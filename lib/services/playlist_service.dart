@@ -1,0 +1,225 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/saved_song.dart';
+import '../models/playlist.dart';
+
+class PlaylistService {
+  static const String _keyPlaylists = 'playlists_v2';
+  static const String _keyOldSongs = 'saved_songs';
+
+  Future<List<Playlist>> loadPlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Check for V2 data
+    if (prefs.containsKey(_keyPlaylists)) {
+      final String? jsonString = prefs.getString(_keyPlaylists);
+      if (jsonString != null) {
+        final List<dynamic> jsonList = jsonDecode(jsonString);
+        return jsonList.map((j) => Playlist.fromJson(j)).toList();
+      }
+    }
+
+    // Migration / First Run
+    List<Playlist> playlists = [];
+
+    // Check for Old data
+    if (prefs.containsKey(_keyOldSongs)) {
+      final String? oldJson = prefs.getString(_keyOldSongs);
+      if (oldJson != null) {
+        final List<dynamic> oldList = jsonDecode(oldJson);
+        final List<SavedSong> oldSongs = oldList
+            .map((j) => SavedSong.fromJson(j))
+            .toList();
+
+        // Create default 'Favorites' with old songs
+        playlists.add(
+          Playlist(
+            id: 'favorites',
+            name: 'Favorites',
+            songs: oldSongs,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+    }
+
+    // Ensure at least one playlist exists if empty
+    if (playlists.isEmpty) {
+      playlists.add(
+        Playlist(
+          id: 'favorites',
+          name: 'Favorites',
+          songs: [],
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
+    await _savePlaylists(prefs, playlists);
+    return playlists;
+  }
+
+  Future<void> _savePlaylists(
+    SharedPreferences prefs,
+    List<Playlist> playlists,
+  ) async {
+    final String jsonString = jsonEncode(
+      playlists.map((p) => p.toJson()).toList(),
+    );
+    await prefs.setString(_keyPlaylists, jsonString);
+  }
+
+  Future<Playlist> createPlaylist(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final newPlaylist = Playlist(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: name,
+      songs: [],
+      createdAt: DateTime.now(),
+    );
+
+    playlists.add(newPlaylist);
+
+    await _savePlaylists(prefs, playlists);
+    return newPlaylist;
+  }
+
+  Future<void> deletePlaylist(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    var playlists = await loadPlaylists();
+
+    // Don't allow deleting the last playlist if you want, or handle it in UI
+    playlists.removeWhere((p) => p.id == id);
+
+    if (playlists.isEmpty) {
+      playlists.add(
+        Playlist(
+          id: 'favorites',
+          name: 'Favorites',
+          songs: [],
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
+    await _savePlaylists(prefs, playlists);
+  }
+
+  Future<void> addSongToPlaylist(String playlistId, SavedSong song) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      // Check duplicates
+      if (!playlists[index].songs.any(
+        (s) =>
+            s.id == song.id ||
+            (s.title == song.title && s.artist == song.artist),
+      )) {
+        playlists[index].songs.insert(0, song);
+        await _savePlaylists(prefs, playlists);
+      }
+    }
+  }
+
+  Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      playlists[index].songs.removeWhere((s) => s.id == songId);
+      await _savePlaylists(prefs, playlists);
+    }
+  }
+
+  Future<void> moveSong(
+    String songId,
+    String fromPlaylistId,
+    String toPlaylistId,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final fromIndex = playlists.indexWhere((p) => p.id == fromPlaylistId);
+    final toIndex = playlists.indexWhere((p) => p.id == toPlaylistId);
+
+    if (fromIndex != -1 && toIndex != -1) {
+      final songIndex = playlists[fromIndex].songs.indexWhere(
+        (s) => s.id == songId,
+      );
+      if (songIndex != -1) {
+        final song = playlists[fromIndex].songs[songIndex];
+
+        // Remove from source
+        playlists[fromIndex].songs.removeAt(songIndex);
+
+        // Add to destination (check duplicates)
+        if (!playlists[toIndex].songs.any(
+          (s) =>
+              s.id == song.id ||
+              (s.title == song.title && s.artist == song.artist),
+        )) {
+          playlists[toIndex].songs.insert(0, song);
+        } else {
+          // If already exists, we still moved it (effectively deleted from source)
+        }
+
+        await _savePlaylists(prefs, playlists);
+      }
+    }
+  }
+
+  Future<bool> isSongInFavorites(String title, String artist) async {
+    final playlists = await loadPlaylists();
+    if (playlists.isEmpty) return false;
+
+    // Check ALL playlists to see if the song is saved anywhere
+    return playlists.any(
+      (p) => p.songs.any((s) => s.title == title && s.artist == artist),
+    );
+  }
+
+  Future<void> addToGenrePlaylist(String genre, SavedSong song) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    // 2. Find or Create Genre Playlist
+    // Normalize genre name
+    final targetName = genre.trim();
+    if (targetName.isNotEmpty) {
+      int genreIndex = playlists.indexWhere(
+        (p) => p.name.toLowerCase() == targetName.toLowerCase(),
+      );
+
+      if (genreIndex == -1) {
+        // Create new
+        final newPlaylist = Playlist(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          name: targetName, // e.g. "Pop", "Rock"
+          songs: [],
+          createdAt: DateTime.now(),
+        );
+        playlists.add(newPlaylist);
+        genreIndex = playlists.length - 1;
+      }
+
+      // Add to Genre Playlist
+      if (!playlists[genreIndex].songs.any(
+        (s) => s.title == song.title && s.artist == song.artist,
+      )) {
+        playlists[genreIndex].songs.insert(0, song);
+      }
+    }
+
+    await _savePlaylists(prefs, playlists);
+  }
+
+  Future<void> saveAll(List<Playlist> playlists) async {
+    final prefs = await SharedPreferences.getInstance();
+    await _savePlaylists(prefs, playlists);
+  }
+}
