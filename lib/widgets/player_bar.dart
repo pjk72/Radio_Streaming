@@ -73,6 +73,7 @@ class PlayerBar extends StatelessWidget {
                                 width: isDesktop ? 50 : 42,
                                 height: isDesktop ? 50 : 42,
                                 color: Colors.black,
+                                alignment: Alignment.center,
                                 child:
                                     (provider.currentAlbumArt ??
                                             station.logo) !=

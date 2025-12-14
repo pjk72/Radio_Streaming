@@ -48,13 +48,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final auth = Provider.of<BackupService>(context, listen: false);
     try {
       await auth.signIn();
-      if (auth.isSignedIn) {
+      if (auth.isSignedIn && mounted) {
         _goToHome();
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Login Failed: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Login Failed: $e")));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -122,110 +124,112 @@ class _LoginScreenState extends State<LoginScreen> {
 
           // 3. Main Content Center
           Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Logo / Icon
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.1),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        width: 2,
+            child: SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Logo / Icon
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.1),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.radio_rounded,
-                      size: 64,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Text Branding
-                  const Text(
-                    "Radio Stream",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 42,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -1.5,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black45,
-                          blurRadius: 10,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    "Your Music. Anywhere. Anytime.",
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 60),
-
-                  // Actions
-                  if (_isLoading)
-                    const SizedBox(
-                      height: 50,
-                      width: 50,
-                      child: CircularProgressIndicator(color: Colors.white),
-                    )
-                  else ...[
-                    // Google Sign In
-                    _buildLoginButton(
-                      icon: Icons.login_rounded, // Fallback if no FontAwesome
-                      label: "Sign in with Google",
-                      onPressed: _handleGoogleLogin,
-                      backgroundColor: Colors.white,
-                      textColor: Colors.black87,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Guest Option
-                    TextButton(
-                      onPressed: _goToHome,
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                          horizontal: 32,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                      child: const Text(
-                        "Continue as Guest",
-                        style: TextStyle(
-                          color: Colors.white60,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      child: const Icon(
+                        Icons.radio_rounded,
+                        size: 64,
+                        color: Colors.white,
                       ),
                     ),
+                    const SizedBox(height: 32),
+
+                    // Text Branding
+                    const Text(
+                      "Radio Stream",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 42,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -1.5,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black45,
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      "Your Music. Anywhere. Anytime.",
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 60),
+
+                    // Actions
+                    if (_isLoading)
+                      const SizedBox(
+                        height: 50,
+                        width: 50,
+                        child: CircularProgressIndicator(color: Colors.white),
+                      )
+                    else ...[
+                      // Google Sign In
+                      _buildLoginButton(
+                        icon: Icons.login_rounded, // Fallback if no FontAwesome
+                        label: "Sign in with Google",
+                        onPressed: _handleGoogleLogin,
+                        backgroundColor: Colors.white,
+                        textColor: Colors.black87,
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Guest Option
+                      TextButton(
+                        onPressed: _goToHome,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 16,
+                            horizontal: 32,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        child: const Text(
+                          "Continue as Guest",
+                          style: TextStyle(
+                            color: Colors.white60,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 40),
                   ],
-
-                  const SizedBox(height: 40),
-                ],
+                ),
               ),
             ),
           ),

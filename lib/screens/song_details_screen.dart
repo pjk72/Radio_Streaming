@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/radio_provider.dart';
 
 import 'artist_details_screen.dart';
+import 'album_details_screen.dart';
 
 class SongDetailsScreen extends StatelessWidget {
   const SongDetailsScreen({super.key});
@@ -97,41 +98,66 @@ class SongDetailsScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(32.0),
                   child: Hero(
                     tag: 'player_image',
-                    child: Container(
-                      width: 280,
-                      height: 280,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                    child: MouseRegion(
+                      cursor:
+                          provider.currentAlbum.isNotEmpty &&
+                              provider.currentAlbum != "Live Radio"
+                          ? SystemMouseCursors.click
+                          : SystemMouseCursors.basic,
+                      child: GestureDetector(
+                        onTap: () {
+                          if (provider.currentAlbum.isNotEmpty &&
+                              provider.currentAlbum != "Live Radio") {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => AlbumDetailsScreen(
+                                  albumName: provider.currentAlbum,
+                                  artistName: provider.currentArtist,
+                                  artworkUrl: provider.currentAlbumArt,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        child: Container(
+                          width: 280,
+                          height: 280,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.4),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: mainImage != null
-                          ? Image.network(
-                              mainImage,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
+                          clipBehavior: Clip.antiAlias,
+                          child: mainImage != null
+                              ? Image.network(
+                                  mainImage,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Center(
+                                      child: Icon(
+                                        Icons.music_note_rounded,
+                                        size: 80,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                              : Center(
                                   child: Icon(
                                     Icons.music_note_rounded,
                                     size: 80,
                                     color: Colors.white.withValues(alpha: 0.5),
                                   ),
-                                );
-                              },
-                            )
-                          : Center(
-                              child: Icon(
-                                Icons.music_note_rounded,
-                                size: 80,
-                                color: Colors.white.withValues(alpha: 0.5),
-                              ),
-                            ),
+                                ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

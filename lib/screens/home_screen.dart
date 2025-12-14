@@ -57,7 +57,12 @@ class _HomeScreenState extends State<HomeScreen>
 
     // Sort categories
     // Logic: 1. Sync genres to provider. 2. Use provider order.
-    provider.syncCategories(grouped.keys.toList());
+    // Logic: 1. Sync genres to provider. 2. Use provider order.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) {
+        provider.syncCategories(grouped.keys.toList());
+      }
+    });
 
     final categories = grouped.keys.toList();
     // Sort grouped keys based on provider.categoryOrder
@@ -70,93 +75,96 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     final isDesktop = MediaQuery.of(context).size.width > 700;
-    final double contentPadding = isDesktop ? 24.0 : 16.0;
+    final double contentPadding = isDesktop ? 32.0 : 16.0;
 
-    return Scaffold(
-      key: _scaffoldKey,
-      extendBodyBehindAppBar: true,
-      appBar: !isDesktop
-          ? AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              title: const Text(
-                "Radio Stream",
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+    return Stack(
+      children: [
+        // Animated Background
+        Positioned.fill(
+          child: AnimatedBuilder(
+            animation: _bgController,
+            builder: (context, child) {
+              return Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF0f0c29),
+                      const Color(0xFF302b63),
+                      const Color(0xFF24243e),
+                    ],
+                    stops: [
+                      0.0,
+                      0.5 + 0.2 * _bgController.value, // subtle shift
+                      1.0,
+                    ],
+                  ),
                 ),
-              ),
-              centerTitle: false,
-              actions: [
-                Row(
-                  children: [
-                    Text(
-                      provider.backupService.currentUser?.displayName
-                              ?.split(' ')
-                              .first ??
-                          "Guest",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.white24,
-                      backgroundImage:
-                          provider.backupService.currentUser?.photoUrl != null
-                          ? NetworkImage(
-                              provider.backupService.currentUser!.photoUrl!,
-                            )
-                          : null,
-                      child:
-                          provider.backupService.currentUser?.photoUrl == null
-                          ? const Icon(
-                              Icons.person,
-                              size: 16,
-                              color: Colors.white,
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 16),
-                  ],
-                ),
-              ],
-            )
-          : null,
-      bottomNavigationBar: !isDesktop ? _buildBottomNav(context) : null,
-      body: Stack(
-        children: [
-          // Animated Background
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _bgController,
-              builder: (context, child) {
-                return Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        const Color(0xFF0f0c29),
-                        const Color(0xFF302b63),
-                        const Color(0xFF24243e),
-                      ],
-                      stops: [
-                        0.0,
-                        0.5 + 0.2 * _bgController.value, // subtle shift
-                        1.0,
-                      ],
+              );
+            },
+          ),
+        ),
+
+        // Main Content
+        Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: false, // Prevent overlap
+          appBar: !isDesktop && _navIndex != 0
+              ? AppBar(
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  title: const Text(
+                    "Radio Stream",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-
-          // Content
-          Column(
+                  centerTitle: false,
+                  actions: [
+                    Row(
+                      children: [
+                        Text(
+                          provider.backupService.currentUser?.displayName
+                                  ?.split(' ')
+                                  .first ??
+                              "Guest",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: Colors.white24,
+                          backgroundImage:
+                              provider.backupService.currentUser?.photoUrl !=
+                                  null
+                              ? NetworkImage(
+                                  provider.backupService.currentUser!.photoUrl!,
+                                )
+                              : null,
+                          child:
+                              provider.backupService.currentUser?.photoUrl ==
+                                  null
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 16),
+                      ],
+                    ),
+                  ],
+                )
+              : null,
+          bottomNavigationBar: !isDesktop ? _buildBottomNav(context) : null,
+          body: Column(
             children: [
               Expanded(
                 child: Row(
@@ -177,182 +185,231 @@ class _HomeScreenState extends State<HomeScreen>
                       child: _navIndex == 2
                           ? Padding(
                               padding: EdgeInsets.only(
-                                top: isDesktop ? 0 : 80.0,
+                                top: isDesktop ? 0 : 24.0,
                               ),
                               child: const PlaylistScreen(),
                             )
                           : _navIndex == 1
                           ? Padding(
                               padding: EdgeInsets.only(
-                                top: isDesktop ? 0 : 80.0,
+                                top: isDesktop ? 0 : 24.0,
                               ),
                               child: const GenresScreen(),
                             )
                           : _navIndex == 3
                           ? Padding(
                               padding: EdgeInsets.only(
-                                top: isDesktop ? 0 : 80.0,
+                                top: isDesktop ? 0 : 24.0,
                               ),
                               child: const SettingsScreen(),
                             )
-                          : /* CUSTOM DRAG & DROP IMPLEMENTATION */ CustomScrollView(
-                              physics: const BouncingScrollPhysics(),
-                              slivers: [
-                                SliverPadding(
-                                  padding: EdgeInsets.fromLTRB(
-                                    contentPadding,
-                                    isDesktop ? 24.0 : 80.0,
-                                    contentPadding,
-                                    0,
-                                  ),
-                                  sliver: SliverToBoxAdapter(
-                                    child: Column(
-                                      children: [
-                                        const NowPlayingHeader(),
-                                        const SizedBox(height: 16),
-                                        // Empty State
-                                        if (categories.isEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 48.0,
-                                            ),
-                                            child: Center(
-                                              child: Column(
-                                                children: [
-                                                  Icon(
-                                                    Icons.favorite_border,
-                                                    size: 48,
-                                                    color: Colors.white24,
-                                                  ),
-                                                  const SizedBox(height: 16),
-                                                  Text(
-                                                    "No favorites yet",
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 18,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    "Go to Genres to add stations",
-                                                    style: const TextStyle(
-                                                      color: Colors.white54,
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                          : /* CUSTOM DRAG & DROP IMPLEMENTATION */ SafeArea(
+                              top: false,
+                              bottom: false,
+                              child: NestedScrollView(
+                                headerSliverBuilder: (context, innerBoxIsScrolled) {
+                                  return [
+                                    if (!isDesktop) ...[
+                                      SliverSafeArea(
+                                        top: true,
+                                        bottom: false,
+                                        sliver: SliverAppBar(
+                                          backgroundColor: Colors.transparent,
+                                          elevation: 0,
+                                          floating: false,
+                                          pinned: false,
+                                          title: const Text(
+                                            "Radio Stream",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
                                             ),
                                           ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-
-                                // Genres List with SliverReorderableList
-                                SliverPadding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: contentPadding,
-                                  ),
-                                  sliver: SliverReorderableList(
-                                    itemCount: categories.length,
-                                    onReorder: (oldIndex, newIndex) {
-                                      provider.reorderCategories(
-                                        oldIndex,
-                                        newIndex,
-                                      );
-                                    },
-                                    itemBuilder: (context, index) {
-                                      final cat = categories[index];
-                                      return ReorderableDelayedDragStartListener(
-                                        key: ValueKey(cat),
-                                        index: index,
-                                        child: Container(
-                                          margin: const EdgeInsets.only(
-                                            bottom: 24,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.2,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.white12,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                          child: Theme(
-                                            data: Theme.of(context).copyWith(
-                                              dividerColor: Colors.transparent,
-                                            ),
-                                            child: ExpansionTile(
-                                              initiallyExpanded: true,
-                                              tilePadding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 16,
-                                                    vertical: 8,
-                                                  ),
-                                              iconColor: Colors.white,
-                                              collapsedIconColor:
-                                                  Colors.white70,
-                                              shape: const Border(),
-                                              collapsedShape: const Border(),
-                                              leading: const Icon(
-                                                Icons.drag_indicator,
-                                                color: Colors.white24,
-                                              ),
-                                              title: Text(
-                                                cat,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .headlineSmall
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors.white,
-                                                      fontSize: isDesktop
-                                                          ? 24
-                                                          : 20,
-                                                    ),
-                                              ),
+                                          centerTitle: false,
+                                          actions: [
+                                            Row(
                                               children: [
-                                                // Horizontal Reorderable List of Stations
-                                                // Vertically Reorderable List of Stations
-                                                ReorderableListView.builder(
-                                                  shrinkWrap: true,
-                                                  physics:
-                                                      const NeverScrollableScrollPhysics(),
-                                                  // No 'scrollDirection' means vertical by default
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 16,
-                                                        vertical: 8,
-                                                      ),
-
-                                                  proxyDecorator: (child, index, animation) {
-                                                    return Material(
-                                                      color: Colors.transparent,
-                                                      child: ScaleTransition(
-                                                        scale: animation.drive(
-                                                          Tween<double>(
-                                                            begin: 1.0,
-                                                            end: 1.02,
-                                                          ).chain(
-                                                            CurveTween(
-                                                              curve: Curves
-                                                                  .easeOut,
-                                                            ),
-                                                          ),
+                                                Text(
+                                                  provider
+                                                          .backupService
+                                                          .currentUser
+                                                          ?.displayName
+                                                          ?.split(' ')
+                                                          .first ??
+                                                      "Guest",
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                CircleAvatar(
+                                                  radius: 16,
+                                                  backgroundColor:
+                                                      Colors.white24,
+                                                  backgroundImage:
+                                                      provider
+                                                              .backupService
+                                                              .currentUser
+                                                              ?.photoUrl !=
+                                                          null
+                                                      ? NetworkImage(
+                                                          provider
+                                                              .backupService
+                                                              .currentUser!
+                                                              .photoUrl!,
+                                                        )
+                                                      : null,
+                                                  child:
+                                                      provider
+                                                              .backupService
+                                                              .currentUser
+                                                              ?.photoUrl ==
+                                                          null
+                                                      ? const Icon(
+                                                          Icons.person,
+                                                          size: 16,
+                                                          color: Colors.white,
+                                                        )
+                                                      : null,
+                                                ),
+                                                const SizedBox(width: 16),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                    SliverOverlapAbsorber(
+                                      handle:
+                                          NestedScrollView.sliverOverlapAbsorberHandleFor(
+                                            context,
+                                          ),
+                                      sliver: SliverSafeArea(
+                                        top: false,
+                                        bottom: false,
+                                        sliver: SliverPersistentHeader(
+                                          pinned: true,
+                                          delegate: NowPlayingHeaderDelegate(
+                                            minHeight:
+                                                110 +
+                                                MediaQuery.of(
+                                                  context,
+                                                ).padding.top,
+                                            maxHeight:
+                                                160 +
+                                                MediaQuery.of(
+                                                  context,
+                                                ).padding.top,
+                                            topPadding: MediaQuery.of(
+                                              context,
+                                            ).padding.top,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ];
+                                },
+                                body: Builder(
+                                  builder: (context) {
+                                    return CustomScrollView(
+                                      physics: const BouncingScrollPhysics(),
+                                      slivers: [
+                                        SliverOverlapInjector(
+                                          handle:
+                                              NestedScrollView.sliverOverlapAbsorberHandleFor(
+                                                context,
+                                              ),
+                                        ),
+                                        // AppBar moved to headerSliverBuilder
+                                        SliverPadding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: contentPadding,
+                                          ),
+                                          sliver: SliverToBoxAdapter(
+                                            child: categories.isEmpty
+                                                ? Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 48.0,
                                                         ),
+                                                    child: Center(
+                                                      child: Column(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .favorite_border,
+                                                            size: 48,
+                                                            color:
+                                                                Colors.white24,
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 16,
+                                                          ),
+                                                          Text(
+                                                            "No favorites yet",
+                                                            style:
+                                                                const TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontSize: 18,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                ),
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 8,
+                                                          ),
+                                                          Text(
+                                                            "Go to Genres to add stations",
+                                                            style:
+                                                                const TextStyle(
+                                                                  color: Colors
+                                                                      .white54,
+                                                                  fontSize: 14,
+                                                                ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  )
+                                                : const SizedBox.shrink(),
+                                          ),
+                                        ),
+
+                                        // Genres List with SliverReorderableList
+                                        SliverPadding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: contentPadding,
+                                          ),
+                                          sliver: SliverReorderableList(
+                                            itemCount: categories.length,
+                                            onReorder: (oldIndex, newIndex) {
+                                              provider.reorderCategories(
+                                                oldIndex,
+                                                newIndex,
+                                              );
+                                            },
+                                            proxyDecorator: (child, index, animation) {
+                                              return AnimatedBuilder(
+                                                animation: animation,
+                                                builder:
+                                                    (
+                                                      BuildContext context,
+                                                      Widget? child,
+                                                    ) {
+                                                      return Material(
+                                                        color:
+                                                            Colors.transparent,
                                                         child: Container(
                                                           decoration: BoxDecoration(
-                                                            color: Colors.black
-                                                                .withValues(
-                                                                  alpha: 0.2,
-                                                                ),
+                                                            color:
+                                                                const Color(
+                                                                  0xFF1a1a2e,
+                                                                ).withValues(
+                                                                  alpha: 0.9,
+                                                                ), // Solid dark background for readability
                                                             borderRadius:
                                                                 BorderRadius.circular(
                                                                   12,
@@ -363,97 +420,244 @@ class _HomeScreenState extends State<HomeScreen>
                                                                     .black
                                                                     .withValues(
                                                                       alpha:
-                                                                          0.3,
+                                                                          0.5,
                                                                     ),
-                                                                blurRadius: 10,
+                                                                blurRadius: 20,
                                                                 spreadRadius: 2,
+                                                                offset:
+                                                                    const Offset(
+                                                                      0,
+                                                                      4,
+                                                                    ),
                                                               ),
                                                             ],
+                                                            border: Border.all(
+                                                              color: Colors
+                                                                  .white24,
+                                                            ),
                                                           ),
                                                           child: child,
                                                         ),
-                                                      ),
-                                                    );
-                                                  },
-
-                                                  onReorder: (oldIndex, newIndex) {
-                                                    if (oldIndex < newIndex) {
-                                                      newIndex -= 1;
-                                                    }
-
-                                                    final station =
-                                                        grouped[cat]![oldIndex];
-                                                    final all =
-                                                        provider.allStations;
-                                                    final oldGlobal = all
-                                                        .indexWhere(
-                                                          (s) =>
-                                                              s.id ==
-                                                              station.id,
-                                                        );
-
-                                                    int targetGlobal = -1;
-                                                    if (newIndex <
-                                                        grouped[cat]!.length) {
-                                                      final targetStation =
-                                                          grouped[cat]![newIndex];
-                                                      targetGlobal = all
-                                                          .indexWhere(
-                                                            (s) =>
-                                                                s.id ==
-                                                                targetStation
-                                                                    .id,
-                                                          );
-                                                    } else {
-                                                      final lastStation =
-                                                          grouped[cat]!.last;
-                                                      final lastGlobal = all
-                                                          .indexWhere(
-                                                            (s) =>
-                                                                s.id ==
-                                                                lastStation.id,
-                                                          );
-                                                      if (lastGlobal != -1) {
-                                                        targetGlobal =
-                                                            lastGlobal + 1;
-                                                      }
-                                                    }
-
-                                                    if (oldGlobal != -1 &&
-                                                        targetGlobal != -1) {
-                                                      provider.reorderStations(
-                                                        oldGlobal,
-                                                        targetGlobal,
                                                       );
-                                                    }
-                                                  },
-                                                  itemCount:
-                                                      grouped[cat]!.length,
-                                                  itemBuilder: (context, index) {
-                                                    final station =
-                                                        grouped[cat]![index];
-                                                    return Container(
-                                                      key: ValueKey(station.id),
-                                                      margin:
-                                                          const EdgeInsets.only(
-                                                            bottom: 12,
-                                                          ),
-                                                      child: StationCard(
-                                                        station: station,
-                                                      ),
-                                                    );
-                                                  },
+                                                    },
+                                                child: child,
+                                              );
+                                            },
+                                            itemBuilder: (context, index) {
+                                              final cat = categories[index];
+                                              return Container(
+                                                key: ValueKey(cat),
+                                                margin: const EdgeInsets.only(
+                                                  bottom: 24,
                                                 ),
-                                                const SizedBox(height: 16),
-                                              ],
-                                            ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.2),
+                                                  border: Border.all(
+                                                    color: Colors.white12,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Theme(
+                                                  data: Theme.of(context)
+                                                      .copyWith(
+                                                        dividerColor:
+                                                            Colors.transparent,
+                                                      ),
+                                                  child: ExpansionTile(
+                                                    initiallyExpanded: true,
+                                                    tilePadding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 16,
+                                                          vertical: 8,
+                                                        ),
+                                                    iconColor: Colors.white,
+                                                    collapsedIconColor:
+                                                        Colors.white70,
+                                                    shape: const Border(),
+                                                    collapsedShape:
+                                                        const Border(),
+                                                    leading:
+                                                        ReorderableDragStartListener(
+                                                          index: index,
+                                                          child: const Icon(
+                                                            Icons
+                                                                .drag_indicator,
+                                                            color:
+                                                                Colors.white24,
+                                                          ),
+                                                        ),
+                                                    title: Text(
+                                                      cat,
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .headlineSmall
+                                                          ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Colors.white,
+                                                            fontSize: isDesktop
+                                                                ? 24
+                                                                : 20,
+                                                          ),
+                                                    ),
+                                                    children: [
+                                                      // Horizontal Reorderable List of Stations
+                                                      // Vertically Reorderable List of Stations
+                                                      ReorderableListView.builder(
+                                                        shrinkWrap: true,
+                                                        physics:
+                                                            const NeverScrollableScrollPhysics(),
+                                                        // No 'scrollDirection' means vertical by default
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 16,
+                                                              vertical: 8,
+                                                            ),
+
+                                                        proxyDecorator: (child, index, animation) {
+                                                          return Material(
+                                                            color: Colors
+                                                                .transparent,
+                                                            child: ScaleTransition(
+                                                              scale: animation.drive(
+                                                                Tween<double>(
+                                                                  begin: 1.0,
+                                                                  end: 1.02,
+                                                                ).chain(
+                                                                  CurveTween(
+                                                                    curve: Curves
+                                                                        .easeOut,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              child: Container(
+                                                                decoration: BoxDecoration(
+                                                                  color: Colors
+                                                                      .black
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.2,
+                                                                      ),
+                                                                  borderRadius:
+                                                                      BorderRadius.circular(
+                                                                        12,
+                                                                      ),
+                                                                  boxShadow: [
+                                                                    BoxShadow(
+                                                                      color: Colors
+                                                                          .black
+                                                                          .withValues(
+                                                                            alpha:
+                                                                                0.3,
+                                                                          ),
+                                                                      blurRadius:
+                                                                          10,
+                                                                      spreadRadius:
+                                                                          2,
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                                child: child,
+                                                              ),
+                                                            ),
+                                                          );
+                                                        },
+
+                                                        onReorder: (oldIndex, newIndex) {
+                                                          if (oldIndex <
+                                                              newIndex) {
+                                                            newIndex -= 1;
+                                                          }
+
+                                                          final station =
+                                                              grouped[cat]![oldIndex];
+                                                          final all = provider
+                                                              .allStations;
+                                                          final oldGlobal = all
+                                                              .indexWhere(
+                                                                (s) =>
+                                                                    s.id ==
+                                                                    station.id,
+                                                              );
+
+                                                          int targetGlobal = -1;
+                                                          if (newIndex <
+                                                              grouped[cat]!
+                                                                  .length) {
+                                                            final targetStation =
+                                                                grouped[cat]![newIndex];
+                                                            targetGlobal = all
+                                                                .indexWhere(
+                                                                  (s) =>
+                                                                      s.id ==
+                                                                      targetStation
+                                                                          .id,
+                                                                );
+                                                          } else {
+                                                            final lastStation =
+                                                                grouped[cat]!
+                                                                    .last;
+                                                            final lastGlobal =
+                                                                all.indexWhere(
+                                                                  (s) =>
+                                                                      s.id ==
+                                                                      lastStation
+                                                                          .id,
+                                                                );
+                                                            if (lastGlobal !=
+                                                                -1) {
+                                                              targetGlobal =
+                                                                  lastGlobal +
+                                                                  1;
+                                                            }
+                                                          }
+
+                                                          if (oldGlobal != -1 &&
+                                                              targetGlobal !=
+                                                                  -1) {
+                                                            provider
+                                                                .reorderStations(
+                                                                  oldGlobal,
+                                                                  targetGlobal,
+                                                                );
+                                                          }
+                                                        },
+                                                        itemCount: grouped[cat]!
+                                                            .length,
+                                                        itemBuilder: (context, index) {
+                                                          final station =
+                                                              grouped[cat]![index];
+                                                          return Container(
+                                                            key: ValueKey(
+                                                              station.id,
+                                                            ),
+                                                            margin:
+                                                                const EdgeInsets.only(
+                                                                  bottom: 12,
+                                                                ),
+                                                            child: StationCard(
+                                                              station: station,
+                                                            ),
+                                                          );
+                                                        },
+                                                      ),
+                                                      const SizedBox(
+                                                        height: 16,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            },
                                           ),
                                         ),
-                                      );
-                                    },
-                                  ),
+                                      ],
+                                    );
+                                  },
                                 ),
-                              ],
+                              ),
                             ),
                     ),
                   ],
@@ -464,8 +668,8 @@ class _HomeScreenState extends State<HomeScreen>
               const PlayerBar(),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

@@ -154,8 +154,12 @@ class PlaylistService {
       if (songIndex != -1) {
         final song = playlists[fromIndex].songs[songIndex];
 
-        // Remove from source
-        playlists[fromIndex].songs.removeAt(songIndex);
+        // Logic: specific request "only when you move a song ON THE FAVORITES CARD create a copy"
+        // If moving TO favorites -> COPY (do not remove from source)
+        // If moving TO others -> MOVE (remove from source)
+        if (toPlaylistId != 'favorites') {
+          playlists[fromIndex].songs.removeAt(songIndex);
+        }
 
         // Add to destination (check duplicates)
         if (!playlists[toIndex].songs.any(
@@ -165,7 +169,9 @@ class PlaylistService {
         )) {
           playlists[toIndex].songs.insert(0, song);
         } else {
-          // If already exists, we still moved it (effectively deleted from source)
+          // If already exists:
+          // If we did a MOVE (removed from source), and it is valid to "merge", it's fine.
+          // If we did a COPY, it just means it's already there.
         }
 
         await _savePlaylists(prefs, playlists);
@@ -189,7 +195,11 @@ class PlaylistService {
 
     // 2. Find or Create Genre Playlist
     // Normalize genre name
-    final targetName = genre.trim();
+    String targetName = genre.trim();
+    if (targetName.isEmpty || targetName.toLowerCase() == 'unknown') {
+      targetName = "Mix"; // Dedicated card for no genre
+    }
+
     if (targetName.isNotEmpty) {
       int genreIndex = playlists.indexWhere(
         (p) => p.name.toLowerCase() == targetName.toLowerCase(),

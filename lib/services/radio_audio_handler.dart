@@ -1,25 +1,34 @@
 import 'dart:ui';
+// import 'dart:developer' as developer;
+import 'package:http/http.dart' as http; // Added import
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import '../data/station_data.dart';
+import '../data/station_data.dart' as static_data;
 import '../models/station.dart';
 import '../models/saved_song.dart';
 import 'playlist_service.dart';
 
 class RadioAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler {
-  final AudioPlayer _player = AudioPlayer();
-  // StreamSubscription? _connectivitySubscription; // Removed unused field
-  bool _isRetryPending = false;
-  bool _expectingStop = false; // To distinguish between user stop and crash
-  bool _isInitialBuffering = false; // To keep loading until actual audio data
-  final PlaylistService _playlistService = PlaylistService();
+  List<Station> _stations = [];
+  AudioPlayer _player = AudioPlayer(); // Non-final to allow recreation
 
-  // Callbacks for external control (e.g. from Provider)
+  // ... (existing helper methods if any)
+
+  bool _isRetryPending = false;
+  bool _expectingStop = false;
+  bool _isInitialBuffering = false;
+  final PlaylistService _playlistService = PlaylistService();
+  int _retryCount = 0;
+  static const int _maxRetries = 5;
+  bool _internalRetry = false;
+  final double _volume = 1.0;
+
+  // Callbacks
   VoidCallback? onSkipNext;
   VoidCallback? onSkipPrevious;
 
@@ -39,101 +48,94 @@ class RadioAudioHandler extends BaseAudioHandler
 
   bool _isCurrentSongSaved = false;
 
-  @override
-  Future<List<MediaItem>> getChildren(
-    String parentMediaId, [
-    Map<String, dynamic>? options,
-  ]) async {
-    // Show only Favorites in Android Auto, matching the App's Home Screen
-    final favStations = await _getOrderedFavorites();
+  // StreamSubscriptions to manage listeners when replacing player
+  StreamSubscription? _playerStateSubscription;
+  StreamSubscription? _playerCompleteSubscription;
+  StreamSubscription? _playerPositionSubscription;
 
-    return favStations
-        .map(
-          (station) => MediaItem(
-            id: station.url,
-            album: "Radio Stream",
-            title: station.name,
-            artist: station.genre,
-            artUri: station.logo != null ? Uri.parse(station.logo!) : null,
-            playable: true,
-            extras: {
-              'url': station.url,
-              'title': station.name,
-              'artist': station.genre,
-              'album': 'Live Radio',
-              'artUri': station.logo,
-            },
+  // Ensure we don't have multiple initializations happening at once
+  bool _isInitializing = false;
+
+  Future<void> _initializePlayer() async {
+    if (_isInitializing) return;
+    _isInitializing = true;
+
+    try {
+      // 1. Dispose old player if exists
+      // We must await this to ensure native resources are freed
+      try {
+        await _playerStateSubscription?.cancel();
+        await _playerCompleteSubscription?.cancel();
+        await _playerPositionSubscription?.cancel();
+
+        // Critical: Release native resources before releasing the Dart object
+        await _player.release();
+        await _player.dispose();
+      } catch (_) {
+        // Ignore disposal errors, object might be dead already
+      }
+
+      // 2. Create New Instance
+      _player = AudioPlayer();
+
+      // 3. Configure (Use defaults to match Test Screen, add minimal config)
+      try {
+        await _player.setReleaseMode(ReleaseMode.stop);
+        // Set context again just in case, similar to fresh start
+        await _player.setAudioContext(
+          AudioContext(
+            android: const AudioContextAndroid(
+              isSpeakerphoneOn: false,
+              stayAwake: true,
+              contentType: AndroidContentType.music,
+              usageType: AndroidUsageType.media,
+              audioFocus: AndroidAudioFocus.gain,
+            ),
+            iOS: AudioContextIOS(
+              category: AVAudioSessionCategory.playback,
+              options: const {},
+            ),
           ),
-        )
-        .toList();
+        );
+      } catch (_) {}
+
+      // 4. Attach Listeners
+      _playerStateSubscription = _player.onPlayerStateChanged.listen(
+        _broadcastState,
+      );
+
+      _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
+        if (!_expectingStop) {
+          _handleConnectionError("Stream ended unexpectedly.");
+        }
+      });
+
+      _playerPositionSubscription = _player.onPositionChanged.listen((_) {
+        // Debounce actual playing state from buffering
+        if (_isInitialBuffering && !_expectingStop) {
+          _isInitialBuffering = false;
+          _broadcastState(_player.state);
+        }
+      });
+    } finally {
+      _isInitializing = false;
+    }
   }
 
-  Future<List<Station>> _getOrderedFavorites() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String> favoriteIds =
-        prefs.getStringList('favorite_station_ids') ?? [];
-
-    if (favoriteIds.isEmpty) {
-      // Fallback: If no favorites, show all stations (or empty list if strictly matching behavior)
-      // User requested "matches the list on home screen". If home screen is empty, this should be too.
-      // But to avoid "No Content" error loops in Auto, let's fallback to all if empty,
-      // OR specifically for this user: they want "the list on home screen".
-      // If home screen shows "No favorites yet", AA should probably show nothing or All?
-      // Let's assume Fallback to All for usability if user has deleted all favorites.
-      return stations;
-    }
-
-    // Map IDs to Stations ensuring correct order
-    List<Station> ordered = [];
-    for (String id in favoriteIds) {
-      try {
-        final station = stations.firstWhere((s) => s.id.toString() == id);
-        ordered.add(station);
-      } catch (_) {
-        // Station ID not found (removed from data?)
-      }
-    }
-
-    // If filtering resulted in 0 valid stations (rare), return all
-    if (ordered.isEmpty) return stations;
-
-    return ordered;
+  // Legacy init - forwards to safe init
+  Future<void> _initPlayer() async {
+    await _initializePlayer();
   }
 
   RadioAudioHandler() {
-    _player.onPlayerStateChanged.listen(_broadcastState);
-
-    // Auto-reconnect on stream finish (unexpected drop)
-    _player.onPlayerComplete.listen((_) {
-      if (!_expectingStop) {
-        _handleConnectionError("Stream ended unexpectedly.");
-      }
-    });
-
-    // Detect actual audio start
-    _player.onPositionChanged.listen((_) {
-      if (_isInitialBuffering) {
-        _isInitialBuffering = false;
-        _broadcastState(_player.state);
-      }
-    });
-
-    // Listen to logs for errors (Audioplayers 6.x)
-    // Listen to logs for errors (Audioplayers 6.x)
-    // Commented out to prevent false positives stopping playback
-    /*_player.onLog.listen((msg) {
-      if (msg.contains("Error") || msg.contains("Exception")) {
-        if (!_expectingStop) {
-          _handleConnectionError("Playback error: $msg");
-        }
-      }
-    });*/
+    _stations = List.from(static_data.stations);
+    // Don't wait for future in constructor, but start it
+    _initializePlayer();
 
     // Monitor network connectivity
     Connectivity().onConnectivityChanged.listen((
       List<ConnectivityResult> results,
     ) {
-      // If we are supposed to be playing but experienced a network issue
       final hasConnection = !results.contains(ConnectivityResult.none);
       if (hasConnection && _isRetryPending) {
         _retryPlayback();
@@ -178,6 +180,19 @@ class RadioAudioHandler extends BaseAudioHandler
     _isRetryPending = true;
 
     // Auto-retry logic
+    _retryCount++;
+    if (_retryCount > _maxRetries) {
+      _isRetryPending = false;
+      playbackState.add(
+        playbackState.value.copyWith(
+          errorMessage: "Unable to connect after multiple attempts.",
+          processingState: AudioProcessingState.error,
+          playing: false,
+        ),
+      );
+      return;
+    }
+
     Future.delayed(const Duration(seconds: 3), () {
       if (_isRetryPending) {
         _retryPlayback();
@@ -204,6 +219,7 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     _isRetryPending = false;
+    _internalRetry = true; // Flag to prevent reset of counter
 
     // Attempt to restart
     playbackState.add(
@@ -214,23 +230,15 @@ class RadioAudioHandler extends BaseAudioHandler
     );
 
     await playFromUri(Uri.parse(currentUrl), mediaItem.value?.extras);
-  }
-
-  @override
-  Future<void> play() async {
-    // REQUIREMENT 1: Clear buffer/cache by forcing a fresh load
-    // Instead of _player.resume(), we restart the stream
-    final currentItem = mediaItem.value;
-    if (currentItem != null) {
-      _expectingStop = false;
-      await playFromUri(Uri.parse(currentItem.id), currentItem.extras);
-    }
+    _internalRetry = false;
   }
 
   @override
   Future<void> pause() async {
     _expectingStop = true;
-    await _player.pause();
+    try {
+      await _player.pause().timeout(const Duration(seconds: 2));
+    } catch (_) {}
     // Manually update state so UI knows we paused
     playbackState.add(
       playbackState.value.copyWith(
@@ -250,50 +258,112 @@ class RadioAudioHandler extends BaseAudioHandler
     onSkipPrevious?.call();
   }
 
-  @override
-  Future<void> stop() async {
-    _expectingStop = true;
-    _isRetryPending = false;
-    await _player.stop();
-    // Manually update state
-    playbackState.add(
-      playbackState.value.copyWith(
-        playing: false,
-        processingState: AudioProcessingState.idle,
-      ),
-    );
-    await super.stop();
+  // --- RESTORED HELPER METHODS ---
+
+  void updateStations(List<Station> newStations) {
+    _stations = List.from(newStations);
+    _loadQueue();
   }
 
-  @override
-  Future<void> playFromMediaId(
-    String mediaId, [
-    Map<String, dynamic>? extras,
-  ]) async {
-    final station = stations.firstWhere(
-      (s) => s.url == mediaId,
-      orElse: () => stations[0],
-    );
+  Future<List<Station>> _getOrderedFavorites() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> favoriteIds =
+        prefs.getStringList('favorite_station_ids') ?? [];
 
-    await playFromUri(Uri.parse(station.url), {
-      'title': station.name,
-      'artist': station.genre,
-      'album': 'Live Radio',
-      'artUri': station.logo,
-    });
+    if (favoriteIds.isEmpty) return _stations;
+
+    List<Station> ordered = [];
+    for (String id in favoriteIds) {
+      try {
+        final station = _stations.firstWhere((s) => s.id.toString() == id);
+        ordered.add(station);
+      } catch (_) {}
+    }
+
+    if (ordered.isEmpty) return _stations;
+    return ordered;
+  }
+
+  Future<String> _resolveStreamUrl(String url) async {
+    final lower = url.toLowerCase();
+    final isPlaylist =
+        lower.endsWith('.pls') ||
+        lower.endsWith('.m3u') ||
+        lower.contains('.pls?') ||
+        lower.contains('.m3u?');
+    // REMOVED .m3u8: HLS streams should typically be handled natively by the player.
+    // Parsing them manually breaks streams with relative paths (Akamai/RTL etc).
+
+    if (!isPlaylist) {
+      return url;
+    }
+
+    final client = http.Client();
+    try {
+      final uri = Uri.parse(url);
+      final request = http.Request('GET', uri)
+        ..followRedirects = true
+        ..headers['User-Agent'] =
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+
+      final response = await client.send(request);
+      final bodyBytes = await response.stream
+          .toBytes(); // Simplify for brevity/safety
+      final body = String.fromCharCodes(bodyBytes);
+
+      if (body.contains('[playlist]')) {
+        final lines = body.split('\n');
+        for (var line in lines) {
+          if (line.toLowerCase().startsWith('file1=')) {
+            return line.substring(6).trim();
+          }
+        }
+      }
+
+      final lines = body.split('\n');
+      for (var line in lines) {
+        line = line.trim();
+        if (line.isNotEmpty && !line.startsWith('#')) {
+          return line;
+        }
+      }
+
+      return url;
+    } catch (_) {
+      return url;
+    } finally {
+      client.close();
+    }
+  }
+
+  // --- AUDIO PLAYER CONTROLS ---
+
+  @override
+  Future<void> play() async {
+    await _initializePlayer(); // Ensure fresh
+    final currentItem = mediaItem.value;
+    if (currentItem != null) {
+      _expectingStop = false;
+      await playFromUri(Uri.parse(currentItem.id), currentItem.extras);
+    }
   }
 
   @override
   Future<void> playFromUri(Uri uri, [Map<String, dynamic>? extras]) async {
+    // 1. Set Switch Flag
+    _expectingStop = true; // CRITICAL: keep notification alive
+
+    // 2. Update Metadata & State IMMEDIATELY (Before resolving/init)
     final url = uri.toString();
     _isRetryPending = false;
     _isCurrentSongSaved = false;
     _isInitialBuffering = true;
+    _internalRetry = false; // Reset
 
-    // Lookup station for fallback metadata
+    // Lookup station
     Station? station;
     try {
-      station = stations.firstWhere((s) => s.url == url);
+      station = _stations.firstWhere((s) => s.url == url);
     } catch (_) {}
 
     final String title = extras?['title'] ?? station?.name ?? "Station";
@@ -301,7 +371,6 @@ class RadioAudioHandler extends BaseAudioHandler
         extras?['artist'] ?? station?.genre ?? "Unknown Artist";
     final String? artUriStr = extras?['artUri'] ?? station?.logo;
 
-    // Create MediaItem from extras or fallbacks
     final item = MediaItem(
       id: url,
       album: extras?['album'] ?? "Radio Stream",
@@ -313,35 +382,81 @@ class RadioAudioHandler extends BaseAudioHandler
 
     mediaItem.add(item);
 
-    // Signal buffering/loading
+    // Force Buffering/Playing state so Service stays alive
     playbackState.add(
       playbackState.value.copyWith(
         processingState: AudioProcessingState.buffering,
+        playing: true,
         errorMessage: null,
       ),
     );
 
-    try {
-      _expectingStop = true; // Ignore events during reset
-      await _player.stop(); // Clear previous
-      _expectingStop = false; // Enable monitoring for new playback
-      await _player.play(UrlSource(url));
-    } catch (e) {
-      _handleConnectionError("Failed to play: $e");
-    }
+    // 3. RECREATE PLAYER (Now safe to do, UI shows new station buffering)
+    await _initializePlayer();
 
-    // Fallback: Clear buffering state after 5 seconds if no position update occurs
-    Future.delayed(const Duration(seconds: 5), () {
-      if (_isInitialBuffering) {
-        _isInitialBuffering = false;
-        _broadcastState(_player.state);
+    // 4. Defer Reset of Flag until we are actually ready to play/fail
+    // _expectingStop = false; // MOVED INSIDE MICROTASK
+
+    Future.microtask(() async {
+      // Re-check if we are still the intended station (prevent race conditions)
+      if (mediaItem.value?.id != url) return;
+
+      bool success = true;
+      String? errorMessage;
+
+      try {
+        String finalUrl = url;
+        try {
+          finalUrl = await _resolveStreamUrl(
+            url,
+          ).timeout(const Duration(seconds: 4), onTimeout: () => url);
+        } catch (_) {}
+
+        // Re-check again before acting on player
+        if (mediaItem.value?.id != url) return;
+
+        // EXACT MATCH to EditStationScreen implementation:
+        // 1. Set Source
+        // 2. Set Volume
+        // 3. Resume
+        await _player.setSourceUrl(finalUrl);
+        await _player.setVolume(_volume);
+
+        // Resume with timeout check
+        await _player.resume().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            success = false;
+            errorMessage = "Player handshake timed out";
+          },
+        );
+
+        if (success) {
+          _expectingStop = false; // Ready to show real state
+          _broadcastState(PlayerState.playing); // Force playing state
+        } else {
+          _expectingStop = false; // Failed, allow error state to show
+        }
+      } catch (e) {
+        _expectingStop = false;
+        success = false;
+        errorMessage = e.toString();
+      }
+
+      if (!success) {
+        if (errorMessage != null) {
+          _handleConnectionError("Failed to play: $errorMessage");
+        }
       }
     });
 
-    // Force update
-    if (_player.state == PlayerState.playing) {
-      _broadcastState(PlayerState.playing);
-    }
+    Future.delayed(const Duration(seconds: 5), () {
+      if (_isInitialBuffering && !_expectingStop) {
+        _isInitialBuffering = false;
+        // Query actual state slightly later
+        _broadcastState(_player.state);
+      }
+    });
   }
 
   @override
@@ -367,12 +482,13 @@ class RadioAudioHandler extends BaseAudioHandler
           youtubeUrl: item.extras?['youtubeUrl'],
           dateAdded: DateTime.now(),
         );
+
         // Lookup station genre
-        String genre = "General";
+        String genre = "Mix";
         final url = item.extras?['url'];
         if (url != null) {
           try {
-            final station = stations.firstWhere((s) => s.url == url);
+            final station = _stations.firstWhere((s) => s.url == url);
             // Take first genre if multiple (e.g. "Pop | Rock" -> "Pop")
             genre = station.genre.split('|').first.trim();
             // Clean slashes too just in case
@@ -398,13 +514,33 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   void _broadcastState(PlayerState state) {
-    // Don't overwrite state if we are retrying or manually managing transition
-    if (_isRetryPending || _expectingStop) {
+    // If we are pending a retry, don't clear notification
+    if (_isRetryPending) {
+      return;
+    }
+
+    // CRITICAL: During station switch (_expectingStop), force "Buffering" state
+    // instead of Idle/Stopped. This usually keeps the Notification ALIVE
+    // because "Buffering" is considered an active playback state by Android.
+    if (_expectingStop) {
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.buffering,
+          playing:
+              true, // Keep "Play" active logic so notification stays expanded
+          controls: [
+            MediaControl.skipToPrevious,
+            MediaControl.pause, // Show Pause (fake playing)
+            MediaControl.skipToNext,
+            _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
+          ],
+        ),
+      );
       return;
     }
 
     final playing = state == PlayerState.playing;
-    final int index = stations.indexWhere((s) => s.url == mediaItem.value?.id);
+    final int index = _stations.indexWhere((s) => s.url == mediaItem.value?.id);
 
     // Determine strict processing state: Buffering if logic says so, otherwise map player state
     AudioProcessingState pState = AudioProcessingState.idle;
@@ -416,6 +552,10 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     } else if (state == PlayerState.paused) {
       pState = AudioProcessingState.ready;
+    } else if (state == PlayerState.stopped) {
+      // Only map to true Idle if we really mean it (e.g. error or hard stop).
+      // If we are just transitioning, this line is usually protected by _expectingStop above.
+      pState = AudioProcessingState.idle;
     } else {
       pState = AudioProcessingState.idle;
     }
@@ -432,7 +572,7 @@ class RadioAudioHandler extends BaseAudioHandler
           MediaAction.skipToNext,
           MediaAction.skipToPrevious,
         },
-        androidCompactActionIndices: const [0, 1, 2, 3],
+        androidCompactActionIndices: const [0, 1, 2],
         processingState: pState,
         playing: playing,
         updatePosition: Duration.zero,

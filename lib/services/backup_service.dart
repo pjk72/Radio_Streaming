@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'dart:developer' as developer;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
@@ -19,10 +20,16 @@ class BackupService extends ChangeNotifier {
   bool get isSignedIn => _currentUser != null;
 
   BackupService() {
-    _googleSignIn.onCurrentUserChanged.listen((account) {
-      _currentUser = account;
-      notifyListeners();
-    });
+    debugPrint("BackupService: Initializing...");
+    try {
+      _googleSignIn.onCurrentUserChanged.listen((account) {
+        _currentUser = account;
+        notifyListeners();
+      });
+      debugPrint("BackupService: Listener attached.");
+    } catch (e) {
+      debugPrint("BackupService: Error attaching listener: $e");
+    }
   }
 
   Future<void> signIn() async {
@@ -33,7 +40,7 @@ class BackupService extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint("Google Sign In Error: $e");
+      developer.log("Google Sign In Error: $e");
       rethrow;
     }
   }
@@ -46,7 +53,7 @@ class BackupService extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint("Silent Sign In Error: $e");
+      developer.log("Silent Sign In Error: $e");
     }
   }
 
@@ -85,7 +92,7 @@ class BackupService extends ChangeNotifier {
       fileMetadata.name = filename;
 
       await driveApi.files.update(fileMetadata, fileId, uploadMedia: media);
-      debugPrint("Backup updated: $fileId");
+      developer.log("Backup updated: $fileId");
     } else {
       // Create new
       final fileMetadata = drive.File();
@@ -93,7 +100,7 @@ class BackupService extends ChangeNotifier {
       fileMetadata.parents = ['appDataFolder'];
 
       await driveApi.files.create(fileMetadata, uploadMedia: media);
-      debugPrint("Backup created");
+      developer.log("Backup created");
     }
   }
 

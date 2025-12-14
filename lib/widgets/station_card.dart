@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
 
+import 'pulsing_indicator.dart';
 import '../utils/icon_library.dart';
 
 class StationCard extends StatefulWidget {
@@ -33,8 +34,11 @@ class _StationCardState extends State<StationCard> {
         onTap: () => provider.playStation(widget.station),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          transform: Matrix4.identity()
-            ..translate(0.0, _isHovering ? -5.0 : 0.0),
+          transform: Matrix4.translationValues(
+            0.0,
+            _isHovering ? -5.0 : 0.0,
+            0.0,
+          ),
           decoration: BoxDecoration(
             // Gradient background for premium feel
             gradient: LinearGradient(
@@ -160,17 +164,10 @@ class _StationCardState extends State<StationCard> {
                           ),
                           if (isPlaying) ...[
                             const SizedBox(height: 4),
-                            if (provider.isRecognizing)
-                              SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Theme.of(context).primaryColor,
-                                ),
-                              )
-                            else
-                              _LiveBadge(color: Theme.of(context).primaryColor),
+                            _LiveBadge(
+                              color: Colors.white70,
+                              isRecognizing: provider.isRecognizing,
+                            ),
                           ],
                         ],
                       ),
@@ -192,13 +189,13 @@ class _StationCardState extends State<StationCard> {
       if (station.logo!.startsWith('assets/')) {
         return Image.asset(
           station.logo!,
-          fit: BoxFit.contain,
+          fit: BoxFit.cover,
           errorBuilder: (c, e, s) => _buildIcon(station.icon),
         );
       }
       return Image.network(
         station.logo!,
-        fit: BoxFit.contain,
+        fit: BoxFit.cover,
         errorBuilder: (c, e, s) => _buildIcon(station.icon),
       );
     }
@@ -238,22 +235,30 @@ class _StationCardState extends State<StationCard> {
 
 class _LiveBadge extends StatelessWidget {
   final Color color;
-  const _LiveBadge({required this.color});
+  final bool isRecognizing;
+
+  const _LiveBadge({required this.color, required this.isRecognizing});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _MiniVisualizer(color: color),
-          const SizedBox(width: 4),
+          isRecognizing
+              ? const Padding(
+                  padding: EdgeInsets.only(right: 4),
+                  child: PulsingIndicator(color: Colors.white70, size: 10),
+                )
+              : Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: _MiniVisualizer(color: color),
+                ),
           Text(
             "LIVE",
             style: TextStyle(
@@ -305,8 +310,8 @@ class _MiniVisualizerState extends State<_MiniVisualizer>
           animation: _controller,
           builder: (context, child) {
             final double height =
-                4 +
-                8 *
+                3 +
+                7 *
                     (0.5 +
                         0.5 *
                             (index % 2 == 0

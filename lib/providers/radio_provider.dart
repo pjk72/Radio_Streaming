@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 
@@ -14,13 +15,20 @@ import '../services/playlist_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/radio_audio_handler.dart'; // Import for casting
+import 'package:workmanager/workmanager.dart';
+import '../services/background_tasks.dart';
 import '../services/backup_service.dart';
+import '../utils/genre_mapper.dart';
 
 // ...
 
 class RadioProvider with ChangeNotifier {
   List<Station> stations = [];
   static const String _keySavedStations = 'saved_stations';
+  static const String _keyStartOption =
+      'start_option'; // 'none', 'last', 'specific'
+  static const String _keyStartupStationId = 'startup_station_id';
+  static const String _keyLastPlayedStationId = 'last_played_station_id';
 
   Future<void> _loadStations() async {
     final prefs = await SharedPreferences.getInstance();
@@ -41,14 +49,86 @@ class RadioProvider with ChangeNotifier {
       stations = List.from(default_data.stations);
       _saveStations();
     }
+    _updateAudioHandler();
     notifyListeners();
+    _updateAudioHandler();
+    notifyListeners();
+    // Defer startup playback slightly to ensure UI is ready if needed, or just run it.
+    // However, we shouldn't block.
+    _handleStartupPlayback();
+    _ensureStationImages();
+  }
+
+  void _ensureStationImages() {
+    bool changed = false;
+    for (int i = 0; i < stations.length; i++) {
+      final s = stations[i];
+      // "le foto dr non gia mdificate" -> if logo is empty/null
+      if (s.logo == null || s.logo!.isEmpty) {
+        // "se una radio ha piu generi scegli la prima"
+        final split = s.genre.split(RegExp(r'[|/,]'));
+        if (split.isNotEmpty) {
+          final firstGenre = split.first.trim();
+          if (firstGenre.isNotEmpty) {
+            final img = GenreMapper.getGenreImage(firstGenre);
+            if (img != null) {
+              // Create new station with updated logo
+              stations[i] = Station(
+                id: s.id,
+                name: s.name,
+                genre: s.genre,
+                url: s.url,
+                icon: s.icon,
+                logo: img,
+                color: s.color,
+                category: s.category,
+              );
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      _saveStations();
+    }
+  }
+
+  Future<void> _handleStartupPlayback() async {
+    if (_startOption == 'none') return;
+
+    final prefs = await SharedPreferences.getInstance();
+    int? targetId;
+
+    if (_startOption == 'last') {
+      targetId = prefs.getInt(_keyLastPlayedStationId);
+    } else if (_startOption == 'specific') {
+      targetId = _startupStationId;
+    }
+
+    if (targetId != null) {
+      try {
+        final station = stations.firstWhere((s) => s.id == targetId);
+        playStation(station);
+      } catch (e) {
+        // Station likely deleted
+      }
+    }
   }
 
   Future<void> _saveStations() async {
     final prefs = await SharedPreferences.getInstance();
     final String encoded = jsonEncode(stations.map((s) => s.toJson()).toList());
     await prefs.setString(_keySavedStations, encoded);
+    _updateAudioHandler();
     notifyListeners();
+  }
+
+  void _updateAudioHandler() {
+    if (_audioHandler is RadioAudioHandler) {
+      _audioHandler.updateStations(stations);
+    }
   }
 
   Future<void> addStation(Station s) async {
@@ -97,6 +177,17 @@ class RadioProvider with ChangeNotifier {
 
   final BackupService _backupService;
   BackupService get backupService => _backupService;
+
+  int _lastBackupTs = 0;
+  int get lastBackupTs => _lastBackupTs;
+
+  String _lastBackupType = 'manual';
+  String get lastBackupType => _lastBackupType;
+
+  String _startOption = 'none'; // 'none', 'last', 'specific'
+  String get startOption => _startOption;
+  int? _startupStationId;
+  int? get startupStationId => _startupStationId;
 
   RadioProvider(this._audioHandler, this._backupService) {
     _backupService.addListener(notifyListeners);
@@ -181,6 +272,9 @@ class RadioProvider with ChangeNotifier {
     // Load persisted playlist
     _loadPlaylists();
     _loadStationOrder();
+    _loadPlaylists();
+    _loadStationOrder();
+    _loadStartupSettings(); // Load this before stations
     _loadStations();
 
     // Connect AudioHandler callbacks
@@ -226,10 +320,19 @@ class RadioProvider with ChangeNotifier {
   }
 
   void playNextFavorite() {
-    // If no favorites, use all stations (custom order)
-    final List<Station> list = _favorites.isEmpty
-        ? allStations
-        : _visualFavoriteOrder;
+    List<Station> list;
+
+    if (_useCustomOrder) {
+      // If user has manually reordered, respectful that specific order (Flat)
+      if (_favorites.isNotEmpty) {
+        list = allStations.where((s) => _favorites.contains(s.id)).toList();
+      } else {
+        list = allStations;
+      }
+    } else {
+      // Default behavior: Genre Grouped
+      list = _favorites.isEmpty ? allStations : _visualFavoriteOrder;
+    }
 
     if (list.isEmpty) return;
 
@@ -244,9 +347,19 @@ class RadioProvider with ChangeNotifier {
   }
 
   void playPreviousFavorite() {
-    final List<Station> list = _favorites.isEmpty
-        ? allStations
-        : _visualFavoriteOrder;
+    List<Station> list;
+
+    if (_useCustomOrder) {
+      // If user has manually reordered, respectful that specific order (Flat)
+      if (_favorites.isNotEmpty) {
+        list = allStations.where((s) => _favorites.contains(s.id)).toList();
+      } else {
+        list = allStations;
+      }
+    } else {
+      // Default behavior: Genre Grouped
+      list = _favorites.isEmpty ? allStations : _visualFavoriteOrder;
+    }
 
     if (list.isEmpty) return;
 
@@ -294,47 +407,37 @@ class RadioProvider with ChangeNotifier {
       dateAdded: DateTime.now(),
     );
 
-    // 1. Exclusive Auto-Genre Logic
-    // If adding to default (playlistId == null) AND genre is known...
-    if (playlistId == null &&
-        _currentGenre != null &&
-        _currentGenre!.isNotEmpty) {
-      final genreName = _currentGenre!;
+    // 1. Auto-Classification Logic (Default / Heart Button)
+    if (playlistId == null) {
+      // Determine effective genre
+      String effectiveGenre = _currentGenre ?? _currentStation?.genre ?? "Mix";
 
-      // Check if playlist exists
-      String? existingPlaylistId;
-      try {
-        final genrePlaylist = _playlists.firstWhere(
-          (p) => p.name.toLowerCase() == genreName.toLowerCase(),
-        );
-        existingPlaylistId = genrePlaylist.id;
-      } catch (_) {
-        existingPlaylistId = null;
+      // Clean up genre string
+      if (effectiveGenre.contains('|')) {
+        effectiveGenre = effectiveGenre.split('|').first.trim();
+      }
+      if (effectiveGenre.contains('/')) {
+        effectiveGenre = effectiveGenre.split('/').first.trim();
       }
 
-      if (existingPlaylistId == null) {
-        // Create it
-        final newPlaylist = await _playlistService.createPlaylist(genreName);
-        existingPlaylistId = newPlaylist.id;
+      if (effectiveGenre.trim().isEmpty ||
+          effectiveGenre.toLowerCase() == 'unknown') {
+        effectiveGenre = "Mix";
       }
 
-      await _playlistService.addSongToPlaylist(existingPlaylistId, song);
+      await _playlistService.addToGenrePlaylist(effectiveGenre, song);
       await _loadPlaylists();
-      return genreName; // Added to Genre Playlist ONLY
+      return effectiveGenre;
     }
 
-    // 2. Default Logic (Favorites or Explicit Playlist)
-    final targetId =
-        playlistId ?? (playlists.isNotEmpty ? playlists.first.id : null);
-    if (targetId == null) return null;
-
-    await _playlistService.addSongToPlaylist(targetId, song);
+    // 2. Explicit Target Logic (e.g. Move to Favorites)
+    await _playlistService.addSongToPlaylist(playlistId, song);
     await _loadPlaylists();
 
-    // Find name
+    // Find name for return value
     final p = playlists.firstWhere(
-      (p) => p.id == targetId,
-      orElse: () => playlists.first,
+      (p) => p.id == playlistId,
+      orElse: () => playlists.first, // Fallback safe
     );
     return p.name;
   }
@@ -400,6 +503,8 @@ class RadioProvider with ChangeNotifier {
 
   bool get isLoading => _isLoading;
   bool get isRecognizing => _isRecognizing;
+  bool _hasPerformedRestore = false;
+  bool get hasPerformedRestore => _hasPerformedRestore;
   Timer? _metadataTimer;
 
   // ACRCloud Credentials
@@ -415,6 +520,27 @@ class RadioProvider with ChangeNotifier {
   List<String> get metadataLog => _metadataLog;
   String _lastApiResponse = "No API response yet.";
   String get lastApiResponse => _lastApiResponse;
+
+  // Backup Override
+  bool _backupOverride = false;
+  bool get backupOverride => _backupOverride;
+
+  // Backup State
+  bool _isBackingUp = false;
+  bool get isBackingUp => _isBackingUp;
+
+  bool _isRestoring = false;
+  bool get isRestoring => _isRestoring;
+
+  void enableBackupOverride() {
+    _backupOverride = true;
+    notifyListeners();
+  }
+
+  bool get canInitiateBackup =>
+      !_isBackingUp &&
+      !_isRestoring &&
+      (_lastBackupTs != 0 || _hasPerformedRestore || _backupOverride);
 
   // Return sorted stations if custom order exists, otherwise default list
   List<Station> get allStations {
@@ -472,6 +598,7 @@ class RadioProvider with ChangeNotifier {
   static const String _keyGenreOrder = 'genre_order';
   static const String _keyCategoryOrder = 'category_order'; // New
   static const String _keyUseCustomOrder = 'use_custom_order';
+  static const String _keyHasPerformedRestore = 'has_performed_restore';
 
   List<String> _genreOrder = [];
   List<String> get genreOrder => _genreOrder;
@@ -577,6 +704,36 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyUseCustomOrder, enabled);
+  }
+
+  Future<void> _saveHasPerformedRestore() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyHasPerformedRestore, _hasPerformedRestore);
+  }
+
+  Future<void> _loadStartupSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _startOption = prefs.getString(_keyStartOption) ?? 'none';
+    _hasPerformedRestore = prefs.getBool(_keyHasPerformedRestore) ?? false;
+    _startupStationId = prefs.getInt(_keyStartupStationId);
+  }
+
+  Future<void> setStartOption(String option) async {
+    _startOption = option;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyStartOption, option);
+    notifyListeners();
+  }
+
+  Future<void> setStartupStationId(int? id) async {
+    _startupStationId = id;
+    final prefs = await SharedPreferences.getInstance();
+    if (id == null) {
+      await prefs.remove(_keyStartupStationId);
+    } else {
+      await prefs.setInt(_keyStartupStationId, id);
+    }
+    notifyListeners();
   }
 
   Future<void> reorderStations(int oldIndex, int newIndex) async {
@@ -862,6 +1019,12 @@ class RadioProvider with ChangeNotifier {
           }
 
           if (artistImg == null || artistImg.isEmpty) {
+            // Save as last played
+            final prefs = await SharedPreferences.getInstance();
+            if (_currentStation != null) {
+              await prefs.setInt(_keyLastPlayedStationId, _currentStation!.id);
+            }
+
             try {
               artistImg = await _fetchArtistImageFromItunes(artist);
             } catch (_) {}
@@ -1038,6 +1201,10 @@ class RadioProvider with ChangeNotifier {
   void playStation(Station station) async {
     _metadataTimer?.cancel();
 
+    // Save as "last played" immediately
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyLastPlayedStationId, station.id);
+
     try {
       if (_currentStation?.id == station.id && _isPlaying) {
         pause();
@@ -1049,12 +1216,12 @@ class RadioProvider with ChangeNotifier {
       _currentTrack = "Live Broadcast";
       _currentArtist = "";
       _currentAlbum = "";
-      _currentAlbumArt = null;
+      _currentAlbumArt = station.logo;
       _currentArtistImage = null;
       _currentSpotifyUrl = null;
       _currentYoutubeUrl = null;
 
-      _addLog("Connecting: ${station.name}...");
+      // _addLog("Connecting: ${station.name}...");
       notifyListeners();
 
       // USE AUDIO HANDLER
@@ -1066,15 +1233,16 @@ class RadioProvider with ChangeNotifier {
       });
 
       _isLoading = false;
-      _addLog("Playing via Service");
+      // _addLog("Playing via Service");
 
       // Explicitly schedule recognition since playback state might not toggle
-      if (_isPlaying) {
-        _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition);
-      }
+      // Explicitly schedule recognition for the new station
+      // This is needed because if we switch stations while already playing,
+      // the 'playing' state toggle listener won't fire.
+      _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition);
     } catch (e) {
       _isLoading = false;
-      _addLog("Error: $e");
+      // _addLog("Error: $e");
       notifyListeners();
     }
   }
@@ -1095,6 +1263,10 @@ class RadioProvider with ChangeNotifier {
     // _metadataTimer?.cancel(); // Handled by listener
     await _audioHandler.pause();
     // playing state listener will update _isPlaying
+  }
+
+  void stop() async {
+    await _audioHandler.stop();
   }
 
   void resume() async {
@@ -1136,31 +1308,53 @@ class RadioProvider with ChangeNotifier {
 
   String _backupFrequency = 'manual';
   String get backupFrequency => _backupFrequency;
-  bool _isBackingUp = false;
-  bool get isBackingUp => _isBackingUp;
-  bool _isRestoring = false;
-  bool get isRestoring => _isRestoring;
 
   Future<void> _checkAutoBackup() async {
     // Wait for auth to settle
     await Future.delayed(const Duration(seconds: 2));
-    if (!_backupService.isSignedIn) return;
 
     final prefs = await SharedPreferences.getInstance();
     _backupFrequency = prefs.getString('backup_frequency') ?? 'manual';
-    final lastBackup = prefs.getInt('last_backup_ts') ?? 0;
+    _lastBackupTs = prefs.getInt('last_backup_ts') ?? 0;
+    _lastBackupType = prefs.getString('last_backup_type') ?? 'manual';
+    notifyListeners();
+
+    // Sync Workmanager Schedule
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      if (_backupFrequency == 'daily') {
+        Workmanager().registerPeriodicTask(
+          kAutoBackupTask,
+          kAutoBackupTask,
+          frequency: const Duration(hours: 24),
+          existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+          constraints: Constraints(networkType: NetworkType.connected),
+        );
+      } else if (_backupFrequency == 'weekly') {
+        Workmanager().registerPeriodicTask(
+          kAutoBackupTask,
+          kAutoBackupTask,
+          frequency: const Duration(days: 7),
+          existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+          constraints: Constraints(networkType: NetworkType.connected),
+        );
+      } else {
+        Workmanager().cancelByUniqueName(kAutoBackupTask);
+      }
+    }
+
+    if (!_backupService.isSignedIn) return;
 
     if (_backupFrequency == 'manual') return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final diff = now - lastBackup;
+    final diff = now - _lastBackupTs;
 
     bool due = false;
     if (_backupFrequency == 'daily' && diff > 86400000) due = true;
     if (_backupFrequency == 'weekly' && diff > 604800000) due = true;
 
     if (due) {
-      await performBackup();
+      await performBackup(isAuto: true);
     }
   }
 
@@ -1169,11 +1363,12 @@ class RadioProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('backup_frequency', freq);
     notifyListeners();
+
     // Check immediately if we switched to auto and it is due
     _checkAutoBackup();
   }
 
-  Future<void> performBackup() async {
+  Future<void> performBackup({bool isAuto = false}) async {
     if (!_backupService.isSignedIn) return;
 
     _isBackingUp = true;
@@ -1185,18 +1380,21 @@ class RadioProvider with ChangeNotifier {
         'favorites': _favorites,
         'station_order': _stationOrder,
         'genre_order': _genreOrder,
+        'category_order': _categoryOrder,
         'playlists': _playlists.map((p) => p.toJson()).toList(),
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'version': 1,
+        'type': isAuto ? 'auto' : 'manual',
       };
 
       await _backupService.uploadBackup(jsonEncode(data));
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(
-        'last_backup_ts',
-        DateTime.now().millisecondsSinceEpoch,
-      );
+      _lastBackupTs = DateTime.now().millisecondsSinceEpoch;
+      _lastBackupType = isAuto ? 'auto' : 'manual';
+      await prefs.setInt('last_backup_ts', _lastBackupTs);
+      await prefs.setString('last_backup_type', _lastBackupType);
+      notifyListeners();
 
       _addLog("Backup Complete");
     } catch (e) {
@@ -1269,6 +1467,13 @@ class RadioProvider with ChangeNotifier {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setStringList(_keyGenreOrder, _genreOrder);
       }
+      if (data['category_order'] != null) {
+        _categoryOrder = (data['category_order'] as List)
+            .map((e) => e as String)
+            .toList();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(_keyCategoryOrder, _categoryOrder);
+      }
 
       // Playlists
       if (data['playlists'] != null) {
@@ -1294,8 +1499,14 @@ class RadioProvider with ChangeNotifier {
       }
 
       _addLog("Restore Complete");
+      _hasPerformedRestore = true;
+      await _saveHasPerformedRestore();
       notifyListeners();
     } catch (e) {
+      if (e.toString().contains("No backup found")) {
+        _hasPerformedRestore = true;
+        await _saveHasPerformedRestore();
+      }
       _addLog("Restore Failed: $e");
       rethrow;
     } finally {

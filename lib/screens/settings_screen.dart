@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
@@ -16,6 +17,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  Timer? _backupUnlockTimer;
+
   @override
   void initState() {
     super.initState();
@@ -28,12 +31,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    _backupUnlockTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   bool _matches(String text) {
     return text.toLowerCase().contains(_searchQuery);
+  }
+
+  String _getLastBackupText(int timestamp, String type) {
+    if (timestamp == 0) return "Never";
+
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    String typeStr = " (${type == 'auto' ? 'Auto' : 'Manual'})";
+
+    if (diff.inDays >= 365) {
+      final years = (diff.inDays / 365).floor();
+      return "$years year${years > 1 ? 's' : ''} ago$typeStr";
+    } else if (diff.inDays >= 30) {
+      final months = (diff.inDays / 30).floor();
+      final days = diff.inDays % 30;
+      if (days > 0) {
+        return "$months month${months > 1 ? 's' : ''} and $days day${days > 1 ? 's' : ''} ago$typeStr";
+      }
+      return "$months month${months > 1 ? 's' : ''} ago$typeStr";
+    } else if (diff.inDays >= 1) {
+      return "${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago$typeStr";
+    } else if (diff.inHours >= 1) {
+      return "${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago$typeStr";
+    } else if (diff.inMinutes >= 1) {
+      return "${diff.inMinutes} minute${diff.inMinutes > 1 ? 's' : ''} ago$typeStr";
+    } else {
+      return "Just now$typeStr";
+    }
   }
 
   @override
@@ -232,6 +265,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (auth.isSignedIn) ...[
                           const Divider(color: Colors.white10, height: 32),
 
+                          // Last Backup
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Last Backup",
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              Text(
+                                _getLastBackupText(
+                                  radio.lastBackupTs,
+                                  radio.lastBackupType,
+                                ),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
                           // Frequency Config
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -262,13 +317,202 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     child: Text("Weekly"),
                                   ),
                                 ],
+                                onChanged: !radio.canInitiateBackup
+                                    ? null
+                                    : (val) {
+                                        if (val != null) {
+                                          radio.setBackupFrequency(val);
+                                        }
+                                      },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Startup Playback
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Startup Playback",
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              DropdownButton<String>(
+                                value: radio.startOption,
+                                dropdownColor: const Color(0xFF16213e),
+                                underline: Container(),
+                                style: const TextStyle(color: Colors.white),
+                                iconEnabledColor: Theme.of(
+                                  context,
+                                ).primaryColor,
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'none',
+                                    child: Text("None"),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'last',
+                                    child: Text("Last Played"),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'specific',
+                                    child: Text("Specific Station"),
+                                  ),
+                                ],
                                 onChanged: (val) {
-                                  if (val != null)
-                                    radio.setBackupFrequency(val);
+                                  if (val != null) {
+                                    radio.setStartOption(val);
+                                  }
                                 },
                               ),
                             ],
                           ),
+                          if (radio.startOption == 'specific') ...[
+                            const SizedBox(height: 8),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white10,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.radio,
+                                  color: Colors.white70,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                radio.startupStationId != null
+                                    ? radio.stations
+                                          .firstWhere(
+                                            (s) =>
+                                                s.id == radio.startupStationId,
+                                            orElse: () => radio.stations.firstWhere(
+                                              (s) => true,
+                                              orElse: () =>
+                                                  // ignore: missing_return
+                                                  throw Exception(
+                                                    "No stations",
+                                                  ),
+                                            ), // Placeholder if list empty, handled by below check
+                                          )
+                                          .name
+                                    : "Select Station",
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              subtitle: const Text(
+                                "Tap to choose",
+                                style: TextStyle(color: Colors.white38),
+                              ),
+                              trailing: const Icon(
+                                Icons.chevron_right,
+                                color: Colors.white38,
+                              ),
+                              onTap: () async {
+                                final selectedId = await showModalBottomSheet<int>(
+                                  context: context,
+                                  backgroundColor: const Color(0xFF16213e),
+                                  isScrollControlled: true,
+                                  shape: const RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.vertical(
+                                      top: Radius.circular(16),
+                                    ),
+                                  ),
+                                  builder: (ctx) {
+                                    return DraggableScrollableSheet(
+                                      initialChildSize: 0.7,
+                                      minChildSize: 0.5,
+                                      maxChildSize: 0.9,
+                                      expand: false,
+                                      builder: (ctx, scrollController) {
+                                        return Column(
+                                          children: [
+                                            const Padding(
+                                              padding: EdgeInsets.all(16.0),
+                                              child: Text(
+                                                "Select Startup Station",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: ListView.builder(
+                                                controller: scrollController,
+                                                itemCount:
+                                                    radio.stations.length,
+                                                itemBuilder: (ctx, index) {
+                                                  final s =
+                                                      radio.stations[index];
+                                                  final isSelected =
+                                                      s.id ==
+                                                      radio.startupStationId;
+                                                  return ListTile(
+                                                    leading: CircleAvatar(
+                                                      backgroundImage:
+                                                          s.logo != null &&
+                                                              s.logo!.isNotEmpty
+                                                          ? (s.logo!.startsWith(
+                                                                  'http',
+                                                                )
+                                                                ? NetworkImage(
+                                                                    s.logo!,
+                                                                  )
+                                                                : AssetImage(
+                                                                        s.logo!,
+                                                                      )
+                                                                      as ImageProvider)
+                                                          : null,
+                                                      child: s.logo == null
+                                                          ? const Icon(
+                                                              Icons.radio,
+                                                            )
+                                                          : null,
+                                                    ),
+                                                    title: Text(
+                                                      s.name,
+                                                      style: TextStyle(
+                                                        color: isSelected
+                                                            ? Theme.of(
+                                                                context,
+                                                              ).primaryColor
+                                                            : Colors.white,
+                                                        fontWeight: isSelected
+                                                            ? FontWeight.bold
+                                                            : FontWeight.normal,
+                                                      ),
+                                                    ),
+                                                    onTap: () {
+                                                      Navigator.pop(ctx, s.id);
+                                                    },
+                                                    trailing: isSelected
+                                                        ? Icon(
+                                                            Icons.check,
+                                                            color: Theme.of(
+                                                              context,
+                                                            ).primaryColor,
+                                                          )
+                                                        : null,
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    );
+                                  },
+                                );
+                                if (selectedId != null) {
+                                  radio.setStartupStationId(selectedId);
+                                }
+                              },
+                            ),
+                          ],
 
                           const SizedBox(height: 16),
 
@@ -276,104 +520,154 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           Row(
                             children: [
                               Expanded(
-                                child: ElevatedButton.icon(
-                                  icon: radio.isBackingUp
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.cloud_upload,
-                                          size: 16,
-                                        ),
-                                  label: const Text("Backup"),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF6c5ce7),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                  ),
-                                  onPressed:
-                                      (radio.isBackingUp || radio.isRestoring)
-                                      ? null
-                                      : () async {
-                                          final confirm = await showDialog<bool>(
-                                            context: context,
-                                            builder: (ctx) => AlertDialog(
-                                              backgroundColor: const Color(
-                                                0xFF16213e,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTapDown: (_) {
+                                    if (!radio.canInitiateBackup) {
+                                      _backupUnlockTimer?.cancel();
+                                      _backupUnlockTimer = Timer(
+                                        const Duration(seconds: 3),
+                                        () {
+                                          radio.enableBackupOverride();
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  "Backup Force Enabled",
+                                                ),
+                                                duration: Duration(seconds: 1),
                                               ),
-                                              title: const Text(
-                                                "Overwrite Backup?",
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                              content: const Text(
-                                                "This will overwrite your existing cloud backup with the current app data. Are you sure?",
-                                                style: TextStyle(
-                                                  color: Colors.white70,
-                                                ),
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(ctx, false),
-                                                  child: const Text("Cancel"),
-                                                ),
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(ctx, true),
-                                                  child: const Text(
-                                                    "Backup",
-                                                    style: TextStyle(
-                                                      color: Color(0xFF6c5ce7),
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                          if (confirm == true &&
-                                              context.mounted) {
-                                            try {
-                                              await radio.performBackup();
-                                              if (context.mounted) {
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      "Backup Successful!",
-                                                    ),
-                                                    backgroundColor:
-                                                        Colors.green,
-                                                  ),
-                                                );
-                                              }
-                                            } catch (e) {
-                                              if (context.mounted) {
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text(
-                                                      "Backup Failed: $e",
-                                                    ),
-                                                    backgroundColor: Colors.red,
-                                                  ),
-                                                );
-                                              }
-                                            }
+                                            );
                                           }
                                         },
+                                      );
+                                    }
+                                  },
+                                  onTapUp: (_) => _backupUnlockTimer?.cancel(),
+                                  onTapCancel: () =>
+                                      _backupUnlockTimer?.cancel(),
+                                  child: AbsorbPointer(
+                                    absorbing: !radio.canInitiateBackup,
+                                    child: ElevatedButton.icon(
+                                      icon: radio.isBackingUp
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.cloud_upload,
+                                              size: 16,
+                                            ),
+                                      label: const Text("Backup"),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF6c5ce7,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                        // Visual feedback for disabled state
+                                        disabledBackgroundColor: const Color(
+                                          0xFF6c5ce7,
+                                        ).withValues(alpha: 0.5),
+                                        disabledForegroundColor: Colors.white38,
+                                      ),
+                                      onPressed: !radio.canInitiateBackup
+                                          ? null
+                                          : () async {
+                                              // ... (Same backup Logic) ...
+                                              final confirm = await showDialog<bool>(
+                                                context: context,
+                                                builder: (ctx) => AlertDialog(
+                                                  backgroundColor: const Color(
+                                                    0xFF16213e,
+                                                  ),
+                                                  title: const Text(
+                                                    "Overwrite Backup?",
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                  content: const Text(
+                                                    "This will overwrite your existing cloud backup with the current app data. Are you sure?",
+                                                    style: TextStyle(
+                                                      color: Colors.white70,
+                                                    ),
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            ctx,
+                                                            false,
+                                                          ),
+                                                      child: const Text(
+                                                        "Cancel",
+                                                      ),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            ctx,
+                                                            true,
+                                                          ),
+                                                      child: const Text(
+                                                        "Backup",
+                                                        style: TextStyle(
+                                                          color: Color(
+                                                            0xFF6c5ce7,
+                                                          ),
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              if (confirm == true &&
+                                                  context.mounted) {
+                                                try {
+                                                  await radio.performBackup();
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                          "Backup Successful!",
+                                                        ),
+                                                        backgroundColor:
+                                                            Colors.green,
+                                                      ),
+                                                    );
+                                                  }
+                                                } catch (e) {
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                          "Backup Failed: $e",
+                                                        ),
+                                                        backgroundColor:
+                                                            Colors.red,
+                                                      ),
+                                                    );
+                                                  }
+                                                }
+                                              }
+                                            },
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 12),

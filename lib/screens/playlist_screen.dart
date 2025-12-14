@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
+import 'album_details_screen.dart';
 import '../utils/genre_mapper.dart';
 
 class PlaylistScreen extends StatefulWidget {
@@ -41,12 +42,20 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final provider = Provider.of<RadioProvider>(context);
     final allPlaylists = provider.playlists;
 
+    // Sort: Favorites first, then Alphabetical
+    final List<Playlist> sortedPlaylists = List.from(allPlaylists);
+    sortedPlaylists.sort((a, b) {
+      if (a.id == 'favorites') return -1;
+      if (b.id == 'favorites') return 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
     // Filter Logic
     final playlists = _selectedPlaylistId == null
-        ? allPlaylists
+        ? sortedPlaylists
               .where((p) => p.name.toLowerCase().contains(_searchQuery))
               .toList()
-        : allPlaylists;
+        : sortedPlaylists;
 
     final Playlist? selectedPlaylist = _selectedPlaylistId == null
         ? null
@@ -231,18 +240,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              image: bgImage != null
-                  ? DecorationImage(
-                      image: bgImage.startsWith('http')
-                          ? NetworkImage(bgImage)
-                          : AssetImage(bgImage) as ImageProvider,
-                      fit: BoxFit.cover,
-                      colorFilter: ColorFilter.mode(
-                        Colors.black.withValues(alpha: 0.6),
-                        BlendMode.darken,
-                      ),
-                    )
-                  : null,
               color: bgImage == null
                   ? Colors.white.withValues(alpha: 0.1)
                   : null, // Fallback color
@@ -255,8 +252,30 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 ),
               ],
             ),
+            clipBehavior: Clip.antiAlias,
             child: Stack(
               children: [
+                if (bgImage != null)
+                  Positioned.fill(
+                    child: bgImage.startsWith('http')
+                        ? Image.network(
+                            bgImage,
+                            fit: BoxFit.cover,
+                            color: Colors.black.withValues(alpha: 0.6),
+                            colorBlendMode: BlendMode.darken,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.white.withValues(alpha: 0.1),
+                              );
+                            },
+                          )
+                        : Image.asset(
+                            bgImage,
+                            fit: BoxFit.cover,
+                            color: Colors.black.withValues(alpha: 0.6),
+                            colorBlendMode: BlendMode.darken,
+                          ),
+                  ),
                 Positioned(
                   right: -10,
                   bottom: -10,
@@ -341,7 +360,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: songs.length,
       itemBuilder: (context, index) {
@@ -366,33 +385,51 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             ),
             child: ListTile(
               contentPadding: const EdgeInsets.all(12),
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: song.artUri != null
-                    ? Image.network(
-                        song.artUri!,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 56,
-                          height: 56,
-                          color: Colors.grey[900],
-                          child: const Icon(
-                            Icons.music_note,
-                            color: Colors.white24,
+              leading: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () {
+                    if (song.album.isNotEmpty && song.album != "Live Radio") {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => AlbumDetailsScreen(
+                            albumName: song.album,
+                            artistName: song.artist,
+                            artworkUrl: song.artUri,
                           ),
                         ),
-                      )
-                    : Container(
-                        width: 56,
-                        height: 56,
-                        color: Colors.grey[900],
-                        child: const Icon(
-                          Icons.music_note,
-                          color: Colors.white24,
-                        ),
-                      ),
+                      );
+                    }
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: song.artUri != null
+                        ? Image.network(
+                            song.artUri!,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              width: 56,
+                              height: 56,
+                              color: Colors.grey[900],
+                              child: const Icon(
+                                Icons.music_note,
+                                color: Colors.white24,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            width: 56,
+                            height: 56,
+                            color: Colors.grey[900],
+                            child: const Icon(
+                              Icons.music_note,
+                              color: Colors.white24,
+                            ),
+                          ),
+                  ),
+                ),
               ),
               title: Text(
                 song.title,
@@ -476,19 +513,20 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.drive_file_move_outline,
-                      color: Colors.white70,
+                  if (playlist.id != 'favorites')
+                    IconButton(
+                      icon: const Icon(
+                        Icons.drive_file_move_outline,
+                        color: Colors.white70,
+                      ),
+                      tooltip: "Move to...",
+                      onPressed: () => _showMoveSongDialog(
+                        context,
+                        provider,
+                        playlist,
+                        song.id,
+                      ),
                     ),
-                    tooltip: "Move to...",
-                    onPressed: () => _showMoveSongDialog(
-                      context,
-                      provider,
-                      playlist,
-                      song.id,
-                    ),
-                  ),
                   IconButton(
                     icon: const Icon(
                       Icons.delete_outline,
@@ -610,11 +648,15 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1a1a2e),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
         return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -628,22 +670,36 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              ...others.map(
-                (p) => ListTile(
-                  leading: const Icon(Icons.folder, color: Colors.white38),
-                  title: Text(
-                    p.name,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  onTap: () {
-                    provider.moveSong(songId, currentPlaylist.id, p.id);
-                    Navigator.pop(ctx);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Moved to ${p.name}")),
-                      );
-                    }
-                  },
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: others
+                      .map(
+                        (p) => ListTile(
+                          leading: const Icon(
+                            Icons.folder,
+                            color: Colors.white38,
+                          ),
+                          title: Text(
+                            p.name,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          onTap: () {
+                            provider.moveSong(songId, currentPlaylist.id, p.id);
+                            Navigator.pop(ctx);
+                            if (context.mounted) {
+                              final isCopy = p.id == 'favorites';
+                              final text = isCopy
+                                  ? "Copied to ${p.name}"
+                                  : "Moved to ${p.name}";
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(SnackBar(content: Text(text)));
+                            }
+                          },
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
             ],

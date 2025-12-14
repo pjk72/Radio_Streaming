@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:ui';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'album_details_screen.dart';
 
 class ArtistDetailsScreen extends StatefulWidget {
   final String artistName;
@@ -43,7 +45,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
         return List<Map<String, dynamic>>.from(data['results']);
       }
     } catch (e) {
-      debugPrint("Error fetching discography: $e");
+      developer.log("Error fetching discography: $e");
     }
     return [];
   }
@@ -61,7 +63,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
         }
       }
     } catch (e) {
-      debugPrint("Error fetching artist info: $e");
+      developer.log("Error fetching artist info: $e");
     }
     return null;
   }
@@ -317,51 +319,77 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                       ) ??
                                       "";
 
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
+                                  return MouseRegion(
+                                    cursor: SystemMouseCursors.click,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                AlbumDetailsScreen(
+                                                  albumName:
+                                                      album['collectionName'] ??
+                                                      "",
+                                                  artistName: widget.artistName,
+                                                  artworkUrl: artworkUrl,
+                                                ),
                                           ),
-                                          child: Container(
-                                            color: Colors.grey[800],
-                                            width: double.infinity,
-                                            child: Image.network(
-                                              artworkUrl,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                                  const Icon(
-                                                    Icons.album,
-                                                    color: Colors.white24,
-                                                  ),
+                                        );
+                                      },
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: Container(
+                                                color: Colors.grey[800],
+                                                width: double.infinity,
+                                                child: Image.network(
+                                                  artworkUrl,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) => const Icon(
+                                                        Icons.album,
+                                                        color: Colors.white24,
+                                                      ),
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            album['collectionName'] ??
+                                                "Unknown Album",
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(
+                                            album['releaseDate']?.substring(
+                                                  0,
+                                                  4,
+                                                ) ??
+                                                "",
+                                            style: const TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        album['collectionName'] ??
-                                            "Unknown Album",
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        album['releaseDate']?.substring(0, 4) ??
-                                            "",
-                                        style: const TextStyle(
-                                          color: Colors.white54,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
+                                    ),
                                   );
                                 }, childCount: albums.length),
                               ),

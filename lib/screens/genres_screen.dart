@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 import '../widgets/station_card.dart';
-import '../widgets/now_playing_header.dart';
+
 import '../utils/genre_mapper.dart';
 
 class GenresScreen extends StatefulWidget {
@@ -51,13 +51,20 @@ class _GenresScreenState extends State<GenresScreen> {
 
     // Level 2: Stations List for Selected Genre
     if (_selectedGenre != null) {
-      final genreStations = stations.where((s) {
-        final split = s.genre.split(RegExp(r'[|/,]'));
-        final matchesGenre = split.any((g) => g.trim() == _selectedGenre);
-        if (!matchesGenre) return false;
-        if (_searchQuery.isEmpty) return true;
-        return s.name.toLowerCase().contains(_searchQuery);
-      }).toList();
+      final genreStations =
+          stations.where((s) {
+            final split = s.genre.split(RegExp(r'[|/,]'));
+            final matchesGenre = split.any((g) => g.trim() == _selectedGenre);
+            if (!matchesGenre) return false;
+            if (_searchQuery.isEmpty) return true;
+            return s.name.toLowerCase().contains(_searchQuery);
+          }).toList()..sort((a, b) {
+            final isFavA = provider.favorites.contains(a.id);
+            final isFavB = provider.favorites.contains(b.id);
+            if (isFavA && !isFavB) return -1;
+            if (!isFavA && isFavB) return 1;
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          });
 
       return Container(
         decoration: BoxDecoration(
@@ -131,12 +138,9 @@ class _GenresScreenState extends State<GenresScreen> {
                 padding: EdgeInsets.zero,
                 children: [
                   const SizedBox(height: 16),
-                  if (_searchQuery.isEmpty) // Only show header if not searching
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: const NowPlayingHeader(),
-                    ),
                   const SizedBox(height: 16),
+
+                  // NowPlayingHeader removed as requested
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: genreStations.isEmpty
@@ -260,18 +264,6 @@ class _GenresScreenState extends State<GenresScreen> {
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
-                      image: genreImg != null
-                          ? DecorationImage(
-                              image: genreImg.startsWith('http')
-                                  ? NetworkImage(genreImg)
-                                  : AssetImage(genreImg) as ImageProvider,
-                              fit: BoxFit.cover,
-                              colorFilter: ColorFilter.mode(
-                                Colors.black.withValues(alpha: 0.6),
-                                BlendMode.darken,
-                              ),
-                            )
-                          : null,
                       color: genreImg == null
                           ? Colors.white.withValues(alpha: 0.1)
                           : null,
@@ -284,8 +276,32 @@ class _GenresScreenState extends State<GenresScreen> {
                         ),
                       ],
                     ),
+                    clipBehavior: Clip.antiAlias,
                     child: Stack(
                       children: [
+                        if (genreImg != null)
+                          Positioned.fill(
+                            child: genreImg.startsWith('http')
+                                ? Image.network(
+                                    genreImg,
+                                    fit: BoxFit.cover,
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    colorBlendMode: BlendMode.darken,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Image.asset(
+                                    genreImg,
+                                    fit: BoxFit.cover,
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    colorBlendMode: BlendMode.darken,
+                                  ),
+                          ),
                         Positioned(
                           right: -10,
                           bottom: -10,
