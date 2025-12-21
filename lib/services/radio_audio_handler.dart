@@ -137,8 +137,25 @@ class RadioAudioHandler extends BaseAudioHandler
       List<ConnectivityResult> results,
     ) {
       final hasConnection = !results.contains(ConnectivityResult.none);
-      if (hasConnection && _isRetryPending) {
-        _retryPlayback();
+
+      if (!hasConnection) {
+        // Internet Lost: Stop player to prevent buffering stale data
+        if (playbackState.value.playing) {
+          _player.stop(); // Clear buffer
+          _isRetryPending = true;
+          // Show buffering/waiting state
+          playbackState.add(
+            playbackState.value.copyWith(
+              errorMessage: "Waiting for connection...",
+              processingState: AudioProcessingState.buffering,
+            ),
+          );
+        }
+      } else {
+        // Internet Restored
+        if (_isRetryPending) {
+          _retryPlayback();
+        }
       }
     });
 
@@ -237,7 +254,8 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> pause() async {
     _expectingStop = true;
     try {
-      await _player.pause().timeout(const Duration(seconds: 2));
+      await _player
+          .stop(); // Use stop() to clear buffer/connection for live radio
     } catch (_) {}
     // Manually update state so UI knows we paused
     playbackState.add(
@@ -340,7 +358,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> play() async {
-    await _initializePlayer(); // Ensure fresh
+    // await _initializePlayer(); // REDUNDANT: playFromUri handles init
     final currentItem = mediaItem.value;
     if (currentItem != null) {
       _expectingStop = false;
@@ -489,9 +507,7 @@ class RadioAudioHandler extends BaseAudioHandler
         if (url != null) {
           try {
             final station = _stations.firstWhere((s) => s.url == url);
-            // Take first genre if multiple (e.g. "Pop | Rock" -> "Pop")
             genre = station.genre.split('|').first.trim();
-            // Clean slashes too just in case
             genre = genre.split('/').first.trim();
           } catch (_) {}
         }
@@ -499,6 +515,89 @@ class RadioAudioHandler extends BaseAudioHandler
         await _playlistService.addToGenrePlaylist(genre, song);
         _isCurrentSongSaved = true;
         _broadcastState(_player.state);
+      }
+    } else if (name == 'startExternalPlayback') {
+      // 1. Stop internal radio player
+      try {
+        await _player.stop();
+      } catch (_) {}
+
+      _expectingStop = false;
+
+      // 2. Update Metadata for External Audio
+      final title = arguments?['title'] ?? "External Audio";
+      final artist = arguments?['artist'] ?? "YouTube";
+      final artUri = arguments?['artUri'];
+
+      final item = MediaItem(
+        id: "external_audio",
+        album: "YouTube Audio",
+        title: title,
+        artist: artist,
+        artUri: artUri != null ? Uri.parse(artUri) : null,
+        playable: true,
+      );
+      mediaItem.add(item);
+
+      // 3. Force Playing State to keep Service Alive
+      // Use controls that make sense: Pause (to stop), Stop.
+      // Added Skip controls as requested
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.ready,
+          playing: true,
+          controls: [
+            MediaControl.skipToPrevious,
+            MediaControl.pause, // Allows user to pause using system controls
+            MediaControl.skipToNext,
+            MediaControl.stop,
+          ],
+          systemActions: const {
+            MediaAction.seek,
+            MediaAction.seekForward,
+            MediaAction.seekBackward,
+            MediaAction.skipToNext,
+            MediaAction.skipToPrevious,
+          },
+          errorMessage: null,
+        ),
+      );
+    } else if (name == 'stopExternalPlayback') {
+      // Just update state to stopped/paused
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: false,
+          processingState: AudioProcessingState.ready,
+        ),
+      );
+    } else if (name == 'updatePlaybackPosition') {
+      // Update progressive icon / progress bar
+      if (arguments != null) {
+        final int posMs = arguments['position'] ?? 0;
+        final int durMs = arguments['duration'] ?? 0;
+        final bool isPlaying = arguments['isPlaying'] ?? false;
+
+        playbackState.add(
+          playbackState.value.copyWith(
+            playing: isPlaying,
+            updatePosition: Duration(milliseconds: posMs),
+            bufferedPosition: Duration(milliseconds: posMs),
+            processingState: AudioProcessingState.ready,
+          ),
+        );
+
+        // Update Metadata Duration if needed
+        if (mediaItem.value != null && durMs > 0) {
+          final currentDuration =
+              mediaItem.value!.duration?.inMilliseconds ?? 0;
+          if (currentDuration != durMs) {
+            mediaItem.add(
+              mediaItem.value!.copyWith(
+                duration: Duration(milliseconds: durMs),
+              ),
+            );
+          }
+        }
       }
     }
   }
@@ -553,9 +652,8 @@ class RadioAudioHandler extends BaseAudioHandler
     } else if (state == PlayerState.paused) {
       pState = AudioProcessingState.ready;
     } else if (state == PlayerState.stopped) {
-      // Only map to true Idle if we really mean it (e.g. error or hard stop).
-      // If we are just transitioning, this line is usually protected by _expectingStop above.
-      pState = AudioProcessingState.idle;
+      // Map Stopped to Ready so the UI shows "Play" button and allows resuming
+      pState = AudioProcessingState.ready;
     } else {
       pState = AudioProcessingState.idle;
     }
@@ -581,6 +679,197 @@ class RadioAudioHandler extends BaseAudioHandler
         queueIndex: index >= 0 ? index : 0,
         errorMessage: null, // Clear error on valid state change
       ),
+    );
+  }
+
+  // --- ANDROID AUTO BROWSING ---
+
+  @override
+  Future<List<MediaItem>> getChildren(
+    String parentMediaId, [
+    Map<String, dynamic>? options,
+  ]) async {
+    if (parentMediaId == 'root') {
+      // 'root'
+      return [
+        const MediaItem(
+          id: 'favorites',
+          title: 'Favorites',
+          playable: false, // Folder
+        ),
+        const MediaItem(
+          id: 'all_stations',
+          title: 'All Stations',
+          playable: false, // Folder
+        ),
+        const MediaItem(
+          id: 'playlists_root',
+          title: 'Playlists',
+          playable: false, // Folder
+        ),
+      ];
+    }
+
+    if (parentMediaId == 'favorites') {
+      final favorites = await _getOrderedFavorites();
+      return favorites.map(_stationToMediaItem).toList();
+    }
+
+    if (parentMediaId == 'all_stations') {
+      return _stations.map(_stationToMediaItem).toList();
+    }
+
+    if (parentMediaId == 'playlists_root') {
+      final playlists = await _playlistService.loadPlaylists();
+      return playlists
+          .map(
+            (p) => MediaItem(
+              id: 'playlist_${p.id}',
+              title: p.name,
+              album: 'Playlists',
+              playable: false, // Folder
+            ),
+          )
+          .toList();
+    }
+
+    if (parentMediaId.startsWith('playlist_')) {
+      final playlistId = parentMediaId.substring('playlist_'.length);
+      final playlists = await _playlistService.loadPlaylists();
+      try {
+        final playlist = playlists.firstWhere((p) => p.id == playlistId);
+        return playlist.songs.map((s) {
+          // Unique ID for browsing context
+          final String uniqueId = 'playlist_song_${playlist.id}_${s.id}';
+          return MediaItem(
+            id: uniqueId,
+            title: s.title,
+            artist: s.artist,
+            album: s.album,
+            artUri: s.artUri != null ? Uri.tryParse(s.artUri!) : null,
+            playable: true,
+            extras: {
+              'url': s.youtubeUrl, // fallback
+              'playlistId': playlist.id,
+              'songId': s.id,
+              'videoId': _extractVideoId(s.youtubeUrl),
+            },
+          );
+        }).toList();
+      } catch (_) {}
+    }
+
+    return [];
+  }
+
+  String? _extractVideoId(String? url) {
+    if (url == null) return null;
+    try {
+      if (url.contains("v=")) {
+        return url.split("v=")[1].split("&")[0];
+      } else if (url.contains("youtu.be/")) {
+        return url.split("youtu.be/")[1].split("?")[0];
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  @override
+  Future<void> playFromMediaId(
+    String mediaId, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (mediaId.startsWith('playlist_song_')) {
+      // It's a playlist song.
+      // We need to fetch the item details to pass correct info
+      // Since we don't have the item here easily without re-parsing,
+      // check if it was preloaded or we have to browse for it.
+      // Better approach: Parse ID
+      final parts = mediaId.split('_');
+      // Format: playlist_song_[playlistId]_[songId]
+      // Warning: IDs might contain underscores.
+      // Robust Way: Store map? No.
+      // Re-fetch playlist.
+
+      // Let's assume we can re-fetch quickly.
+      try {
+        // Find playlist ID... this is tricky with underscores.
+        // Let's use getChildren logic/search.
+        // Shortcut: If we just clicked it, it might typically come with extras if provided by UI,
+        // but from AA root, it calls playFromMediaId(id).
+
+        final playlists = await _playlistService.loadPlaylists();
+        for (var p in playlists) {
+          if (mediaId.startsWith('playlist_song_${p.id}_')) {
+            final songId = mediaId.substring('playlist_song_${p.id}_'.length);
+            final song = p.songs.firstWhere(
+              (s) => s.id == songId,
+              orElse: () => SavedSong(
+                id: '',
+                title: '',
+                artist: '',
+                album: '',
+                dateAdded: DateTime.now(),
+              ),
+            );
+
+            if (song.id.isNotEmpty) {
+              // Determine VideoID
+              final videoId = _extractVideoId(song.youtubeUrl);
+
+              if (videoId != null) {
+                // Update Media Item to trigger listener in Provider
+                mediaItem.add(
+                  MediaItem(
+                    id: "playlist_play_intent", // Dummy ID to trigger change check
+                    title: song.title,
+                    artist: song.artist,
+                    artUri: song.artUri != null
+                        ? Uri.parse(song.artUri!)
+                        : null,
+                    extras: {
+                      'type': 'playlist_song',
+                      'playlistId': p.id,
+                      'songId': song.id,
+                      'videoId': videoId,
+                    },
+                  ),
+                );
+                return;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      return;
+    }
+
+    // Default Station logic
+    await super.playFromMediaId(mediaId, extras);
+  }
+
+  @override
+  Future<MediaItem?> getMediaItem(String mediaId) async {
+    // Helper to find item in currently known lists
+    // This is optional but good for robust implementations
+    try {
+      return _stations
+          .map(_stationToMediaItem)
+          .firstWhere((item) => item.id == mediaId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  MediaItem _stationToMediaItem(Station s) {
+    return MediaItem(
+      id: s.url,
+      album: "Live Radio",
+      title: s.name,
+      artist: s.genre,
+      artUri: s.logo != null ? Uri.parse(s.logo!) : null,
+      playable: true,
+      extras: {'url': s.url},
     );
   }
 }

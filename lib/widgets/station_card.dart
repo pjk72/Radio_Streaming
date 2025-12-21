@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
 
+import 'realistic_visualizer.dart';
 import 'pulsing_indicator.dart';
 import '../utils/icon_library.dart';
 
@@ -22,7 +23,8 @@ class _StationCardState extends State<StationCard> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
-    final isFavorite = provider.favorites.contains(widget.station.id);
+    final isCompact = provider.isCompactView;
+
     final isPlaying =
         provider.currentStation?.id == widget.station.id && provider.isPlaying;
 
@@ -49,7 +51,7 @@ class _StationCardState extends State<StationCard> {
                 Colors.white.withValues(alpha: 0.05),
               ],
             ),
-            borderRadius: BorderRadius.circular(24), // Softer corners
+            borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
             border: Border.all(
               color: _isHovering
                   ? Color(
@@ -72,24 +74,93 @@ class _StationCardState extends State<StationCard> {
                 : [],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
             child: Stack(
               children: [
+                if (isCompact && isPlaying)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(
+                              int.parse(widget.station.color),
+                            ).withValues(alpha: 0.3),
+                            Colors.transparent,
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                      ),
+                      child: Align(
+                        alignment: Alignment.bottomRight,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.max,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (provider.isRecognizing)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  right: 16,
+                                  bottom: 8,
+                                ),
+                                child: PulsingIndicator(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  size: 40,
+                                ),
+                              )
+                            else
+                              Flexible(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: 8,
+                                    bottom: 0,
+                                  ),
+                                  child: ShaderMask(
+                                    shaderCallback: (bounds) => LinearGradient(
+                                      colors: [
+                                        Colors.white.withValues(alpha: 0.6),
+                                        Colors.white.withValues(alpha: 0.1),
+                                      ],
+                                      begin: Alignment.bottomCenter,
+                                      end: Alignment.topCenter,
+                                    ).createShader(bounds),
+                                    blendMode: BlendMode.dstIn,
+                                    child: RealisticVisualizer(
+                                      color: Color(
+                                        int.parse(widget.station.color),
+                                      ),
+                                      barCount: 20,
+                                      isBackground: true,
+                                      volume: provider.volume,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20.0,
-                    vertical: 12.0,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact ? 12.0 : 20.0,
+                    vertical: isCompact ? 8.0 : 12.0,
                   ),
                   child: Row(
                     children: [
                       // Icon / Logo
                       Container(
-                        width: 56,
-                        height: 56,
-                        padding: const EdgeInsets.all(10),
+                        width: isCompact ? 40 : 56,
+                        height: isCompact ? 40 : 56,
+                        padding: EdgeInsets.all(isCompact ? 6 : 10),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(
+                            isCompact ? 10 : 14,
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.2),
@@ -101,7 +172,7 @@ class _StationCardState extends State<StationCard> {
                         child: Center(child: _buildVisual(widget.station)),
                       ),
 
-                      const SizedBox(width: 20),
+                      SizedBox(width: isCompact ? 12 : 20),
 
                       // Info
                       Expanded(
@@ -111,20 +182,20 @@ class _StationCardState extends State<StationCard> {
                           children: [
                             Text(
                               widget.station.name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w700,
-                                fontSize: 18,
+                                fontSize: isCompact ? 15 : 18,
                                 color: Colors.white,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 4),
+                            SizedBox(height: isCompact ? 2 : 4),
                             Text(
                               widget.station.genre.toUpperCase(),
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 11,
+                                fontSize: isCompact ? 9 : 11,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 1.0,
                               ),
@@ -135,42 +206,22 @@ class _StationCardState extends State<StationCard> {
                         ),
                       ),
 
-                      // Favorite & Live Status
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          GestureDetector(
-                            onTap: () =>
-                                provider.toggleFavorite(widget.station.id),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: isFavorite
-                                    ? Colors.white.withValues(alpha: 0.1)
-                                    : Colors.transparent,
-                                shape: BoxShape.circle,
+                      // Favorite & Live Status (Hidden in Compact View if Playing)
+                      if (!isCompact)
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (isPlaying) ...[
+                              const SizedBox(height: 4),
+                              _LiveBadge(
+                                color: Colors.white70,
+                                isRecognizing: provider.isRecognizing,
+                                isCompact: isCompact,
                               ),
-                              child: Icon(
-                                isFavorite
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                size: 22,
-                                color: isFavorite
-                                    ? const Color(0xFFFF5252)
-                                    : Colors.white38,
-                              ),
-                            ),
-                          ),
-                          if (isPlaying) ...[
-                            const SizedBox(height: 4),
-                            _LiveBadge(
-                              color: Colors.white70,
-                              isRecognizing: provider.isRecognizing,
-                            ),
+                            ],
                           ],
-                        ],
-                      ),
+                        ),
                     ],
                   ),
                 ),
@@ -236,13 +287,18 @@ class _StationCardState extends State<StationCard> {
 class _LiveBadge extends StatelessWidget {
   final Color color;
   final bool isRecognizing;
+  final bool isCompact;
 
-  const _LiveBadge({required this.color, required this.isRecognizing});
+  const _LiveBadge({
+    required this.color,
+    required this.isRecognizing,
+    this.isCompact = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
@@ -257,7 +313,11 @@ class _LiveBadge extends StatelessWidget {
                 )
               : Padding(
                   padding: const EdgeInsets.only(right: 4),
-                  child: _MiniVisualizer(color: color),
+                  child: SizedBox(
+                    width: 20,
+                    height: 12,
+                    child: RealisticVisualizer(color: color),
+                  ),
                 ),
           Text(
             "LIVE",
@@ -269,71 +329,6 @@ class _LiveBadge extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _MiniVisualizer extends StatefulWidget {
-  final Color color;
-  const _MiniVisualizer({required this.color});
-
-  @override
-  State<_MiniVisualizer> createState() => _MiniVisualizerState();
-}
-
-class _MiniVisualizerState extends State<_MiniVisualizer>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(3, (index) {
-        return AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final double height =
-                3 +
-                7 *
-                    (0.5 +
-                        0.5 *
-                            (index % 2 == 0
-                                ? DateTime.now().millisecondsSinceEpoch %
-                                      1000 /
-                                      1000
-                                : 1 -
-                                      (DateTime.now().millisecondsSinceEpoch %
-                                          1000 /
-                                          1000)));
-            return Container(
-              width: 3,
-              height: height,
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              decoration: BoxDecoration(
-                color: widget.color,
-                borderRadius: BorderRadius.circular(1),
-              ),
-            );
-          },
-        );
-      }),
     );
   }
 }

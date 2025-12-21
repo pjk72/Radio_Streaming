@@ -8,6 +8,7 @@ import '../utils/icon_library.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../screens/song_details_screen.dart';
 import '../screens/artist_details_screen.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
@@ -26,65 +27,98 @@ class PlayerBar extends StatelessWidget {
         ).withValues(alpha: 0.95), // Slightly more opaque
         border: const Border(top: BorderSide(color: Colors.white12, width: 1)),
       ),
-      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16),
-      child: Row(
+      padding: EdgeInsets
+          .zero, // Remove padding from container to allow edge-to-edge progress bar
+      child: Column(
         children: [
-          // Track Info
+          // Top Section: Info + Controls + Volume
           Expanded(
-            child: station != null
-                ? Row(
-                    children: [
-                      MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          onTap: () {
-                            Navigator.of(context).push(
-                              PageRouteBuilder(
-                                pageBuilder:
-                                    (context, animation, secondaryAnimation) =>
-                                        const SongDetailsScreen(),
-                                transitionsBuilder:
-                                    (
-                                      context,
-                                      animation,
-                                      secondaryAnimation,
-                                      child,
-                                    ) {
-                                      const begin = Offset(0.0, 1.0);
-                                      const end = Offset.zero;
-                                      const curve = Curves.easeOutQuart;
-                                      var tween = Tween(
-                                        begin: begin,
-                                        end: end,
-                                      ).chain(CurveTween(curve: curve));
-                                      return SlideTransition(
-                                        position: animation.drive(tween),
-                                        child: child,
-                                      );
-                                    },
-                              ),
-                            );
-                          },
-                          child: Hero(
-                            tag: 'player_image',
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: isDesktop ? 50 : 42,
-                                height: isDesktop ? 50 : 42,
-                                color: Colors.black,
-                                alignment: Alignment.center,
-                                child:
-                                    (provider.currentAlbumArt ??
-                                            station.logo) !=
-                                        null
-                                    ? _buildImage(
-                                        provider.currentAlbumArt ??
-                                            station.logo!,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                              return FaIcon(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16),
+              child: Row(
+                children: [
+                  // Track Info - Flexible width
+                  Expanded(
+                    flex: isDesktop ? 3 : 1,
+                    child: station != null
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min, // shrink wrap
+                            children: [
+                              MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  onLongPress: () =>
+                                      _showExternalLinks(context, provider),
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      PageRouteBuilder(
+                                        pageBuilder:
+                                            (
+                                              context,
+                                              animation,
+                                              secondaryAnimation,
+                                            ) => const SongDetailsScreen(),
+                                        transitionsBuilder:
+                                            (
+                                              context,
+                                              animation,
+                                              secondaryAnimation,
+                                              child,
+                                            ) {
+                                              const begin = Offset(0.0, 1.0);
+                                              const end = Offset.zero;
+                                              const curve = Curves.easeOutQuart;
+                                              var tween = Tween(
+                                                begin: begin,
+                                                end: end,
+                                              ).chain(CurveTween(curve: curve));
+                                              return SlideTransition(
+                                                position: animation.drive(
+                                                  tween,
+                                                ),
+                                                child: child,
+                                              );
+                                            },
+                                      ),
+                                    );
+                                  },
+                                  child: Hero(
+                                    tag: 'player_image',
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        width: isDesktop ? 50 : 42,
+                                        height: isDesktop ? 50 : 42,
+                                        color: Colors.black,
+                                        alignment: Alignment.center,
+                                        child:
+                                            (provider.currentAlbumArt ??
+                                                    station.logo) !=
+                                                null
+                                            ? _buildImage(
+                                                provider.currentAlbumArt ??
+                                                    station.logo!,
+                                                fit: BoxFit.cover,
+                                                errorBuilder:
+                                                    (
+                                                      context,
+                                                      error,
+                                                      stackTrace,
+                                                    ) {
+                                                      return FaIcon(
+                                                        IconLibrary.getIcon(
+                                                          station.icon,
+                                                        ),
+                                                        color: Color(
+                                                          int.parse(
+                                                            station.color,
+                                                          ),
+                                                        ),
+                                                        size: 24,
+                                                      );
+                                                    },
+                                              )
+                                            : FaIcon(
                                                 IconLibrary.getIcon(
                                                   station.icon,
                                                 ),
@@ -92,275 +126,240 @@ class PlayerBar extends StatelessWidget {
                                                   int.parse(station.color),
                                                 ),
                                                 size: 24,
-                                              );
-                                            },
-                                      )
-                                    : FaIcon(
-                                        IconLibrary.getIcon(station.icon),
-                                        color: Color(int.parse(station.color)),
-                                        size: 24,
+                                              ),
                                       ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: provider.errorMessage != null
-                            ? Row(
-                                children: [
-                                  Icon(
-                                    Icons.signal_wifi_bad_rounded,
-                                    color: Colors.redAccent,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      provider.errorMessage!,
-                                      style: const TextStyle(
-                                        color: Colors.redAccent,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                ],
-                              )
-                            : provider.currentTrack != "Live Broadcast" &&
-                                  provider.currentTrack.isNotEmpty
-                            ? Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          provider.currentTrack,
-                                          style: TextStyle(
-                                            color: Theme.of(
-                                              context,
-                                            ).primaryColor,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: provider.errorMessage != null
+                                    ? Row(
+                                        children: [
+                                          Icon(
+                                            Icons.signal_wifi_bad_rounded,
+                                            color: Colors.redAccent,
+                                            size: 20,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        MouseRegion(
-                                          cursor:
-                                              provider.currentArtist.isNotEmpty
-                                              ? SystemMouseCursors.click
-                                              : SystemMouseCursors.basic,
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              if (provider
-                                                  .currentArtist
-                                                  .isNotEmpty) {
-                                                Navigator.of(context).push(
-                                                  MaterialPageRoute(
-                                                    builder: (context) =>
-                                                        ArtistDetailsScreen(
-                                                          artistName: provider
-                                                              .currentArtist,
-                                                          artistImage: provider
-                                                              .currentArtistImage,
-                                                          genre: station.genre,
-                                                        ),
-                                                  ),
-                                                );
-                                              }
-                                            },
+                                          const SizedBox(width: 8),
+                                          Expanded(
                                             child: Text(
-                                              provider.currentArtist.isNotEmpty
-                                                  ? provider.currentArtist
-                                                  : "Unknown Artist",
-                                              style: TextStyle(
-                                                color: Color(
-                                                  int.parse(station.color),
-                                                ),
-                                                fontSize: 12,
+                                              provider.errorMessage!,
+                                              style: const TextStyle(
+                                                color: Colors.redAccent,
                                                 fontWeight: FontWeight.bold,
+                                                fontSize: 14,
                                               ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                        ),
-                                        if (provider.currentAlbum.isNotEmpty)
-                                          Text(
-                                            provider.currentAlbum,
-                                            style: TextStyle(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.5,
+                                        ],
+                                      )
+                                    : provider.currentTrack !=
+                                              "Live Broadcast" &&
+                                          provider.currentTrack.isNotEmpty
+                                    ? Row(
+                                        children: [
+                                          Expanded(
+                                            child: GestureDetector(
+                                              onLongPress: () =>
+                                                  _showExternalLinks(
+                                                    context,
+                                                    provider,
+                                                  ),
+                                              behavior:
+                                                  HitTestBehavior.translucent,
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Flexible(
+                                                        child: Text(
+                                                          provider.currentTrack,
+                                                          style:
+                                                              const TextStyle(
+                                                                color: Colors
+                                                                    .white,
+                                                                fontSize: 16,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                              ),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  MouseRegion(
+                                                    cursor:
+                                                        provider
+                                                            .currentArtist
+                                                            .isNotEmpty
+                                                        ? SystemMouseCursors
+                                                              .click
+                                                        : SystemMouseCursors
+                                                              .basic,
+                                                    child: GestureDetector(
+                                                      onTap: () {
+                                                        if (provider
+                                                            .currentArtist
+                                                            .isNotEmpty) {
+                                                          Navigator.of(
+                                                            context,
+                                                          ).push(
+                                                            MaterialPageRoute(
+                                                              builder: (context) =>
+                                                                  ArtistDetailsScreen(
+                                                                    artistName:
+                                                                        provider
+                                                                            .currentArtist,
+                                                                    artistImage:
+                                                                        provider
+                                                                            .currentArtistImage,
+                                                                    genre: station
+                                                                        .genre,
+                                                                  ),
+                                                            ),
+                                                          );
+                                                        }
+                                                      },
+                                                      child: Text(
+                                                        provider
+                                                                .currentArtist
+                                                                .isNotEmpty
+                                                            ? provider
+                                                                  .currentArtist
+                                                            : "Unknown Artist",
+                                                        style: TextStyle(
+                                                          color: Theme.of(
+                                                            context,
+                                                          ).primaryColor,
+                                                          fontSize: 13,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  if (provider
+                                                          .currentAlbum
+                                                          .isNotEmpty &&
+                                                      provider.currentAlbum !=
+                                                          "Playlist") ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      provider.currentAlbum,
+                                                      style: TextStyle(
+                                                        color: Colors.white
+                                                            .withValues(
+                                                              alpha: 0.5,
+                                                            ),
+                                                        fontSize: 11,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
+                                                ],
                                               ),
-                                              fontSize: 10,
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  GestureDetector(
-                                    onLongPress: () =>
-                                        _showExternalLinks(context, provider),
-                                    child: IconButton(
-                                      onPressed: () async {
-                                        if (context.mounted) {
-                                          final playlistName = await provider
-                                              .addToPlaylist(null);
-                                          if (context.mounted &&
-                                              playlistName != null) {
-                                            _showSavedSnackBar(
-                                              context,
-                                              playlistName,
-                                            );
-                                          }
-                                        }
-                                      },
-                                      icon: provider.isCurrentSongSaved
-                                          ? const Icon(
-                                              Icons.favorite_rounded,
-                                              color: Colors.redAccent,
-                                            )
-                                          : const Icon(
-                                              Icons.favorite_border_rounded,
-                                              size: 24,
-                                            ),
-                                      color: provider.isCurrentSongSaved
-                                          ? Colors.redAccent
-                                          : Colors.white54,
-                                      tooltip: provider.isCurrentSongSaved
-                                          ? "Saved"
-                                          : "Add to Favorites (Hold for options)",
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    station.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (isDesktop || station.name.length < 20)
-                                    Text(
-                                      station.genre,
-                                      style: TextStyle(
-                                        color: Colors.grey[400],
-                                        fontSize: 12,
+                                        ],
+                                      )
+                                    : const Text(
+                                        "Select a station",
+                                        style: TextStyle(color: Colors.white70),
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                ],
                               ),
-                      ),
-                    ],
-                  )
-                : const Text(
-                    "Select a station",
-                    style: TextStyle(color: Colors.white70),
+                            ],
+                          )
+                        : const Center(
+                            child: Text(
+                              "Select a station",
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          ),
                   ),
-          ),
 
-          // Controls
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.skip_previous_rounded),
-                color: Colors.white,
-                iconSize: isDesktop ? 32 : 28,
-                onPressed: () => provider.playPrevious(),
-              ),
-              SizedBox(width: isDesktop ? 24 : 12),
-              Container(
-                width: isDesktop ? 50 : 42,
-                height: isDesktop ? 50 : 42,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(
-                        context,
-                      ).primaryColor.withValues(alpha: 0.4),
-                      blurRadius: 10,
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    provider.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                  ),
-                  color: Colors.white,
-                  iconSize: isDesktop ? 32 : 28,
-                  onPressed: () => provider.togglePlay(),
-                ),
-              ),
-              SizedBox(width: isDesktop ? 24 : 12),
-              IconButton(
-                icon: const Icon(Icons.skip_next_rounded),
-                color: Colors.white,
-                iconSize: isDesktop ? 32 : 28,
-                onPressed: () => provider.playNext(),
-              ),
-            ],
-          ),
+                  // Spacer to ensure separation if needed, or rely on MainAxisAlignment.spaceBetween
+                  if (!isDesktop) const SizedBox(width: 8),
 
-          // Volume (Desktop only)
-          if (isDesktop) ...[
-            const SizedBox(width: 32),
-            SizedBox(
-              width: 120,
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.volume_up_rounded,
-                    size: 20,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 6,
-                        ),
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 10,
-                        ),
-                        trackHeight: 2,
-                      ),
-                      child: Slider(
-                        value: provider.volume,
-                        onChanged: (val) => provider.setVolume(val),
-                        activeColor: Theme.of(context).primaryColor,
-                        inactiveColor: Colors.white12,
+                  // Center Controls (Play, Prev, Next, Shuffle) - Fixed size on Mobile
+                  isDesktop
+                      ? Expanded(
+                          flex: 2,
+                          child: _buildControls(context, provider, isDesktop),
+                        )
+                      : _buildControls(context, provider, isDesktop),
+
+                  // Volume (Right Side) - Only show on Desktop
+                  if (isDesktop)
+                    Expanded(
+                      flex: 2,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          const SizedBox(width: 32),
+                          SizedBox(
+                            width: 120,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.volume_up_rounded,
+                                  size: 20,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      thumbShape: const RoundSliderThumbShape(
+                                        enabledThumbRadius: 0,
+                                      ),
+                                      overlayShape:
+                                          const RoundSliderOverlayShape(
+                                            overlayRadius: 10,
+                                          ),
+                                      trackHeight: 2,
+                                    ),
+                                    child: Slider(
+                                      value: provider.volume,
+                                      onChanged: (val) =>
+                                          provider.setVolume(val),
+                                      activeColor: Theme.of(
+                                        context,
+                                      ).primaryColor,
+                                      inactiveColor: Colors.white12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
-          ],
+          ),
+
+          // Bottom Progress Bar (Full Width)
+          if (provider.hiddenAudioController != null)
+            _buildYoutubeProgressBar(context, provider.hiddenAudioController!),
         ],
       ),
     );
@@ -425,16 +424,20 @@ class PlayerBar extends StatelessWidget {
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
+                        children: [
                           Icon(
-                            Icons.playlist_add_rounded,
+                            provider.isCurrentSongSaved
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
                             color: Colors.white,
                             size: 28,
                           ),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Text(
-                            "Save to Playlist",
-                            style: TextStyle(
+                            provider.isCurrentSongSaved
+                                ? "Saved to Favorites"
+                                : "Add to Favorites",
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -626,6 +629,147 @@ class PlayerBar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildYoutubeProgressBar(
+    BuildContext context,
+    YoutubePlayerController controller,
+  ) {
+    return Container(
+      width: double.infinity,
+      height: 24, // Increased height for touch targets
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      alignment: Alignment.center,
+      child: ValueListenableBuilder(
+        valueListenable: controller,
+        builder: (context, value, child) {
+          final position = value.position.inSeconds.toDouble();
+          final duration = value.metaData.duration.inSeconds.toDouble();
+          final max = duration > 0 ? duration : 100.0;
+          final val = position.clamp(0.0, max);
+
+          return Row(
+            children: [
+              Text(
+                _formatDuration(value.position),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    trackShape: const RectangularSliderTrackShape(),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 0,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                    activeTrackColor: Colors.redAccent,
+                    inactiveTrackColor: Colors.white38, // Lighter
+                    thumbColor: Colors.redAccent,
+                    overlayColor: Colors.redAccent.withValues(alpha: 0.2),
+                  ),
+                  child: Slider(
+                    value: val,
+                    min: 0.0,
+                    max: max,
+                    onChanged: (v) {
+                      controller.seekTo(Duration(seconds: v.toInt()));
+                    },
+                  ),
+                ),
+              ),
+              Text(
+                _formatDuration(value.metaData.duration),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    if (duration.inHours > 0) {
+      return "${duration.inHours}:$minutes:$seconds";
+    }
+    return "${duration.inMinutes}:$seconds";
+  }
+
+  Widget _buildControls(
+    BuildContext context,
+    RadioProvider provider,
+    bool isDesktop,
+  ) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // Shuffle Button (Left of Controls)
+        if (provider.hiddenAudioController != null) ...[
+          IconButton(
+            icon: Icon(
+              Icons.shuffle_rounded,
+              color: provider.isShuffleMode ? Colors.redAccent : Colors.grey,
+            ),
+            iconSize: 20,
+            tooltip: "Shuffle",
+            onPressed: () => provider.toggleShuffle(),
+          ),
+          const SizedBox(width: 8),
+        ],
+        IconButton(
+          icon: const Icon(Icons.skip_previous_rounded),
+          color: Colors.white,
+          iconSize: isDesktop ? 32 : 28,
+          onPressed: () => provider.playPrevious(),
+        ),
+        SizedBox(width: isDesktop ? 24 : 12),
+        Container(
+          width: isDesktop ? 50 : 42,
+          height: isDesktop ? 50 : 42,
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.4),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+          child: IconButton(
+            icon: Icon(
+              provider.isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+            ),
+            color: Colors.white,
+            iconSize: isDesktop ? 32 : 28,
+            onPressed: () => provider.togglePlay(),
+          ),
+        ),
+        SizedBox(width: isDesktop ? 24 : 12),
+        IconButton(
+          icon: const Icon(Icons.skip_next_rounded),
+          color: Colors.white,
+          iconSize: isDesktop ? 32 : 28,
+          onPressed: () => provider.playNext(),
+        ),
+      ],
     );
   }
 }

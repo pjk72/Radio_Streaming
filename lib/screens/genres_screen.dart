@@ -81,55 +81,67 @@ class _GenresScreenState extends State<GenresScreen> {
                 vertical: 8.0,
               ),
               color: Colors.white.withValues(alpha: 0.05),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () {
-                      setState(() {
-                        _selectedGenre = null;
-                        _searchController.clear();
-                      });
-                    },
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () {
+                          setState(() {
+                            _selectedGenre = null;
+                            _searchController.clear();
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _selectedGenre!,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                            ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _selectedGenre!,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                    ),
-                  ),
-                  const Spacer(),
                   // Search Bar
                   Container(
-                    width: 200,
-                    height: 40,
+                    width: double.infinity,
+                    height: 36,
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: TextField(
                       controller: _searchController,
-                      style: const TextStyle(color: Colors.white),
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      textAlignVertical: TextAlignVertical.center,
                       decoration: const InputDecoration(
                         hintText: "Search stations...",
                         hintStyle: TextStyle(
                           color: Colors.white38,
-                          fontSize: 13,
+                          fontSize: 12,
                         ),
+                        isDense: true,
                         prefixIcon: Icon(
                           Icons.search,
                           color: Colors.white38,
-                          size: 18,
+                          size: 16,
+                        ),
+                        prefixIconConstraints: BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
                         ),
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.only(top: 8),
+                        contentPadding: EdgeInsets.zero,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),
@@ -155,11 +167,17 @@ class _GenresScreenState extends State<GenresScreen> {
                             physics: const NeverScrollableScrollPhysics(),
                             shrinkWrap: true,
                             gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 600,
-                                  mainAxisExtent: 100,
+                                SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: provider.isCompactView
+                                      ? 220
+                                      : 600,
+                                  mainAxisExtent: provider.isCompactView
+                                      ? 80
+                                      : 100,
                                   crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
+                                  mainAxisSpacing: provider.isCompactView
+                                      ? 8
+                                      : 16,
                                 ),
                             itemCount: genreStations.length,
                             itemBuilder: (context, index) {
@@ -191,43 +209,56 @@ class _GenresScreenState extends State<GenresScreen> {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             color: Colors.white.withValues(alpha: 0.05),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.category_rounded, color: Colors.white),
-                const SizedBox(width: 12),
-                Text(
-                  "Genres",
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: Icon(Icons.category_rounded, color: Colors.white),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      "Genres",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
                 // Search Bar
                 Container(
-                  width: 180,
-                  height: 40,
+                  width: double.infinity,
+                  height: 36,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: TextField(
                     controller: _searchController,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    textAlignVertical: TextAlignVertical.center,
                     decoration: const InputDecoration(
                       hintText: "Search...",
-                      hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                      hintStyle: TextStyle(color: Colors.white38, fontSize: 12),
+                      isDense: true,
                       prefixIcon: Icon(
                         Icons.search,
                         color: Colors.white38,
-                        size: 18,
+                        size: 16,
+                      ),
+                      prefixIconConstraints: BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
                       ),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.only(
-                        top: 8,
-                      ), // center text vertically
+                      contentPadding: EdgeInsets.zero,
                     ),
                   ),
                 ),

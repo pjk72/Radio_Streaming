@@ -82,6 +82,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _matches("Add") ||
         _matches("Edit");
 
+    final bool showGeneral =
+        _searchQuery.isEmpty ||
+        _matches("Compact View") ||
+        _matches("Display") ||
+        _matches("Density");
+
     final bool showBackup =
         _searchQuery.isEmpty ||
         _matches("Cloud Backup") ||
@@ -176,6 +182,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     );
                   },
                 ),
+                if (showGeneral)
+                  _buildSettingsSwitchTile(
+                    context,
+                    icon: Icons.view_headline_rounded,
+                    title: "Compact View",
+                    subtitle: "Show more stations in less space",
+                    value: radio.isCompactView,
+                    onChanged: (val) => radio.setCompactView(val),
+                  ),
 
                 if (showManageStations && showBackup)
                   const SizedBox(height: 32),
@@ -815,6 +830,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
         subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54)),
         trailing: const Icon(Icons.chevron_right, color: Colors.white54),
         onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+    );
+  }
+
+  Widget _buildSettingsSwitchTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SwitchListTile(
+        secondary: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: Theme.of(context).primaryColor),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54)),
+        value: value,
+        onChanged: onChanged,
+        activeColor: Theme.of(context).primaryColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );

@@ -7,6 +7,7 @@ class Station {
   final String? logo; // URL to image
   final String color;
   final String category;
+  final String? countryCode;
 
   Station({
     required this.id,
@@ -17,6 +18,7 @@ class Station {
     this.logo,
     required this.color,
     required this.category,
+    this.countryCode,
   });
   factory Station.fromJson(Map<String, dynamic> json) {
     return Station(
@@ -28,6 +30,7 @@ class Station {
       logo: json['logo'] as String?,
       color: json['color'] as String,
       category: json['category'] as String,
+      countryCode: json['countryCode'] as String?,
     );
   }
 
@@ -41,6 +44,7 @@ class Station {
       'logo': logo,
       'color': color,
       'category': category,
+      'countryCode': countryCode,
     };
   }
 }

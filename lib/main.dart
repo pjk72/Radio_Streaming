@@ -13,6 +13,7 @@ import 'package:audio_service/audio_service.dart';
 import 'services/radio_audio_handler.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/background_tasks.dart';
+import 'widgets/global_hidden_player.dart';
 
 late AudioHandler audioHandler;
 
@@ -96,7 +97,15 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       useInheritedMediaQuery: true, // Required for DevicePreview
       locale: DevicePreview.locale(context), // Required for DevicePreview
-      builder: DevicePreview.appBuilder, // Required for DevicePreview
+      builder: (context, child) {
+        final widget = DevicePreview.appBuilder(context, child);
+        return Stack(
+          children: [
+            widget,
+            const GlobalHiddenPlayer(), // Persists across navigation
+          ],
+        );
+      },
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0a0a0f),

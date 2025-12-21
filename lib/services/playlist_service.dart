@@ -136,6 +136,20 @@ class PlaylistService {
     }
   }
 
+  Future<void> removeSongsFromPlaylist(
+    String playlistId,
+    List<String> songIds,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      playlists[index].songs.removeWhere((s) => songIds.contains(s.id));
+      await _savePlaylists(prefs, playlists);
+    }
+  }
+
   Future<void> moveSong(
     String songId,
     String fromPlaylistId,
@@ -174,6 +188,47 @@ class PlaylistService {
           // If we did a COPY, it just means it's already there.
         }
 
+        await _savePlaylists(prefs, playlists);
+      }
+    }
+  }
+
+  Future<void> moveSongs(
+    List<String> songIds,
+    String fromPlaylistId,
+    String toPlaylistId,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final fromIndex = playlists.indexWhere((p) => p.id == fromPlaylistId);
+    final toIndex = playlists.indexWhere((p) => p.id == toPlaylistId);
+
+    if (fromIndex != -1 && toIndex != -1) {
+      bool changed = false;
+      for (var songId in songIds) {
+        final songIndex = playlists[fromIndex].songs.indexWhere(
+          (s) => s.id == songId,
+        );
+        if (songIndex != -1) {
+          final song = playlists[fromIndex].songs[songIndex];
+
+          if (toPlaylistId != 'favorites') {
+            playlists[fromIndex].songs.removeAt(songIndex);
+          }
+
+          if (!playlists[toIndex].songs.any(
+            (s) =>
+                s.id == song.id ||
+                (s.title == song.title && s.artist == song.artist),
+          )) {
+            playlists[toIndex].songs.insert(0, song);
+          }
+          changed = true;
+        }
+      }
+
+      if (changed) {
         await _savePlaylists(prefs, playlists);
       }
     }
@@ -226,6 +281,37 @@ class PlaylistService {
     }
 
     await _savePlaylists(prefs, playlists);
+  }
+
+  Future<void> restoreSongsToPlaylist(
+    String playlistId,
+    List<SavedSong> songs, {
+    String? playlistName,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    var index = playlists.indexWhere((p) => p.id == playlistId);
+
+    if (index == -1 && playlistName != null) {
+      final newPlaylist = Playlist(
+        id: playlistId,
+        name: playlistName,
+        songs: [],
+        createdAt: DateTime.now(),
+      );
+      playlists.add(newPlaylist);
+      index = playlists.length - 1;
+    }
+
+    if (index != -1) {
+      for (var song in songs) {
+        if (!playlists[index].songs.any((s) => s.id == song.id)) {
+          playlists[index].songs.insert(0, song);
+        }
+      }
+      await _savePlaylists(prefs, playlists);
+    }
   }
 
   Future<void> saveAll(List<Playlist> playlists) async {

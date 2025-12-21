@@ -1,21 +1,33 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'dart:developer' as developer;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'artist_details_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../providers/radio_provider.dart';
+import '../widgets/youtube_popup.dart';
+import '../models/saved_song.dart';
+import '../services/music_metadata_service.dart';
 
 class AlbumDetailsScreen extends StatefulWidget {
   final String albumName;
   final String artistName;
   final String? artworkUrl;
+  final String? appleMusicUrl;
+  final String? songName; // Add optional songName
 
   const AlbumDetailsScreen({
     super.key,
     required this.albumName,
     required this.artistName,
     this.artworkUrl,
+    this.appleMusicUrl,
+    this.songName, // Add this
   });
 
   @override
@@ -24,34 +36,139 @@ class AlbumDetailsScreen extends StatefulWidget {
 
 class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
   late Future<Map<String, dynamic>?> _albumInfoFuture;
+  String _selectedProvider = 'youtube'; // Default provider
+  int? _selectedTrackIndex; // Track index to highlight
 
   @override
   void initState() {
     super.initState();
     _albumInfoFuture = _fetchAlbumInfo();
-    // We can't fetch tracks until we have album ID from album info,
-    // or we can try to chain them.
-    // Let's chain them in _fetchTracks if possible, or wait.
-    // Actually, I can do both.
   }
 
   Future<Map<String, dynamic>?> _fetchAlbumInfo() async {
+    // 1. Try to lookup by ID if we have an Apple Music URL
+    if (widget.appleMusicUrl != null) {
+      final id = _extractAlbumId(widget.appleMusicUrl!);
+      if (id != null) {
+        try {
+          final uri = Uri.parse(
+            "https://itunes.apple.com/lookup?id=$id&entity=album",
+          );
+          final response = await http.get(uri);
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            if (data['resultCount'] > 0) {
+              return data['results'][0];
+            }
+          }
+        } catch (e) {
+          developer.log("Error fetching album info by ID: $e");
+        }
+      }
+    }
+
+    // 2. Fallback to search query using Song Title + Artist (preferred) or Album + Artist
     try {
-      final query = "${widget.albumName} ${widget.artistName}";
+      String query;
+      bool isSongSearch = false;
+      // Prefer searching for the specific song to find its album
+      if (widget.songName != null && widget.songName!.isNotEmpty) {
+        // Artist first (cleaned) + Song Name (cleaned)
+        query =
+            "${_cleanArtistName(widget.artistName)} ${_cleanTitle(widget.songName!)}";
+        isSongSearch = true;
+      } else {
+        query = "${_cleanArtistName(widget.artistName)} ${widget.albumName}";
+      }
+
+      // If searching for a song, we specifically ask for song entities (tracks)
+      // Otherwise we look for albums.
+      final entityParam = isSongSearch ? "song" : "album";
       final uri = Uri.parse(
-        "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=album&limit=1",
+        "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=$entityParam&limit=25",
       );
       final response = await http.get(uri);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['resultCount'] > 0) {
-          return data['results'][0];
+          final results = List<Map<String, dynamic>>.from(data['results']);
+          final inputArtist = widget.artistName.toLowerCase();
+
+          if (isSongSearch) {
+            final inputSong = _cleanTitle(widget.songName!).toLowerCase();
+            // Find matching song
+            for (var result in results) {
+              final resultArtist =
+                  (result['artistName'] as String?)?.toLowerCase() ?? '';
+              final resultTrack = _cleanTitle(
+                result['trackName'] as String? ?? '',
+              ).toLowerCase();
+
+              final artistMatch =
+                  resultArtist.contains(inputArtist) ||
+                  inputArtist.contains(resultArtist);
+              // Allow fuzzy match for song title too? Or contains?
+              final songMatch =
+                  resultTrack.contains(inputSong) ||
+                  inputSong.contains(resultTrack);
+
+              if (artistMatch && songMatch) {
+                return result; // This track result contains collectionName, collectionId etc.
+              }
+            }
+          } else {
+            // Album search logic (previous logic)
+            final inputAlbum = widget.albumName.toLowerCase();
+            for (var result in results) {
+              final resultArtist =
+                  (result['artistName'] as String?)?.toLowerCase() ?? '';
+              final resultAlbum =
+                  (result['collectionName'] as String?)?.toLowerCase() ?? '';
+
+              final artistMatch =
+                  resultArtist.contains(inputArtist) ||
+                  inputArtist.contains(resultArtist);
+              final albumMatch =
+                  resultAlbum.contains(inputAlbum) ||
+                  inputAlbum.contains(resultAlbum);
+
+              if (artistMatch && albumMatch) {
+                return result;
+              }
+            }
+          }
+
+          // Fallback: Return first result if no strict match
+          // But for song search, if we didn't find the song, the first result might be wrong.
+          // However, usually it's the best guess.
+          return results[0];
         }
       }
     } catch (e) {
       developer.log("Error fetching album info: $e");
     }
     return null;
+  }
+
+  String _cleanArtistName(String name) {
+    String cleaned = name;
+    // Remove content after dot
+    if (cleaned.contains('.')) {
+      cleaned = cleaned.split('.').first;
+    }
+    // Remove content after bullet (•) which appears as %E2%80%A2 in URLs
+    if (cleaned.contains('•')) {
+      cleaned = cleaned.split('•').first;
+    }
+    return _cleanTitle(cleaned);
+  }
+
+  String _cleanTitle(String title) {
+    // Remove text in parentheses and brackets/braces
+    // e.g. "Song Name (feat. Artist)" -> "Song Name"
+    // e.g. "Song Name [Remix]" -> "Song Name"
+    // Use regex to match (...) or [...] non-greedily
+    return title.replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '').trim();
   }
 
   Future<List<Map<String, dynamic>>> _fetchTracks(int collectionId) async {
@@ -87,6 +204,37 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
       developer.log("Error fetching tracks: $e");
     }
     return [];
+  }
+
+  Widget _buildProviderIcon(IconData icon, Color color, String providerId) {
+    final isSelected = _selectedProvider == providerId;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedProvider = providerId;
+          });
+        },
+        borderRadius: BorderRadius.circular(50),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withOpacity(0.2) : Colors.transparent,
+            shape: BoxShape.circle,
+            border: isSelected
+                ? Border.all(color: color.withOpacity(0.5), width: 2)
+                : Border.all(color: Colors.transparent, width: 2),
+          ),
+          child: FaIcon(
+            icon,
+            color: isSelected ? color : Colors.white.withOpacity(0.3),
+            size: 24,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -139,8 +287,8 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.6),
-                      Colors.black.withValues(alpha: 0.9),
+                      Colors.black.withOpacity(0.6),
+                      Colors.black.withOpacity(0.9),
                       Colors.black,
                     ],
                   ),
@@ -169,7 +317,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.5),
+                                  color: Colors.black.withOpacity(0.5),
                                   blurRadius: 30,
                                   offset: const Offset(0, 15),
                                 ),
@@ -196,61 +344,230 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            displayArtist,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 18,
+                          const SizedBox(height: 24),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () {
+                                        // Take the first artist if multiple are listed
+                                        String firstArtist = displayArtist;
+                                        // Split by common separators: , & / Ft. Feat. Vs.
+                                        final separators = [
+                                          ',',
+                                          '&',
+                                          '/',
+                                          ' ft.',
+                                          ' feat.',
+                                          ' vs.',
+                                          ' Ft.',
+                                          ' Feat.',
+                                          ' Vs.',
+                                          ' • ',
+                                        ];
+                                        for (final sep in separators) {
+                                          if (firstArtist.contains(sep)) {
+                                            firstArtist = firstArtist
+                                                .split(sep)
+                                                .first;
+                                          }
+                                        }
+                                        firstArtist = firstArtist.trim();
+
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                ArtistDetailsScreen(
+                                                  artistName: firstArtist,
+                                                  // Optional: Pass genre if available
+                                                  genre: genre,
+                                                  fallbackImage: displayImage,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                      child: Text(
+                                        displayArtist,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 18,
+                                          decoration: TextDecoration.underline,
+                                          decorationColor: Colors.white30,
+                                        ),
+                                      ),
+                                    ),
+                                    Builder(
+                                      builder: (context) {
+                                        final releaseDate =
+                                            albumData?['releaseDate']
+                                                as String?;
+                                        String? year;
+                                        if (releaseDate != null) {
+                                          try {
+                                            year = DateTime.parse(
+                                              releaseDate,
+                                            ).year.toString();
+                                          } catch (_) {}
+                                        }
+
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            if (genre != null) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                genre,
+                                                style: TextStyle(
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).primaryColor,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                            if (year != null) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                year,
+                                                style: TextStyle(
+                                                  color: Colors.white
+                                                      .withOpacity(0.5),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          // Provider Selector
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildProviderIcon(
+                                  FontAwesomeIcons.youtube,
+                                  Colors.red,
+                                  'youtube',
+                                ),
+                                const SizedBox(width: 24),
+                                _buildProviderIcon(
+                                  FontAwesomeIcons.spotify,
+                                  Colors.green,
+                                  'spotify',
+                                ),
+                                const SizedBox(width: 24),
+                                _buildProviderIcon(
+                                  FontAwesomeIcons.apple,
+                                  Colors.white,
+                                  'apple',
+                                ),
+                              ],
                             ),
                           ),
-                          if (genre != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              genre,
-                              style: TextStyle(
-                                color: Theme.of(context).primaryColor,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
+                          const SizedBox(height: 8),
+                          Text(
+                            "Select provider to play tracks",
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.4),
+                              fontSize: 10,
+                            ),
+                          ),
+                          if (albumData != null) ...[
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () async {
+                                final tracks = await _fetchTracks(
+                                  albumData['collectionId'],
+                                );
+                                if (tracks.isEmpty) return;
+
+                                if (!context.mounted) return;
+                                final provider = Provider.of<RadioProvider>(
+                                  context,
+                                  listen: false,
+                                );
+                                int addedCount = 0;
+
+                                for (var track in tracks) {
+                                  final trackArtist =
+                                      track['artistName'] ?? displayArtist;
+                                  final trackName =
+                                      track['trackName'] ?? "Unknown Track";
+
+                                  final song = SavedSong(
+                                    id:
+                                        track['trackId']?.toString() ??
+                                        DateTime.now().millisecondsSinceEpoch
+                                            .toString(),
+                                    title: trackName,
+                                    artist: trackArtist,
+                                    album: displayName,
+                                    artUri: displayImage,
+                                    appleMusicUrl: track['trackViewUrl'],
+                                    dateAdded: DateTime.now(),
+                                    releaseDate: albumData['releaseDate'],
+                                  );
+
+                                  await provider.addFoundSongToGenre(
+                                    SongSearchResult(
+                                      song: song,
+                                      genre: genre ?? "Mix",
+                                    ),
+                                  );
+                                  addedCount++;
+                                }
+
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        "Added $addedCount songs to ${genre ?? "Mix"}",
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.playlist_add,
+                                color: Colors.black,
+                              ),
+                              label: const Text(
+                                "Add All to Playlist",
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.greenAccent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
                               ),
                             ),
                           ],
-                          if (albumData != null &&
-                              albumData['collectionViewUrl'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 16),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (albumData['collectionViewUrl'] !=
-                                      null) ...[
-                                    _SocialButton(
-                                      icon: FontAwesomeIcons.apple,
-                                      color: Colors.pinkAccent,
-                                      url: albumData['collectionViewUrl'],
-                                      label: "Apple Music",
-                                    ),
-                                    const SizedBox(width: 16),
-                                  ],
-                                  _SocialButton(
-                                    icon: FontAwesomeIcons.spotify,
-                                    color: Colors.green,
-                                    url:
-                                        "https://open.spotify.com/search/${Uri.encodeComponent("$displayName $displayArtist")}",
-                                    label: "Spotify",
-                                  ),
-                                  const SizedBox(width: 16),
-                                  _SocialButton(
-                                    icon: FontAwesomeIcons.youtube,
-                                    color: Colors.red,
-                                    url:
-                                        "https://www.youtube.com/results?search_query=${Uri.encodeComponent("$displayName $displayArtist")}",
-                                    label: "YouTube",
-                                  ),
-                                ],
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -285,35 +602,306 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
 
                         return SliverList(
                           delegate: SliverChildBuilderDelegate((
-                            context,
+                            innerContext,
                             index,
                           ) {
                             final track = tracks[index];
-                            return ListTile(
-                              leading: Text(
-                                "${track['trackNumber'] ?? index + 1}",
-                                style: const TextStyle(color: Colors.white54),
-                              ),
-                              title: Text(
-                                track['trackName'] ?? "Unknown Track",
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                              trailing: track['trackTimeMillis'] != null
-                                  ? Text(
-                                      _formatDuration(track['trackTimeMillis']),
-                                      style: const TextStyle(
-                                        color: Colors.white38,
-                                        fontSize: 12,
-                                      ),
-                                    )
-                                  : null,
-                              onTap: () {
-                                if (track['trackViewUrl'] != null) {
-                                  launchUrl(Uri.parse(track['trackViewUrl']));
-                                } else if (track['previewUrl'] != null) {
-                                  launchUrl(Uri.parse(track['previewUrl']));
+                            final trackName =
+                                track['trackName'] ?? "Unknown Track";
+                            // For artist, use track artist or album artist
+                            final trackArtist =
+                                track['artistName'] ?? displayArtist;
+
+                            final isSelected = _selectedTrackIndex == index;
+
+                            final isContextTrack =
+                                widget.songName != null &&
+                                _cleanTitle(trackName).toLowerCase() ==
+                                    _cleanTitle(widget.songName!).toLowerCase();
+
+                            // Check if song is already saved
+                            final provider = Provider.of<RadioProvider>(
+                              context,
+                            );
+
+                            bool isSaved = false;
+                            String? existingPlaylistId;
+                            String? existingSongId;
+
+                            final cleanTrackTitle = _cleanTitle(
+                              trackName,
+                            ).toLowerCase();
+                            final cleanTrackArtist = _cleanArtistName(
+                              trackArtist,
+                            ).toLowerCase();
+
+                            for (var p in provider.playlists) {
+                              if (isSaved) break;
+                              for (var s in p.songs) {
+                                final sTitle = _cleanTitle(
+                                  s.title,
+                                ).toLowerCase();
+                                final sArtist = _cleanArtistName(
+                                  s.artist,
+                                ).toLowerCase();
+                                if (sTitle == cleanTrackTitle &&
+                                    sArtist == cleanTrackArtist) {
+                                  isSaved = true;
+                                  existingPlaylistId = p.id;
+                                  existingSongId = s.id;
+                                  break;
                                 }
-                              },
+                              }
+                            }
+
+                            return Container(
+                              color: isSelected
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.transparent,
+                              child: ListTile(
+                                leading: Text(
+                                  "${track['trackNumber'] ?? index + 1}",
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.white54,
+                                    fontWeight: isSelected || isContextTrack
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                title: Text(
+                                  trackName,
+                                  style: TextStyle(
+                                    color: isContextTrack
+                                        ? Colors.redAccent
+                                        : Colors.white,
+                                    fontWeight: isSelected || isContextTrack
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (track['trackTimeMillis'] != null)
+                                      Text(
+                                        _formatDuration(
+                                          track['trackTimeMillis'],
+                                        ),
+                                        style: const TextStyle(
+                                          color: Colors.white38,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      icon: Icon(
+                                        isSaved
+                                            ? Icons.favorite
+                                            : Icons.favorite_border,
+                                        color: isSaved
+                                            ? Colors.redAccent
+                                            : Colors.white54,
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        if (isSaved) {
+                                          if (existingPlaylistId != null &&
+                                              existingSongId != null) {
+                                            provider.removeFromPlaylist(
+                                              existingPlaylistId,
+                                              existingSongId,
+                                            );
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  "Removed '$trackName' from playlists",
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          final song = SavedSong(
+                                            id:
+                                                track['trackId']?.toString() ??
+                                                DateTime.now()
+                                                    .millisecondsSinceEpoch
+                                                    .toString(),
+                                            title: trackName,
+                                            artist: trackArtist,
+                                            album: displayName,
+                                            artUri: displayImage,
+                                            appleMusicUrl:
+                                                track['trackViewUrl'],
+                                            dateAdded: DateTime.now(),
+                                            releaseDate:
+                                                albumData['releaseDate'],
+                                          );
+
+                                          provider.addFoundSongToGenre(
+                                            SongSearchResult(
+                                              song: song,
+                                              genre: genre ?? "Mix",
+                                            ),
+                                          );
+
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                "Added '$trackName' to ${genre ?? "Mix"}",
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                onTap: () async {
+                                  setState(() {
+                                    _selectedTrackIndex = index;
+                                  });
+
+                                  final provider = Provider.of<RadioProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+
+                                  // Show loading
+                                  if (!mounted) return;
+                                  showDialog(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (ctx) => const Center(
+                                      child: CircularProgressIndicator(
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                  );
+
+                                  try {
+                                    final searchTitle = _cleanTitle(trackName);
+                                    final links = await provider
+                                        .resolveLinks(
+                                          title: searchTitle,
+                                          artist: trackArtist,
+                                        )
+                                        .timeout(
+                                          const Duration(seconds: 10),
+                                          onTimeout: () {
+                                            throw TimeoutException(
+                                              "Connection timed out",
+                                            );
+                                          },
+                                        );
+
+                                    if (!mounted) return;
+                                    Navigator.of(
+                                      context,
+                                      rootNavigator: true,
+                                    ).pop(); // Dismiss loading
+                                    String? url;
+
+                                    if (_selectedProvider == 'youtube') {
+                                      String? videoUrl = links['youtube'];
+                                      String? videoId;
+
+                                      if (videoUrl != null) {
+                                        videoId = YoutubePlayer.convertUrlToId(
+                                          videoUrl,
+                                        );
+                                        // Fallback manual extraction if library fails
+                                        if (videoId == null) {
+                                          final regExp = RegExp(
+                                            r'[?&]v=([^&#]+)',
+                                          );
+                                          final match = regExp.firstMatch(
+                                            videoUrl,
+                                          );
+                                          if (match != null) {
+                                            videoId = match.group(1);
+                                          }
+                                        }
+                                      }
+                                      if (videoId != null) {
+                                        provider.pause();
+                                        if (mounted) {
+                                          await showDialog(
+                                            context: context,
+                                            builder: (_) =>
+                                                YouTubePopup(videoId: videoId!),
+                                          );
+                                        }
+                                        return; // Done
+                                      } else if (videoUrl != null) {
+                                        // Valid URL but not an ID we can extract (e.g. channel link?), launch external
+                                        final launched = await launchUrl(
+                                          Uri.parse(videoUrl),
+                                          mode: LaunchMode.externalApplication,
+                                        );
+                                        return;
+                                      } else {
+                                        // No link found
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                "YouTube link not found",
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return;
+                                      }
+                                    }
+
+                                    // Other providers
+                                    if (_selectedProvider == 'spotify') {
+                                      url = links['spotify'];
+                                      url ??=
+                                          "https://open.spotify.com/search/${Uri.encodeComponent("$trackArtist - $searchTitle")}";
+                                    } else if (_selectedProvider == 'apple') {
+                                      url =
+                                          links['appleMusic'] ??
+                                          track['trackViewUrl'];
+                                      url ??=
+                                          "https://music.apple.com/search?term=${Uri.encodeComponent("$trackArtist - $searchTitle")}";
+                                    }
+
+                                    if (url != null && url.isNotEmpty) {
+                                      await launchUrl(
+                                        Uri.parse(url),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      Navigator.of(
+                                        context,
+                                        rootNavigator: true,
+                                      ).pop();
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(content: Text("Error: $e")),
+                                      );
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() {
+                                        _selectedTrackIndex = null;
+                                      });
+                                    }
+                                  }
+                                },
+                              ),
                             );
                           }, childCount: tracks.length),
                         );
@@ -351,7 +939,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                   icon: const Icon(Icons.arrow_back_ios_new_rounded),
                   color: Colors.white,
                   style: IconButton.styleFrom(
-                    backgroundColor: Colors.black.withValues(alpha: 0.2),
+                    backgroundColor: Colors.black.withOpacity(0.2),
                   ),
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -369,42 +957,26 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
     final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
     return "$minutes:$seconds";
   }
-}
 
-class _SocialButton extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String url;
-  final String label;
+  String? _extractAlbumId(String url) {
+    try {
+      // Common pattern: .../album/album-name/id...
+      // e.g. https://music.apple.com/us/album/hybrid-theory/528436018
+      final regex = RegExp(r'\/album\/[^\/]+\/(\d+)');
+      final match = regex.firstMatch(url);
+      if (match != null) {
+        return match.group(1);
+      }
 
-  const _SocialButton({
-    required this.icon,
-    required this.color,
-    required this.url,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        IconButton(
-          icon: FaIcon(icon),
-          color: Colors.white,
-          iconSize: 24,
-          style: IconButton.styleFrom(
-            backgroundColor: color.withValues(alpha: 0.2),
-            padding: const EdgeInsets.all(12),
-            highlightColor: color.withValues(alpha: 0.5),
-          ),
-          onPressed: () => launchUrl(Uri.parse(url)),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white60, fontSize: 10),
-        ),
-      ],
-    );
+      // Check for simple .../album/id... format just in case
+      final simpleRegex = RegExp(r'\/album\/(\d+)');
+      final simpleMatch = simpleRegex.firstMatch(url);
+      if (simpleMatch != null) {
+        return simpleMatch.group(1);
+      }
+    } catch (e) {
+      developer.log("Error extracting album ID: $e");
+    }
+    return null;
   }
 }

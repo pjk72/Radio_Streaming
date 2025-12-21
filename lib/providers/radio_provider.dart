@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
@@ -19,6 +20,11 @@ import 'package:workmanager/workmanager.dart';
 import '../services/background_tasks.dart';
 import '../services/backup_service.dart';
 import '../utils/genre_mapper.dart';
+import '../services/song_link_service.dart';
+import '../services/music_metadata_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 // ...
 
@@ -29,6 +35,9 @@ class RadioProvider with ChangeNotifier {
       'start_option'; // 'none', 'last', 'specific'
   static const String _keyStartupStationId = 'startup_station_id';
   static const String _keyLastPlayedStationId = 'last_played_station_id';
+  static const String _keyCompactView = 'compact_view';
+  static const String _keyShuffleMode = 'shuffle_mode';
+  static const String _keyInvalidSongIds = 'invalid_song_ids';
 
   Future<void> _loadStations() async {
     final prefs = await SharedPreferences.getInstance();
@@ -55,7 +64,7 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
     // Defer startup playback slightly to ensure UI is ready if needed, or just run it.
     // However, we shouldn't block.
-    _handleStartupPlayback();
+    // _handleStartupPlayback(); // Removed automatic call
     _ensureStationImages();
   }
 
@@ -63,16 +72,13 @@ class RadioProvider with ChangeNotifier {
     bool changed = false;
     for (int i = 0; i < stations.length; i++) {
       final s = stations[i];
-      // "le foto dr non gia mdificate" -> if logo is empty/null
       if (s.logo == null || s.logo!.isEmpty) {
-        // "se una radio ha piu generi scegli la prima"
         final split = s.genre.split(RegExp(r'[|/,]'));
         if (split.isNotEmpty) {
           final firstGenre = split.first.trim();
           if (firstGenre.isNotEmpty) {
             final img = GenreMapper.getGenreImage(firstGenre);
             if (img != null) {
-              // Create new station with updated logo
               stations[i] = Station(
                 id: s.id,
                 name: s.name,
@@ -95,10 +101,13 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _handleStartupPlayback() async {
+  Future<void> handleStartupPlayback() async {
+    final prefs = await SharedPreferences.getInstance();
+    _startOption = prefs.getString(_keyStartOption) ?? 'none';
+    _startupStationId = prefs.getInt(_keyStartupStationId);
+
     if (_startOption == 'none') return;
 
-    final prefs = await SharedPreferences.getInstance();
     int? targetId;
 
     if (_startOption == 'last') {
@@ -166,9 +175,16 @@ class RadioProvider with ChangeNotifier {
 
   final AudioHandler _audioHandler;
   final PlaylistService _playlistService = PlaylistService();
+  final SongLinkService _songLinkService = SongLinkService();
+  final MusicMetadataService _musicMetadataService = MusicMetadataService();
 
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
+  DateTime? _lastPlayNextTime;
+  DateTime? _zeroDurationStartTime;
+  DateTime? _lastProcessingTime;
+  Duration? _lastMonitoredPosition;
+  DateTime? _lastMonitoredPositionTime;
 
   // ... existing members
 
@@ -189,12 +205,22 @@ class RadioProvider with ChangeNotifier {
   int? _startupStationId;
   int? get startupStationId => _startupStationId;
 
+  bool _isCompactView = false;
+  bool get isCompactView => _isCompactView;
+
   RadioProvider(this._audioHandler, this._backupService) {
     _backupService.addListener(notifyListeners);
     _checkAutoBackup(); // Start check
     // Listen to playback state from AudioService
     _audioHandler.playbackState.listen((state) {
       bool playing = state.playing;
+
+      // Handle External Pause (Notification interaction)
+      // Handle External Pause (Notification interaction)
+      if (!playing && _hiddenAudioController != null && !_ignoringPause) {
+        // If notification was paused by user, pause YouTube too
+        _hiddenAudioController!.pause();
+      }
 
       // Check for error message updates
       if (state.errorMessage != _errorMessage) {
@@ -208,12 +234,12 @@ class RadioProvider with ChangeNotifier {
         // If we just started playing via toggle/external, schedule.
         // NOTE: playStation() handles its own scheduling to support station switching where playing state might not toggle.
         _metadataTimer?.cancel();
-        if (_isPlaying) {
-          _metadataTimer = Timer(
-            const Duration(seconds: 5),
-            _attemptRecognition,
-          );
-        }
+        // if (_isPlaying) {
+        //   _metadataTimer = Timer(
+        //     const Duration(seconds: 5),
+        //     _attemptRecognition, // FAZIO -- Intervallo ricerca musica via riconoscimento API
+        //   );
+        // }
 
         notifyListeners();
       }
@@ -226,6 +252,12 @@ class RadioProvider with ChangeNotifier {
       // If the media item ID (URL) differs from current station, it means
       // Android Auto or another source changed the station.
       if (_currentStation?.url != item.id) {
+        // Prevent interference if we are handling YouTube locally
+        if ((_currentStation?.url.startsWith('youtube://') ?? false) ||
+            (item.id == 'external_audio')) {
+          return;
+        }
+
         // Find the station by URL
         try {
           final newStation = stations.firstWhere((s) => s.url == item.id);
@@ -248,20 +280,38 @@ class RadioProvider with ChangeNotifier {
 
           _isRecognizing = false;
 
-          _isRecognizing = false;
-
           notifyListeners();
 
           // Restart recognition for the new station
           _metadataTimer?.cancel();
-          if (_isPlaying) {
-            _metadataTimer = Timer(
-              const Duration(seconds: 5),
-              _attemptRecognition,
-            );
-          }
+          // if (_isPlaying) {
+          //  _metadataTimer = Timer(
+          //    const Duration(seconds: 5),
+          //     _attemptRecognition, // FAZIO -- Intervallo ricerca musica via riconoscimento API
+          //   );
+          // }
         } catch (_) {
-          // Station not found in our list, ignore or handle custom
+          // Check if it is a playlist song request from Android Auto
+          if (item.extras?['type'] == 'playlist_song') {
+            final String? videoId = item.extras?['videoId'];
+            final String? playlistId = item.extras?['playlistId'];
+            final String? songId = item.extras?['songId'];
+
+            if (videoId != null && songId != null) {
+              // Trigger playback
+              // We use a microtask to avoid recursive updates if this listener fired during an update
+              Future.microtask(() {
+                playYoutubeAudio(
+                  videoId,
+                  songId,
+                  playlistId: playlistId,
+                  overrideTitle: item.title,
+                  overrideArtist: item.artist,
+                  overrideArtUri: item.artUri?.toString(),
+                );
+              });
+            }
+          }
         }
       }
     });
@@ -272,9 +322,8 @@ class RadioProvider with ChangeNotifier {
     // Load persisted playlist
     _loadPlaylists();
     _loadStationOrder();
-    _loadPlaylists();
-    _loadStationOrder();
     _loadStartupSettings(); // Load this before stations
+    _loadYouTubeSettings();
     _loadStations();
 
     // Connect AudioHandler callbacks
@@ -283,14 +332,6 @@ class RadioProvider with ChangeNotifier {
       _audioHandler.onSkipPrevious = playPreviousFavorite;
     }
   }
-
-  // Import for casting
-  // Note: Since RadioAudioHandler is imported via 'services/radio_audio_handler.dart' but access might be ambiguous if not imported.
-  // RadioAudioHandler needs to be imported in RadioProvider file?
-  // It is NOT currently imported in the view_file of RadioProvider.
-  // I must add the import first!
-  // I'll do it in a separate step if needed, but I can add it here if I replace top imports.
-  // Let's assume I need to add import.
 
   List<Station> get _visualFavoriteOrder {
     if (_favorites.isEmpty) return [];
@@ -403,8 +444,10 @@ class RadioProvider with ChangeNotifier {
       spotifyUrl: _currentSpotifyUrl,
       youtubeUrl: _currentYoutubeUrl,
       appleMusicUrl:
+          _currentAppleMusicUrl ??
           "https://music.apple.com/search?term=${Uri.encodeComponent("$_currentTrack $_currentArtist")}",
       dateAdded: DateTime.now(),
+      releaseDate: _currentReleaseDate,
     );
 
     // 1. Auto-Classification Logic (Default / Heart Button)
@@ -459,6 +502,11 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  Future<void> restoreSongToPlaylist(String playlistId, SavedSong song) async {
+    await _playlistService.addSongToPlaylist(playlistId, song);
+    await _loadPlaylists();
+  }
+
   Future<void> moveSong(
     String songId,
     String fromPayloadId,
@@ -474,10 +522,80 @@ class RadioProvider with ChangeNotifier {
       orElse: () =>
           Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
     );
+
     if (p.id.isNotEmpty && p.songs.isEmpty) {
       await _playlistService.deletePlaylist(fromPayloadId);
       await _loadPlaylists();
     }
+  }
+
+  Future<void> moveSongs(
+    List<String> songIds,
+    String fromPayloadId,
+    String toPayloadId,
+  ) async {
+    await _playlistService.moveSongs(songIds, fromPayloadId, toPayloadId);
+    await _loadPlaylists();
+
+    if (fromPayloadId == 'favorites') return;
+
+    final p = _playlists.firstWhere(
+      (element) => element.id == fromPayloadId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+
+    if (p.id.isNotEmpty && p.songs.isEmpty) {
+      await _playlistService.deletePlaylist(fromPayloadId);
+      await _loadPlaylists();
+    }
+  }
+
+  Future<void> restoreSongsToPlaylist(
+    String playlistId,
+    List<SavedSong> songs, {
+    String? playlistName,
+  }) async {
+    await _playlistService.restoreSongsToPlaylist(
+      playlistId,
+      songs,
+      playlistName: playlistName,
+    );
+    await _loadPlaylists();
+  }
+
+  Future<void> removeSongsFromPlaylist(
+    String playlistId,
+    List<String> songIds,
+  ) async {
+    await _playlistService.removeSongsFromPlaylist(playlistId, songIds);
+    await _loadPlaylists();
+
+    if (playlistId == 'favorites') return;
+
+    final p = _playlists.firstWhere(
+      (element) => element.id == playlistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+
+    if (p.id.isNotEmpty && p.songs.isEmpty) {
+      await _playlistService.deletePlaylist(playlistId);
+      await _loadPlaylists();
+    }
+  }
+
+  Future<List<SongSearchResult>> searchMusic(String query) async {
+    return await _musicMetadataService.searchSongs(query: query, limit: 40);
+  }
+
+  Future<void> addFoundSongToGenre(SongSearchResult result) async {
+    // Check if result.genre is valid, otherwise use default
+    String genre = result.genre;
+    if (genre.isEmpty) genre = "Mix";
+
+    await _playlistService.addToGenrePlaylist(genre, result.song);
+    await _loadPlaylists();
   }
 
   // ... rest of class
@@ -494,6 +612,12 @@ class RadioProvider with ChangeNotifier {
   String? _currentArtistImage;
   String? _currentSpotifyUrl;
   String? _currentYoutubeUrl;
+  String? _currentAppleMusicUrl;
+  String? _currentDeezerUrl;
+  String? _currentTidalUrl;
+  String? _currentAmazonMusicUrl;
+  String? _currentNapsterUrl;
+
   String? _currentReleaseDate;
   String? _currentGenre;
 
@@ -501,16 +625,22 @@ class RadioProvider with ChangeNotifier {
   bool _isRecognizing = false;
   final List<String> _metadataLog = [];
 
+  // Track invalid songs
+  final List<String> _invalidSongIds = [];
+  List<String> get invalidSongIds => _invalidSongIds;
+
   bool get isLoading => _isLoading;
   bool get isRecognizing => _isRecognizing;
   bool _hasPerformedRestore = false;
   bool get hasPerformedRestore => _hasPerformedRestore;
   Timer? _metadataTimer;
+  Timer? _playbackMonitor; // Robust backup for end-of-song detection
+  Timer? _invalidDetectionTimer;
 
   // ACRCloud Credentials
   final String _acrHost = "identify-eu-west-1.acrcloud.com";
-  final String _acrAccessKey = "7009a942fd57981882bc0fb39f9e3ed5";
-  final String _acrSecretKey = "DryrXroZvB6uLY8wAJ0jKAkgCiJD2hToDSk0Pdnx";
+  final String _acrAccessKey = "e763fb2faa97925d26fcfba2c8e29f34";
+  final String _acrSecretKey = "Pg8Htq25c39YswVQXga3ExXsaUSu2qTbxCACyqgY";
 
   Station? get currentStation => _currentStation;
   bool get isPlaying => _isPlaying;
@@ -520,6 +650,8 @@ class RadioProvider with ChangeNotifier {
   List<String> get metadataLog => _metadataLog;
   String _lastApiResponse = "No API response yet.";
   String get lastApiResponse => _lastApiResponse;
+  String _lastSongLinkResponse = "No SongLink response yet.";
+  String get lastSongLinkResponse => _lastSongLinkResponse;
 
   // Backup Override
   bool _backupOverride = false;
@@ -571,6 +703,12 @@ class RadioProvider with ChangeNotifier {
   String? get currentArtistImage => _currentArtistImage;
   String? get currentSpotifyUrl => _currentSpotifyUrl;
   String? get currentYoutubeUrl => _currentYoutubeUrl;
+  String? get currentAppleMusicUrl => _currentAppleMusicUrl;
+  String? get currentDeezerUrl => _currentDeezerUrl;
+  String? get currentTidalUrl => _currentTidalUrl;
+  String? get currentAmazonMusicUrl => _currentAmazonMusicUrl;
+  String? get currentNapsterUrl => _currentNapsterUrl;
+
   String? get currentReleaseDate => _currentReleaseDate;
   String? get currentGenre => _currentGenre;
 
@@ -599,6 +737,550 @@ class RadioProvider with ChangeNotifier {
   static const String _keyCategoryOrder = 'category_order'; // New
   static const String _keyUseCustomOrder = 'use_custom_order';
   static const String _keyHasPerformedRestore = 'has_performed_restore';
+  // Persistent Youtube Player State via WebView
+  // Persistent Youtube Player State
+  YoutubePlayerController? _hiddenAudioController;
+  String? _audioOnlySongId;
+
+  YoutubePlayerController? get hiddenAudioController => _hiddenAudioController;
+  String? get audioOnlySongId => _audioOnlySongId;
+  String? _currentPlayingPlaylistId;
+  String? get currentPlayingPlaylistId => _currentPlayingPlaylistId;
+
+  bool _isShuffleMode = false;
+  bool get isShuffleMode => _isShuffleMode;
+
+  bool _isRepeatMode = true;
+  bool get isRepeatMode => _isRepeatMode;
+
+  bool _ignoringPause = false;
+
+  // Shuffle Logic
+  List<int> _shuffledIndices = [];
+
+  List<SavedSong> get activeQueue {
+    if (_currentPlayingPlaylistId == null) return [];
+
+    final playlist = playlists.firstWhere(
+      (p) => p.id == _currentPlayingPlaylistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+
+    if (playlist.songs.isEmpty) return [];
+
+    if (_isShuffleMode && _shuffledIndices.length == playlist.songs.length) {
+      return _shuffledIndices.map((i) => playlist.songs[i]).toList();
+    }
+
+    return playlist.songs;
+  }
+
+  void toggleShuffle() async {
+    _isShuffleMode = !_isShuffleMode;
+
+    if (_isShuffleMode && _currentPlayingPlaylistId != null) {
+      _generateShuffleList();
+    } else {
+      _shuffledIndices.clear();
+    }
+
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyShuffleMode, _isShuffleMode);
+  }
+
+  void _generateShuffleList() {
+    if (_currentPlayingPlaylistId == null) return;
+
+    final playlist = playlists.firstWhere(
+      (p) => p.id == _currentPlayingPlaylistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+
+    if (playlist.songs.isEmpty) return;
+
+    _shuffledIndices = List.generate(playlist.songs.length, (i) => i);
+    _shuffledIndices.shuffle();
+
+    // Optional: Move current song to start of shuffle list so we don't jump?
+    // Or just let the user find their place.
+    // Better UX: If we are playing song X, find X in shuffled list and swap it to current position?
+    // No, standard shuffle usually just reshuffles the queue.
+    // But to support "Previous" correctly, we need a consistent list.
+    // Let's ensure the current song remains the "current" one in the shuffled context.
+
+    if (_audioOnlySongId != null) {
+      final currentIndex = playlist.songs.indexWhere(
+        (s) => s.id == _audioOnlySongId,
+      );
+      if (currentIndex != -1) {
+        // Move current song index to the beginning (or handle it logically)
+        // Actually, pure random shuffle is fine, we just need to find where the current song IS in the shuffled list
+        // and continue from there.
+      }
+    }
+  }
+
+  void toggleRepeat() {
+    _isRepeatMode = !_isRepeatMode;
+    notifyListeners();
+  }
+
+  Future<void> playYoutubeAudio(
+    String videoId,
+    String songId, {
+    String? playlistId,
+    String? overrideTitle,
+    String? overrideArtist,
+    String? overrideAlbum,
+    String? overrideArtUri,
+  }) async {
+    _metadataTimer?.cancel(); // CANCEL recognition timer
+    _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
+    _invalidDetectionTimer = null;
+
+    String? oldPlaylistId = _currentPlayingPlaylistId;
+    _currentPlayingPlaylistId = playlistId;
+
+    if (playlistId != null && oldPlaylistId != playlistId && _isShuffleMode) {
+      _generateShuffleList();
+    }
+
+    // Determine metadata: Use overrides if provided, otherwise fallback to search
+    String title = overrideTitle ?? "Audio";
+    String artist = overrideArtist ?? "YouTube";
+    String? artwork = overrideArtUri;
+    String? album = overrideAlbum;
+    String? releaseDate;
+
+    // Only search if we don't have overrides
+    if (overrideTitle == null) {
+      // Use current playlist if available for better lookup, otherwise search all
+      List<Playlist> searchLists = playlistId != null
+          ? playlists.where((p) => p.id == playlistId).toList()
+          : playlists;
+
+      // Fallback to searching all if specific lookup fails
+      if (searchLists.isEmpty) searchLists = playlists;
+
+      for (var p in searchLists) {
+        final match = p.songs.firstWhere(
+          (s) => s.id == songId,
+          orElse: () => SavedSong(
+            id: '',
+            title: '',
+            artist: '',
+            album: '',
+            dateAdded: DateTime.now(),
+          ),
+        );
+        if (match.id.isNotEmpty) {
+          title = match.title;
+          artist = match.artist;
+          artwork = match.artUri;
+          album = match.album;
+          releaseDate = match.releaseDate;
+          break;
+        }
+      }
+    }
+
+    // --------------------------------------------------------------------------------
+    // 1. UPDATE UI IMMEDIATELY (Prevent flicker / "No Station")
+    // --------------------------------------------------------------------------------
+
+    String playlistName = "Playlist";
+    if (playlistId != null) {
+      try {
+        final pl = playlists.firstWhere((p) => p.id == playlistId);
+        playlistName = pl.name;
+      } catch (_) {}
+    }
+
+    _currentStation = Station(
+      id: -999, // Dummy ID for external playback
+      name: playlistName,
+      genre: "My Playlist",
+      url: "youtube://$videoId",
+      icon: "youtube",
+      color: "0xFFFF0000",
+      logo: artwork,
+      category: "Playlist",
+    );
+    _currentTrack = title;
+    _currentArtist = artist;
+    _currentAlbum = album ?? ""; // Empty instead of "Playlist"
+    _currentAlbumArt = artwork;
+    _currentReleaseDate = releaseDate;
+    _currentArtistImage = null;
+    _isPlaying = true; // Show 'Pause' icon
+    // _isLoading = true; // Optional: Show loading state, but better to show song info
+
+    notifyListeners(); // <--- CRITICAL: Update UI BEFORE async delays
+
+    // --------------------------------------------------------------------------------
+    // 2. BACKGROUND TASKS
+    // --------------------------------------------------------------------------------
+
+    // Switch to external playback mode
+    _ignoringPause = true; // Prevent internal stop from pausing YouTube
+    try {
+      await _audioHandler.customAction('startExternalPlayback', {
+        'title': title,
+        'artist': artist,
+        'artUri': artwork,
+      });
+    } finally {
+      // Delay disabling flag slightly to ensure async events are processed
+      Future.delayed(const Duration(seconds: 1), () {
+        _ignoringPause = false;
+      });
+    }
+
+    // Enable Wakelock
+    try {
+      if (!kIsWeb) {
+        WakelockPlus.enable();
+      }
+    } catch (_) {}
+
+    if (_hiddenAudioController != null) {
+      if (_hiddenAudioController!.initialVideoId == videoId ||
+          _hiddenAudioController!.metadata.videoId == videoId) {
+        _hiddenAudioController!.seekTo(const Duration(seconds: 0));
+        _hiddenAudioController!.play();
+      } else {
+        // Remove listener to prevent 'ended' event of previous video triggering next
+        _hiddenAudioController!.removeListener(_youtubeListener);
+        _hiddenAudioController!.load(videoId);
+        // Listener will be re-added below if needed, but safer to add it cleanly
+      }
+    } else {
+      _hiddenAudioController = YoutubePlayerController(
+        initialVideoId: videoId,
+        flags: const YoutubePlayerFlags(
+          autoPlay: true,
+          mute: false,
+          enableCaption: false,
+          hideControls: true,
+          forceHD: false,
+        ),
+      );
+    }
+
+    // Ensure listener is attached (remove first to avoid duplicates)
+    _hiddenAudioController!.removeListener(_youtubeListener);
+    _hiddenAudioController!.addListener(_youtubeListener);
+
+    _audioOnlySongId = songId;
+    _audioOnlySongId = songId;
+    // _isLoading = false; // Moved to listener to wait for actual playback
+    notifyListeners();
+
+    // Start Monitor
+    _startPlaybackMonitor();
+  }
+
+  bool _isCheckingStallInternet = false;
+
+  Future<bool> _hasInternetConnection() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _startPlaybackMonitor() {
+    _stopPlaybackMonitor();
+    _playbackMonitor = Timer.periodic(const Duration(milliseconds: 300), (
+      timer,
+    ) async {
+      if (_hiddenAudioController == null) {
+        timer.cancel();
+        return;
+      }
+
+      try {
+        final value = _hiddenAudioController!.value;
+
+        // Notify AudioHandler of position for Android Auto Progress Bar
+        _audioHandler.customAction('updatePlaybackPosition', {
+          'position': value.position.inMilliseconds,
+          'duration': value.metaData.duration.inMilliseconds,
+          'isPlaying': value.isPlaying,
+        });
+
+        // Only check if we are actually playing
+        if (value.playerState == PlayerState.playing) {
+          final position = value.position;
+          final duration = value.metaData.duration;
+
+          // --- STALL DETECTION (Only check at start of song < 15s) ---
+          if (position.inSeconds < 15) {
+            if (_lastMonitoredPosition == position) {
+              if (_lastMonitoredPositionTime == null) {
+                _lastMonitoredPositionTime = DateTime.now();
+              } else {
+                final diff = DateTime.now().difference(
+                  _lastMonitoredPositionTime!,
+                );
+                if (diff.inSeconds > 5) {
+                  if (_isCheckingStallInternet) return;
+
+                  _isCheckingStallInternet = true;
+                  final hasInternet = await _hasInternetConnection();
+                  _isCheckingStallInternet = false;
+
+                  if (hasInternet) {
+                    // Ricontrolla condizione di stallo dopo l'attesa
+                    if (_hiddenAudioController != null &&
+                        _hiddenAudioController!.value.playerState ==
+                            PlayerState.playing &&
+                        _hiddenAudioController!.value.position ==
+                            _lastMonitoredPosition) {
+                      debugPrint(
+                        "Stallo Rilevato (>5s) e Internet OK. Segnalo canzone invalida.",
+                      );
+                      _markCurrentSongAsInvalid(); // Segnala come invalida
+                      playNext(false); // Passa alla successiva
+
+                      _lastMonitoredPosition = null;
+                      _lastMonitoredPositionTime = null;
+                      return;
+                    }
+                  } else {
+                    debugPrint(
+                      "Stallo Rilevato (>5s) - Nessuna connessione Internet. Attendo...",
+                    );
+                  }
+                }
+              }
+            } else {
+              _lastMonitoredPosition = position;
+              _lastMonitoredPositionTime = DateTime.now();
+            }
+          }
+          // -----------------------
+
+          if (duration.inMilliseconds > 0) {
+            final remainingMs =
+                duration.inMilliseconds - position.inMilliseconds;
+
+            if (remainingMs <= 1000 && !_isLoading) {
+              _isLoading = true;
+              notifyListeners();
+
+              debugPrint(
+                "PlaybackMonitor: Progress nearly reached duration (remaining: $remainingMs ms). Simulating click.",
+              );
+              // Force next - Simulate user click (true) 1s early
+              playNext(true);
+            }
+          }
+        } else {
+          // Not playing, reset stall tracker
+          _lastMonitoredPosition = null;
+          _lastMonitoredPositionTime = null;
+        }
+      } catch (e) {
+        // safeguards
+      }
+    });
+  }
+
+  void _stopPlaybackMonitor() {
+    _playbackMonitor?.cancel();
+    _playbackMonitor = null;
+  }
+
+  Future<void> stopYoutubeAudio() async {
+    if (_hiddenAudioController != null) {
+      final controller = _hiddenAudioController!;
+
+      // Remove listener to prevent memory leaks or unwanted callbacks
+      controller.removeListener(_youtubeListener);
+      _stopPlaybackMonitor();
+
+      // Clear reference immediately to update UI
+      _hiddenAudioController = null;
+      _audioOnlySongId = null;
+      _invalidDetectionTimer?.cancel();
+      _invalidDetectionTimer = null;
+      _zeroDurationStartTime = null;
+      _lastMonitoredPosition = null;
+      _lastMonitoredPositionTime = null;
+
+      // Reset PlayerBar Metadata
+      _currentPlayingPlaylistId = null;
+      _currentStation = null;
+      _currentTrack = "Live Broadcast";
+      _currentArtist = "";
+      _currentAlbum = "";
+      _currentAlbumArt = null;
+      _isPlaying = false;
+
+      notifyListeners();
+
+      // Dispose controller to close connections
+      controller.pause();
+      controller.dispose();
+
+      await _audioHandler.customAction('stopExternalPlayback');
+
+      try {
+        if (!kIsWeb) {
+          WakelockPlus.disable();
+        }
+      } catch (_) {}
+    }
+  }
+
+  void _youtubeListener() {
+    if (_hiddenAudioController == null) return;
+
+    final value = _hiddenAudioController!.value;
+    final state = value.playerState;
+
+    // 1. Explicit Error Check
+    if (value.errorCode != 0) {
+      debugPrint(
+        "YouTube Player Error: ${value.errorCode}. Marking song invalid.",
+      );
+      _markCurrentSongAsInvalid();
+      playNext(false);
+      return;
+    }
+
+    // 2. Health Check: "Stuck" detection
+    bool isProcessing = state == PlayerState.buffering;
+    if (_isPlaying &&
+        (state == PlayerState.unknown || state == PlayerState.cued)) {
+      isProcessing = true;
+    }
+
+    if (isProcessing) {
+      _zeroDurationStartTime = null;
+
+      if (_lastProcessingTime == null) {
+        _lastProcessingTime = DateTime.now();
+      } else {
+        final diff = DateTime.now().difference(_lastProcessingTime!);
+        if (diff.inSeconds > 10) {
+          debugPrint(
+            "Playback Processing Timeout (>10s in $state). Marking invalid.",
+          );
+          _markCurrentSongAsInvalid();
+          playNext(false);
+          _lastProcessingTime = null;
+          return;
+        }
+      }
+
+      if (!_isLoading) {
+        _isLoading = true;
+        notifyListeners();
+      }
+    } else {
+      // Not processing (Playing, Paused, Ended, or Cued-while-paused)
+      _lastProcessingTime = null;
+    }
+
+    if (state == PlayerState.playing) {
+      if (_isLoading) {
+        _isLoading = false;
+        notifyListeners();
+      }
+      if (!_isPlaying) {
+        _isPlaying = true;
+        notifyListeners();
+      }
+
+      // Check for Zero Duration (Invalid Song) with Timestamp Approach
+      if (_hiddenAudioController != null) {
+        final duration = _hiddenAudioController!.value.metaData.duration;
+        if (duration.inMilliseconds == 0) {
+          if (_isPlaying) {
+            if (_zeroDurationStartTime == null) {
+              _zeroDurationStartTime = DateTime.now();
+              debugPrint(
+                "Detected Zero Duration. Starting invalid detection timer...",
+              );
+            } else {
+              // Check elapsed time
+              final diff = DateTime.now().difference(_zeroDurationStartTime!);
+              if (diff.inSeconds >= 5) {
+                debugPrint(
+                  "Song has had Zero Duration for >5s in Playing State. Marking invalid.",
+                );
+                _markCurrentSongAsInvalid();
+                playNext(false);
+                _zeroDurationStartTime = null;
+              }
+            }
+          } else {
+            _zeroDurationStartTime = null;
+          }
+        } else {
+          // Duration is valid
+          _zeroDurationStartTime = null;
+        }
+
+        // Preload next song logic
+        final position = _hiddenAudioController!.value.position;
+        if (duration.inSeconds > 10) {
+          final remaining = duration - position;
+          if (remaining.inMilliseconds < 3500 && remaining.inMilliseconds > 0) {
+            _preloadNextSong();
+          }
+        }
+      }
+    } else if (state == PlayerState.paused) {
+      _zeroDurationStartTime = null;
+      if (_isLoading) {
+        _isLoading = false;
+        notifyListeners();
+      }
+      if (_isPlaying) {
+        _isPlaying = false;
+        notifyListeners();
+      }
+    } else if (state == PlayerState.cued) {
+      _zeroDurationStartTime = null;
+      if (_isLoading) {
+        _isLoading = false;
+        notifyListeners();
+      }
+    } else if (state == PlayerState.ended) {
+      _zeroDurationStartTime = null;
+      if (!_isLoading) {
+        _isLoading = true;
+        notifyListeners();
+        playNext(true);
+      }
+    } else if (state == PlayerState.unknown) {
+      // Often happens on error
+      // We can debounce this too? Usually just ignore or treat as buffering?
+    }
+  }
+
+  void clearYoutubeAudio() {
+    _stopPlaybackMonitor();
+    _hiddenAudioController?.dispose();
+    _hiddenAudioController = null;
+    _audioOnlySongId = null;
+    _currentPlayingPlaylistId = null;
+    _currentStation = null; // Also clear station
+    notifyListeners();
+  }
+
+  static const String _keyPreferYouTubeAudioOnly = 'prefer_youtube_audio_only';
+
+  bool _preferYouTubeAudioOnly = false;
+  bool get preferYouTubeAudioOnly => _preferYouTubeAudioOnly;
 
   List<String> _genreOrder = [];
   List<String> get genreOrder => _genreOrder;
@@ -666,6 +1348,121 @@ class RadioProvider with ChangeNotifier {
     await prefs.setStringList(_keyCategoryOrder, _categoryOrder);
   }
 
+  Future<void> moveCategory(
+    String category,
+    String? afterCategory,
+    String? beforeCategory,
+  ) async {
+    final int currentIndex = _categoryOrder.indexOf(category);
+    if (currentIndex == -1) return;
+
+    _categoryOrder.removeAt(currentIndex);
+
+    int targetIndex = -1;
+
+    if (afterCategory != null) {
+      final afterIndex = _categoryOrder.indexOf(afterCategory);
+      if (afterIndex != -1) {
+        targetIndex = afterIndex + 1;
+      }
+    } else if (beforeCategory != null) {
+      final beforeIndex = _categoryOrder.indexOf(beforeCategory);
+      if (beforeIndex != -1) {
+        targetIndex = beforeIndex;
+      }
+    }
+
+    if (targetIndex != -1) {
+      if (targetIndex > _categoryOrder.length) {
+        _categoryOrder.add(category);
+      } else {
+        _categoryOrder.insert(targetIndex, category);
+      }
+    } else {
+      // Fallback: Reference not found.
+      // If we intended to put it BEFORE something, and that something is missing/unknown,
+      // putting it at the TOP is usually safer/more expected than the bottom for visibility.
+      // If 'after' was specified but missing, we fall through to here? No, 'after' logic handles itself.
+      if (beforeCategory != null) {
+        _categoryOrder.insert(0, category);
+      } else {
+        // Default (after=null, before=null) -> Top? or Bottom?
+        // Usually implies empty list or drag to start?
+        _categoryOrder.insert(0, category);
+      }
+    }
+
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyCategoryOrder, _categoryOrder);
+  }
+
+  Future<void> moveStation(
+    int stationId,
+    int? afterStationId,
+    int? beforeStationId,
+  ) async {
+    // Ensure order list is fully populated
+    if (_stationOrder.isEmpty || _stationOrder.length != stations.length) {
+      // Re-sync with current stations if needed
+      final existing = _stationOrder.toSet();
+      final missing = stations
+          .where((s) => !existing.contains(s.id))
+          .map((s) => s.id);
+      _stationOrder.addAll(missing);
+    }
+
+    // Auto-enable custom order
+    if (!_useCustomOrder) {
+      _useCustomOrder = true;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyUseCustomOrder, true);
+    }
+
+    final int currentIndex = _stationOrder.indexOf(stationId);
+    if (currentIndex == -1) return;
+
+    _stationOrder.removeAt(currentIndex);
+
+    int targetIndex = -1;
+
+    if (afterStationId != null) {
+      final afterIndex = _stationOrder.indexOf(afterStationId);
+      if (afterIndex != -1) {
+        targetIndex = afterIndex + 1;
+      }
+    } else if (beforeStationId != null) {
+      final beforeIndex = _stationOrder.indexOf(beforeStationId);
+      if (beforeIndex != -1) {
+        targetIndex = beforeIndex;
+      }
+    }
+
+    if (targetIndex != -1) {
+      if (targetIndex > _stationOrder.length) {
+        _stationOrder.add(stationId);
+      } else {
+        _stationOrder.insert(targetIndex, stationId);
+      }
+    } else {
+      // Fallback
+      if (beforeStationId != null) {
+        _stationOrder.insert(0, stationId);
+      } else if (afterStationId != null) {
+        _stationOrder.add(stationId);
+      } else {
+        _stationOrder.insert(0, stationId);
+      }
+    }
+
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _keyStationOrder,
+      _stationOrder.map((e) => e.toString()).toList(),
+    );
+  }
+
   // Helper to ensure all genres are in the order list (if new ones appear)
   void syncGenres(List<String> currentGenres) {
     bool changed = false;
@@ -716,6 +1513,15 @@ class RadioProvider with ChangeNotifier {
     _startOption = prefs.getString(_keyStartOption) ?? 'none';
     _hasPerformedRestore = prefs.getBool(_keyHasPerformedRestore) ?? false;
     _startupStationId = prefs.getInt(_keyStartupStationId);
+    _isCompactView = prefs.getBool(_keyCompactView) ?? false;
+    _isShuffleMode = prefs.getBool(_keyShuffleMode) ?? false;
+
+    // Load invalid songs
+    final invalidList = prefs.getStringList(_keyInvalidSongIds);
+    if (invalidList != null) {
+      _invalidSongIds.clear();
+      _invalidSongIds.addAll(invalidList);
+    }
   }
 
   Future<void> setStartOption(String option) async {
@@ -853,6 +1659,7 @@ class RadioProvider with ChangeNotifier {
     if (!_isPlaying || _currentStation == null) return;
 
     final String capturedStationUrl = _currentStation!.url;
+    if (capturedStationUrl.startsWith('youtube://')) return;
 
     _isRecognizing = true;
     notifyListeners();
@@ -863,6 +1670,10 @@ class RadioProvider with ChangeNotifier {
     bool matchFound = false;
 
     try {
+      // 1. CLEAR/INIT LOG
+      _lastSongLinkResponse = "Song Link: Waiting for recognition...";
+      notifyListeners();
+
       _addLog("Capturing audio stream...");
       List<int> audioBuffer = await _captureBytes(capturedStationUrl);
 
@@ -906,10 +1717,8 @@ class RadioProvider with ChangeNotifier {
       var responseBody = await res.stream.bytesToString();
       _lastApiResponse = responseBody; // Save raw JSON
       notifyListeners();
-
       var json = jsonDecode(responseBody);
       var status = json['status'];
-
       if (status != null && status['code'] == 0) {
         var metadata = json['metadata'];
         if (metadata != null &&
@@ -987,7 +1796,18 @@ class RadioProvider with ChangeNotifier {
             }
           }
 
+          // Use Song.link API if we have enough info
+          String? appleUrl;
+          String? deezerUrl;
+          String? tidalUrl;
+          String? amazonUrl;
+          String? napsterUrl;
+
+          // NOTE: SongLink fetching is now manual via fetchSmartLinks()
+          // to save API calls and performance.
+
           // Fallbacks
+
           if (spotifyUrl == null) {
             String safeTitle = title.trim();
             String safeArtist = artist.trim();
@@ -1041,8 +1861,14 @@ class RadioProvider with ChangeNotifier {
 
           _currentSpotifyUrl = spotifyUrl;
           _currentYoutubeUrl = youtubeUrl;
+          _currentAppleMusicUrl = appleUrl;
+          _currentDeezerUrl = deezerUrl;
+          _currentTidalUrl = tidalUrl;
+          _currentAmazonMusicUrl = amazonUrl;
+          _currentNapsterUrl = napsterUrl;
           _currentTrack = title;
           _currentArtist = artist;
+
           _currentAlbum = albumName;
           _currentAlbumArt = albumArt ?? _currentStation?.logo;
           _currentArtistImage = artistImg ?? _currentStation?.logo;
@@ -1069,6 +1895,11 @@ class RadioProvider with ChangeNotifier {
                   'url': _currentStation!.url,
                   'spotifyUrl': _currentSpotifyUrl,
                   'youtubeUrl': _currentYoutubeUrl,
+                  'appleMusicUrl': _currentAppleMusicUrl,
+                  'deezerUrl': _currentDeezerUrl,
+                  'tidalUrl': _currentTidalUrl,
+                  'amazonMusicUrl': _currentAmazonMusicUrl,
+                  'napsterUrl': _currentNapsterUrl,
                 },
               ),
             );
@@ -1080,27 +1911,33 @@ class RadioProvider with ChangeNotifier {
           notifyListeners();
         } else {
           _addLog("RESULT: No music found.");
+          _lastSongLinkResponse =
+              "Song Link: Skipped (ACRCloud found no match)";
+          notifyListeners();
         }
       } else {
         _addLog("API ERROR: ${status['msg']}");
       }
     } catch (e) {
       _addLog("ERROR: $e");
+      _lastSongLinkResponse = "Song Link: Error during process ($e)";
+      notifyListeners();
     } finally {
       // 2. CHECK IF FAILED -> RESTORE DEFAULT
       // Verify station hasn't changed during process
       if (!matchFound &&
           _currentStation != null &&
-          _currentStation!.url == capturedStationUrl) {
+          _currentStation!.url == capturedStationUrl &&
+          !_currentStation!.url.startsWith('youtube://')) {
         // Only revert to default if we are currently showing a song
         // (i.e., prevent redundant updates if we are already showing station info)
         bool isAlreadyDefault =
-            _currentTrack == "Live Broadcast" &&
-            _currentArtist == _currentStation!.name;
+            _currentTrack == _currentStation!.name &&
+            _currentArtist == _currentStation!.genre;
 
         if (!isAlreadyDefault) {
-          _currentTrack = "Live Broadcast";
-          _currentArtist = _currentStation!.name;
+          _currentTrack = _currentStation!.name;
+          _currentArtist = _currentStation!.genre;
           _currentAlbum = "Live Radio";
           _currentAlbumArt = _currentStation!.logo;
           _currentArtistImage = null;
@@ -1108,6 +1945,11 @@ class RadioProvider with ChangeNotifier {
           // Clear external links since we failed to find music
           _currentSpotifyUrl = null;
           _currentYoutubeUrl = null;
+          _currentAppleMusicUrl = null;
+          _currentDeezerUrl = null;
+          _currentTidalUrl = null;
+          _currentAmazonMusicUrl = null;
+          _currentNapsterUrl = null;
 
           _audioHandler.updateMediaItem(
             MediaItem(
@@ -1128,12 +1970,12 @@ class RadioProvider with ChangeNotifier {
       _addLog("<<< SEARCH END >>>");
       notifyListeners();
 
-      if (_isPlaying) {
-        _metadataTimer = Timer(
-          const Duration(seconds: 45),
-          _attemptRecognition,
-        );
-      }
+      //      if (_isPlaying) {
+      //        _metadataTimer = Timer(
+      //          const Duration(seconds: 45),
+      //          _attemptRecognition, // FAZIO -- Intervallo ricerca musica via riconoscimento API
+      //        );
+      //      }
     }
   }
 
@@ -1150,6 +1992,22 @@ class RadioProvider with ChangeNotifier {
             '100x100bb',
             '600x600bb',
           );
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String?> _fetchItunesUrl(String query) async {
+    try {
+      final uri = Uri.parse(
+        "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=1",
+      );
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        if (json['resultCount'] > 0) {
+          return json['results'][0]['trackViewUrl'];
         }
       }
     } catch (_) {}
@@ -1201,6 +2059,12 @@ class RadioProvider with ChangeNotifier {
   void playStation(Station station) async {
     _metadataTimer?.cancel();
 
+    // If we're playing from a playlist (YouTube), stop it first
+    if (_hiddenAudioController != null) {
+      clearYoutubeAudio();
+      _isShuffleMode = false;
+    }
+
     // Save as "last played" immediately
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyLastPlayedStationId, station.id);
@@ -1213,13 +2077,18 @@ class RadioProvider with ChangeNotifier {
 
       _currentStation = station;
       _isLoading = true;
-      _currentTrack = "Live Broadcast";
-      _currentArtist = "";
+      _currentTrack = station.name;
+      _currentArtist = station.genre;
       _currentAlbum = "";
       _currentAlbumArt = station.logo;
       _currentArtistImage = null;
       _currentSpotifyUrl = null;
       _currentYoutubeUrl = null;
+      _currentAppleMusicUrl = null;
+      _currentDeezerUrl = null;
+      _currentTidalUrl = null;
+      _currentAmazonMusicUrl = null;
+      _currentNapsterUrl = null;
 
       // _addLog("Connecting: ${station.name}...");
       notifyListeners();
@@ -1239,7 +2108,7 @@ class RadioProvider with ChangeNotifier {
       // Explicitly schedule recognition for the new station
       // This is needed because if we switch stations while already playing,
       // the 'playing' state toggle listener won't fire.
-      _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition);
+      // _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition); // FAZIO -- Intervallo ricerca musica via riconoscimento API
     } catch (e) {
       _isLoading = false;
       // _addLog("Error: $e");
@@ -1248,6 +2117,18 @@ class RadioProvider with ChangeNotifier {
   }
 
   void togglePlay() {
+    if (_hiddenAudioController != null) {
+      if (_hiddenAudioController!.value.isPlaying) {
+        _hiddenAudioController!.pause();
+        _isPlaying = false;
+      } else {
+        _hiddenAudioController!.play();
+        _isPlaying = true;
+      }
+      notifyListeners();
+      return;
+    }
+
     if (_currentStation == null) {
       if (stations.isNotEmpty) playStation(stations[0]);
       return;
@@ -1275,12 +2156,299 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
-  void playNext() {
-    playNextFavorite();
+  void playNext([bool userInitiated = true]) {
+    // Debounce to ensure it only clicks once within a short window (2 seconds)
+    final now = DateTime.now();
+    if (_lastPlayNextTime != null &&
+        now.difference(_lastPlayNextTime!) < const Duration(seconds: 2)) {
+      debugPrint("playNext: Ignored (Debounced)");
+      return;
+    }
+    _lastPlayNextTime = now;
+
+    if (_hiddenAudioController != null || _currentPlayingPlaylistId != null) {
+      _playNextInPlaylist(userInitiated: userInitiated);
+    } else {
+      playNextFavorite();
+    }
   }
 
   void playPrevious() {
-    playPreviousFavorite();
+    if (_hiddenAudioController != null || _currentPlayingPlaylistId != null) {
+      _playPreviousInPlaylist();
+    } else {
+      playPreviousFavorite();
+    }
+  }
+
+  // Preloading State
+  String? _preloadedVideoId;
+  String? _preloadedSongId;
+  bool _isPreloading = false;
+
+  SavedSong? _getNextSongInPlaylist() {
+    if (_currentPlayingPlaylistId == null) return null;
+
+    final playlist = playlists.firstWhere(
+      (p) => p.id == _currentPlayingPlaylistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+    if (playlist.songs.isEmpty) return null;
+
+    // Filter out invalid songs to prevent playing them
+    // Logic: Look for the next song. If invalid, keep looking.
+    // We limit this to the playlist length to avoid infinite loops if ALL are invalid.
+
+    int currentIndex = -1;
+    if (_audioOnlySongId != null) {
+      currentIndex = playlist.songs.indexWhere((s) => s.id == _audioOnlySongId);
+    }
+
+    int attempts = 0;
+    // We Loop to find a VALID formatted song
+    while (attempts < playlist.songs.length) {
+      int nextIndex = 0;
+
+      if (_isShuffleMode) {
+        if (_shuffledIndices.length != playlist.songs.length) {
+          _generateShuffleList();
+        }
+
+        int currentShuffledIndex = -1;
+        if (currentIndex != -1) {
+          currentShuffledIndex = _shuffledIndices.indexOf(currentIndex);
+        }
+
+        if (currentShuffledIndex != -1) {
+          if (currentShuffledIndex + 1 >= _shuffledIndices.length) {
+            nextIndex = _shuffledIndices[0];
+          } else {
+            nextIndex = _shuffledIndices[currentShuffledIndex + 1];
+          }
+        } else {
+          if (_shuffledIndices.isNotEmpty) {
+            nextIndex = _shuffledIndices[0];
+          }
+        }
+      } else {
+        if (currentIndex != -1) {
+          if (currentIndex + 1 >= playlist.songs.length) {
+            nextIndex = 0;
+          } else {
+            nextIndex = currentIndex + 1;
+          }
+        } else {
+          nextIndex = 0;
+        }
+      }
+
+      final candidate = playlist.songs[nextIndex];
+      // Check if this candidate is valid
+      if (!_invalidSongIds.contains(candidate.id)) {
+        return candidate;
+      }
+
+      // If invalid, we pretend we just played it, and look for the next one
+      currentIndex = nextIndex;
+      attempts++;
+    }
+
+    return null; // All songs invalid or list empty
+  }
+
+  Future<void> _preloadNextSong() async {
+    if (_isPreloading || _preloadedVideoId != null) return;
+
+    final nextSong = _getNextSongInPlaylist();
+    if (nextSong == null) return;
+
+    // Don't preload if it's the same song (looping 1 song) to avoid confusion?
+    // Actually fine.
+
+    _isPreloading = true;
+    _preloadedSongId = nextSong.id;
+    // debugPrint("Preloading next song: ${nextSong.title}");
+
+    try {
+      String? videoId;
+      if (nextSong.youtubeUrl != null) {
+        videoId = YoutubePlayer.convertUrlToId(nextSong.youtubeUrl!);
+      }
+
+      if (videoId == null) {
+        final links = await resolveLinks(
+          title: nextSong.title,
+          artist: nextSong.artist,
+          spotifyUrl: nextSong.spotifyUrl,
+          youtubeUrl: nextSong.youtubeUrl,
+        );
+        final url = links['youtube'];
+        if (url != null) {
+          videoId = YoutubePlayer.convertUrlToId(url);
+        }
+      }
+
+      if (videoId != null) {
+        _preloadedVideoId = videoId;
+        // debugPrint("Preloaded Video ID: $videoId");
+      }
+    } catch (e) {
+      // Ignore preload errors, will retry on actual play
+    } finally {
+      _isPreloading = false;
+    }
+  }
+
+  Future<void> _playNextInPlaylist({bool userInitiated = true}) async {
+    final nextSong = _getNextSongInPlaylist();
+    if (nextSong != null && _currentPlayingPlaylistId != null) {
+      await playPlaylistSong(nextSong, _currentPlayingPlaylistId!);
+    }
+  }
+
+  Future<void> _playPreviousInPlaylist() async {
+    if (_currentPlayingPlaylistId == null || _audioOnlySongId == null) return;
+
+    final playlist = playlists.firstWhere(
+      (p) => p.id == _currentPlayingPlaylistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+    if (playlist.songs.isEmpty) return;
+
+    final currentOriginalIndex = playlist.songs.indexWhere(
+      (s) => s.id == _audioOnlySongId,
+    );
+    if (currentOriginalIndex == -1) return;
+
+    int prevIndex;
+
+    if (_isShuffleMode) {
+      // Ensure shuffle list is valid
+      if (_shuffledIndices.length != playlist.songs.length) {
+        _generateShuffleList();
+      }
+
+      int currentShuffledIndex = _shuffledIndices.indexOf(currentOriginalIndex);
+      if (currentShuffledIndex == -1) {
+        _generateShuffleList();
+        currentShuffledIndex = _shuffledIndices.indexOf(currentOriginalIndex);
+      }
+
+      if (currentShuffledIndex - 1 < 0) {
+        // Start of shuffled list
+        prevIndex =
+            _shuffledIndices[_shuffledIndices.length - 1]; // Loop to end
+      } else {
+        prevIndex = _shuffledIndices[currentShuffledIndex - 1];
+      }
+    } else {
+      // Normal Order
+      prevIndex =
+          (currentOriginalIndex - 1 + playlist.songs.length) %
+          playlist.songs.length;
+    }
+
+    final prevSong = playlist.songs[prevIndex];
+
+    await playPlaylistSong(prevSong, playlist.id);
+  }
+
+  Future<void> playPlaylistSong(SavedSong song, String playlistId) async {
+    // Optimistic UI update
+    _currentTrack = song.title;
+    _currentArtist = song.artist;
+    _currentAlbum = song.album; // Optimistic Album
+    _currentAlbumArt = song.artUri;
+    _audioOnlySongId =
+        song.id; // Also update ID so ID-based UI remains consistent
+
+    // Resolve Playlist Name
+    String playlistName = "Playlist";
+    try {
+      final pl = playlists.firstWhere((p) => p.id == playlistId);
+      playlistName = pl.name;
+    } catch (_) {}
+
+    // Optimistically set station to prevent "Select a station" flash
+    _currentStation = Station(
+      id: -999,
+      name: playlistName,
+      genre: "My Playlist",
+      url: "youtube://loading",
+      icon: "youtube",
+      color: "0xFF212121",
+      logo: song.artUri,
+      category: "Playlist",
+    );
+    _metadataTimer?.cancel(); // CANCEL recognition timer
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      String? videoId;
+
+      // Check Preloaded Data
+      if (song.id == _preloadedSongId && _preloadedVideoId != null) {
+        videoId = _preloadedVideoId;
+        _preloadedVideoId = null;
+        _preloadedSongId = null;
+      }
+
+      if (videoId == null && song.youtubeUrl != null) {
+        videoId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
+      }
+
+      if (videoId == null) {
+        final links = await resolveLinks(
+          title: song.title,
+          artist: song.artist,
+          spotifyUrl: song.spotifyUrl,
+          youtubeUrl: song.youtubeUrl,
+        ).timeout(const Duration(seconds: 10));
+
+        final url = links['youtube'];
+        if (url != null) {
+          videoId = YoutubePlayer.convertUrlToId(url);
+        }
+      }
+
+      if (videoId != null) {
+        await playYoutubeAudio(
+          videoId,
+          song.id,
+          playlistId: playlistId,
+          overrideTitle: song.title,
+          overrideArtist: song.artist,
+          overrideAlbum: song.album,
+          overrideArtUri: song.artUri,
+        ); // Recursive metadata update
+      } else {
+        // Link resolution failed - Auto-Skip to next
+        await Future.delayed(
+          const Duration(seconds: 1),
+        ); // Delay to prevent rapid loops
+        playNext(false);
+      }
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+
+      // Error occurred - Auto-Skip
+      await Future.delayed(const Duration(seconds: 1));
+      playNext(false);
+    }
+  }
+
+  void previewSong(SavedSong song) {
+    _currentTrack = song.title;
+    _currentArtist = song.artist;
+    _currentAlbum = song.album;
+    _currentAlbumArt = song.artUri;
+    // Do NOT set isLoading or trigger audio.
+    // Just update UI to reflect selection.
+    notifyListeners();
   }
 
   void setVolume(double vol) {
@@ -1302,6 +2470,62 @@ class RadioProvider with ChangeNotifier {
       _keyFavorites,
       _favorites.map((e) => e.toString()).toList(),
     );
+  }
+
+  // --- External Links (SongLink) ---
+
+  Future<void> fetchSmartLinks() async {
+    if (_currentTrack == "Live Broadcast") return;
+
+    final links = await resolveLinks(
+      title: _currentTrack,
+      artist: _currentArtist,
+      spotifyUrl: _currentSpotifyUrl,
+      youtubeUrl: _currentYoutubeUrl,
+    );
+
+    // Update State
+    if (links.containsKey('spotify')) _currentSpotifyUrl = links['spotify'];
+    if (links.containsKey('youtube')) _currentYoutubeUrl = links['youtube'];
+    if (links.containsKey('appleMusic')) {
+      _currentAppleMusicUrl = links['appleMusic'];
+    }
+    if (links.containsKey('deezer')) _currentDeezerUrl = links['deezer'];
+    if (links.containsKey('tidal')) _currentTidalUrl = links['tidal'];
+    if (links.containsKey('amazonMusic')) {
+      _currentAmazonMusicUrl = links['amazonMusic'];
+    }
+    if (links.containsKey('napster')) _currentNapsterUrl = links['napster'];
+
+    notifyListeners();
+
+    // Update Notification/Audio Service
+    if (_currentStation != null) {
+      _audioHandler.updateMediaItem(
+        MediaItem(
+          id: _currentStation!.url,
+          title: _currentTrack,
+          artist: "$_currentArtist • $_currentGenre",
+          album: _currentAlbum.isNotEmpty
+              ? "$_currentAlbum • $_currentGenre"
+              : _currentGenre,
+          genre: _currentGenre,
+          artUri: _currentAlbumArt != null
+              ? Uri.parse(_currentAlbumArt!)
+              : null,
+          extras: {
+            'url': _currentStation!.url,
+            'spotifyUrl': _currentSpotifyUrl,
+            'youtubeUrl': _currentYoutubeUrl,
+            'appleMusicUrl': _currentAppleMusicUrl,
+            'deezerUrl': _currentDeezerUrl,
+            'tidalUrl': _currentTidalUrl,
+            'amazonMusicUrl': _currentAmazonMusicUrl,
+            'napsterUrl': _currentNapsterUrl,
+          },
+        ),
+      );
+    }
   }
 
   // --- Backup & Restore Logic ---
@@ -1381,6 +2605,7 @@ class RadioProvider with ChangeNotifier {
         'station_order': _stationOrder,
         'genre_order': _genreOrder,
         'category_order': _categoryOrder,
+        'invalid_song_ids': _invalidSongIds,
         'playlists': _playlists.map((p) => p.toJson()).toList(),
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'version': 1,
@@ -1475,6 +2700,23 @@ class RadioProvider with ChangeNotifier {
         await prefs.setStringList(_keyCategoryOrder, _categoryOrder);
       }
 
+      // Restore Invalid Songs
+      if (data['invalid_song_ids'] != null) {
+        final List<String> loadedInvalid = (data['invalid_song_ids'] as List)
+            .map((e) => e.toString())
+            .toList();
+
+        // Merge with existing
+        for (var id in loadedInvalid) {
+          if (!_invalidSongIds.contains(id)) {
+            _invalidSongIds.add(id);
+          }
+        }
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+      }
+
       // Playlists
       if (data['playlists'] != null) {
         final List<dynamic> pList = data['playlists'];
@@ -1515,8 +2757,130 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  Future<void> setPreferYouTubeAudioOnly(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    _preferYouTubeAudioOnly = value;
+    await prefs.setBool(_keyPreferYouTubeAudioOnly, value);
+    notifyListeners();
+  }
+
+  Future<void> _loadYouTubeSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _preferYouTubeAudioOnly =
+        prefs.getBool(_keyPreferYouTubeAudioOnly) ?? false;
+  }
+
+  Future<Map<String, String>> resolveLinks({
+    required String title,
+    required String artist,
+    String? spotifyUrl,
+    String? youtubeUrl,
+  }) async {
+    try {
+      _lastSongLinkResponse = "Song Link: Fetching for '$title'...";
+      notifyListeners();
+
+      // Determine best source URL for SongLink
+      String? sourceUrl;
+      String? spotId;
+
+      // 1. Try Spotify ID first
+      if (spotifyUrl != null && spotifyUrl.contains('/track/')) {
+        spotId = spotifyUrl.split('track/').last.split('?').first;
+      }
+
+      // 2. Fallback to full URLs
+      // Filter out generic search URLs which SongLink likely can't handle
+      if (spotifyUrl != null && !spotifyUrl.contains('/search')) {
+        sourceUrl = spotifyUrl;
+      }
+
+      if (sourceUrl == null &&
+          youtubeUrl != null &&
+          !youtubeUrl.contains('search_query') &&
+          !youtubeUrl.contains('/results')) {
+        sourceUrl = youtubeUrl;
+      }
+
+      // 2b. EMERGENCY FALLBACK: iTunes Search
+      // If we don't have a specific track link, use Title + Artist to find one via iTunes
+      if (sourceUrl == null) {
+        sourceUrl = await _fetchItunesUrl("$title $artist");
+      }
+
+      // Debug Log construction
+      String debugLog = "--- SONG LINK CHECK (Manual) ---\n";
+      debugLog += "1. Metadata: Title='$title', Artist='$artist'\n";
+      debugLog +=
+          "2. Initial URLs: Spotify='${spotifyUrl ?? 'null'}', Youtube='${youtubeUrl ?? 'null'}'\n";
+      debugLog += "3. Extracted SpotID: '${spotId ?? 'null'}'\n";
+      debugLog += "4. Selected Source URL: '${sourceUrl ?? 'null'}'\n";
+      debugLog += "----------------------------\n\n";
+
+      _lastSongLinkResponse = "${debugLog}Fetching API...";
+      notifyListeners();
+
+      final links = await _songLinkService.fetchLinks(
+        spotifyId: spotId,
+        url: sourceUrl,
+        countryCode: _currentStation?.countryCode ?? 'IT',
+      );
+
+      // Log Capture
+      String serviceLog = _songLinkService.lastRawJson;
+      if (serviceLog.isEmpty) {
+        serviceLog = jsonEncode(links);
+      }
+      _lastSongLinkResponse = debugLog + serviceLog;
+      notifyListeners();
+
+      return links;
+    } catch (e) {
+      if (_songLinkService.lastRawJson.isNotEmpty) {
+        _lastSongLinkResponse = _songLinkService.lastRawJson;
+      } else {
+        _lastSongLinkResponse = "Error: $e";
+      }
+      notifyListeners();
+      return {};
+    }
+  }
+
   Future<void> reloadPlaylists() async {
     _playlists = await _playlistService.loadPlaylists();
     notifyListeners();
+  }
+
+  Future<void> setCompactView(bool value) async {
+    _isCompactView = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyCompactView, value);
+    notifyListeners();
+  }
+
+  void _markCurrentSongAsInvalid() {
+    if (_audioOnlySongId != null) {
+      if (!_invalidSongIds.contains(_audioOnlySongId!)) {
+        _invalidSongIds.add(_audioOnlySongId!);
+        notifyListeners();
+
+        // Persist immediately
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+        });
+      }
+    }
+  }
+
+  void unmarkSongAsInvalid(String songId) {
+    if (_invalidSongIds.contains(songId)) {
+      _invalidSongIds.remove(songId);
+      notifyListeners();
+
+      // Persist immediately
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+      });
+    }
   }
 }

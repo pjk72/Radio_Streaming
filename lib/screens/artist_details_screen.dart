@@ -3,20 +3,20 @@ import 'dart:ui';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'album_details_screen.dart';
 
 class ArtistDetailsScreen extends StatefulWidget {
   final String artistName;
   final String? artistImage;
   final String? genre;
+  final String? fallbackImage;
 
   const ArtistDetailsScreen({
     super.key,
     required this.artistName,
     this.artistImage,
     this.genre,
+    this.fallbackImage,
   });
 
   @override
@@ -26,12 +26,42 @@ class ArtistDetailsScreen extends StatefulWidget {
 class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
   late Future<List<Map<String, dynamic>>> _discographyFuture;
   late Future<Map<String, dynamic>?> _artistInfoFuture;
+  String? _fetchedArtistImage;
 
   @override
   void initState() {
     super.initState();
     _discographyFuture = _fetchDiscography();
     _artistInfoFuture = _fetchArtistInfo();
+    if (widget.artistImage == null) {
+      _fetchArtistImage();
+    }
+  }
+
+  Future<void> _fetchArtistImage() async {
+    try {
+      final uri = Uri.parse(
+        "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(widget.artistName)}&limit=1",
+      );
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        if (json['data'] != null && (json['data'] as List).isNotEmpty) {
+          String? picture =
+              json['data'][0]['picture_xl'] ??
+              json['data'][0]['picture_big'] ??
+              json['data'][0]['picture_medium'];
+
+          if (picture != null && mounted) {
+            setState(() {
+              _fetchedArtistImage = picture;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      developer.log("Error fetching artist image: $e");
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscography() async {
@@ -70,15 +100,18 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displayImage =
+        widget.artistImage ?? _fetchedArtistImage ?? widget.fallbackImage;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
           // 1. Fixed Background Image
-          if (widget.artistImage != null)
+          if (displayImage != null)
             Image.network(
-              widget.artistImage!,
+              displayImage,
               fit: BoxFit.cover,
               alignment: Alignment.topCenter,
             )
@@ -97,9 +130,9 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withValues(alpha: 0.3),
+                  Colors.black.withOpacity(0.3),
                   Colors.transparent,
-                  Colors.black.withValues(alpha: 0.8),
+                  Colors.black.withOpacity(0.8),
                 ],
               ),
             ),
@@ -205,42 +238,8 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
+
                                     const SizedBox(height: 24),
-                                    // Social Buttons Row
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        if (data['artistLinkUrl'] != null)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              right: 16.0,
-                                            ),
-                                            child: _SocialButton(
-                                              icon: FontAwesomeIcons.apple,
-                                              color: Colors.pinkAccent,
-                                              url: data['artistLinkUrl'],
-                                              label: 'Music',
-                                            ),
-                                          ),
-                                        _SocialButton(
-                                          icon: FontAwesomeIcons.spotify,
-                                          color: Colors.green,
-                                          url:
-                                              "https://open.spotify.com/search/${Uri.encodeComponent(widget.artistName)}",
-                                          label: 'Spotify',
-                                        ),
-                                        const SizedBox(width: 16),
-                                        _SocialButton(
-                                          icon: FontAwesomeIcons.youtube,
-                                          color: Colors.red,
-                                          url:
-                                              "https://www.youtube.com/results?search_query=${Uri.encodeComponent(widget.artistName)}",
-                                          label: 'YouTube',
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 32),
                                   ],
                                 ),
                               );
@@ -333,6 +332,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                                       "",
                                                   artistName: widget.artistName,
                                                   artworkUrl: artworkUrl,
+                                                  songName: null,
                                                 ),
                                           ),
                                         );
@@ -409,44 +409,6 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _SocialButton extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String url;
-  final String label;
-
-  const _SocialButton({
-    required this.icon,
-    required this.color,
-    required this.url,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        IconButton(
-          icon: FaIcon(icon),
-          color: Colors.white,
-          iconSize: 28,
-          style: IconButton.styleFrom(
-            backgroundColor: color.withValues(alpha: 0.2),
-            padding: const EdgeInsets.all(12),
-            highlightColor: color.withValues(alpha: 0.5),
-          ),
-          onPressed: () => launchUrl(Uri.parse(url)),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white60, fontSize: 10),
-        ),
-      ],
     );
   }
 }

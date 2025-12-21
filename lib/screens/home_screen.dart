@@ -11,6 +11,7 @@ import 'playlist_screen.dart';
 import 'genres_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/now_playing_header.dart';
+import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +32,16 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(seconds: 15),
       vsync: this,
     )..repeat();
+
+    // Trigger startup playback ONLY when we reach Home Screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<RadioProvider>(
+          context,
+          listen: false,
+        ).handleStartupPlayback();
+      }
+    });
   }
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -386,9 +397,29 @@ class _HomeScreenState extends State<HomeScreen>
                                           sliver: SliverReorderableList(
                                             itemCount: categories.length,
                                             onReorder: (oldIndex, newIndex) {
-                                              provider.reorderCategories(
-                                                oldIndex,
-                                                newIndex,
+                                              if (oldIndex < newIndex) {
+                                                newIndex -= 1;
+                                              }
+                                              final item = categories[oldIndex];
+                                              final temp = List.of(categories)
+                                                ..removeAt(oldIndex);
+
+                                              String? after;
+                                              String? before;
+
+                                              if (newIndex >= 0 &&
+                                                  newIndex < temp.length) {
+                                                before = temp[newIndex];
+                                              }
+                                              if (newIndex > 0 &&
+                                                  newIndex - 1 < temp.length) {
+                                                after = temp[newIndex - 1];
+                                              }
+
+                                              provider.moveCategory(
+                                                item,
+                                                after,
+                                                before,
                                               );
                                             },
                                             proxyDecorator: (child, index, animation) {
@@ -446,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen>
                                             itemBuilder: (context, index) {
                                               final cat = categories[index];
                                               return Container(
-                                                key: ValueKey(cat),
+                                                key: ValueKey('category_$cat'),
                                                 margin: const EdgeInsets.only(
                                                   bottom: 24,
                                                 ),
@@ -505,144 +536,231 @@ class _HomeScreenState extends State<HomeScreen>
                                                     children: [
                                                       // Horizontal Reorderable List of Stations
                                                       // Vertically Reorderable List of Stations
-                                                      ReorderableListView.builder(
-                                                        shrinkWrap: true,
-                                                        physics:
-                                                            const NeverScrollableScrollPhysics(),
-                                                        // No 'scrollDirection' means vertical by default
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 16,
-                                                              vertical: 8,
-                                                            ),
-
-                                                        proxyDecorator: (child, index, animation) {
-                                                          return Material(
-                                                            color: Colors
-                                                                .transparent,
-                                                            child: ScaleTransition(
-                                                              scale: animation.drive(
-                                                                Tween<double>(
-                                                                  begin: 1.0,
-                                                                  end: 1.02,
-                                                                ).chain(
-                                                                  CurveTween(
-                                                                    curve: Curves
-                                                                        .easeOut,
+                                                      provider.isCompactView
+                                                          ? ReorderableGridView.builder(
+                                                              shrinkWrap: true,
+                                                              physics:
+                                                                  const NeverScrollableScrollPhysics(),
+                                                              padding:
+                                                                  const EdgeInsets.symmetric(
+                                                                    horizontal:
+                                                                        16,
+                                                                    vertical: 8,
                                                                   ),
-                                                                ),
+                                                              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                                                maxCrossAxisExtent:
+                                                                    220,
+                                                                mainAxisExtent:
+                                                                    80,
+                                                                crossAxisSpacing:
+                                                                    8,
+                                                                mainAxisSpacing:
+                                                                    8,
                                                               ),
-                                                              child: Container(
-                                                                decoration: BoxDecoration(
-                                                                  color: Colors
-                                                                      .black
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.2,
-                                                                      ),
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        12,
-                                                                      ),
-                                                                  boxShadow: [
-                                                                    BoxShadow(
-                                                                      color: Colors
-                                                                          .black
-                                                                          .withValues(
-                                                                            alpha:
-                                                                                0.3,
-                                                                          ),
-                                                                      blurRadius:
-                                                                          10,
-                                                                      spreadRadius:
-                                                                          2,
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                                child: child,
-                                                              ),
-                                                            ),
-                                                          );
-                                                        },
+                                                              itemCount:
+                                                                  grouped[cat]!
+                                                                      .length,
+                                                              onReorder:
+                                                                  (
+                                                                    oldIndex,
+                                                                    newIndex,
+                                                                  ) {
+                                                                    final stationList =
+                                                                        grouped[cat]!;
+                                                                    // Safe access
+                                                                    if (oldIndex <
+                                                                            0 ||
+                                                                        oldIndex >=
+                                                                            stationList.length) {
+                                                                      return;
+                                                                    }
 
-                                                        onReorder: (oldIndex, newIndex) {
-                                                          if (oldIndex <
-                                                              newIndex) {
-                                                            newIndex -= 1;
-                                                          }
+                                                                    final station =
+                                                                        stationList[oldIndex];
+                                                                    final temp =
+                                                                        List.of(
+                                                                          stationList,
+                                                                        )..removeAt(
+                                                                          oldIndex,
+                                                                        );
 
-                                                          final station =
-                                                              grouped[cat]![oldIndex];
-                                                          final all = provider
-                                                              .allStations;
-                                                          final oldGlobal = all
-                                                              .indexWhere(
-                                                                (s) =>
-                                                                    s.id ==
+                                                                    int?
+                                                                    afterId;
+                                                                    int?
+                                                                    beforeId;
+
+                                                                    if (newIndex >=
+                                                                            0 &&
+                                                                        newIndex <
+                                                                            temp.length) {
+                                                                      beforeId =
+                                                                          temp[newIndex]
+                                                                              .id;
+                                                                    }
+                                                                    if (newIndex >
+                                                                            0 &&
+                                                                        newIndex -
+                                                                                1 <
+                                                                            temp.length) {
+                                                                      afterId =
+                                                                          temp[newIndex -
+                                                                                  1]
+                                                                              .id;
+                                                                    }
+
+                                                                    provider.moveStation(
+                                                                      station
+                                                                          .id,
+                                                                      afterId,
+                                                                      beforeId,
+                                                                    );
+                                                                  },
+                                                              itemBuilder: (context, index) {
+                                                                final station =
+                                                                    grouped[cat]![index];
+                                                                return Container(
+                                                                  key: ValueKey(
                                                                     station.id,
-                                                              );
+                                                                  ),
+                                                                  child: StationCard(
+                                                                    station:
+                                                                        station,
+                                                                  ),
+                                                                );
+                                                              },
+                                                            )
+                                                          : ReorderableListView.builder(
+                                                              shrinkWrap: true,
+                                                              physics:
+                                                                  const NeverScrollableScrollPhysics(),
+                                                              // No 'scrollDirection' means vertical by default
+                                                              padding:
+                                                                  const EdgeInsets.symmetric(
+                                                                    horizontal:
+                                                                        16,
+                                                                    vertical: 8,
+                                                                  ),
 
-                                                          int targetGlobal = -1;
-                                                          if (newIndex <
-                                                              grouped[cat]!
-                                                                  .length) {
-                                                            final targetStation =
-                                                                grouped[cat]![newIndex];
-                                                            targetGlobal = all
-                                                                .indexWhere(
-                                                                  (s) =>
-                                                                      s.id ==
-                                                                      targetStation
-                                                                          .id,
-                                                                );
-                                                          } else {
-                                                            final lastStation =
-                                                                grouped[cat]!
-                                                                    .last;
-                                                            final lastGlobal =
-                                                                all.indexWhere(
-                                                                  (s) =>
-                                                                      s.id ==
-                                                                      lastStation
-                                                                          .id,
-                                                                );
-                                                            if (lastGlobal !=
-                                                                -1) {
-                                                              targetGlobal =
-                                                                  lastGlobal +
-                                                                  1;
-                                                            }
-                                                          }
+                                                              proxyDecorator:
+                                                                  (
+                                                                    child,
+                                                                    index,
+                                                                    animation,
+                                                                  ) {
+                                                                    return Material(
+                                                                      color: Colors
+                                                                          .transparent,
+                                                                      child: ScaleTransition(
+                                                                        scale: animation.drive(
+                                                                          Tween<
+                                                                                double
+                                                                              >(
+                                                                                begin: 1.0,
+                                                                                end: 1.02,
+                                                                              )
+                                                                              .chain(
+                                                                                CurveTween(
+                                                                                  curve: Curves.easeOut,
+                                                                                ),
+                                                                              ),
+                                                                        ),
+                                                                        child: Container(
+                                                                          decoration: BoxDecoration(
+                                                                            color: Colors.black.withValues(
+                                                                              alpha: 0.2,
+                                                                            ),
+                                                                            borderRadius: BorderRadius.circular(
+                                                                              12,
+                                                                            ),
+                                                                            boxShadow: [
+                                                                              BoxShadow(
+                                                                                color: Colors.black.withValues(
+                                                                                  alpha: 0.3,
+                                                                                ),
+                                                                                blurRadius: 10,
+                                                                                spreadRadius: 2,
+                                                                              ),
+                                                                            ],
+                                                                          ),
+                                                                          child:
+                                                                              child,
+                                                                        ),
+                                                                      ),
+                                                                    );
+                                                                  },
 
-                                                          if (oldGlobal != -1 &&
-                                                              targetGlobal !=
-                                                                  -1) {
-                                                            provider
-                                                                .reorderStations(
-                                                                  oldGlobal,
-                                                                  targetGlobal,
+                                                              onReorder:
+                                                                  (
+                                                                    oldIndex,
+                                                                    newIndex,
+                                                                  ) {
+                                                                    if (oldIndex <
+                                                                        newIndex) {
+                                                                      newIndex -=
+                                                                          1;
+                                                                    }
+
+                                                                    final stationList =
+                                                                        grouped[cat]!;
+                                                                    final station =
+                                                                        stationList[oldIndex];
+                                                                    final temp =
+                                                                        List.of(
+                                                                          stationList,
+                                                                        )..removeAt(
+                                                                          oldIndex,
+                                                                        );
+
+                                                                    int?
+                                                                    afterId;
+                                                                    int?
+                                                                    beforeId;
+
+                                                                    if (newIndex <
+                                                                        temp.length) {
+                                                                      beforeId =
+                                                                          temp[newIndex]
+                                                                              .id;
+                                                                    }
+                                                                    if (newIndex >
+                                                                        0) {
+                                                                      afterId =
+                                                                          temp[newIndex -
+                                                                                  1]
+                                                                              .id;
+                                                                    }
+
+                                                                    provider.moveStation(
+                                                                      station
+                                                                          .id,
+                                                                      afterId,
+                                                                      beforeId,
+                                                                    );
+                                                                  },
+                                                              itemCount:
+                                                                  grouped[cat]!
+                                                                      .length,
+                                                              itemBuilder: (context, index) {
+                                                                final station =
+                                                                    grouped[cat]![index];
+                                                                return Container(
+                                                                  key: ValueKey(
+                                                                    station.id,
+                                                                  ),
+                                                                  margin: EdgeInsets.only(
+                                                                    bottom:
+                                                                        provider
+                                                                            .isCompactView
+                                                                        ? 8
+                                                                        : 12,
+                                                                  ),
+                                                                  child: StationCard(
+                                                                    station:
+                                                                        station,
+                                                                  ),
                                                                 );
-                                                          }
-                                                        },
-                                                        itemCount: grouped[cat]!
-                                                            .length,
-                                                        itemBuilder: (context, index) {
-                                                          final station =
-                                                              grouped[cat]![index];
-                                                          return Container(
-                                                            key: ValueKey(
-                                                              station.id,
+                                                              },
                                                             ),
-                                                            margin:
-                                                                const EdgeInsets.only(
-                                                                  bottom: 12,
-                                                                ),
-                                                            child: StationCard(
-                                                              station: station,
-                                                            ),
-                                                          );
-                                                        },
-                                                      ),
                                                       const SizedBox(
                                                         height: 16,
                                                       ),

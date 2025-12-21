@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/backup_service.dart';
 import 'home_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,6 +14,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
+  bool _isCheckingAuth = true;
 
   @override
   void initState() {
@@ -22,17 +24,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _checkAutoLogin() async {
     final auth = Provider.of<BackupService>(context, listen: false);
-    // This runs after build, so we can navigate
-    await Future.delayed(Duration.zero);
 
     // Request permissions early in UI flow
     await Permission.notification.request();
+
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('was_guest') == true) {
+      if (mounted) {
+        setState(() => _isCheckingAuth = false);
+      }
+      return;
+    }
 
     // Attempt silent sign in
     await auth.signInSilently();
 
     if (auth.isSignedIn && mounted) {
       _goToHome();
+    } else {
+      if (mounted) {
+        setState(() => _isCheckingAuth = false);
+      }
     }
   }
 
@@ -49,6 +61,8 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await auth.signIn();
       if (auth.isSignedIn && mounted) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('was_guest', false);
         _goToHome();
       }
     } catch (e) {
@@ -64,6 +78,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isCheckingAuth) {
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: Stack(
         children: [
@@ -134,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(32),
                         color: Colors.white.withValues(alpha: 0.1),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: 0.2),
@@ -148,10 +179,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.radio_rounded,
-                        size: 64,
-                        color: Colors.white,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.asset(
+                          'assets/icon.png',
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 32),
@@ -206,7 +241,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       // Guest Option
                       TextButton(
-                        onPressed: _goToHome,
+                        onPressed: () async {
+                          final auth = Provider.of<BackupService>(
+                            context,
+                            listen: false,
+                          );
+                          await auth.signOut();
+
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('was_guest', true);
+
+                          _goToHome();
+                        },
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                             vertical: 16,

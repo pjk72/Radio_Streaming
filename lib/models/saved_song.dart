@@ -8,6 +8,7 @@ class SavedSong {
   final String? youtubeUrl;
   final String? appleMusicUrl;
   final DateTime dateAdded;
+  final String? releaseDate;
 
   SavedSong({
     required this.id,
@@ -19,6 +20,7 @@ class SavedSong {
     this.youtubeUrl,
     this.appleMusicUrl,
     required this.dateAdded,
+    this.releaseDate,
   });
 
   Map<String, dynamic> toJson() {
@@ -32,6 +34,7 @@ class SavedSong {
       'youtubeUrl': youtubeUrl,
       'appleMusicUrl': appleMusicUrl,
       'dateAdded': dateAdded.toIso8601String(),
+      'releaseDate': releaseDate,
     };
   }
 
@@ -46,6 +49,7 @@ class SavedSong {
       youtubeUrl: json['youtubeUrl'],
       appleMusicUrl: json['appleMusicUrl'],
       dateAdded: DateTime.parse(json['dateAdded']),
+      releaseDate: json['releaseDate'],
     );
   }
 
@@ -59,6 +63,7 @@ class SavedSong {
     String? youtubeUrl,
     String? appleMusicUrl,
     DateTime? dateAdded,
+    String? releaseDate,
   }) {
     return SavedSong(
       id: id ?? this.id,
@@ -70,6 +75,7 @@ class SavedSong {
       youtubeUrl: youtubeUrl ?? this.youtubeUrl,
       appleMusicUrl: appleMusicUrl ?? this.appleMusicUrl,
       dateAdded: dateAdded ?? this.dateAdded,
+      releaseDate: releaseDate ?? this.releaseDate,
     );
   }
 }

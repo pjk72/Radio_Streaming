@@ -1,14 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../utils/icon_library.dart';
 
 import '../providers/radio_provider.dart';
 import '../screens/artist_details_screen.dart';
-import 'mini_visualizer.dart';
+import 'realistic_visualizer.dart';
 import 'pulsing_indicator.dart';
 
 class NowPlayingHeader extends StatelessWidget {
@@ -46,7 +45,7 @@ class NowPlayingHeader extends StatelessWidget {
     final bool hasEnrichedImage =
         (provider.currentArtistImage ?? provider.currentAlbumArt) != null;
 
-    final double titleSize = 18.0 + (18.0 * t); // 18 to 36
+    final double titleSize = 16.0 + (10.0 * t); // 16 to 30
     final double trackSize = 12.0 + (8.0 * t); // 12 to 20
     final double stationSize = 18.0 + (18.0 * t); // 18 to 36
 
@@ -201,7 +200,7 @@ class NowPlayingHeader extends StatelessWidget {
                         padding: EdgeInsets.only(
                           left: 24.0,
                           right: 24.0,
-                          bottom: 2.0,
+                          bottom: 16.0,
                           top: dynamicTopPadding,
                         ),
                         child: Column(
@@ -263,7 +262,7 @@ class NowPlayingHeader extends StatelessWidget {
 
                                 // ARTIST HIGHLIGHT MODE
                                 Text(
-                                  provider.currentArtist.toUpperCase(),
+                                  provider.currentTrack.toUpperCase(),
                                   style: TextStyle(
                                     fontSize: titleSize,
                                     fontWeight: FontWeight.w900,
@@ -284,7 +283,7 @@ class NowPlayingHeader extends StatelessWidget {
                                 SizedBox(height: (4.0 * t)),
                                 Text.rich(
                                   TextSpan(
-                                    text: provider.currentTrack,
+                                    text: provider.currentArtist,
                                     style: TextStyle(
                                       fontSize: trackSize,
                                       fontWeight: FontWeight.w300,
@@ -373,12 +372,13 @@ class NowPlayingHeader extends StatelessWidget {
                                                       size: 10,
                                                     ),
                                                   )
-                                                : const Padding(
+                                                : Padding(
                                                     padding: EdgeInsets.only(
                                                       right: 4,
                                                     ),
-                                                    child: MiniVisualizer(
+                                                    child: RealisticVisualizer(
                                                       color: Colors.white70,
+                                                      volume: provider.volume,
                                                     ),
                                                   ),
                                             const Text(
@@ -395,34 +395,6 @@ class NowPlayingHeader extends StatelessWidget {
                                       ),
                                     ),
                                     const Spacer(),
-                                    if (t > 0.5) // Hide icons when too small
-                                      if (provider.currentSpotifyUrl !=
-                                          null) ...[
-                                        _HeaderIconButton(
-                                          icon: FontAwesomeIcons.apple,
-                                          color: Colors.white,
-                                          url:
-                                              "https://music.apple.com/us/search?term=${Uri.encodeComponent("${provider.currentTrack} ${provider.currentArtist}")}",
-                                          tooltip: "Apple Music",
-                                        ),
-                                        const SizedBox(width: 12),
-                                        _HeaderIconButton(
-                                          icon: FontAwesomeIcons.spotify,
-                                          color: Colors.white,
-                                          url: provider.currentSpotifyUrl!,
-                                          tooltip: "Spotify",
-                                        ),
-                                        if (provider.currentYoutubeUrl !=
-                                            null) ...[
-                                          const SizedBox(width: 12),
-                                          _HeaderIconButton(
-                                            icon: FontAwesomeIcons.youtube,
-                                            color: Colors.white,
-                                            url: provider.currentYoutubeUrl!,
-                                            tooltip: "YouTube",
-                                          ),
-                                        ],
-                                      ],
                                   ],
                                 ),
                               ] else ...[
@@ -499,13 +471,17 @@ class NowPlayingHeader extends StatelessWidget {
                                                         size: 10,
                                                       ),
                                                     )
-                                                  : const Padding(
+                                                  : Padding(
                                                       padding: EdgeInsets.only(
                                                         right: 4,
                                                       ),
-                                                      child: MiniVisualizer(
-                                                        color: Colors.white70,
-                                                      ),
+                                                      child:
+                                                          RealisticVisualizer(
+                                                            color:
+                                                                Colors.white70,
+                                                            volume:
+                                                                provider.volume,
+                                                          ),
                                                     ),
                                               const Text(
                                                 "NOW PLAYING",
@@ -637,34 +613,6 @@ class NowPlayingHeader extends StatelessWidget {
         alignment: alignment ?? Alignment.center,
       );
     }
-  }
-}
-
-class _HeaderIconButton extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String url;
-  final String tooltip;
-
-  const _HeaderIconButton({
-    required this.icon,
-    required this.color,
-    required this.url,
-    required this.tooltip,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: FaIcon(icon),
-      color: Colors.white.withValues(alpha: 0.7),
-      iconSize: 20,
-      tooltip: tooltip,
-      constraints: const BoxConstraints(),
-      padding: EdgeInsets.zero,
-      onPressed: () =>
-          launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-    );
   }
 }
 
