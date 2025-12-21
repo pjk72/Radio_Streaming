@@ -216,10 +216,13 @@ class RadioProvider with ChangeNotifier {
       bool playing = state.playing;
 
       // Handle External Pause (Notification interaction)
-      // Handle External Pause (Notification interaction)
-      if (!playing && _hiddenAudioController != null && !_ignoringPause) {
-        // If notification was paused by user, pause YouTube too
-        _hiddenAudioController!.pause();
+      if (_hiddenAudioController != null && !_ignoringPause) {
+        if (!playing && _isPlaying) {
+          _hiddenAudioController!.pause();
+        } else if (playing && !_isPlaying) {
+          // Re-sync YouTube state if notification was resumed
+          _hiddenAudioController!.play();
+        }
       }
 
       // Check for error message updates
@@ -229,19 +232,10 @@ class RadioProvider with ChangeNotifier {
       }
 
       if (_isPlaying != playing) {
-        _isPlaying = playing; // Update local state
-
-        // If we just started playing via toggle/external, schedule.
-        // NOTE: playStation() handles its own scheduling to support station switching where playing state might not toggle.
-        _metadataTimer?.cancel();
-        // if (_isPlaying) {
-        //   _metadataTimer = Timer(
-        //     const Duration(seconds: 5),
-        //     _attemptRecognition, // FAZIO -- Intervallo ricerca musica via riconoscimento API
-        //   );
-        // }
-
-        notifyListeners();
+        if (!_ignoringPause) {
+          _isPlaying = playing;
+          notifyListeners();
+        }
       }
     });
 
@@ -955,19 +949,41 @@ class RadioProvider with ChangeNotifier {
         // Remove listener to prevent 'ended' event of previous video triggering next
         _hiddenAudioController!.removeListener(_youtubeListener);
         _hiddenAudioController!.load(videoId);
-        // Listener will be re-added below if needed, but safer to add it cleanly
       }
     } else {
+      // First launch loop
       _hiddenAudioController = YoutubePlayerController(
         initialVideoId: videoId,
         flags: const YoutubePlayerFlags(
-          autoPlay: true,
+          autoPlay: false,
           mute: false,
           enableCaption: false,
           hideControls: true,
           forceHD: false,
         ),
       );
+      notifyListeners();
+
+      // Increased delay: Ensure the Widget/WebView is fully integrated into the OS view hierarchy
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      // Retry loop for the first hand-shake
+      int attempts = 0;
+      while (attempts < 3) {
+        _hiddenAudioController!.load(videoId);
+        await Future.delayed(const Duration(milliseconds: 500));
+        _hiddenAudioController!.play();
+
+        // Check if it's moving or at least buffering
+        await Future.delayed(const Duration(milliseconds: 1000));
+        if (_hiddenAudioController!.value.isPlaying ||
+            _hiddenAudioController!.value.playerState == PlayerState.playing ||
+            _hiddenAudioController!.value.playerState ==
+                PlayerState.buffering) {
+          break;
+        }
+        attempts++;
+      }
     }
 
     // Ensure listener is attached (remove first to avoid duplicates)
@@ -975,8 +991,7 @@ class RadioProvider with ChangeNotifier {
     _hiddenAudioController!.addListener(_youtubeListener);
 
     _audioOnlySongId = songId;
-    _audioOnlySongId = songId;
-    // _isLoading = false; // Moved to listener to wait for actual playback
+    _isPlaying = true; // Ensure state is correct
     notifyListeners();
 
     // Start Monitor
@@ -1238,7 +1253,23 @@ class RadioProvider with ChangeNotifier {
           }
         }
       }
-    } else if (state == PlayerState.paused) {
+    }
+    // 3. Sync Playing State
+    if (state == PlayerState.playing || state == PlayerState.buffering) {
+      if (!_isPlaying) {
+        _isPlaying = true;
+        notifyListeners();
+      }
+      // Clear loading if we are playing, buffering, or moving
+      if (_isLoading ||
+          (_hiddenAudioController!.value.position.inSeconds > 0)) {
+        if (_isLoading) {
+          _isLoading = false;
+          notifyListeners();
+        }
+      }
+    } else if (state == PlayerState.paused || state == PlayerState.cued) {
+      // Treat 'cued' as effectively paused/stopped if it's not starting
       _zeroDurationStartTime = null;
       if (_isLoading) {
         _isLoading = false;
@@ -1246,12 +1277,6 @@ class RadioProvider with ChangeNotifier {
       }
       if (_isPlaying) {
         _isPlaying = false;
-        notifyListeners();
-      }
-    } else if (state == PlayerState.cued) {
-      _zeroDurationStartTime = null;
-      if (_isLoading) {
-        _isLoading = false;
         notifyListeners();
       }
     } else if (state == PlayerState.ended) {
@@ -2118,14 +2143,56 @@ class RadioProvider with ChangeNotifier {
 
   void togglePlay() {
     if (_hiddenAudioController != null) {
-      if (_hiddenAudioController!.value.isPlaying) {
+      _ignoringPause = true; // Guard against notification echo and state loop
+      final state = _hiddenAudioController!.value.playerState;
+      final bool currentlyPlaying =
+          state == PlayerState.playing || state == PlayerState.buffering;
+
+      if (currentlyPlaying) {
         _hiddenAudioController!.pause();
         _isPlaying = false;
+        // Immediate sync to AudioHandler to avoid lag
+        _audioHandler.customAction('updatePlaybackPosition', {
+          'position': _hiddenAudioController!.value.position.inMilliseconds,
+          'duration':
+              _hiddenAudioController!.value.metaData.duration.inMilliseconds,
+          'isPlaying': false,
+        });
       } else {
+        if (state == PlayerState.ended) {
+          _hiddenAudioController!.seekTo(const Duration(seconds: 0));
+        }
         _hiddenAudioController!.play();
         _isPlaying = true;
+        // Immediate sync to AudioHandler
+        _audioHandler.customAction('updatePlaybackPosition', {
+          'position': _hiddenAudioController!.value.position.inMilliseconds,
+          'duration':
+              _hiddenAudioController!.value.metaData.duration.inMilliseconds,
+          'isPlaying': true,
+        });
       }
       notifyListeners();
+
+      // Release guard after a short delay
+      Future.delayed(const Duration(milliseconds: 600), () {
+        _ignoringPause = false;
+      });
+      return;
+    } else if (_audioOnlySongId != null && _currentPlayingPlaylistId != null) {
+      // Re-launch the current playlist song if controller was lost/stopped
+      try {
+        final playlist = playlists.firstWhere(
+          (p) => p.id == _currentPlayingPlaylistId,
+        );
+        final song = playlist.songs.firstWhere((s) => s.id == _audioOnlySongId);
+        playPlaylistSong(song, _currentPlayingPlaylistId!);
+      } catch (_) {
+        // If playlist/song not found, fallback to radio or do nothing
+        if (_currentStation != null) {
+          resume();
+        }
+      }
       return;
     }
 
@@ -2355,7 +2422,10 @@ class RadioProvider with ChangeNotifier {
     await playPlaylistSong(prevSong, playlist.id);
   }
 
-  Future<void> playPlaylistSong(SavedSong song, String playlistId) async {
+  Future<void> playPlaylistSong(SavedSong song, String? playlistId) async {
+    // Save playlist context
+    _currentPlayingPlaylistId = playlistId;
+
     // Optimistic UI update
     _currentTrack = song.title;
     _currentArtist = song.artist;
@@ -2364,12 +2434,13 @@ class RadioProvider with ChangeNotifier {
     _audioOnlySongId =
         song.id; // Also update ID so ID-based UI remains consistent
 
-    // Resolve Playlist Name
     String playlistName = "Playlist";
-    try {
-      final pl = playlists.firstWhere((p) => p.id == playlistId);
-      playlistName = pl.name;
-    } catch (_) {}
+    if (playlistId != null) {
+      try {
+        final pl = playlists.firstWhere((p) => p.id == playlistId);
+        playlistName = pl.name;
+      } catch (_) {}
+    }
 
     // Optimistically set station to prevent "Select a station" flash
     _currentStation = Station(
@@ -2384,10 +2455,27 @@ class RadioProvider with ChangeNotifier {
     );
     _metadataTimer?.cancel(); // CANCEL recognition timer
     _isLoading = true;
+    _isPlaying = true; // Optimistically show pause icon
     notifyListeners();
 
     try {
       String? videoId;
+
+      // Watchdog: If still loading after 5 seconds, try to force play
+      final currentTargetId = song.id;
+      Future.delayed(const Duration(seconds: 5), () {
+        if (_isLoading &&
+            _audioOnlySongId == currentTargetId &&
+            _hiddenAudioController != null) {
+          _hiddenAudioController?.play();
+          // If it's still stuck after 8s, try a reload
+          Future.delayed(const Duration(seconds: 3), () {
+            if (_isLoading && _audioOnlySongId == currentTargetId) {
+              _hiddenAudioController?.load(videoId ?? '');
+            }
+          });
+        }
+      });
 
       // Check Preloaded Data
       if (song.id == _preloadedSongId && _preloadedVideoId != null) {
@@ -2411,10 +2499,23 @@ class RadioProvider with ChangeNotifier {
         final url = links['youtube'];
         if (url != null) {
           videoId = YoutubePlayer.convertUrlToId(url);
+          // Fallback manual
+          if (videoId == null && url.contains('v=')) {
+            videoId = url.split('v=').last.split('&').first;
+          }
         }
       }
 
       if (videoId != null) {
+        // Clear loading after a maximum of 15 seconds regardless of state events
+        final currentId = song.id;
+        Future.delayed(const Duration(seconds: 15), () {
+          if (_isLoading && _audioOnlySongId == currentId) {
+            _isLoading = false;
+            notifyListeners();
+          }
+        });
+
         await playYoutubeAudio(
           videoId,
           song.id,
@@ -2425,19 +2526,23 @@ class RadioProvider with ChangeNotifier {
           overrideArtUri: song.artUri,
         ); // Recursive metadata update
       } else {
-        // Link resolution failed - Auto-Skip to next
-        await Future.delayed(
-          const Duration(seconds: 1),
-        ); // Delay to prevent rapid loops
-        playNext(false);
+        _isLoading = false;
+        notifyListeners();
+
+        // If it was a playlist queue, skip to next. If manual one-off, just alert.
+        if (playlistId != null) {
+          await Future.delayed(const Duration(seconds: 1));
+          playNext(false);
+        }
       }
     } catch (e) {
       _isLoading = false;
       notifyListeners();
 
-      // Error occurred - Auto-Skip
-      await Future.delayed(const Duration(seconds: 1));
-      playNext(false);
+      if (playlistId != null) {
+        await Future.delayed(const Duration(seconds: 1));
+        playNext(false);
+      }
     }
   }
 

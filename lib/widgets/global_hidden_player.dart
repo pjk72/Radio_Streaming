@@ -75,15 +75,16 @@ class _GlobalHiddenPlayerState extends State<GlobalHiddenPlayer>
         // but the widget needs to be in the tree.
         return Align(
           alignment: Alignment.bottomRight,
-          child: SizedBox(
-            width: 1,
-            height: 1,
-            child: YoutubePlayer(
-              controller: provider.hiddenAudioController!,
-              showVideoProgressIndicator: false,
-              onEnded: (meta) {
-                provider.stopYoutubeAudio();
-              },
+          child: Offstage(
+            offstage: false, // Must be false to keep the webview alive
+            child: SizedBox(
+              width: 1,
+              height: 1,
+              child: YoutubePlayer(
+                key: ValueKey(provider.audioOnlySongId ?? 'youtube_player'),
+                controller: provider.hiddenAudioController!,
+                showVideoProgressIndicator: false,
+              ),
             ),
           ),
         );

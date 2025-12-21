@@ -752,11 +752,20 @@ class PlayerBar extends StatelessWidget {
             ],
           ),
           child: IconButton(
-            icon: Icon(
-              provider.isPlaying
-                  ? Icons.pause_rounded
-                  : Icons.play_arrow_rounded,
-            ),
+            icon: provider.isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                    ),
+                  )
+                : Icon(
+                    provider.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                  ),
             color: Colors.white,
             iconSize: isDesktop ? 32 : 28,
             onPressed: () => provider.togglePlay(),

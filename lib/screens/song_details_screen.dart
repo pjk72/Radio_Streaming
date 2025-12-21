@@ -554,13 +554,22 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                 ),
                 child: IconButton(
                   onPressed: () => provider.togglePlay(),
-                  icon: Icon(
-                    provider.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    color: Colors.black,
-                    size: 32,
-                  ),
+                  icon: provider.isLoading
+                      ? const SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: CircularProgressIndicator(
+                            color: Colors.black,
+                            strokeWidth: 3,
+                          ),
+                        )
+                      : Icon(
+                          provider.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          color: Colors.black,
+                          size: 32,
+                        ),
                 ),
               ),
               const SizedBox(width: 24),

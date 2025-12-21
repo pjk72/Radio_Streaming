@@ -43,19 +43,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     super.dispose();
   }
 
-  void _stopHiddenAudio(RadioProvider provider) {
-    provider.stopYoutubeAudio();
-  }
-
-  void _playHiddenAudio(
-    RadioProvider provider,
-    String videoId,
-    String songId, {
-    String? playlistId,
-  }) {
-    provider.playYoutubeAudio(videoId, songId, playlistId: playlistId);
-  }
-
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
@@ -908,13 +895,25 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       GestureDetector(
                         onTap: () =>
                             _handleSongAudioAction(provider, song, playlist.id),
-                        child: FaIcon(
-                          provider.audioOnlySongId == song.id
-                              ? FontAwesomeIcons.stop
-                              : FontAwesomeIcons.headphones,
-                          color: Colors.white,
-                          size: 20,
-                        ),
+                        child:
+                            (provider.audioOnlySongId == song.id &&
+                                provider.isLoading)
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.redAccent,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                (provider.audioOnlySongId == song.id &&
+                                        provider.isPlaying)
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
                       ),
                     ],
                   ], // close else...[ and children
@@ -1060,13 +1059,25 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 song,
                                 playlist.id,
                               ),
-                              child: FaIcon(
-                                provider.audioOnlySongId == song.id
-                                    ? FontAwesomeIcons.stop
-                                    : FontAwesomeIcons.headphones,
-                                color: Colors.white,
-                                size: 20,
-                              ),
+                              child:
+                                  (provider.audioOnlySongId == song.id &&
+                                      provider.isLoading)
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.redAccent,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Icon(
+                                      (provider.audioOnlySongId == song.id &&
+                                              provider.isPlaying)
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
                             ),
                           ],
                         ], // close else...[ and children
@@ -1086,73 +1097,15 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     SavedSong song,
     String playlistId,
   ) async {
-    // If this song is currently playing audio, stop it
+    // If this song is currently playing audio, toggle play/pause
     if (provider.audioOnlySongId == song.id) {
-      _stopHiddenAudio(provider);
+      provider.togglePlay();
       return;
     }
 
-    // Otherwise, start playing it
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(
-        child: CircularProgressIndicator(color: Colors.redAccent),
-      ),
-    );
-
-    try {
-      final links = await provider
-          .resolveLinks(
-            title: song.title,
-            artist: song.artist,
-            spotifyUrl: song.spotifyUrl,
-            youtubeUrl: song.youtubeUrl,
-          )
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              throw TimeoutException("Connection timed out");
-            },
-          );
-
-      if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
-
-      final url = links['youtube'] ?? song.youtubeUrl;
-      if (url != null) {
-        final videoId = YoutubePlayer.convertUrlToId(url);
-        if (videoId != null) {
-          provider.pause(); // Pause radio
-          if (!mounted) return;
-
-          // Start hidden audio
-          _playHiddenAudio(provider, videoId, song.id, playlistId: playlistId);
-        } else {
-          try {
-            final uri = Uri.parse(url);
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("Could not launch YouTube: $e")),
-              );
-            }
-          }
-        }
-      } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("YouTube link not found")));
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
-    }
+    // Otherwise, use the provider's optimized playlist song player
+    // This handles background resolution, optimistic UI, and auto-skip on error.
+    provider.playPlaylistSong(song, playlistId);
   }
 
   void _showCreatePlaylistDialog(BuildContext context, RadioProvider provider) {
