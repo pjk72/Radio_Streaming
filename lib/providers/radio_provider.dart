@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 
 import 'dart:convert';
@@ -22,6 +23,7 @@ import '../services/backup_service.dart';
 import '../utils/genre_mapper.dart';
 import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
+import '../services/youtube_audio_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -59,8 +61,7 @@ class RadioProvider with ChangeNotifier {
       _saveStations();
     }
     _updateAudioHandler();
-    notifyListeners();
-    _updateAudioHandler();
+    _setupAudioHandlerCallbacks(); // Ensure callbacks are set
     notifyListeners();
     // Defer startup playback slightly to ensure UI is ready if needed, or just run it.
     // However, we shouldn't block.
@@ -140,6 +141,14 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  void _setupAudioHandlerCallbacks() {
+    if (_audioHandler is RadioAudioHandler) {
+      final handler = _audioHandler as RadioAudioHandler;
+      handler.onSkipNext = () => playNext(true);
+      handler.onSkipPrevious = () => playPrevious();
+    }
+  }
+
   Future<void> addStation(Station s) async {
     stations.add(s);
     await _saveStations();
@@ -174,9 +183,12 @@ class RadioProvider with ChangeNotifier {
   }
 
   final AudioHandler _audioHandler;
+  AudioHandler get audioHandler => _audioHandler;
+  Timer? _youtubeKeepAliveTimer;
   final PlaylistService _playlistService = PlaylistService();
   final SongLinkService _songLinkService = SongLinkService();
   final MusicMetadataService _musicMetadataService = MusicMetadataService();
+  final YouTubeAudioService _youtubeAudioService = YouTubeAudioService();
 
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
@@ -237,6 +249,23 @@ class RadioProvider with ChangeNotifier {
           notifyListeners();
         }
       }
+
+      // Sync loading state for Radio (when no YouTube controller is active)
+      if (_hiddenAudioController == null) {
+        final bool isBuffering =
+            state.processingState == AudioProcessingState.buffering;
+        final bool isReadyOrError =
+            state.processingState == AudioProcessingState.ready ||
+            state.processingState == AudioProcessingState.error;
+
+        if (isBuffering && !_isLoading) {
+          _isLoading = true;
+          notifyListeners();
+        } else if (isReadyOrError && _isLoading) {
+          _isLoading = false;
+          notifyListeners();
+        }
+      }
     });
 
     // Listen to media item changes (if updated from outside or by handler, e.g. Android Auto)
@@ -292,8 +321,6 @@ class RadioProvider with ChangeNotifier {
             final String? songId = item.extras?['songId'];
 
             if (videoId != null && songId != null) {
-              // Trigger playback
-              // We use a microtask to avoid recursive updates if this listener fired during an update
               Future.microtask(() {
                 playYoutubeAudio(
                   videoId,
@@ -303,6 +330,34 @@ class RadioProvider with ChangeNotifier {
                   overrideArtist: item.artist,
                   overrideArtUri: item.artUri?.toString(),
                 );
+              });
+            }
+          }
+
+          // Check if it is a playlist command (Play All / Shuffle)
+          if (item.extras?['type'] == 'playlist_cmd') {
+            final String? playlistId = item.extras?['playlistId'];
+            final String? cmd = item.extras?['cmd'];
+            if (playlistId != null) {
+              Future.microtask(() async {
+                try {
+                  final playlist = playlists.firstWhere(
+                    (p) => p.id == playlistId,
+                  );
+                  if (playlist.songs.isEmpty) return;
+
+                  if (cmd == 'shuffle') {
+                    if (!_isShuffleMode) toggleShuffle();
+                    // Play random
+                    final random = Random();
+                    final song =
+                        playlist.songs[random.nextInt(playlist.songs.length)];
+                    playPlaylistSong(song, playlistId);
+                  } else {
+                    // Play all (start from first)
+                    playPlaylistSong(playlist.songs.first, playlistId);
+                  }
+                } catch (_) {}
               });
             }
           }
@@ -319,12 +374,6 @@ class RadioProvider with ChangeNotifier {
     _loadStartupSettings(); // Load this before stations
     _loadYouTubeSettings();
     _loadStations();
-
-    // Connect AudioHandler callbacks
-    if (_audioHandler is RadioAudioHandler) {
-      _audioHandler.onSkipNext = playNextFavorite;
-      _audioHandler.onSkipPrevious = playPreviousFavorite;
-    }
   }
 
   List<Station> get _visualFavoriteOrder {
@@ -915,7 +964,56 @@ class RadioProvider with ChangeNotifier {
     notifyListeners(); // <--- CRITICAL: Update UI BEFORE async delays
 
     // --------------------------------------------------------------------------------
-    // 2. BACKGROUND TASKS
+    // 2. NATIVE PLAYBACK (Anti-Standby Fix)
+    // --------------------------------------------------------------------------------
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final audioData = await _youtubeAudioService.getAudioStreamData(videoId);
+
+      // Race condition guard: Abort if song changed while fetching stream
+      if (_audioOnlySongId != songId) {
+        debugPrint(
+          "playYoutubeAudio: Song changed during stream fetch, aborting.",
+        );
+        return;
+      }
+
+      if (audioData != null) {
+        // Play natively via AudioHandler
+        await _audioHandler.playFromUri(Uri.parse(audioData.url), {
+          'title': title,
+          'artist': artist,
+          'artUri': artwork,
+          'album': album ?? "Playlist",
+          'duration': audioData.duration.inSeconds,
+          'type': 'playlist_song',
+          'playlistId': playlistId,
+          'songId': songId,
+          'videoId': videoId,
+        });
+
+        _audioOnlySongId = songId;
+        _isPlaying = true;
+        _isLoading = false;
+        notifyListeners();
+
+        // Clean up old controller if it exists
+        if (_hiddenAudioController != null) {
+          _hiddenAudioController!.removeListener(_youtubeListener);
+          _hiddenAudioController!.dispose();
+          _hiddenAudioController = null;
+        }
+        return; // Success!
+      }
+    } catch (e) {
+      debugPrint("Native YouTube playback failed, falling back: $e");
+    }
+
+    // --------------------------------------------------------------------------------
+    // 3. FALLBACK: WEBVIEW (Legacy)
     // --------------------------------------------------------------------------------
 
     // Switch to external playback mode
@@ -986,12 +1084,32 @@ class RadioProvider with ChangeNotifier {
       }
     }
 
+    // --- RECOVERY TIMER ---
+    // Background insurance: OS might try to pause the webview when screen turns off.
+    _youtubeKeepAliveTimer?.cancel();
+    _youtubeKeepAliveTimer = Timer.periodic(const Duration(seconds: 5), (
+      timer,
+    ) {
+      if (_isPlaying && _hiddenAudioController != null) {
+        final state = _hiddenAudioController!.value.playerState;
+        if (state != PlayerState.playing &&
+            state != PlayerState.buffering &&
+            state != PlayerState.ended) {
+          debugPrint("YouTube Keep-Alive: Forcing play...");
+          _hiddenAudioController!.play();
+        }
+      } else if (!_isPlaying) {
+        timer.cancel();
+      }
+    });
+
     // Ensure listener is attached (remove first to avoid duplicates)
     _hiddenAudioController!.removeListener(_youtubeListener);
     _hiddenAudioController!.addListener(_youtubeListener);
 
     _audioOnlySongId = songId;
     _isPlaying = true; // Ensure state is correct
+    _isLoading = false;
     notifyListeners();
 
     // Start Monitor
@@ -1243,15 +1361,6 @@ class RadioProvider with ChangeNotifier {
           // Duration is valid
           _zeroDurationStartTime = null;
         }
-
-        // Preload next song logic
-        final position = _hiddenAudioController!.value.position;
-        if (duration.inSeconds > 10) {
-          final remaining = duration - position;
-          if (remaining.inMilliseconds < 3500 && remaining.inMilliseconds > 0) {
-            _preloadNextSong();
-          }
-        }
       }
     }
     // 3. Sync Playing State
@@ -1293,6 +1402,8 @@ class RadioProvider with ChangeNotifier {
   }
 
   void clearYoutubeAudio() {
+    _youtubeKeepAliveTimer?.cancel();
+    _youtubeKeepAliveTimer = null;
     _stopPlaybackMonitor();
     _hiddenAudioController?.dispose();
     _hiddenAudioController = null;
@@ -2127,6 +2238,7 @@ class RadioProvider with ChangeNotifier {
       });
 
       _isLoading = false;
+      notifyListeners();
       // _addLog("Playing via Service");
 
       // Explicitly schedule recognition since playback state might not toggle
@@ -2179,19 +2291,12 @@ class RadioProvider with ChangeNotifier {
         _ignoringPause = false;
       });
       return;
-    } else if (_audioOnlySongId != null && _currentPlayingPlaylistId != null) {
-      // Re-launch the current playlist song if controller was lost/stopped
-      try {
-        final playlist = playlists.firstWhere(
-          (p) => p.id == _currentPlayingPlaylistId,
-        );
-        final song = playlist.songs.firstWhere((s) => s.id == _audioOnlySongId);
-        playPlaylistSong(song, _currentPlayingPlaylistId!);
-      } catch (_) {
-        // If playlist/song not found, fallback to radio or do nothing
-        if (_currentStation != null) {
-          resume();
-        }
+    } else if (_currentPlayingPlaylistId != null) {
+      // Native Playlist Mode
+      if (_isPlaying) {
+        pause();
+      } else {
+        resume();
       }
       return;
     }
@@ -2247,11 +2352,6 @@ class RadioProvider with ChangeNotifier {
       playPreviousFavorite();
     }
   }
-
-  // Preloading State
-  String? _preloadedVideoId;
-  String? _preloadedSongId;
-  bool _isPreloading = false;
 
   SavedSong? _getNextSongInPlaylist() {
     if (_currentPlayingPlaylistId == null) return null;
@@ -2322,49 +2422,6 @@ class RadioProvider with ChangeNotifier {
     }
 
     return null; // All songs invalid or list empty
-  }
-
-  Future<void> _preloadNextSong() async {
-    if (_isPreloading || _preloadedVideoId != null) return;
-
-    final nextSong = _getNextSongInPlaylist();
-    if (nextSong == null) return;
-
-    // Don't preload if it's the same song (looping 1 song) to avoid confusion?
-    // Actually fine.
-
-    _isPreloading = true;
-    _preloadedSongId = nextSong.id;
-    // debugPrint("Preloading next song: ${nextSong.title}");
-
-    try {
-      String? videoId;
-      if (nextSong.youtubeUrl != null) {
-        videoId = YoutubePlayer.convertUrlToId(nextSong.youtubeUrl!);
-      }
-
-      if (videoId == null) {
-        final links = await resolveLinks(
-          title: nextSong.title,
-          artist: nextSong.artist,
-          spotifyUrl: nextSong.spotifyUrl,
-          youtubeUrl: nextSong.youtubeUrl,
-        );
-        final url = links['youtube'];
-        if (url != null) {
-          videoId = YoutubePlayer.convertUrlToId(url);
-        }
-      }
-
-      if (videoId != null) {
-        _preloadedVideoId = videoId;
-        // debugPrint("Preloaded Video ID: $videoId");
-      }
-    } catch (e) {
-      // Ignore preload errors, will retry on actual play
-    } finally {
-      _isPreloading = false;
-    }
   }
 
   Future<void> _playNextInPlaylist({bool userInitiated = true}) async {
@@ -2461,29 +2518,6 @@ class RadioProvider with ChangeNotifier {
     try {
       String? videoId;
 
-      // Watchdog: If still loading after 5 seconds, try to force play
-      final currentTargetId = song.id;
-      Future.delayed(const Duration(seconds: 5), () {
-        if (_isLoading &&
-            _audioOnlySongId == currentTargetId &&
-            _hiddenAudioController != null) {
-          _hiddenAudioController?.play();
-          // If it's still stuck after 8s, try a reload
-          Future.delayed(const Duration(seconds: 3), () {
-            if (_isLoading && _audioOnlySongId == currentTargetId) {
-              _hiddenAudioController?.load(videoId ?? '');
-            }
-          });
-        }
-      });
-
-      // Check Preloaded Data
-      if (song.id == _preloadedSongId && _preloadedVideoId != null) {
-        videoId = _preloadedVideoId;
-        _preloadedVideoId = null;
-        _preloadedSongId = null;
-      }
-
       if (videoId == null && song.youtubeUrl != null) {
         videoId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
       }
@@ -2495,6 +2529,9 @@ class RadioProvider with ChangeNotifier {
           spotifyUrl: song.spotifyUrl,
           youtubeUrl: song.youtubeUrl,
         ).timeout(const Duration(seconds: 10));
+
+        // Race condition guard after deep search
+        if (_audioOnlySongId != song.id) return;
 
         final url = links['youtube'];
         if (url != null) {
@@ -2515,6 +2552,14 @@ class RadioProvider with ChangeNotifier {
             notifyListeners();
           }
         });
+
+        // Race condition guard: If user clicked another song while resolving, abort
+        if (_audioOnlySongId != song.id) {
+          debugPrint(
+            "playPlaylistSong: Song changed during resolution, aborting.",
+          );
+          return;
+        }
 
         await playYoutubeAudio(
           videoId,

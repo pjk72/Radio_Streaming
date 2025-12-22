@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:device_preview/device_preview.dart';
+// import 'package:device_preview/device_preview.dart'; // Disabled for debugging
 import 'package:flutter/foundation.dart'; // For kReleaseMode
 
 import 'package:flutter/material.dart';
@@ -19,43 +19,134 @@ late AudioHandler audioHandler;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  debugPrint("App Entry Point");
 
   if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
     Workmanager().initialize(callbackDispatcher, isInDebugMode: !kReleaseMode);
   }
-  // Removed blocking permission request here
 
-  audioHandler = await AudioService.init(
-    builder: () => RadioAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.antigravity.radio.channel.audio.v2',
-      androidNotificationChannelName: 'Radio Playback',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-      androidNotificationClickStartsActivity: true,
-      androidResumeOnClick: true,
-      androidShowNotificationBadge: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
-    ),
-  );
+  runApp(const AppBootstrapper());
+}
 
-  final backupService = BackupService();
+class AppBootstrapper extends StatefulWidget {
+  const AppBootstrapper({super.key});
 
-  runApp(
-    DevicePreview(
-      enabled: !kReleaseMode, // Enable only in debug mode
-      builder: (context) => MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => backupService, lazy: false),
-          ChangeNotifierProvider(
-            create: (_) => RadioProvider(audioHandler, backupService),
-            lazy: false,
+  @override
+  State<AppBootstrapper> createState() => _AppBootstrapperState();
+}
+
+class _AppBootstrapperState extends State<AppBootstrapper> {
+  bool _isInitialized = false;
+  String? _error;
+  late BackupService _backupService;
+
+  @override
+  void initState() {
+    super.initState();
+    _backupService = BackupService();
+    _initApp();
+  }
+
+  Future<void> _initApp() async {
+    debugPrint("Initializing App...");
+    try {
+      // Simulate small delay to ensure UI renders first frame
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      debugPrint("Initializing AudioService...");
+      audioHandler = await AudioService.init(
+        builder: () => RadioAudioHandler(),
+        config: AudioServiceConfig(
+          androidNotificationChannelId:
+              'com.antigravity.radio.channel.audio.v2',
+          androidNotificationChannelName: 'Radio Playback',
+          androidNotificationOngoing:
+              false, // Must be false if androidStopForegroundOnPause is false
+          androidStopForegroundOnPause: false,
+          androidNotificationClickStartsActivity: true,
+          androidResumeOnClick: true,
+          androidShowNotificationBadge: true,
+          androidNotificationIcon: 'mipmap/ic_launcher',
+        ),
+      );
+      debugPrint("AudioService Initialized");
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    } catch (e, stack) {
+      debugPrint("Initialization Error: $e");
+      debugPrint(stack.toString());
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 1. Error State
+    if (_error != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0a0a0f),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: SingleChildScrollView(
+                child: Text(
+                  "Startup Error:\n$_error",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              ),
+            ),
           ),
-        ],
-        child: const RadioApp(),
-      ),
-    ),
-  );
+        ),
+      );
+    }
+
+    // 2. Loading State
+    if (!_isInitialized) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor:
+              Colors.blue, // DEBUG: Blue background to verify rendering
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(color: Colors.white),
+                const SizedBox(height: 20),
+                Text(
+                  "Initializing Audio Service...",
+                  style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 3. App Loaded
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: _backupService),
+        ChangeNotifierProvider(
+          create: (_) => RadioProvider(audioHandler, _backupService),
+          lazy: false,
+        ),
+      ],
+      child: const RadioApp(),
+    );
+  }
 }
 
 class RadioApp extends StatefulWidget {
@@ -95,13 +186,11 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'Radio Stream',
       debugShowCheckedModeBanner: false,
-      useInheritedMediaQuery: true, // Required for DevicePreview
-      locale: DevicePreview.locale(context), // Required for DevicePreview
       builder: (context, child) {
-        final widget = DevicePreview.appBuilder(context, child);
+        // DevicePreview removed
         return Stack(
           children: [
-            widget,
+            child!,
             const GlobalHiddenPlayer(), // Persists across navigation
           ],
         );

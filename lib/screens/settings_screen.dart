@@ -5,6 +5,7 @@ import '../providers/radio_provider.dart';
 import '../services/backup_service.dart';
 import 'manage_stations_screen.dart';
 import 'api_debug_screen.dart';
+import 'debug_log_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -179,6 +180,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const ApiDebugScreen()),
+                    );
+                  },
+                ),
+                _buildSettingsTile(
+                  context,
+                  icon: Icons.bug_report,
+                  title: "Debug Logs",
+                  subtitle: "View application logs",
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const DebugLogScreen()),
                     );
                   },
                 ),

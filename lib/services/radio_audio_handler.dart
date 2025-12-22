@@ -1,6 +1,7 @@
 import 'dart:ui';
 // import 'dart:developer' as developer;
 import 'package:http/http.dart' as http; // Added import
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,22 +12,25 @@ import '../data/station_data.dart' as static_data;
 import '../models/station.dart';
 import '../models/saved_song.dart';
 import 'playlist_service.dart';
+import 'log_service.dart';
 
 class RadioAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler {
   List<Station> _stations = [];
-  AudioPlayer _player = AudioPlayer(); // Non-final to allow recreation
+  AudioPlayer _player = AudioPlayer();
 
   // ... (existing helper methods if any)
 
   bool _isRetryPending = false;
+  bool _internalRetry = false;
   bool _expectingStop = false;
   bool _isInitialBuffering = false;
   final PlaylistService _playlistService = PlaylistService();
   int _retryCount = 0;
   static const int _maxRetries = 5;
-  bool _internalRetry = false;
+  int _currentSessionId = 0;
   final double _volume = 1.0;
+  Duration _currentPosition = Duration.zero;
 
   // Callbacks
   VoidCallback? onSkipNext;
@@ -52,6 +56,7 @@ class RadioAudioHandler extends BaseAudioHandler
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _playerCompleteSubscription;
   StreamSubscription? _playerPositionSubscription;
+  StreamSubscription? _playerDurationSubscription;
 
   // Ensure we don't have multiple initializations happening at once
   bool _isInitializing = false;
@@ -61,24 +66,14 @@ class RadioAudioHandler extends BaseAudioHandler
     _isInitializing = true;
 
     try {
-      // 1. Dispose old player if exists
-      // We must await this to ensure native resources are freed
+      // 2. Clear Source/Stop instead of full dispose for tracks
       try {
-        await _playerStateSubscription?.cancel();
-        await _playerCompleteSubscription?.cancel();
-        await _playerPositionSubscription?.cancel();
-
-        // Critical: Release native resources before releasing the Dart object
+        await _player.stop();
         await _player.release();
-        await _player.dispose();
-      } catch (_) {
-        // Ignore disposal errors, object might be dead already
-      }
-
-      // 2. Create New Instance
-      _player = AudioPlayer();
+      } catch (_) {}
 
       // 3. Configure (Use defaults to match Test Screen, add minimal config)
+
       try {
         await _player.setReleaseMode(ReleaseMode.stop);
         // Set context again just in case, similar to fresh start
@@ -99,27 +94,112 @@ class RadioAudioHandler extends BaseAudioHandler
         );
       } catch (_) {}
 
-      // 4. Attach Listeners
-      _playerStateSubscription = _player.onPlayerStateChanged.listen(
-        _broadcastState,
-      );
-
-      _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
-        if (!_expectingStop) {
-          _handleConnectionError("Stream ended unexpectedly.");
-        }
-      });
-
-      _playerPositionSubscription = _player.onPositionChanged.listen((_) {
-        // Debounce actual playing state from buffering
-        if (_isInitialBuffering && !_expectingStop) {
-          _isInitialBuffering = false;
-          _broadcastState(_player.state);
-        }
-      });
+      _setupPlayerListeners();
+    } catch (e) {
+      LogService().log("Player initialization error: $e");
     } finally {
       _isInitializing = false;
     }
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
+    _currentPosition = position;
+    _broadcastState(_player.state);
+  }
+
+  void _setupPlayerListeners() {
+    _playerStateSubscription?.cancel();
+    _playerCompleteSubscription?.cancel();
+    _playerPositionSubscription?.cancel();
+    _playerDurationSubscription?.cancel();
+
+    _playerStateSubscription = _player.onPlayerStateChanged.listen(
+      _broadcastState,
+      onError: (Object e) {
+        LogService().log("Player State Error: $e");
+        String es = e.toString();
+        if (es.contains("-1005") || es.contains("what:1")) {
+          // Common connection/media error - try to swallow if transient
+        }
+      },
+    );
+
+    _playerCompleteSubscription = _player.onPlayerComplete.listen(
+      (_) {
+        if (!_expectingStop) {
+          final hasDuration =
+              mediaItem.value?.duration != null &&
+              mediaItem.value!.duration! > Duration.zero;
+
+          if (hasDuration) {
+            skipToNext();
+          } else {
+            _handleConnectionError("Stream ended unexpectedly.");
+          }
+        }
+      },
+      onError: (Object e) {
+        LogService().log("Player Complete Error: $e");
+      },
+    );
+
+    _playerDurationSubscription = _player.onDurationChanged.listen((d) {
+      // User request: Do NOT update duration from file. Trust metadata.
+      // if (d > Duration.zero) ...
+    });
+
+    _playerPositionSubscription = _player.onPositionChanged.listen(
+      (pos) {
+        _currentPosition = pos; // Track position
+
+        if (_isInitialBuffering && !_expectingStop) {
+          _isInitialBuffering = false;
+          _broadcastState(_player.state);
+        } else {
+          // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
+          final expectedDuration = mediaItem.value?.duration;
+          if (expectedDuration != null) {
+            if (pos >= expectedDuration) {
+              if (!_expectingStop) skipToNext();
+              return;
+            }
+          }
+
+          final lastPos = playbackState.value.position;
+          if ((pos - lastPos).abs().inSeconds >= 2) {
+            _broadcastState(_player.state);
+          }
+        }
+      },
+      onError: (Object e) {
+        LogService().log("Player Position Error: $e");
+      },
+    );
+
+    // Global Error Monitoring
+    _player.onLog.listen(
+      (log) {
+        if (log.toLowerCase().contains("error") ||
+            log.toLowerCase().contains("exception")) {
+          LogService().log("Native Player Log: $log");
+          if (_isInitialBuffering &&
+              !_expectingStop &&
+              (log.contains("403") ||
+                  log.contains("-1005") ||
+                  log.contains("1002"))) {
+            LogService().log(
+              "Detected chronic playback error in logs, skipping...",
+            );
+            skipToNext();
+          }
+        }
+      },
+      onError: (Object e) {
+        LogService().log("Player Log Error: $e");
+      },
+    );
   }
 
   // Legacy init - forwards to safe init
@@ -217,6 +297,73 @@ class RadioAudioHandler extends BaseAudioHandler
     });
   }
 
+  Future<void> _playYoutubeVideo(
+    String videoId,
+    SavedSong song,
+    String playlistId,
+  ) async {
+    // 1. Immediate Feedback: Stop previous audio & Show correct Metadata
+    await _player.stop();
+
+    final placeholderItem = MediaItem(
+      id: "api_resolve_${song.id}",
+      album: song.album,
+      title: song.title,
+      artist: song.artist,
+      artUri: song.artUri != null ? Uri.parse(song.artUri!) : null,
+      extras: {
+        'type': 'playlist_song',
+        'playlistId': playlistId,
+        'songId': song.id,
+        'videoId': videoId,
+      },
+    );
+    mediaItem.add(placeholderItem);
+
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.buffering,
+        playing: true,
+        errorMessage: null,
+      ),
+    );
+
+    try {
+      var yt = YoutubeExplode();
+      var manifest = await yt.videos.streamsClient.getManifest(videoId);
+      // Fallback to muxed (Video+Audio) for better player compatibility (avoids codec issues with raw audio streams)
+      var streamInfo = manifest.muxed.withHighestBitrate();
+      yt.close();
+
+      final streamUrl = streamInfo.url.toString();
+
+      final extras = {
+        'title': song.title,
+        'artist': song.artist,
+        'album': song.album,
+        'artUri': song.artUri,
+        'youtubeUrl': song.youtubeUrl,
+        'playlistId': playlistId,
+        'songId': song.id,
+        'videoId': videoId,
+        'type': 'playlist_song',
+      };
+
+      await playFromUri(Uri.parse(streamUrl), extras);
+
+      // Explicitly clear error state if we succeeded (playFromUri does this too, but for clarity)
+      playbackState.add(playbackState.value.copyWith(errorMessage: null));
+    } catch (e) {
+      LogService().log("Error playing YouTube video: $e");
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.error,
+          errorMessage: "Could not play song. Tap to skip.",
+        ),
+      );
+    }
+  }
+
   Future<void> _retryPlayback() async {
     final currentUrl = mediaItem.value?.id;
     if (currentUrl == null) {
@@ -267,13 +414,41 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   @override
+  @override
   Future<void> skipToNext() async {
-    onSkipNext?.call();
+    if (onSkipNext != null) {
+      onSkipNext!();
+    } else {
+      final stations = await _getOrderedFavorites();
+      if (stations.isNotEmpty) {
+        final current = mediaItem.value;
+        if (current == null) {
+          await playFromUri(Uri.parse(stations.first.url));
+        } else {
+          int index = stations.indexWhere((s) => s.url == current.id);
+          int nextIndex = (index + 1) % stations.length;
+          await playFromUri(Uri.parse(stations[nextIndex].url));
+        }
+      }
+    }
   }
 
   @override
   Future<void> skipToPrevious() async {
-    onSkipPrevious?.call();
+    if (onSkipPrevious != null) {
+      onSkipPrevious!();
+    } else {
+      final stations = await _getOrderedFavorites();
+      if (stations.isNotEmpty) {
+        final current = mediaItem.value;
+        if (current != null) {
+          int index = stations.indexWhere((s) => s.url == current.id);
+          int prevIndex = index - 1;
+          if (prevIndex < 0) prevIndex = stations.length - 1;
+          await playFromUri(Uri.parse(stations[prevIndex].url));
+        }
+      }
+    }
   }
 
   // --- RESTORED HELPER METHODS ---
@@ -302,8 +477,21 @@ class RadioAudioHandler extends BaseAudioHandler
     return ordered;
   }
 
-  Future<String> _resolveStreamUrl(String url) async {
+  Future<String> _resolveStreamUrl(
+    String url, {
+    bool isPlaylistSong = false,
+  }) async {
     final lower = url.toLowerCase();
+
+    // Explicit bypass for known direct streams
+    if (isPlaylistSong ||
+        lower.contains('googlevideo.com') ||
+        lower.endsWith('.mp3') ||
+        lower.endsWith('.aac') ||
+        lower.endsWith('.mp4')) {
+      return url;
+    }
+
     final isPlaylist =
         lower.endsWith('.pls') ||
         lower.endsWith('.m3u') ||
@@ -325,8 +513,18 @@ class RadioAudioHandler extends BaseAudioHandler
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
       final response = await client.send(request);
-      final bodyBytes = await response.stream
-          .toBytes(); // Simplify for brevity/safety
+
+      // Safety: Only read body if Content-Type is text-like (playlist)
+      // If server returns audio/mpeg for a PLS url (weird but possible), we shouldn't download it all.
+      final cType = response.headers['content-type']?.toLowerCase() ?? '';
+      if (cType.contains('audio') ||
+          cType.contains('video') ||
+          cType.contains('octet-stream')) {
+        // Direct stream masquerading as playlist?
+        return url;
+      }
+
+      final bodyBytes = await response.stream.toBytes();
       final body = String.fromCharCodes(bodyBytes);
 
       if (body.contains('[playlist]')) {
@@ -366,17 +564,125 @@ class RadioAudioHandler extends BaseAudioHandler
     }
   }
 
+  // NEW: Dedicated playback method for YouTube/Playlist songs
+  Future<void> _playYoutubeSong(String url, Map<String, dynamic> extras) async {
+    final sessionId = DateTime.now().millisecondsSinceEpoch;
+    _currentSessionId = sessionId;
+
+    // Update UI immediately
+    final String title = extras['title'] ?? "Song";
+    final String artist = extras['artist'] ?? "Artist";
+    final String album = extras['album'] ?? "Playlist";
+    final String? artUri = extras['artUri'];
+
+    // Set MediaItem
+    MediaItem newItem = MediaItem(
+      id: url,
+      album: album,
+      title: title,
+      artist: artist,
+      duration: extras['duration'] != null
+          ? Duration(seconds: extras['duration'])
+          : null,
+      artUri: artUri != null ? Uri.parse(artUri) : null,
+      playable: true,
+      extras: extras,
+    );
+    mediaItem.add(newItem);
+    _isCurrentSongSaved = await _playlistService.isSongInFavorites(
+      title,
+      artist,
+    );
+
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.buffering,
+        playing: true,
+        errorMessage: null,
+      ),
+    );
+
+    // Async Work
+    Future.microtask(() async {
+      if (_currentSessionId != sessionId) return;
+
+      try {
+        // 1. Destroy old player completely
+        try {
+          await _player.stop();
+          await _player.dispose();
+        } catch (_) {}
+
+        // 2. Create Fresh Player
+        _player = AudioPlayer();
+        _setupPlayerListeners(); // Bind listeners
+        await _player.setPlaybackRate(1.0); // Force normal speed
+
+        // 3. Configure Context
+        // Ensure we are in "Music" mode
+        await _player.setAudioContext(
+          AudioContext(
+            android: const AudioContextAndroid(
+              isSpeakerphoneOn: false,
+              stayAwake: true, // Vital for background playback
+              contentType: AndroidContentType.music,
+              usageType: AndroidUsageType.media,
+              audioFocus: AndroidAudioFocus.gain,
+            ),
+            iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
+          ),
+        );
+
+        if (_currentSessionId != sessionId) return;
+
+        // 4. Load Source & Play
+        LogService().log("Attempting native play: $url");
+        await _player.setReleaseMode(
+          ReleaseMode.release,
+        ); // Auto-advance? No, we handle complete.
+        await _player.setSource(UrlSource(url));
+        await _player.resume();
+
+        if (_currentSessionId == sessionId) {
+          _expectingStop = false;
+          _broadcastState(PlayerState.playing);
+        }
+      } catch (e) {
+        LogService().log("Youtube Playback Error: $e");
+        // Auto-Skip on fatal error
+        if (_currentSessionId == sessionId) {
+          Future.delayed(const Duration(seconds: 1), skipToNext);
+        }
+      }
+    });
+  }
+
   @override
   Future<void> playFromUri(Uri uri, [Map<String, dynamic>? extras]) async {
-    // 1. Set Switch Flag
-    _expectingStop = true; // CRITICAL: keep notification alive
+    // Dispatcher
+    if (extras != null && extras['type'] == 'playlist_song') {
+      _expectingStop = true; // Block events from old player
+      await _playYoutubeSong(uri.toString(), extras);
+      return;
+    }
 
-    // 2. Update Metadata & State IMMEDIATELY (Before resolving/init)
-    final url = uri.toString();
+    // ORIGINAL RADIO LOGIC BELOW
+    // 1. Force Stop & Clean State
+    _expectingStop = true;
     _isRetryPending = false;
+    if (!_internalRetry) {
+      _retryCount = 0;
+    }
     _isCurrentSongSaved = false;
-    _isInitialBuffering = true;
-    _internalRetry = false; // Reset
+    _isInitialBuffering = true; // Flag that we are starting new
+
+    // Stop existing playback immediately
+    try {
+      await _player.stop();
+    } catch (_) {}
+
+    // 2. Update Metadata & State IMMEDIATELY
+    final url = uri.toString();
 
     // Lookup station
     Station? station;
@@ -385,20 +691,28 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (_) {}
 
     final String title = extras?['title'] ?? station?.name ?? "Station";
-    final String artist =
-        extras?['artist'] ?? station?.genre ?? "Unknown Artist";
-    final String? artUriStr = extras?['artUri'] ?? station?.logo;
+    final String artist = extras?['artist'] ?? station?.genre ?? "Live Radio";
+    final String album = extras?['album'] ?? station?.category ?? "Live Radio";
+    final String? artUri = extras?['artUri'] ?? station?.logo;
 
-    final item = MediaItem(
+    MediaItem newItem = MediaItem(
       id: url,
-      album: extras?['album'] ?? "Radio Stream",
+      album: album,
       title: title,
       artist: artist,
-      artUri: artUriStr != null ? Uri.parse(artUriStr) : null,
-      extras: {'url': url},
+      duration: extras?['duration'] != null
+          ? Duration(seconds: extras!['duration'])
+          : null,
+      artUri: artUri != null ? Uri.parse(artUri) : null,
+      playable: true,
+      extras: extras ?? {'url': url},
     );
 
-    mediaItem.add(item);
+    mediaItem.add(newItem);
+    _isCurrentSongSaved = await _playlistService.isSongInFavorites(
+      title,
+      artist,
+    );
 
     // Force Buffering/Playing state so Service stays alive
     playbackState.add(
@@ -409,70 +723,120 @@ class RadioAudioHandler extends BaseAudioHandler
       ),
     );
 
-    // 3. RECREATE PLAYER (Now safe to do, UI shows new station buffering)
-    await _initializePlayer();
-
-    // 4. Defer Reset of Flag until we are actually ready to play/fail
-    // _expectingStop = false; // MOVED INSIDE MICROTASK
+    // 3. Defer all heavy player interactions (Stop, Resolve, SetSource, Play)
+    // to a microtask with immediate return to UI.
+    final sessionId = DateTime.now().millisecondsSinceEpoch;
+    _currentSessionId = sessionId;
 
     Future.microtask(() async {
-      // Re-check if we are still the intended station (prevent race conditions)
-      if (mediaItem.value?.id != url) return;
+      if (_currentSessionId != sessionId) return;
+
+      // Stop previous instance - fire and forget
+      try {
+        await _player.stop();
+        // If we encountered a fatal error recently or switching types, explicit dispose/create might help clean native buffers
+        // But for speed we just stop.
+        // Logic: specific 1005 errors usually need a fresh player.
+      } catch (_) {}
+
+      // Hard Reset: Recreate player instance to clear binary buffers if it's a playlist song (prone to issues)
+      if (extras?['type'] == 'playlist_song') {
+        // Full recreation is necessary for persistent -1005 errors
+        try {
+          await _player.dispose();
+        } catch (_) {}
+        _player = AudioPlayer();
+        _setupPlayerListeners(); // Re-attach listeners to new instance
+        await Future.delayed(
+          const Duration(milliseconds: 200),
+        ); // Give it a moment to stabilize
+      } else {
+        await _player.release();
+      }
 
       bool success = true;
       String? errorMessage;
 
+      String finalUrl = url;
+      // Resolve playlists if needed (non-blocking)
       try {
-        String finalUrl = url;
-        try {
-          finalUrl = await _resolveStreamUrl(
-            url,
-          ).timeout(const Duration(seconds: 4), onTimeout: () => url);
-        } catch (_) {}
+        finalUrl = await _resolveStreamUrl(
+          url,
+          isPlaylistSong: extras?['type'] == 'playlist_song',
+        ).timeout(const Duration(seconds: 3), onTimeout: () => url);
+      } catch (_) {}
 
-        // Re-check again before acting on player
-        if (mediaItem.value?.id != url) return;
+      // Re-check session barrier after I/O wait
+      if (_currentSessionId != sessionId) return;
 
-        // EXACT MATCH to EditStationScreen implementation:
-        // 1. Set Source
-        // 2. Set Volume
-        // 3. Resume
-        await _player.setSourceUrl(finalUrl);
+      // 4. Init & Play
+      try {
+        _expectingStop = false; // Ready to receive events
+        await _initializePlayer();
+
+        if (extras?['type'] == 'playlist_song') {
+          await _player.setReleaseMode(
+            ReleaseMode.release,
+          ); // Allow seamless transitions
+          _expectingStop = false;
+        } else {
+          // Radio
+          await _player.setReleaseMode(ReleaseMode.stop);
+        }
+
+        await _player.setSource(UrlSource(finalUrl));
         await _player.setVolume(_volume);
 
-        // Resume with timeout check
-        await _player.resume().timeout(
-          const Duration(seconds: 15),
-          onTimeout: () {
-            success = false;
-            errorMessage = "Player handshake timed out";
-          },
-        );
-
-        if (success) {
-          _expectingStop = false; // Ready to show real state
-          _broadcastState(PlayerState.playing); // Force playing state
-        } else {
-          _expectingStop = false; // Failed, allow error state to show
+        await _player.resume();
+        if (true) {
+          _expectingStop = false;
+          _broadcastState(PlayerState.playing);
         }
       } catch (e) {
-        _expectingStop = false;
         success = false;
         errorMessage = e.toString();
+        _expectingStop = false;
       }
 
       if (!success) {
         if (errorMessage != null) {
-          _handleConnectionError("Failed to play: $errorMessage");
+          LogService().log("Playback failed: $errorMessage");
+        }
+
+        final hasDuration =
+            mediaItem.value?.duration != null &&
+            mediaItem.value!.duration! > Duration.zero;
+
+        if (hasDuration) {
+          LogService().log("Song playback failed, skipping to next...");
+          skipToNext();
+        } else {
+          _handleConnectionError(
+            "Failed to play: ${errorMessage ?? 'Unknown error'}",
+          );
         }
       }
     });
 
-    Future.delayed(const Duration(seconds: 5), () {
-      if (_isInitialBuffering && !_expectingStop) {
-        _isInitialBuffering = false;
-        // Query actual state slightly later
-        _broadcastState(_player.state);
+    // 5. Watchdog for persistent hangs (like 403 silent failure)
+    final currentId = url;
+    Future.delayed(const Duration(seconds: 15), () {
+      // Check if it's a playlist song to allow more time or different handling
+      bool isPlaylistSong = extras?['type'] == 'playlist_song';
+
+      if (_isInitialBuffering &&
+          mediaItem.value?.id == currentId &&
+          !_expectingStop &&
+          !isPlaylistSong) {
+        final hasDuration =
+            mediaItem.value?.duration != null &&
+            mediaItem.value!.duration! > Duration.zero;
+        if (hasDuration) {
+          LogService().log(
+            "Watchdog: Song stuck in buffering too long, skipping...",
+          );
+          skipToNext();
+        }
       }
     });
   }
@@ -485,7 +849,9 @@ class RadioAudioHandler extends BaseAudioHandler
     if (name == 'setVolume') {
       final vol = arguments?['volume'] as double?;
       if (vol != null) {
-        await _player.setVolume(vol);
+        try {
+          await _player.setVolume(vol);
+        } catch (_) {}
       }
     } else if (name == 'add_to_playlist') {
       final item = mediaItem.value;
@@ -673,9 +1039,9 @@ class RadioAudioHandler extends BaseAudioHandler
         androidCompactActionIndices: const [0, 1, 2],
         processingState: pState,
         playing: playing,
-        updatePosition: Duration.zero,
+        updatePosition: _currentPosition,
         bufferedPosition: Duration.zero,
-        speed: 1.0,
+        speed: 1.0, // Force 1.0 speed
         queueIndex: index >= 0 ? index : 0,
         errorMessage: null, // Clear error on valid state change
       ),
@@ -738,24 +1104,49 @@ class RadioAudioHandler extends BaseAudioHandler
       final playlists = await _playlistService.loadPlaylists();
       try {
         final playlist = playlists.firstWhere((p) => p.id == playlistId);
-        return playlist.songs.map((s) {
-          // Unique ID for browsing context
-          final String uniqueId = 'playlist_song_${playlist.id}_${s.id}';
-          return MediaItem(
-            id: uniqueId,
-            title: s.title,
-            artist: s.artist,
-            album: s.album,
-            artUri: s.artUri != null ? Uri.tryParse(s.artUri!) : null,
+        final List<MediaItem> children = [];
+
+        // Add Play All & Shuffle virtual items
+        children.add(
+          MediaItem(
+            id: 'playlist_play_all_${playlist.id}',
+            title: '▶ Play All',
+            album: playlist.name,
             playable: true,
-            extras: {
-              'url': s.youtubeUrl, // fallback
-              'playlistId': playlist.id,
-              'songId': s.id,
-              'videoId': _extractVideoId(s.youtubeUrl),
-            },
-          );
-        }).toList();
+            extras: {'type': 'playlist_cmd', 'cmd': 'play_all'},
+          ),
+        );
+        children.add(
+          MediaItem(
+            id: 'playlist_shuffle_${playlist.id}',
+            title: '🔀 Shuffle',
+            album: playlist.name,
+            playable: true,
+            extras: {'type': 'playlist_cmd', 'cmd': 'shuffle'},
+          ),
+        );
+
+        // Add actual songs
+        children.addAll(
+          playlist.songs.map((s) {
+            final String uniqueId = 'playlist_song_${playlist.id}_${s.id}';
+            return MediaItem(
+              id: uniqueId,
+              title: s.title,
+              artist: s.artist,
+              album: s.album,
+              artUri: s.artUri != null ? Uri.tryParse(s.artUri!) : null,
+              playable: true,
+              extras: {
+                'url': s.youtubeUrl,
+                'playlistId': playlist.id,
+                'songId': s.id,
+                'videoId': _extractVideoId(s.youtubeUrl),
+              },
+            );
+          }),
+        );
+        return children;
       } catch (_) {}
     }
 
@@ -779,6 +1170,28 @@ class RadioAudioHandler extends BaseAudioHandler
     String mediaId, [
     Map<String, dynamic>? extras,
   ]) async {
+    // 1. Handle Commands (Play All / Shuffle)
+    if (mediaId.startsWith('playlist_play_all_') ||
+        mediaId.startsWith('playlist_shuffle_')) {
+      final bool isShuffle = mediaId.contains('_shuffle_');
+      final playlistId = mediaId.split('_').last;
+
+      mediaItem.add(
+        MediaItem(
+          id: "playlist_cmd_intent",
+          title: isShuffle ? "Shuffling Playlist..." : "Starting Playlist...",
+          artist: "System",
+          extras: {
+            'type': 'playlist_cmd',
+            'playlistId': playlistId,
+            'cmd': isShuffle ? 'shuffle' : 'play_all',
+          },
+        ),
+      );
+      return;
+    }
+
+    // 2. Handle Individual Songs
     if (mediaId.startsWith('playlist_song_')) {
       // It's a playlist song.
       // We need to fetch the item details to pass correct info
@@ -818,23 +1231,7 @@ class RadioAudioHandler extends BaseAudioHandler
               final videoId = _extractVideoId(song.youtubeUrl);
 
               if (videoId != null) {
-                // Update Media Item to trigger listener in Provider
-                mediaItem.add(
-                  MediaItem(
-                    id: "playlist_play_intent", // Dummy ID to trigger change check
-                    title: song.title,
-                    artist: song.artist,
-                    artUri: song.artUri != null
-                        ? Uri.parse(song.artUri!)
-                        : null,
-                    extras: {
-                      'type': 'playlist_song',
-                      'playlistId': p.id,
-                      'songId': song.id,
-                      'videoId': videoId,
-                    },
-                  ),
-                );
+                _playYoutubeVideo(videoId, song, p.id);
                 return;
               }
             }

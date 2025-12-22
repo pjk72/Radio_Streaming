@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:palette_generator/palette_generator.dart';
@@ -490,7 +491,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
         // Progress Bar (Youtube) - Above Controls
         if (provider.hiddenAudioController != null)
-          _buildProgressBar(context, provider.hiddenAudioController!),
+          _buildProgressBar(context, provider.hiddenAudioController!)
+        else if (provider.currentPlayingPlaylistId != null)
+          _buildNativeProgressBar(context, provider),
 
         // Controls
         Padding(
@@ -634,21 +637,90 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
         const SizedBox(height: 16),
 
         // Visualizer (Bottom)
-        if (provider.isPlaying)
-          SizedBox(
-            height: 100,
-            child: Opacity(
-              opacity: provider.hiddenAudioController != null ? 0.3 : 1.0,
-              child: _MusicVisualizer(
-                color: visualizerColor,
-                barCount: 60,
-                volume: _currentVolume,
+        SizedBox(
+          height: 100,
+          child: provider.isPlaying
+              ? Opacity(
+                  opacity:
+                      (provider.hiddenAudioController != null ||
+                          provider.currentPlayingPlaylistId != null)
+                      ? 0.3
+                      : 1.0,
+                  child: _MusicVisualizer(
+                    color: visualizerColor,
+                    barCount: 60,
+                    volume: _currentVolume,
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNativeProgressBar(BuildContext context, RadioProvider provider) {
+    // STANDARD LOGIC: Use AudioService.position for live position updates
+    // This stream automatically extrapolates based on playback state and speed.
+    return StreamBuilder<Duration>(
+      stream: AudioService.position,
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? Duration.zero;
+        final duration =
+            provider.audioHandler.mediaItem.value?.duration ?? Duration.zero;
+
+        // Basic clamp to avoid errors if position > duration temporarily
+        final max = duration.inSeconds.toDouble() > 0
+            ? duration.inSeconds.toDouble()
+            : 1.0;
+        final val = position.inSeconds.toDouble().clamp(0.0, max);
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Row(
+                children: [
+                  Text(
+                    _formatDuration(position),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 4,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6,
+                        ), // Visible thumb
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
+                        activeTrackColor: Colors.redAccent,
+                        inactiveTrackColor: Colors.white24,
+                        thumbColor: Colors.redAccent,
+                        overlayColor: Colors.redAccent.withValues(alpha: 0.2),
+                      ),
+                      child: Slider(
+                        value: val,
+                        max: max,
+                        onChanged: (v) {
+                          provider.audioHandler.seek(
+                            Duration(seconds: v.toInt()),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _formatDuration(duration),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
               ),
             ),
-          )
-        else
-          const SizedBox(height: 60),
-      ],
+            const SizedBox(height: 12),
+          ],
+        );
+      },
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/radio_provider.dart';
+import 'package:audio_service/audio_service.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/icon_library.dart';
@@ -359,7 +360,9 @@ class PlayerBar extends StatelessWidget {
 
           // Bottom Progress Bar (Full Width)
           if (provider.hiddenAudioController != null)
-            _buildYoutubeProgressBar(context, provider.hiddenAudioController!),
+            _buildYoutubeProgressBar(context, provider.hiddenAudioController!)
+          else if (provider.currentPlayingPlaylistId != null)
+            _buildNativeProgressBar(context, provider),
         ],
       ),
     );
@@ -700,6 +703,80 @@ class PlayerBar extends StatelessWidget {
     );
   }
 
+  Widget _buildNativeProgressBar(BuildContext context, RadioProvider provider) {
+    // STANDARD LOGIC: Use AudioService.position for live position updates
+    return StreamBuilder<Duration>(
+      stream: AudioService.position,
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? Duration.zero;
+        final totalDuration =
+            provider.audioHandler.mediaItem.value?.duration ?? Duration.zero;
+
+        // Clamp values
+        final positionSec = position.inSeconds.toDouble();
+        final durationSec = totalDuration.inSeconds.toDouble();
+
+        final max = durationSec > 0 ? durationSec : 1.0;
+        final val = positionSec > max ? max : positionSec.clamp(0.0, max);
+
+        return Container(
+          width: double.infinity,
+          height: 24,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          child: Row(
+            children: [
+              Text(
+                _formatDuration(
+                  Duration(seconds: val.toInt()),
+                ), // Display clamped
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    trackShape: const RectangularSliderTrackShape(),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 0,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                    activeTrackColor: Colors.redAccent,
+                    inactiveTrackColor: Colors.white38,
+                    thumbColor: Colors.redAccent,
+                    overlayColor: Colors.redAccent.withValues(alpha: 0.2),
+                  ),
+                  child: Slider(
+                    value: val,
+                    min: 0.0,
+                    max: max,
+                    onChanged: (v) {
+                      provider.audioHandler.seek(Duration(seconds: v.toInt()));
+                    },
+                  ),
+                ),
+              ),
+              Text(
+                _formatDuration(totalDuration),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final minutes = twoDigits(duration.inMinutes.remainder(60));
@@ -719,7 +796,7 @@ class PlayerBar extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         // Shuffle Button (Left of Controls)
-        if (provider.hiddenAudioController != null) ...[
+        if (provider.currentPlayingPlaylistId != null) ...[
           IconButton(
             icon: Icon(
               Icons.shuffle_rounded,
