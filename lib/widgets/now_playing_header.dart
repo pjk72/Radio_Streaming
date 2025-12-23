@@ -8,7 +8,6 @@ import '../utils/icon_library.dart';
 import '../providers/radio_provider.dart';
 import '../screens/artist_details_screen.dart';
 import 'realistic_visualizer.dart';
-import 'pulsing_indicator.dart';
 
 class NowPlayingHeader extends StatelessWidget {
   final double height;
@@ -362,25 +361,15 @@ class NowPlayingHeader extends StatelessWidget {
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            provider.isRecognizing
-                                                ? const Padding(
-                                                    padding: EdgeInsets.only(
-                                                      right: 4,
-                                                    ),
-                                                    child: PulsingIndicator(
-                                                      color: Colors.white70,
-                                                      size: 10,
-                                                    ),
-                                                  )
-                                                : Padding(
-                                                    padding: EdgeInsets.only(
-                                                      right: 4,
-                                                    ),
-                                                    child: RealisticVisualizer(
-                                                      color: Colors.white70,
-                                                      volume: provider.volume,
-                                                    ),
-                                                  ),
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 4,
+                                              ),
+                                              child: RealisticVisualizer(
+                                                color: Colors.white70,
+                                                volume: provider.volume,
+                                              ),
+                                            ),
                                             const Text(
                                               "NOW PLAYING",
                                               style: TextStyle(
@@ -461,28 +450,15 @@ class NowPlayingHeader extends StatelessWidget {
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              provider.isRecognizing
-                                                  ? const Padding(
-                                                      padding: EdgeInsets.only(
-                                                        right: 4,
-                                                      ),
-                                                      child: PulsingIndicator(
-                                                        color: Colors.white70,
-                                                        size: 10,
-                                                      ),
-                                                    )
-                                                  : Padding(
-                                                      padding: EdgeInsets.only(
-                                                        right: 4,
-                                                      ),
-                                                      child:
-                                                          RealisticVisualizer(
-                                                            color:
-                                                                Colors.white70,
-                                                            volume:
-                                                                provider.volume,
-                                                          ),
-                                                    ),
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  right: 4,
+                                                ),
+                                                child: RealisticVisualizer(
+                                                  color: Colors.white70,
+                                                  volume: provider.volume,
+                                                ),
+                                              ),
                                               const Text(
                                                 "NOW PLAYING",
                                                 style: TextStyle(

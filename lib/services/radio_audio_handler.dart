@@ -35,19 +35,25 @@ class RadioAudioHandler extends BaseAudioHandler
   // Callbacks
   VoidCallback? onSkipNext;
   VoidCallback? onSkipPrevious;
+  VoidCallback? onPreloadNext; // New callback
+
+  // Preloading State
+  bool _hasTriggeredPreload = false;
+  String? _cachedNextSongUrl;
+  Map<String, dynamic>? _cachedNextSongExtras;
 
   static const _addToPlaylistControl = MediaControl(
     androidIcon: 'drawable/ic_favorite_border',
     label: 'Like',
     action: MediaAction.custom,
-    customAction: const CustomMediaAction(name: 'add_to_playlist'),
+    customAction: CustomMediaAction(name: 'add_to_playlist'),
   );
 
   static const _addedControl = MediaControl(
     androidIcon: 'drawable/ic_favorite',
     label: 'Liked',
     action: MediaAction.custom,
-    customAction: const CustomMediaAction(name: 'noop'),
+    customAction: CustomMediaAction(name: 'noop'),
   );
 
   bool _isCurrentSongSaved = false;
@@ -146,8 +152,15 @@ class RadioAudioHandler extends BaseAudioHandler
     );
 
     _playerDurationSubscription = _player.onDurationChanged.listen((d) {
-      // User request: Do NOT update duration from file. Trust metadata.
-      // if (d > Duration.zero) ...
+      final currentItem = mediaItem.value;
+      if (currentItem != null &&
+          currentItem.extras?['type'] == 'playlist_song' &&
+          d > Duration.zero) {
+        // Update duration for playlist songs so progress bar and preloading work
+        if (currentItem.duration != d) {
+          mediaItem.add(currentItem.copyWith(duration: d));
+        }
+      }
     });
 
     _playerPositionSubscription = _player.onPositionChanged.listen(
@@ -161,6 +174,19 @@ class RadioAudioHandler extends BaseAudioHandler
           // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
           final expectedDuration = mediaItem.value?.duration;
           if (expectedDuration != null) {
+            // Trigger preloading 10 seconds before end (increased from 5s)
+            if (expectedDuration - pos <= const Duration(seconds: 10) &&
+                expectedDuration > Duration.zero) {
+              if (!_hasTriggeredPreload &&
+                  mediaItem.value?.extras?['type'] == 'playlist_song') {
+                _hasTriggeredPreload = true;
+                LogService().log(
+                  "Triggering Preload (Time Remaining: ${expectedDuration - pos})",
+                );
+                if (onPreloadNext != null) onPreloadNext!();
+              }
+            }
+
             if (pos >= expectedDuration) {
               if (!_expectingStop) skipToNext();
               return;
@@ -200,11 +226,6 @@ class RadioAudioHandler extends BaseAudioHandler
         LogService().log("Player Log Error: $e");
       },
     );
-  }
-
-  // Legacy init - forwards to safe init
-  Future<void> _initPlayer() async {
-    await _initializePlayer();
   }
 
   RadioAudioHandler() {
@@ -302,7 +323,44 @@ class RadioAudioHandler extends BaseAudioHandler
     SavedSong song,
     String playlistId,
   ) async {
-    // 1. Immediate Feedback: Stop previous audio & Show correct Metadata
+    // Always reset preload flag
+    _hasTriggeredPreload = false;
+
+    // Debug Cache State
+    LogService().log("Checking Cache for: ${song.id}-$videoId");
+    if (_cachedNextSongExtras != null) {
+      LogService().log("Cache content: ${_cachedNextSongExtras?['uniqueId']}");
+    } else {
+      LogService().log("Cache is empty");
+    }
+
+    // Check for preloaded stream FIRST
+    if (_cachedNextSongExtras?['uniqueId'] == "${song.id}-$videoId" &&
+        _cachedNextSongUrl != null) {
+      LogService().log("Using preloaded stream for: $videoId");
+      final streamUrl = _cachedNextSongUrl!;
+      _cachedNextSongUrl = null;
+      _cachedNextSongExtras = null;
+
+      // FAST PATH: Go directly to playback without stopping/buffering UI
+      final extras = {
+        'title': song.title,
+        'artist': song.artist,
+        'album': song.album,
+        'artUri': song.artUri,
+        'youtubeUrl': song.youtubeUrl,
+        'playlistId': playlistId,
+        'songId': song.id,
+        'videoId': videoId,
+        'type': 'playlist_song',
+        'is_resolved': true,
+      };
+      await playFromUri(Uri.parse(streamUrl), extras);
+      return;
+    }
+
+    // SLOW PATH: Not cached.
+    // 1. Give Feedback
     await _player.stop();
 
     final placeholderItem = MediaItem(
@@ -329,9 +387,9 @@ class RadioAudioHandler extends BaseAudioHandler
     );
 
     try {
+      LogService().log("Cache miss for $videoId. Resolving...");
       var yt = YoutubeExplode();
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
-      // Fallback to muxed (Video+Audio) for better player compatibility (avoids codec issues with raw audio streams)
       var streamInfo = manifest.muxed.withHighestBitrate();
       yt.close();
 
@@ -347,11 +405,10 @@ class RadioAudioHandler extends BaseAudioHandler
         'songId': song.id,
         'videoId': videoId,
         'type': 'playlist_song',
+        'is_resolved': true,
       };
 
       await playFromUri(Uri.parse(streamUrl), extras);
-
-      // Explicitly clear error state if we succeeded (playFromUri does this too, but for clarity)
       playbackState.add(playbackState.value.copyWith(errorMessage: null));
     } catch (e) {
       LogService().log("Error playing YouTube video: $e");
@@ -398,11 +455,15 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   @override
+  @override
   Future<void> pause() async {
-    _expectingStop = true;
     try {
-      await _player
-          .stop(); // Use stop() to clear buffer/connection for live radio
+      // For playlist songs, use pause() to keep position. For radio, stop() to clear buffer.
+      if (mediaItem.value?.extras?['type'] == 'playlist_song') {
+        await _player.pause();
+      } else {
+        await _player.stop();
+      }
     } catch (_) {}
     // Manually update state so UI knows we paused
     playbackState.add(
@@ -414,6 +475,28 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   @override
+  Future<void> play() async {
+    // If paused, just resume without reloading
+    if (_player.state == PlayerState.paused) {
+      _expectingStop = false;
+      await _player.resume();
+      // State will be updated by listener, but we can force it for responsiveness
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: true,
+          processingState: AudioProcessingState.ready,
+        ),
+      );
+      return;
+    }
+
+    final currentItem = mediaItem.value;
+    if (currentItem != null) {
+      _expectingStop = false;
+      await playFromUri(Uri.parse(currentItem.id), currentItem.extras);
+    }
+  }
+
   @override
   Future<void> skipToNext() async {
     if (onSkipNext != null) {
@@ -430,6 +513,28 @@ class RadioAudioHandler extends BaseAudioHandler
           await playFromUri(Uri.parse(stations[nextIndex].url));
         }
       }
+    }
+  }
+
+  Future<void> preloadNextStream(String videoId, String songId) async {
+    try {
+      if (_cachedNextSongExtras?['uniqueId'] == "$songId-$videoId") return;
+
+      LogService().log("Preloading next song: $videoId (ID: $songId)");
+      var yt = YoutubeExplode();
+      var manifest = await yt.videos.streamsClient.getManifest(videoId);
+      var streamInfo = manifest.muxed.withHighestBitrate();
+      yt.close();
+
+      _cachedNextSongUrl = streamInfo.url.toString();
+      _cachedNextSongExtras = {
+        'videoId': videoId,
+        'songId': songId,
+        'uniqueId': "$songId-$videoId",
+      };
+      LogService().log("Preload success. URL cached for $videoId");
+    } catch (e) {
+      LogService().log("Preload failed: $e");
     }
   }
 
@@ -554,16 +659,6 @@ class RadioAudioHandler extends BaseAudioHandler
 
   // --- AUDIO PLAYER CONTROLS ---
 
-  @override
-  Future<void> play() async {
-    // await _initializePlayer(); // REDUNDANT: playFromUri handles init
-    final currentItem = mediaItem.value;
-    if (currentItem != null) {
-      _expectingStop = false;
-      await playFromUri(Uri.parse(currentItem.id), currentItem.extras);
-    }
-  }
-
   // NEW: Dedicated playback method for YouTube/Playlist songs
   Future<void> _playYoutubeSong(String url, Map<String, dynamic> extras) async {
     final sessionId = DateTime.now().millisecondsSinceEpoch;
@@ -594,6 +689,7 @@ class RadioAudioHandler extends BaseAudioHandler
       artist,
     );
 
+    /* GAPLESS: Don't force buffering state initially
     playbackState.add(
       playbackState.value.copyWith(
         processingState: AudioProcessingState.buffering,
@@ -601,45 +697,44 @@ class RadioAudioHandler extends BaseAudioHandler
         errorMessage: null,
       ),
     );
+    */
 
     // Async Work
     Future.microtask(() async {
       if (_currentSessionId != sessionId) return;
 
       try {
-        // 1. Destroy old player completely
-        try {
-          await _player.stop();
-          await _player.dispose();
-        } catch (_) {}
+        // OPTIMIZATION: Reuse player if healthy
+        if (_player.state == PlayerState.disposed) {
+          _player = AudioPlayer();
+          _setupPlayerListeners();
+          await _player.setPlaybackRate(1.0);
 
-        // 2. Create Fresh Player
-        _player = AudioPlayer();
-        _setupPlayerListeners(); // Bind listeners
-        await _player.setPlaybackRate(1.0); // Force normal speed
-
-        // 3. Configure Context
-        // Ensure we are in "Music" mode
-        await _player.setAudioContext(
-          AudioContext(
-            android: const AudioContextAndroid(
-              isSpeakerphoneOn: false,
-              stayAwake: true, // Vital for background playback
-              contentType: AndroidContentType.music,
-              usageType: AndroidUsageType.media,
-              audioFocus: AndroidAudioFocus.gain,
+          // Configure Context (only needed on creation)
+          await _player.setAudioContext(
+            AudioContext(
+              android: const AudioContextAndroid(
+                isSpeakerphoneOn: false,
+                stayAwake: true,
+                contentType: AndroidContentType.music,
+                usageType: AndroidUsageType.media,
+                audioFocus: AndroidAudioFocus.gain,
+              ),
+              iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
             ),
-            iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
-          ),
-        );
-
-        if (_currentSessionId != sessionId) return;
+          );
+        } else {
+          // If playing, just stop to clear buffers or directly set source?
+          // setSourceUrl usually handles it.
+          // await _player.stop(); // GAPLESS ATTEMPT: Don't explicit stop
+        }
 
         // 4. Load Source & Play
-        LogService().log("Attempting native play: $url");
-        await _player.setReleaseMode(
-          ReleaseMode.release,
-        ); // Auto-advance? No, we handle complete.
+        // Ensure Release Mode is correct
+        if (_player.releaseMode != ReleaseMode.release) {
+          await _player.setReleaseMode(ReleaseMode.release);
+        }
+
         await _player.setSource(UrlSource(url));
         await _player.resume();
 
@@ -649,7 +744,6 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       } catch (e) {
         LogService().log("Youtube Playback Error: $e");
-        // Auto-Skip on fatal error
         if (_currentSessionId == sessionId) {
           Future.delayed(const Duration(seconds: 1), skipToNext);
         }
@@ -661,8 +755,28 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> playFromUri(Uri uri, [Map<String, dynamic>? extras]) async {
     // Dispatcher
     if (extras != null && extras['type'] == 'playlist_song') {
-      _expectingStop = true; // Block events from old player
-      await _playYoutubeSong(uri.toString(), extras);
+      // If it's already resolved (has stream URL), play it directly
+      if (extras['is_resolved'] == true) {
+        _expectingStop = true; // Block events from old player
+        await _playYoutubeSong(uri.toString(), extras);
+      } else {
+        // Otherwise, it's likely a video ID (from RadioProvider update), resolve it (checking cache)
+        final song = SavedSong(
+          id: extras['songId'] ?? 'unknown',
+          title: extras['title'] ?? '',
+          artist: extras['artist'] ?? '',
+          album: extras['album'] ?? '',
+          artUri: extras['artUri'],
+          dateAdded: DateTime.now(),
+          youtubeUrl: uri.toString(), // Using URI as ID container
+        );
+        // Delegate to _playYoutubeVideo which handles caching and resolution
+        await _playYoutubeVideo(
+          uri.toString(),
+          song,
+          extras['playlistId'] ?? '',
+        );
+      }
       return;
     }
 
@@ -842,12 +956,9 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   @override
-  Future<void> customAction(
-    String name, [
-    Map<String, dynamic>? arguments,
-  ]) async {
+  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     if (name == 'setVolume') {
-      final vol = arguments?['volume'] as double?;
+      final vol = extras?['volume'] as double?;
       if (vol != null) {
         try {
           await _player.setVolume(vol);
@@ -891,9 +1002,9 @@ class RadioAudioHandler extends BaseAudioHandler
       _expectingStop = false;
 
       // 2. Update Metadata for External Audio
-      final title = arguments?['title'] ?? "External Audio";
-      final artist = arguments?['artist'] ?? "YouTube";
-      final artUri = arguments?['artUri'];
+      final title = extras?['title'] ?? "External Audio";
+      final artist = extras?['artist'] ?? "YouTube";
+      final artUri = extras?['artUri'];
 
       final item = MediaItem(
         id: "external_audio",
@@ -938,10 +1049,10 @@ class RadioAudioHandler extends BaseAudioHandler
       );
     } else if (name == 'updatePlaybackPosition') {
       // Update progressive icon / progress bar
-      if (arguments != null) {
-        final int posMs = arguments['position'] ?? 0;
-        final int durMs = arguments['duration'] ?? 0;
-        final bool isPlaying = arguments['isPlaying'] ?? false;
+      if (extras != null) {
+        final int posMs = extras['position'] ?? 0;
+        final int durMs = extras['duration'] ?? 0;
+        final bool isPlaying = extras['isPlaying'] ?? false;
 
         playbackState.add(
           playbackState.value.copyWith(
@@ -1198,7 +1309,7 @@ class RadioAudioHandler extends BaseAudioHandler
       // Since we don't have the item here easily without re-parsing,
       // check if it was preloaded or we have to browse for it.
       // Better approach: Parse ID
-      final parts = mediaId.split('_');
+
       // Format: playlist_song_[playlistId]_[songId]
       // Warning: IDs might contain underscores.
       // Robust Way: Store map? No.

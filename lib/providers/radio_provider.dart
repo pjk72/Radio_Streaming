@@ -7,7 +7,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:crypto/crypto.dart';
+
 import '../models/station.dart';
 import '../data/station_data.dart' as default_data;
 
@@ -23,7 +23,8 @@ import '../services/backup_service.dart';
 import '../utils/genre_mapper.dart';
 import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
-import '../services/youtube_audio_service.dart';
+import '../services/log_service.dart';
+
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -33,6 +34,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 class RadioProvider with ChangeNotifier {
   List<Station> stations = [];
   static const String _keySavedStations = 'saved_stations';
+  Timer? _metadataTimer;
   static const String _keyStartOption =
       'start_option'; // 'none', 'last', 'specific'
   static const String _keyStartupStationId = 'startup_station_id';
@@ -143,9 +145,55 @@ class RadioProvider with ChangeNotifier {
 
   void _setupAudioHandlerCallbacks() {
     if (_audioHandler is RadioAudioHandler) {
-      final handler = _audioHandler as RadioAudioHandler;
+      final handler = _audioHandler;
       handler.onSkipNext = () => playNext(true);
       handler.onSkipPrevious = () => playPrevious();
+      handler.onPreloadNext = _preloadNextSong;
+    }
+  }
+
+  Future<void> _preloadNextSong() async {
+    // Only preload if we are in playlist mode using native player
+    if (_currentPlayingPlaylistId == null) return;
+
+    // Just find the next song
+    final nextSong = _getNextSongInPlaylist();
+    if (nextSong != null) {
+      String? videoId;
+
+      if (nextSong.youtubeUrl != null) {
+        videoId = YoutubePlayer.convertUrlToId(nextSong.youtubeUrl!);
+      } else if (nextSong.id.length == 11) {
+        // Fallback ID
+        videoId = nextSong.id;
+      }
+
+      // If still null, try to resolve via search (Heavy!)
+      if (videoId == null) {
+        try {
+          final links = await resolveLinks(
+            title: nextSong.title,
+            artist: nextSong.artist,
+            spotifyUrl: nextSong.spotifyUrl,
+          ).timeout(const Duration(seconds: 8));
+
+          final url = links['youtube'];
+          if (url != null) {
+            videoId = YoutubePlayer.convertUrlToId(url);
+            if (videoId == null && url.contains('v=')) {
+              videoId = url.split('v=').last.split('&').first;
+            }
+          }
+        } catch (e) {
+          // resolution failed silently
+        }
+      }
+
+      if (videoId != null) {
+        if (_audioHandler is RadioAudioHandler) {
+          _audioHandler.preloadNextStream(videoId, nextSong.id);
+        }
+      }
     }
   }
 
@@ -188,7 +236,6 @@ class RadioProvider with ChangeNotifier {
   final PlaylistService _playlistService = PlaylistService();
   final SongLinkService _songLinkService = SongLinkService();
   final MusicMetadataService _musicMetadataService = MusicMetadataService();
-  final YouTubeAudioService _youtubeAudioService = YouTubeAudioService();
 
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
@@ -301,18 +348,7 @@ class RadioProvider with ChangeNotifier {
           _currentReleaseDate = null; // Placeholder
           _currentGenre = null; // Placeholder
 
-          _isRecognizing = false;
-
           notifyListeners();
-
-          // Restart recognition for the new station
-          _metadataTimer?.cancel();
-          // if (_isPlaying) {
-          //  _metadataTimer = Timer(
-          //    const Duration(seconds: 5),
-          //     _attemptRecognition, // FAZIO -- Intervallo ricerca musica via riconoscimento API
-          //   );
-          // }
         } catch (_) {
           // Check if it is a playlist song request from Android Auto
           if (item.extras?['type'] == 'playlist_song') {
@@ -665,7 +701,6 @@ class RadioProvider with ChangeNotifier {
   String? _currentGenre;
 
   bool _isLoading = false;
-  bool _isRecognizing = false;
   final List<String> _metadataLog = [];
 
   // Track invalid songs
@@ -673,25 +708,19 @@ class RadioProvider with ChangeNotifier {
   List<String> get invalidSongIds => _invalidSongIds;
 
   bool get isLoading => _isLoading;
-  bool get isRecognizing => _isRecognizing;
   bool _hasPerformedRestore = false;
   bool get hasPerformedRestore => _hasPerformedRestore;
-  Timer? _metadataTimer;
   Timer? _playbackMonitor; // Robust backup for end-of-song detection
   Timer? _invalidDetectionTimer;
 
-  // ACRCloud Credentials
-  final String _acrHost = "identify-eu-west-1.acrcloud.com";
-  final String _acrAccessKey = "e763fb2faa97925d26fcfba2c8e29f34";
-  final String _acrSecretKey = "Pg8Htq25c39YswVQXga3ExXsaUSu2qTbxCACyqgY";
-
   Station? get currentStation => _currentStation;
   bool get isPlaying => _isPlaying;
+  bool get isRecognizing => false;
   //   bool get isLoading => _isLoading; // duplicate removed
   double get volume => _volume;
   List<int> get favorites => _favorites;
   List<String> get metadataLog => _metadataLog;
-  String _lastApiResponse = "No API response yet.";
+  String _lastApiResponse = "No ACR response yet.";
   String get lastApiResponse => _lastApiResponse;
   String _lastSongLinkResponse = "No SongLink response yet.";
   String get lastSongLinkResponse => _lastSongLinkResponse;
@@ -880,7 +909,7 @@ class RadioProvider with ChangeNotifier {
     String? overrideAlbum,
     String? overrideArtUri,
   }) async {
-    _metadataTimer?.cancel(); // CANCEL recognition timer
+    _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
     _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
     _invalidDetectionTimer = null;
 
@@ -971,8 +1000,6 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final audioData = await _youtubeAudioService.getAudioStreamData(videoId);
-
       // Race condition guard: Abort if song changed while fetching stream
       if (_audioOnlySongId != songId) {
         debugPrint(
@@ -981,33 +1008,32 @@ class RadioProvider with ChangeNotifier {
         return;
       }
 
-      if (audioData != null) {
-        // Play natively via AudioHandler
-        await _audioHandler.playFromUri(Uri.parse(audioData.url), {
-          'title': title,
-          'artist': artist,
-          'artUri': artwork,
-          'album': album ?? "Playlist",
-          'duration': audioData.duration.inSeconds,
-          'type': 'playlist_song',
-          'playlistId': playlistId,
-          'songId': songId,
-          'videoId': videoId,
-        });
+      // Bypass blocking resolution in Provider - Let AudioHandler handle it (and use cache)
+      // We pass the VideoId as the URI.
+      await _audioHandler.playFromUri(Uri.parse(videoId), {
+        'title': title,
+        'artist': artist,
+        'artUri': artwork,
+        'album': album ?? "Playlist",
+        'duration': null, // Will be updated by player
+        'type': 'playlist_song',
+        'playlistId': playlistId,
+        'songId': songId,
+        'videoId': videoId,
+      });
 
-        _audioOnlySongId = songId;
-        _isPlaying = true;
-        _isLoading = false;
-        notifyListeners();
+      _audioOnlySongId = songId;
+      _isPlaying = true;
+      _isLoading = false;
+      notifyListeners();
 
-        // Clean up old controller if it exists
-        if (_hiddenAudioController != null) {
-          _hiddenAudioController!.removeListener(_youtubeListener);
-          _hiddenAudioController!.dispose();
-          _hiddenAudioController = null;
-        }
-        return; // Success!
+      // Clean up old controller if it exists
+      if (_hiddenAudioController != null) {
+        _hiddenAudioController!.removeListener(_youtubeListener);
+        _hiddenAudioController!.dispose();
+        _hiddenAudioController = null;
       }
+      return; // Success!
     } catch (e) {
       debugPrint("Native YouTube playback failed, falling back: $e");
     }
@@ -1715,486 +1741,7 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<int>> _captureBytes(String url, {int depth = 0}) async {
-    if (depth > 5) throw Exception("Redirection/Playlist Limit Reached");
-
-    final uri = Uri.parse(url);
-    final client = http.Client();
-    final request = http.Request('GET', uri);
-
-    // Add User-Agent to avoid blocking by some servers
-    request.headers['User-Agent'] =
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
-
-    final streamResponse = await client.send(request);
-
-    if (streamResponse.statusCode != 200) {
-      client.close();
-      throw Exception("Status ${streamResponse.statusCode} from $url");
-    }
-
-    List<int> buffer = [];
-    int maxAudioBytes = 200 * 1024; // ~15 seconds
-    bool checkedType = false;
-    bool isPlaylist = false;
-
-    await for (var chunk in streamResponse.stream) {
-      buffer.addAll(chunk);
-
-      if (!checkedType) {
-        // Check first few bytes for #EXTM3U signature
-        if (buffer.length >= 7) {
-          try {
-            // We only decode the start to check signature
-            final prefix = utf8.decode(
-              buffer.sublist(0, 7),
-              allowMalformed: true,
-            );
-            if (prefix.contains("#EXTM3U")) {
-              isPlaylist = true;
-            }
-          } catch (_) {
-            // Binary data likely
-          }
-          checkedType = true;
-        }
-      }
-
-      // If it's NOT a playlist, and we have enough audio, stop.
-      if (checkedType && !isPlaylist && buffer.length >= maxAudioBytes) {
-        client.close();
-        break;
-      }
-    }
-
-    // Ensure client is closed
-    client.close();
-
-    if (isPlaylist) {
-      try {
-        final content = utf8.decode(buffer, allowMalformed: true);
-        final lines = content.split('\n');
-        for (var line in lines) {
-          line = line.trim();
-          if (line.isNotEmpty && !line.startsWith("#")) {
-            // Found next URL
-            Uri nextUri = uri.resolve(line);
-            return _captureBytes(nextUri.toString(), depth: depth + 1);
-          }
-        }
-      } catch (e) {
-        throw Exception("Failed to parse M3U8: $e");
-      }
-      throw Exception("Empty M3U8 playlist");
-    }
-
-    return buffer;
-  }
-
-  Future<void> _attemptRecognition() async {
-    if (!_isPlaying || _currentStation == null) return;
-
-    final String capturedStationUrl = _currentStation!.url;
-    if (capturedStationUrl.startsWith('youtube://')) return;
-
-    _isRecognizing = true;
-    notifyListeners();
-
-    _addLog(">>> SEARCH START: Music Recognition <<<");
-    notifyListeners();
-
-    bool matchFound = false;
-
-    try {
-      // 1. CLEAR/INIT LOG
-      _lastSongLinkResponse = "Song Link: Waiting for recognition...";
-      notifyListeners();
-
-      _addLog("Capturing audio stream...");
-      List<int> audioBuffer = await _captureBytes(capturedStationUrl);
-
-      if (audioBuffer.isEmpty) {
-        throw Exception("Stream buffer empty (CORS or Net Error)");
-      }
-
-      _addLog(
-        "Audio captured (${audioBuffer.length} bytes). Sending to API...",
-      );
-
-      String timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
-          .toString();
-      String stringToSign =
-          "POST\n/v1/identify\n$_acrAccessKey\naudio\n1\n$timestamp";
-
-      var hmac = Hmac(sha1, utf8.encode(_acrSecretKey));
-      var digest = hmac.convert(utf8.encode(stringToSign));
-      String signature = base64.encode(digest.bytes);
-
-      var uri = Uri.parse("https://$_acrHost/v1/identify");
-      var multipartRequest = http.MultipartRequest("POST", uri);
-      multipartRequest.fields['access_key'] = _acrAccessKey;
-      multipartRequest.fields['data_type'] = 'audio';
-      multipartRequest.fields['signature_version'] = '1';
-      multipartRequest.fields['signature'] = signature;
-      multipartRequest.fields['timestamp'] = timestamp;
-      multipartRequest.fields['sample_bytes'] = audioBuffer.length.toString();
-
-      multipartRequest.files.add(
-        http.MultipartFile.fromBytes(
-          'sample',
-          audioBuffer,
-          filename: 'sample.mp3',
-        ),
-      );
-
-      var res = await multipartRequest.send();
-      _addLog("API Response Code: ${res.statusCode}");
-
-      var responseBody = await res.stream.bytesToString();
-      _lastApiResponse = responseBody; // Save raw JSON
-      notifyListeners();
-      var json = jsonDecode(responseBody);
-      var status = json['status'];
-      if (status != null && status['code'] == 0) {
-        var metadata = json['metadata'];
-        if (metadata != null &&
-            metadata['music'] != null &&
-            (metadata['music'] as List).isNotEmpty) {
-          matchFound = true; // SUCCESS
-          var music = metadata['music'][0];
-          String title = music['title'];
-          String artist =
-              (music['artists'] != null &&
-                  (music['artists'] as List).isNotEmpty)
-              ? music['artists'][0]['name']
-              : "Unknown";
-
-          String? albumArt;
-          String? artistImg;
-          String albumName = "";
-          String? spotifyUrl;
-          String? youtubeUrl;
-          String? releaseDate = music['release_date'];
-          String? genreName;
-          if (music['genres'] != null && (music['genres'] as List).isNotEmpty) {
-            genreName = music['genres'][0]['name'];
-          }
-
-          if (music['album'] != null) {
-            albumName = music['album']['name'] ?? "";
-            if (music['album']['cover'] != null) {
-              albumArt = music['album']['cover'];
-            }
-          }
-
-          // External Metadata Handling (Spotify, Deezer, Youtube)
-          if (music['external_metadata'] != null) {
-            var ext = music['external_metadata'];
-            if (ext.containsKey('spotify')) {
-              var spot = ext['spotify'];
-              if (albumArt == null &&
-                  spot['album'] != null &&
-                  spot['album']['images'] != null) {
-                var imgs = spot['album']['images'] as List;
-                if (imgs.isNotEmpty) albumArt = imgs[0]['url'];
-              }
-              if (spot['artists'] != null) {
-                var artists = spot['artists'] as List;
-                if (artists.isNotEmpty && artists[0]['images'] != null) {
-                  var imgs = artists[0]['images'] as List;
-                  if (imgs.isNotEmpty) artistImg = imgs[0]['url'];
-                }
-              }
-              if (spot['track'] != null && spot['track']['id'] != null) {
-                spotifyUrl =
-                    "https://open.spotify.com/track/${spot['track']['id']}";
-              }
-            }
-            if (ext.containsKey('youtube')) {
-              var yt = ext['youtube'];
-              if (yt['vid'] != null) {
-                youtubeUrl = "https://www.youtube.com/watch?v=${yt['vid']}";
-              }
-            }
-            if (ext.containsKey('deezer')) {
-              var deez = ext['deezer'];
-              if (albumArt == null &&
-                  deez['album'] != null &&
-                  deez['album']['cover'] != null) {
-                albumArt = deez['album']['cover'];
-              }
-              if (artistImg == null && deez['artists'] != null) {
-                var artists = deez['artists'] as List;
-                if (artists.isNotEmpty && artists[0]['picture'] != null) {
-                  artistImg = artists[0]['picture'];
-                }
-              }
-            }
-          }
-
-          // Use Song.link API if we have enough info
-          String? appleUrl;
-          String? deezerUrl;
-          String? tidalUrl;
-          String? amazonUrl;
-          String? napsterUrl;
-
-          // NOTE: SongLink fetching is now manual via fetchSmartLinks()
-          // to save API calls and performance.
-
-          // Fallbacks
-
-          if (spotifyUrl == null) {
-            String safeTitle = title.trim();
-            String safeArtist = artist.trim();
-
-            List<String> terms = [safeTitle];
-            if (safeArtist.isNotEmpty && safeArtist != "Unknown") {
-              terms.add(safeArtist);
-            }
-            String query = Uri.encodeComponent(terms.join(" "));
-            spotifyUrl = "https://open.spotify.com/search/$query?type=track";
-          }
-          if (youtubeUrl == null) {
-            String safeTitle = title.trim();
-            String safeArtist = artist.trim();
-
-            List<String> terms = [safeTitle];
-            if (safeArtist.isNotEmpty && safeArtist != "Unknown") {
-              terms.add(safeArtist);
-            }
-            String query = Uri.encodeComponent(terms.join(" "));
-            youtubeUrl = "https://www.youtube.com/results?search_query=$query";
-          }
-
-          if (albumArt == null || albumArt.isEmpty) {
-            try {
-              String query = "$title $artist";
-              albumArt = await _fetchArtFromItunes(query);
-            } catch (_) {}
-          }
-
-          if (artistImg == null || artistImg.isEmpty) {
-            // Save as last played
-            final prefs = await SharedPreferences.getInstance();
-            if (_currentStation != null) {
-              await prefs.setInt(_keyLastPlayedStationId, _currentStation!.id);
-            }
-
-            try {
-              artistImg = await _fetchArtistImageFromItunes(artist);
-            } catch (_) {}
-          }
-
-          // Update State
-          if (_currentStation?.url != capturedStationUrl) return;
-
-          // Check if data actually changed to verify if update is needed
-          final bool hasChanged =
-              title != _currentTrack ||
-              artist != _currentArtist ||
-              (albumArt ?? _currentStation?.logo) != _currentAlbumArt;
-
-          _currentSpotifyUrl = spotifyUrl;
-          _currentYoutubeUrl = youtubeUrl;
-          _currentAppleMusicUrl = appleUrl;
-          _currentDeezerUrl = deezerUrl;
-          _currentTidalUrl = tidalUrl;
-          _currentAmazonMusicUrl = amazonUrl;
-          _currentNapsterUrl = napsterUrl;
-          _currentTrack = title;
-          _currentArtist = artist;
-
-          _currentAlbum = albumName;
-          _currentAlbumArt = albumArt ?? _currentStation?.logo;
-          _currentArtistImage = artistImg ?? _currentStation?.logo;
-          _currentReleaseDate = releaseDate;
-          _currentGenre = genreName;
-
-          // UPDATE AUDIO HANDLER (Android Auto) - Only if changed
-          if (hasChanged) {
-            _audioHandler.updateMediaItem(
-              MediaItem(
-                id: _currentStation!.url,
-                title: title,
-                artist: "$artist • $genreName",
-                album: albumName.isNotEmpty
-                    ? "$albumName • $genreName"
-                    : genreName,
-                genre: genreName,
-                artUri: (albumArt ?? artistImg ?? _currentStation!.logo) != null
-                    ? Uri.parse(
-                        (albumArt ?? artistImg ?? _currentStation!.logo)!,
-                      )
-                    : null,
-                extras: {
-                  'url': _currentStation!.url,
-                  'spotifyUrl': _currentSpotifyUrl,
-                  'youtubeUrl': _currentYoutubeUrl,
-                  'appleMusicUrl': _currentAppleMusicUrl,
-                  'deezerUrl': _currentDeezerUrl,
-                  'tidalUrl': _currentTidalUrl,
-                  'amazonMusicUrl': _currentAmazonMusicUrl,
-                  'napsterUrl': _currentNapsterUrl,
-                },
-              ),
-            );
-            _addLog("SUCCESS: Identified '$title' by $artist (Updated UI)");
-          } else {
-            _addLog("SUCCESS: Confirmed '$title' by $artist (No UI Change)");
-          }
-
-          notifyListeners();
-        } else {
-          _addLog("RESULT: No music found.");
-          _lastSongLinkResponse =
-              "Song Link: Skipped (ACRCloud found no match)";
-          notifyListeners();
-        }
-      } else {
-        _addLog("API ERROR: ${status['msg']}");
-      }
-    } catch (e) {
-      _addLog("ERROR: $e");
-      _lastSongLinkResponse = "Song Link: Error during process ($e)";
-      notifyListeners();
-    } finally {
-      // 2. CHECK IF FAILED -> RESTORE DEFAULT
-      // Verify station hasn't changed during process
-      if (!matchFound &&
-          _currentStation != null &&
-          _currentStation!.url == capturedStationUrl &&
-          !_currentStation!.url.startsWith('youtube://')) {
-        // Only revert to default if we are currently showing a song
-        // (i.e., prevent redundant updates if we are already showing station info)
-        bool isAlreadyDefault =
-            _currentTrack == _currentStation!.name &&
-            _currentArtist == _currentStation!.genre;
-
-        if (!isAlreadyDefault) {
-          _currentTrack = _currentStation!.name;
-          _currentArtist = _currentStation!.genre;
-          _currentAlbum = "Live Radio";
-          _currentAlbumArt = _currentStation!.logo;
-          _currentArtistImage = null;
-
-          // Clear external links since we failed to find music
-          _currentSpotifyUrl = null;
-          _currentYoutubeUrl = null;
-          _currentAppleMusicUrl = null;
-          _currentDeezerUrl = null;
-          _currentTidalUrl = null;
-          _currentAmazonMusicUrl = null;
-          _currentNapsterUrl = null;
-
-          _audioHandler.updateMediaItem(
-            MediaItem(
-              id: _currentStation!.url,
-              title: _currentStation!.name,
-              artist: _currentStation!.genre,
-              album: "Live Radio",
-              artUri: _currentStation!.logo != null
-                  ? Uri.parse(_currentStation!.logo!)
-                  : null,
-              extras: {'url': _currentStation!.url},
-            ),
-          );
-        }
-      }
-
-      _isRecognizing = false;
-      _addLog("<<< SEARCH END >>>");
-      notifyListeners();
-
-      //      if (_isPlaying) {
-      //        _metadataTimer = Timer(
-      //          const Duration(seconds: 45),
-      //          _attemptRecognition, // FAZIO -- Intervallo ricerca musica via riconoscimento API
-      //        );
-      //      }
-    }
-  }
-
-  Future<String?> _fetchArtFromItunes(String query) async {
-    try {
-      final uri = Uri.parse(
-        "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=1",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        if (json['resultCount'] > 0) {
-          return json['results'][0]['artworkUrl100'].replaceAll(
-            '100x100bb',
-            '600x600bb',
-          );
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  Future<String?> _fetchItunesUrl(String query) async {
-    try {
-      final uri = Uri.parse(
-        "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=1",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        if (json['resultCount'] > 0) {
-          return json['results'][0]['trackViewUrl'];
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  Future<String?> _fetchArtistImageFromItunes(String artistName) async {
-    // 1. Try Deezer (Best for Artist Profile Pictures)
-    try {
-      final uri = Uri.parse(
-        "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(artistName)}&limit=1",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        if (json['data'] != null && (json['data'] as List).isNotEmpty) {
-          String? picture =
-              json['data'][0]['picture_xl'] ??
-              json['data'][0]['picture_big'] ??
-              json['data'][0]['picture_medium'];
-          if (picture != null && picture.isNotEmpty) return picture;
-        }
-      }
-    } catch (e) {
-      _addLog("Deezer Artist Error: $e");
-    }
-
-    // 2. Fallback to iTunes (Album Art as Artist Image)
-    try {
-      final uri = Uri.parse(
-        "https://itunes.apple.com/search?term=${Uri.encodeComponent(artistName)}&entity=album&limit=1",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        if (json['resultCount'] > 0) {
-          String? artUrl = json['results'][0]['artworkUrl100'];
-          if (artUrl != null) {
-            return artUrl.replaceAll('100x100bb', '600x600bb');
-          }
-        }
-      }
-    } catch (e) {
-      _addLog("iTunes Artist Fallback Error: $e");
-    }
-    return null;
-  }
-
   void playStation(Station station) async {
-    _metadataTimer?.cancel();
-
     // If we're playing from a playlist (YouTube), stop it first
     if (_hiddenAudioController != null) {
       clearYoutubeAudio();
@@ -2323,7 +1870,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   void resume() async {
-    if (_currentStation != null) {
+    if (_currentStation != null || _currentPlayingPlaylistId != null) {
       await _audioHandler.play();
     }
   }
@@ -2370,6 +1917,13 @@ class RadioProvider with ChangeNotifier {
     int currentIndex = -1;
     if (_audioOnlySongId != null) {
       currentIndex = playlist.songs.indexWhere((s) => s.id == _audioOnlySongId);
+    }
+
+    // Debug
+    if (currentIndex == -1 && _audioOnlySongId != null) {
+      LogService().log(
+        "GetNext: ID $_audioOnlySongId not found in playlist (Size: ${playlist.songs.length})",
+      );
     }
 
     int attempts = 0;
@@ -2511,14 +2065,14 @@ class RadioProvider with ChangeNotifier {
       category: "Playlist",
     );
     _metadataTimer?.cancel(); // CANCEL recognition timer
-    _isLoading = true;
+    // _isLoading = true; // GAPLESS: Don't force loading state, let buffering event handle it
     _isPlaying = true; // Optimistically show pause icon
     notifyListeners();
 
     try {
       String? videoId;
 
-      if (videoId == null && song.youtubeUrl != null) {
+      if (song.youtubeUrl != null) {
         videoId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
       }
 
@@ -2994,6 +2548,28 @@ class RadioProvider with ChangeNotifier {
       notifyListeners();
       return {};
     }
+  }
+
+  Future<String?> _fetchItunesUrl(String query) async {
+    try {
+      final encodedOriginal = Uri.encodeComponent(query);
+      final url = Uri.parse(
+        'https://itunes.apple.com/search?term=$encodedOriginal&limit=1&media=music',
+      );
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['resultCount'] > 0) {
+          final result = data['results'][0];
+          return result['trackViewUrl'] as String?;
+        }
+      }
+    } catch (e) {
+      debugPrint("iTunes Search Error: $e");
+    }
+    return null;
   }
 
   Future<void> reloadPlaylists() async {

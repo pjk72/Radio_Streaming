@@ -840,7 +840,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                         return; // Done
                                       } else if (videoUrl != null) {
                                         // Valid URL but not an ID we can extract (e.g. channel link?), launch external
-                                        final launched = await launchUrl(
+                                        await launchUrl(
                                           Uri.parse(videoUrl),
                                           mode: LaunchMode.externalApplication,
                                         );

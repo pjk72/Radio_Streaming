@@ -1,34 +1,4 @@
-import 'package:flutter/foundation.dart';
 import '../models/station.dart';
-import '../models/station_genre.dart';
-
-String _getPlatformUrl({
-  required String defaultUrl,
-  String? web,
-  String? android,
-  String? ios,
-  String? windows,
-  String? macos,
-  String? linux,
-}) {
-  if (kIsWeb) {
-    return web ?? defaultUrl;
-  }
-  switch (defaultTargetPlatform) {
-    case TargetPlatform.android:
-      return android ?? defaultUrl;
-    case TargetPlatform.iOS:
-      return ios ?? defaultUrl;
-    case TargetPlatform.windows:
-      return windows ?? defaultUrl;
-    case TargetPlatform.macOS:
-      return macos ?? defaultUrl;
-    case TargetPlatform.linux:
-      return linux ?? defaultUrl;
-    default:
-      return defaultUrl;
-  }
-}
 
 List<Station> stations = [
   // Station(
