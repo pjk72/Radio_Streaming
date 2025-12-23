@@ -563,12 +563,15 @@ class RadioAudioHandler extends BaseAudioHandler
     _loadQueue();
   }
 
-  Future<List<Station>> _getOrderedFavorites() async {
+  Future<List<Station>> _getOrderedFavorites({
+    bool fallbackToAll = true,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
+    // Try both keys to be safe (sync with provider)
     final List<String> favoriteIds =
         prefs.getStringList('favorite_station_ids') ?? [];
 
-    if (favoriteIds.isEmpty) return _stations;
+    if (favoriteIds.isEmpty) return fallbackToAll ? _stations : [];
 
     List<Station> ordered = [];
     for (String id in favoriteIds) {
@@ -578,7 +581,7 @@ class RadioAudioHandler extends BaseAudioHandler
       } catch (_) {}
     }
 
-    if (ordered.isEmpty) return _stations;
+    if (ordered.isEmpty) return fallbackToAll ? _stations : [];
     return ordered;
   }
 
@@ -1098,6 +1101,9 @@ class RadioAudioHandler extends BaseAudioHandler
     // CRITICAL: During station switch (_expectingStop), force "Buffering" state
     // instead of Idle/Stopped. This usually keeps the Notification ALIVE
     // because "Buffering" is considered an active playback state by Android.
+    final bool isPlaylistSong =
+        mediaItem.value?.extras?['type'] == 'playlist_song';
+
     if (_expectingStop) {
       playbackState.add(
         playbackState.value.copyWith(
@@ -1108,7 +1114,8 @@ class RadioAudioHandler extends BaseAudioHandler
             MediaControl.skipToPrevious,
             MediaControl.pause, // Show Pause (fake playing)
             MediaControl.skipToNext,
-            _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
+            if (!isPlaylistSong)
+              _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
           ],
         ),
       );
@@ -1141,9 +1148,11 @@ class RadioAudioHandler extends BaseAudioHandler
           MediaControl.skipToPrevious,
           if (playing) MediaControl.pause else MediaControl.play,
           MediaControl.skipToNext,
-          _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
+          if (!isPlaylistSong)
+            _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
         ],
         systemActions: const {
+          MediaAction.seek,
           MediaAction.skipToNext,
           MediaAction.skipToPrevious,
         },
@@ -1188,7 +1197,7 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     if (parentMediaId == 'favorites') {
-      final favorites = await _getOrderedFavorites();
+      final favorites = await _getOrderedFavorites(fallbackToAll: false);
       return favorites.map(_stationToMediaItem).toList();
     }
 
@@ -1247,8 +1256,12 @@ class RadioAudioHandler extends BaseAudioHandler
               artist: s.artist,
               album: s.album,
               artUri: s.artUri != null ? Uri.tryParse(s.artUri!) : null,
+              duration: const Duration(
+                minutes: 3,
+              ), // Fallback to enable seekbar early
               playable: true,
               extras: {
+                'type': 'playlist_song',
                 'url': s.youtubeUrl,
                 'playlistId': playlist.id,
                 'songId': s.id,

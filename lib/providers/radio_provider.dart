@@ -28,6 +28,7 @@ import '../services/log_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../services/lyrics_service.dart';
 
 // ...
 
@@ -349,6 +350,7 @@ class RadioProvider with ChangeNotifier {
           _currentGenre = null; // Placeholder
 
           notifyListeners();
+          _fetchLyrics();
         } catch (_) {
           // Check if it is a playlist song request from Android Auto
           if (item.extras?['type'] == 'playlist_song') {
@@ -700,6 +702,46 @@ class RadioProvider with ChangeNotifier {
   String? _currentReleaseDate;
   String? _currentGenre;
 
+  LyricsData _currentLyrics = LyricsData.empty();
+  LyricsData get currentLyrics => _currentLyrics;
+  bool _isFetchingLyrics = false;
+  bool get isFetchingLyrics => _isFetchingLyrics;
+  final LyricsService _lyricsService = LyricsService();
+
+  Future<void> _fetchLyrics() async {
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") {
+      _currentLyrics = LyricsData.empty();
+      notifyListeners();
+      return;
+    }
+
+    _currentLyrics = LyricsData.empty();
+    _isFetchingLyrics = true;
+    notifyListeners();
+
+    try {
+      int? durationSecs;
+      if (_hiddenAudioController != null) {
+        durationSecs =
+            _hiddenAudioController!.value.metaData.duration.inSeconds;
+      } else {
+        durationSecs = _audioHandler.mediaItem.value?.duration?.inSeconds;
+      }
+
+      _currentLyrics = await _lyricsService.fetchLyrics(
+        artist: _currentArtist,
+        title: _currentTrack,
+        album: _currentAlbum,
+        durationSeconds: durationSecs,
+      );
+    } catch (e) {
+      _currentLyrics = LyricsData.empty();
+    } finally {
+      _isFetchingLyrics = false;
+      notifyListeners();
+    }
+  }
+
   bool _isLoading = false;
   final List<String> _metadataLog = [];
 
@@ -991,6 +1033,8 @@ class RadioProvider with ChangeNotifier {
     // _isLoading = true; // Optional: Show loading state, but better to show song info
 
     notifyListeners(); // <--- CRITICAL: Update UI BEFORE async delays
+
+    _fetchLyrics(); // Fetch lyrics in background
 
     // --------------------------------------------------------------------------------
     // 2. NATIVE PLAYBACK (Anti-Standby Fix)
