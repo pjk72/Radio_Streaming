@@ -58,10 +58,18 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
             ? TextField(
                 controller: _searchController,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: "Search Stations...",
-                  hintStyle: TextStyle(color: Colors.white54),
+                  hintStyle: const TextStyle(color: Colors.white54),
                   border: InputBorder.none,
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
                 ),
                 autofocus: true,
               )

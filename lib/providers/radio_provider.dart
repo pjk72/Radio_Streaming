@@ -241,6 +241,7 @@ class RadioProvider with ChangeNotifier {
 
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
+  Playlist? _tempPlaylist;
   DateTime? _lastPlayNextTime;
   DateTime? _zeroDurationStartTime;
   DateTime? _lastProcessingTime;
@@ -865,6 +866,7 @@ class RadioProvider with ChangeNotifier {
   String? get audioOnlySongId => _audioOnlySongId;
   String? _currentPlayingPlaylistId;
   String? get currentPlayingPlaylistId => _currentPlayingPlaylistId;
+  String? get currentSongId => _audioOnlySongId;
 
   bool _isShuffleMode = false;
   bool get isShuffleMode => _isShuffleMode;
@@ -880,11 +882,17 @@ class RadioProvider with ChangeNotifier {
   List<SavedSong> get activeQueue {
     if (_currentPlayingPlaylistId == null) return [];
 
-    final playlist = playlists.firstWhere(
-      (p) => p.id == _currentPlayingPlaylistId,
-      orElse: () =>
-          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
-    );
+    Playlist playlist;
+    if (_tempPlaylist != null &&
+        _tempPlaylist!.id == _currentPlayingPlaylistId) {
+      playlist = _tempPlaylist!;
+    } else {
+      playlist = playlists.firstWhere(
+        (p) => p.id == _currentPlayingPlaylistId,
+        orElse: () =>
+            Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+      );
+    }
 
     if (playlist.songs.isEmpty) return [];
 
@@ -912,11 +920,17 @@ class RadioProvider with ChangeNotifier {
   void _generateShuffleList() {
     if (_currentPlayingPlaylistId == null) return;
 
-    final playlist = playlists.firstWhere(
-      (p) => p.id == _currentPlayingPlaylistId,
-      orElse: () =>
-          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
-    );
+    Playlist playlist;
+    if (_tempPlaylist != null &&
+        _tempPlaylist!.id == _currentPlayingPlaylistId) {
+      playlist = _tempPlaylist!;
+    } else {
+      playlist = playlists.firstWhere(
+        (p) => p.id == _currentPlayingPlaylistId,
+        orElse: () =>
+            Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+      );
+    }
 
     if (playlist.songs.isEmpty) return;
 
@@ -945,6 +959,56 @@ class RadioProvider with ChangeNotifier {
   void toggleRepeat() {
     _isRepeatMode = !_isRepeatMode;
     notifyListeners();
+  }
+
+  Future<void> playAdHocPlaylist(Playlist playlist, String? startSongId) async {
+    _tempPlaylist = playlist;
+
+    SavedSong? song;
+    if (startSongId != null) {
+      try {
+        song = playlist.songs.firstWhere((s) => s.id == startSongId);
+      } catch (_) {}
+    }
+    if (song == null && playlist.songs.isNotEmpty) {
+      song = playlist.songs.first;
+    }
+
+    if (song == null) return;
+
+    String? videoId;
+    if (song.youtubeUrl != null) {
+      videoId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
+    }
+    // Fallback if not cached
+    if (videoId == null) {
+      if (song.id.length == 11) {
+        videoId = song.id;
+      } else {
+        // Attempt resolution
+        try {
+          final links = await resolveLinks(
+            title: song.title,
+            artist: song.artist,
+            spotifyUrl: song.spotifyUrl,
+          );
+          final url = links['youtube'];
+          if (url != null) videoId = YoutubePlayer.convertUrlToId(url);
+        } catch (_) {}
+      }
+    }
+
+    if (videoId != null) {
+      await playYoutubeAudio(
+        videoId,
+        song.id,
+        playlistId: playlist.id,
+        overrideTitle: song.title,
+        overrideArtist: song.artist,
+        overrideAlbum: song.album,
+        overrideArtUri: song.artUri,
+      );
+    }
   }
 
   Future<void> playYoutubeAudio(
@@ -977,9 +1041,17 @@ class RadioProvider with ChangeNotifier {
     // Only search if we don't have overrides
     if (overrideTitle == null) {
       // Use current playlist if available for better lookup, otherwise search all
-      List<Playlist> searchLists = playlistId != null
-          ? playlists.where((p) => p.id == playlistId).toList()
-          : playlists;
+      List<Playlist> searchLists = [];
+      if (playlistId != null) {
+        if (_tempPlaylist != null && _tempPlaylist!.id == playlistId) {
+          searchLists = [_tempPlaylist!];
+        } else {
+          searchLists = playlists.where((p) => p.id == playlistId).toList();
+        }
+      } else {
+        searchLists = [...playlists];
+        if (_tempPlaylist != null) searchLists.add(_tempPlaylist!);
+      }
 
       // Fallback to searching all if specific lookup fails
       if (searchLists.isEmpty) searchLists = playlists;
@@ -1960,11 +2032,17 @@ class RadioProvider with ChangeNotifier {
   SavedSong? _getNextSongInPlaylist() {
     if (_currentPlayingPlaylistId == null) return null;
 
-    final playlist = playlists.firstWhere(
-      (p) => p.id == _currentPlayingPlaylistId,
-      orElse: () =>
-          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
-    );
+    Playlist playlist;
+    if (_tempPlaylist != null &&
+        _tempPlaylist!.id == _currentPlayingPlaylistId) {
+      playlist = _tempPlaylist!;
+    } else {
+      playlist = playlists.firstWhere(
+        (p) => p.id == _currentPlayingPlaylistId,
+        orElse: () =>
+            Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+      );
+    }
     if (playlist.songs.isEmpty) return null;
 
     // Filter out invalid songs to prevent playing them
@@ -2037,11 +2115,17 @@ class RadioProvider with ChangeNotifier {
   Future<void> _playPreviousInPlaylist() async {
     if (_currentPlayingPlaylistId == null || _audioOnlySongId == null) return;
 
-    final playlist = playlists.firstWhere(
-      (p) => p.id == _currentPlayingPlaylistId,
-      orElse: () =>
-          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
-    );
+    Playlist playlist;
+    if (_tempPlaylist != null &&
+        _tempPlaylist!.id == _currentPlayingPlaylistId) {
+      playlist = _tempPlaylist!;
+    } else {
+      playlist = playlists.firstWhere(
+        (p) => p.id == _currentPlayingPlaylistId,
+        orElse: () =>
+            Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+      );
+    }
     if (playlist.songs.isEmpty) return;
 
     final currentOriginalIndex = playlist.songs.indexWhere(

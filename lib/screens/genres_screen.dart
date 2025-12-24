@@ -120,22 +120,39 @@ class _GenresScreenState extends State<GenresScreen> {
                       controller: _searchController,
                       style: const TextStyle(color: Colors.white, fontSize: 13),
                       textAlignVertical: TextAlignVertical.center,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: "Search stations...",
-                        hintStyle: TextStyle(
+                        hintStyle: const TextStyle(
                           color: Colors.white38,
                           fontSize: 12,
                         ),
                         isDense: true,
-                        prefixIcon: Icon(
+                        prefixIcon: const Icon(
                           Icons.search,
                           color: Colors.white38,
                           size: 16,
                         ),
-                        prefixIconConstraints: BoxConstraints(
+                        prefixIconConstraints: const BoxConstraints(
                           minWidth: 32,
                           minHeight: 32,
                         ),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(
+                                  Icons.close,
+                                  color: Colors.white38,
+                                  size: 16,
+                                ),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 32,
+                                ),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              )
+                            : null,
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.zero,
                       ),
@@ -244,19 +261,39 @@ class _GenresScreenState extends State<GenresScreen> {
                     controller: _searchController,
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                     textAlignVertical: TextAlignVertical.center,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: "Search...",
-                      hintStyle: TextStyle(color: Colors.white38, fontSize: 12),
+                      hintStyle: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                      ),
                       isDense: true,
-                      prefixIcon: Icon(
+                      prefixIcon: const Icon(
                         Icons.search,
                         color: Colors.white38,
                         size: 16,
                       ),
-                      prefixIconConstraints: BoxConstraints(
+                      prefixIconConstraints: const BoxConstraints(
                         minWidth: 32,
                         minHeight: 32,
                       ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white38,
+                                size: 16,
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                              },
+                            )
+                          : null,
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.zero,
                     ),

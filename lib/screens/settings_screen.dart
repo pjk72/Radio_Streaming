@@ -134,16 +134,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: TextField(
                     controller: _searchController,
                     style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: "Search...",
-                      hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
-                      prefixIcon: Icon(
+                      hintStyle: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 13,
+                      ),
+                      prefixIcon: const Icon(
                         Icons.search,
                         color: Colors.white38,
                         size: 16,
                       ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white38,
+                                size: 16,
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                              },
+                            )
+                          : null,
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.only(
+                      contentPadding: const EdgeInsets.only(
                         top: 2,
                       ), // vertically center
                     ),

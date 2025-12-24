@@ -14,7 +14,10 @@ import 'album_details_screen.dart';
 import '../widgets/youtube_popup.dart';
 import '../utils/genre_mapper.dart';
 import '../services/music_metadata_service.dart';
-import '../services/log_service.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+enum MetadataViewMode { playlists, artists, albums }
 
 class PlaylistScreen extends StatefulWidget {
   const PlaylistScreen({super.key});
@@ -25,6 +28,13 @@ class PlaylistScreen extends StatefulWidget {
 
 class _PlaylistScreenState extends State<PlaylistScreen> {
   String? _selectedPlaylistId;
+  String? _selectedArtist;
+  String? _selectedArtistDisplay;
+  bool _selectedArtistIsGroup = false;
+  String? _selectedAlbum;
+  String? _selectedAlbumDisplay;
+  bool _selectedAlbumIsGroup = false;
+  MetadataViewMode _viewMode = MetadataViewMode.playlists;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -94,36 +104,156 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
 
-    // Filter Logic
-    final playlists = _selectedPlaylistId == null
+    // Collect all unique songs
+    final Set<String> uniqueIds = {};
+    final List<SavedSong> allSongs = [];
+    for (var p in allPlaylists) {
+      for (var s in p.songs) {
+        if (uniqueIds.add(s.id)) {
+          allSongs.add(s);
+        }
+      }
+    }
+
+    // 1. Determine Selection State
+    final bool isSelectionActive =
+        _selectedPlaylistId != null ||
+        _selectedArtist != null ||
+        _selectedAlbum != null;
+
+    // 2. Determine Title & Song List (if selection active)
+    String headerTitle = "Library";
+    List<SavedSong> currentSongList = [];
+
+    // Helper for dummy playlist creation
+    Playlist createDummyPlaylist(String name, List<SavedSong> songs) {
+      return Playlist(
+        id: 'temp_view',
+        name: name,
+        songs: songs,
+        createdAt: DateTime.now(),
+      );
+    }
+
+    Playlist? effectivePlaylist;
+
+    if (_selectedPlaylistId != null) {
+      final p = allPlaylists.firstWhere(
+        (p) => p.id == _selectedPlaylistId,
+        orElse: () => allPlaylists.first,
+      );
+      headerTitle = p.name;
+      currentSongList = p.songs;
+      effectivePlaylist = p;
+    } else if (_selectedArtist != null) {
+      headerTitle = _selectedArtistDisplay ?? _selectedArtist!;
+
+      if (_selectedArtistIsGroup) {
+        currentSongList = allSongs.where((s) {
+          final norm = s.artist
+              .split('•')
+              .first
+              .trim()
+              .split(RegExp(r'[,&/]'))
+              .first
+              .trim()
+              .toLowerCase();
+          return norm == _selectedArtist;
+        }).toList();
+      } else {
+        currentSongList = allSongs
+            .where((s) => s.artist == _selectedArtist)
+            .toList();
+      }
+      effectivePlaylist = createDummyPlaylist(headerTitle, currentSongList);
+    } else if (_selectedAlbum != null) {
+      headerTitle = _selectedAlbumDisplay ?? _selectedAlbum!;
+
+      if (_selectedAlbumIsGroup) {
+        currentSongList = allSongs.where((s) {
+          final norm = s.album
+              .split('(')
+              .first
+              .trim()
+              .split('[')
+              .first
+              .trim()
+              .toLowerCase();
+          return norm == _selectedAlbum;
+        }).toList();
+      } else {
+        currentSongList = allSongs
+            .where((s) => s.album == _selectedAlbum)
+            .toList();
+      }
+      effectivePlaylist = createDummyPlaylist(headerTitle, currentSongList);
+    } else {
+      switch (_viewMode) {
+        case MetadataViewMode.playlists:
+          headerTitle = "Genres";
+          break;
+        case MetadataViewMode.artists:
+          headerTitle = "Artists";
+          break;
+        case MetadataViewMode.albums:
+          headerTitle = "Albums";
+          break;
+      }
+    }
+
+    // 3. Filter Song List by Search (if selection active)
+    if (isSelectionActive && _searchQuery.isNotEmpty) {
+      currentSongList = currentSongList.where((s) {
+        return s.title.toLowerCase().contains(_searchQuery) ||
+            s.artist.toLowerCase().contains(_searchQuery);
+      }).toList();
+    }
+
+    // 4. Filter Playlists by Search (only if view mode is playlists and no selection)
+    final displayPlaylists = !isSelectionActive && _searchQuery.isNotEmpty
         ? sortedPlaylists
               .where((p) => p.name.toLowerCase().contains(_searchQuery))
               .toList()
         : sortedPlaylists;
 
-    final Playlist? selectedPlaylist = _selectedPlaylistId == null
-        ? null
-        : allPlaylists.firstWhere(
-            (p) => p.id == _selectedPlaylistId,
-            orElse: () => allPlaylists.first,
-          );
-
-    final List<SavedSong> filteredSongs = selectedPlaylist != null
-        ? selectedPlaylist.songs.where((s) {
-            final q = _searchQuery;
-            if (q.isEmpty) return true;
-            return s.title.toLowerCase().contains(q) ||
-                s.artist.toLowerCase().contains(q);
-          }).toList()
-        : [];
+    // Helper for Mode Button
+    Widget buildModeBtn(String title, MetadataViewMode mode) {
+      final bool selected = _viewMode == mode;
+      return GestureDetector(
+        onTap: () {
+          setState(() {
+            _viewMode = mode;
+            _searchController.clear();
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? Theme.of(context).primaryColor
+                : Colors.white.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? Colors.transparent : Colors.white24,
+            ),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
 
     return Stack(
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.black.withValues(
-              alpha: 0.2,
-            ), // Separate area background
+            color: Colors.black.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(16),
           ),
           clipBehavior: Clip.hardEdge,
@@ -137,31 +267,35 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   children: [
                     Row(
                       children: [
-                        if (_selectedPlaylistId != null)
+                        if (isSelectionActive)
                           IconButton(
                             icon: const Icon(Icons.arrow_back_ios_new_rounded),
                             color: Colors.white,
                             onPressed: () {
                               setState(() {
                                 _selectedPlaylistId = null;
+                                _selectedArtist = null;
+                                _selectedAlbum = null;
                                 _searchController.clear();
                               });
                             },
                           )
                         else
-                          const Padding(
-                            padding: EdgeInsets.all(12.0),
+                          Padding(
+                            padding: const EdgeInsets.all(12.0),
                             child: Icon(
-                              Icons.playlist_play_rounded,
+                              _viewMode == MetadataViewMode.artists
+                                  ? Icons.people
+                                  : _viewMode == MetadataViewMode.albums
+                                  ? Icons.album
+                                  : Icons.playlist_play_rounded,
                               color: Colors.white,
                             ),
                           ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _selectedPlaylistId != null
-                                ? selectedPlaylist?.name ?? "Playlist"
-                                : "Playlists",
+                            headerTitle,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 20,
@@ -171,7 +305,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (_selectedPlaylistId != null) ...[
+                        if (isSelectionActive) ...[
                           IconButton(
                             icon: Icon(
                               Icons.shuffle_rounded,
@@ -189,8 +323,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               color: Colors.white,
                             ),
                             tooltip: "Play All",
-                            onPressed: () =>
-                                _playPlaylist(provider, selectedPlaylist!),
+                            onPressed: () {
+                              if (_selectedPlaylistId != null) {
+                                _playPlaylist(provider, effectivePlaylist!);
+                              } else {
+                                _playSongs(
+                                  provider,
+                                  currentSongList,
+                                  headerTitle,
+                                );
+                              }
+                            },
                           ),
                           const SizedBox(width: 8),
                         ] else ...[
@@ -205,17 +348,31 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 _showAddSongDialog(context, provider),
                           ),
                           const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.add_rounded, size: 28),
-                            color: Colors.white,
-                            tooltip: "Create Playlist",
-                            onPressed: () =>
-                                _showCreatePlaylistDialog(context, provider),
-                          ),
+                          if (_viewMode == MetadataViewMode.playlists)
+                            IconButton(
+                              icon: const Icon(Icons.add_rounded, size: 28),
+                              color: Colors.white,
+                              tooltip: "Create Playlist",
+                              onPressed: () =>
+                                  _showCreatePlaylistDialog(context, provider),
+                            ),
                           const SizedBox(width: 8),
                         ],
                       ],
                     ),
+                    if (!isSelectionActive)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: Row(
+                          children: [
+                            buildModeBtn("Genres", MetadataViewMode.playlists),
+                            const SizedBox(width: 8),
+                            buildModeBtn("Artists", MetadataViewMode.artists),
+                            const SizedBox(width: 8),
+                            buildModeBtn("Albums", MetadataViewMode.albums),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 8),
                     // Search Bar
                     Container(
@@ -233,22 +390,39 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           fontSize: 13,
                         ),
                         textAlignVertical: TextAlignVertical.center,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: "Search...",
-                          hintStyle: TextStyle(
+                          hintStyle: const TextStyle(
                             color: Colors.white38,
                             fontSize: 12,
                           ),
                           isDense: true,
-                          prefixIcon: Icon(
+                          prefixIcon: const Icon(
                             Icons.search,
                             color: Colors.white38,
                             size: 16,
                           ),
-                          prefixIconConstraints: BoxConstraints(
+                          prefixIconConstraints: const BoxConstraints(
                             minWidth: 32,
                             minHeight: 32,
                           ),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white38,
+                                    size: 16,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 32,
+                                    minHeight: 32,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                  },
+                                )
+                              : null,
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.zero,
                         ),
@@ -258,28 +432,86 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   ],
                 ),
               ),
-
-              // Body content
+              // Body Content
               Expanded(
-                child: _selectedPlaylistId == null
-                    ? ListView(
-                        padding: EdgeInsets.zero,
-                        children: [
-                          const SizedBox(height: 16),
-                          _buildPlaylistsGrid(context, provider, playlists),
-                        ],
-                      )
-                    : RefreshIndicator(
+                child: Builder(
+                  builder: (context) {
+                    if (isSelectionActive) {
+                      return RefreshIndicator(
                         onRefresh: () async {
-                          await provider.reloadPlaylists();
+                          if (_selectedPlaylistId != null) {
+                            await provider.reloadPlaylists();
+                          }
                         },
                         child: _buildSongList(
                           context,
                           provider,
-                          selectedPlaylist!,
-                          filteredSongs,
+                          effectivePlaylist!,
+                          currentSongList,
                         ),
-                      ),
+                      );
+                    }
+
+                    // Global Search OR Main View
+                    if (!isSelectionActive && _searchQuery.isNotEmpty) {
+                      if (_viewMode == MetadataViewMode.playlists) {
+                        return _buildGlobalSearchResults(
+                          context,
+                          provider,
+                          allPlaylists,
+                        );
+                      } else {
+                        // Filter Logic for Artists/Albums Grid Search
+                        if (_viewMode == MetadataViewMode.artists) {
+                          final filteredArtists = allSongs
+                              .where(
+                                (s) => s.artist.toLowerCase().contains(
+                                  _searchQuery,
+                                ),
+                              )
+                              .toList();
+                          return _buildArtistsGrid(
+                            context,
+                            provider,
+                            filteredArtists,
+                          );
+                        } else {
+                          final filteredAlbums = allSongs
+                              .where(
+                                (s) => s.album.toLowerCase().contains(
+                                  _searchQuery,
+                                ),
+                              )
+                              .toList();
+                          return _buildAlbumsGrid(
+                            context,
+                            provider,
+                            filteredAlbums,
+                          );
+                        }
+                      }
+                    }
+
+                    switch (_viewMode) {
+                      case MetadataViewMode.playlists:
+                        return ListView(
+                          key: const PageStorageKey('playlists_list'),
+                          padding: const EdgeInsets.only(bottom: 80),
+                          children: [
+                            _buildPlaylistsGrid(
+                              context,
+                              provider,
+                              displayPlaylists,
+                            ),
+                          ],
+                        );
+                      case MetadataViewMode.artists:
+                        return _buildArtistsGrid(context, provider, allSongs);
+                      case MetadataViewMode.albums:
+                        return _buildAlbumsGrid(context, provider, allSongs);
+                    }
+                  },
+                ),
               ),
             ],
           ),
@@ -940,6 +1172,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             provider,
                             song,
                             playlist.id,
+                            adHocPlaylist: playlist,
                           ),
                           child:
                               (provider.audioOnlySongId == song.id &&
@@ -1110,6 +1343,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   provider,
                                   song,
                                   playlist.id,
+                                  adHocPlaylist: playlist,
                                 ),
                                 child:
                                     (provider.audioOnlySongId == song.id &&
@@ -1148,11 +1382,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   Future<void> _handleSongAudioAction(
     RadioProvider provider,
     SavedSong song,
-    String playlistId,
-  ) async {
+    String playlistId, {
+    Playlist? adHocPlaylist,
+  }) async {
     // If this song is currently playing audio, toggle play/pause
     if (provider.audioOnlySongId == song.id) {
       provider.togglePlay();
+      return;
+    }
+
+    if (playlistId == 'temp_view' && adHocPlaylist != null) {
+      await provider.playAdHocPlaylist(adHocPlaylist, song.id);
       return;
     }
 
@@ -1443,23 +1683,45 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     decoration: InputDecoration(
                       hintText: "Enter search term...",
                       hintStyle: const TextStyle(color: Colors.white38),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.search, color: Colors.white70),
-                        onPressed: () async {
-                          if (controller.text.isEmpty) return;
-                          setState(() {
-                            isLoading = true;
-                            hasSearched = true;
-                            results = [];
-                          });
-                          final res = await provider.searchMusic(
-                            controller.text,
-                          );
-                          setState(() {
-                            isLoading = false;
-                            results = res;
-                          });
-                        },
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (controller.text.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                controller.clear();
+                                setState(() {
+                                  // Update state to hide the X button
+                                });
+                              },
+                            ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.search,
+                              color: Colors.white70,
+                            ),
+                            onPressed: () async {
+                              if (controller.text.isEmpty) return;
+                              setState(() {
+                                isLoading = true;
+                                hasSearched = true;
+                                results = [];
+                              });
+                              final res = await provider.searchMusic(
+                                controller.text,
+                              );
+                              setState(() {
+                                isLoading = false;
+                                results = res;
+                              });
+                            },
+                          ),
+                        ],
                       ),
                       enabledBorder: const UnderlineInputBorder(
                         borderSide: BorderSide(color: Colors.white24),
@@ -1664,6 +1926,736 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       ),
     );
   }
+
+  Widget _buildGlobalSearchResults(
+    BuildContext context,
+    RadioProvider provider,
+    List<Playlist> allPlaylists,
+  ) {
+    print("Building global search results: query='$_searchQuery'");
+    // 1. Filter Playlists by name
+    final matchedPlaylists = allPlaylists
+        .where((p) => p.name.toLowerCase().contains(_searchQuery))
+        .toList();
+
+    // 2. Find Songs across ALL playlists
+    final List<Map<String, dynamic>> matchedSongs = [];
+    for (var p in allPlaylists) {
+      for (var s in p.songs) {
+        if (s.title.toLowerCase().contains(_searchQuery) ||
+            s.artist.toLowerCase().contains(_searchQuery)) {
+          matchedSongs.add({'playlist': p, 'song': s});
+        }
+      }
+    }
+
+    if (matchedPlaylists.isEmpty && matchedSongs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.search_off_rounded,
+              size: 64,
+              color: Colors.white24,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "No results found for '$_searchQuery'",
+              style: const TextStyle(color: Colors.white54),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (matchedPlaylists.isNotEmpty) ...[
+          const Text(
+            "Playlists",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildPlaylistsGrid(context, provider, matchedPlaylists),
+          const SizedBox(height: 24),
+        ],
+        if (matchedSongs.isNotEmpty) ...[
+          const Text(
+            "Songs",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: matchedSongs.length,
+            itemBuilder: (context, index) {
+              final item = matchedSongs[index];
+              final SavedSong song = item['song'];
+              final Playlist playlist = item['playlist'];
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: song.artUri != null
+                        ? Image.network(
+                            song.artUri!,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 48,
+                              height: 48,
+                              color: Colors.grey[900],
+                              child: const Icon(
+                                Icons.music_note,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            width: 48,
+                            height: 48,
+                            color: Colors.grey[900],
+                            child: const Icon(
+                              Icons.music_note,
+                              color: Colors.white54,
+                            ),
+                          ),
+                  ),
+                  title: Text(
+                    song.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        song.artist,
+                        style: const TextStyle(color: Colors.white70),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            playlist.id == 'favorites'
+                                ? Icons.favorite
+                                : Icons.queue_music,
+                            size: 12,
+                            color: playlist.id == 'favorites'
+                                ? Colors.pinkAccent
+                                : Colors.white54,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              "in ${playlist.name}",
+                              style: TextStyle(
+                                color: playlist.id == 'favorites'
+                                    ? Colors.pinkAccent
+                                    : Colors.white54,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(
+                      Icons.play_circle_fill,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      provider.playPlaylistSong(song, playlist.id);
+                    },
+                  ),
+                  onTap: () {
+                    provider.playPlaylistSong(song, playlist.id);
+                  },
+                ),
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildArtistsGrid(
+    BuildContext context,
+    RadioProvider provider,
+    List<SavedSong> allSongs,
+  ) {
+    // Grouping Logic
+    final Map<String, Set<String>> groupedVariants = {};
+    final Map<String, String> normKeyToDisplay = {};
+
+    for (var s in allSongs) {
+      if (s.artist.isEmpty) continue;
+      String raw = s.artist;
+      String norm = raw
+          .split('•')
+          .first
+          .trim()
+          .split(RegExp(r'[,&/]'))
+          .first
+          .trim();
+      String key = norm.toLowerCase();
+
+      if (!groupedVariants.containsKey(key)) {
+        groupedVariants[key] = {};
+        normKeyToDisplay[key] = norm;
+      }
+      groupedVariants[key]!.add(raw);
+    }
+
+    final groups = groupedVariants.keys.toList()
+      ..sort((a, b) => a.compareTo(b));
+
+    if (groups.isEmpty) {
+      return const Center(
+        child: Text(
+          "No artists found",
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return GridView.builder(
+      key: const PageStorageKey('artists_grid'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 180,
+        childAspectRatio: 0.8,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: groups.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          final favImage = GenreMapper.getGenreImage("Favorites");
+          // Check if Favorites is playing
+          bool isFavPlaying = provider.currentPlayingPlaylistId == 'favorites';
+          // Only check song match if not already active playlist
+          if (!isFavPlaying) {
+            // We'd need to access the favorites list, but standard practice is
+            // checking playlistId. We can leave it as ID check for simplicity
+            // or check if current song is IS_FAV if needed.
+            // But simpler to just rely on ID or maybe check if current song is favorited?
+            // The user request says "where inside there is a song that is playing".
+            // If ANY favorite song is playing?
+            final favIds = provider.favorites;
+            if (favIds.contains(
+                  int.tryParse(provider.currentSongId ?? "") ?? -1,
+                ) ||
+                (provider.currentTrack.isNotEmpty &&
+                    provider.favorites.isNotEmpty &&
+                    // This is tricky without loading all favorites.
+                    // Let's stick to playlist ID check or if current song is favored.
+                    provider.favorites.any(
+                      (fid) => fid.toString() == provider.audioOnlySongId,
+                    ))) {
+              // Actually provider.favorites is just IDs.
+              // We can't easily know if 'currentTrack' matches a favorite by text without traversing all.
+              // But we CAN check provider.isFavorite(currentSongId).
+              // Let's assume if the current song is favorited, highlight the Favorites card.
+              final currentId = int.tryParse(provider.currentSongId ?? "");
+              if (currentId != null && provider.favorites.contains(currentId)) {
+                isFavPlaying = true;
+              }
+            }
+          }
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedPlaylistId = 'favorites';
+                _selectedArtist = null;
+                _selectedAlbum = null;
+                _searchController.clear();
+              });
+            },
+            child: Container(
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: isFavPlaying
+                    ? Border.all(
+                        color: Colors.redAccent.withValues(alpha: 0.8),
+                        width: 2,
+                      )
+                    : Border.all(color: Colors.white12),
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: isFavPlaying
+                    ? [
+                        BoxShadow(
+                          color: Colors.redAccent.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
+                image: favImage != null
+                    ? DecorationImage(
+                        image: NetworkImage(favImage),
+                        fit: BoxFit.cover,
+                        colorFilter: ColorFilter.mode(
+                          Colors.black.withValues(alpha: 0.5),
+                          BlendMode.darken,
+                        ),
+                      )
+                    : null,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: Icon(
+                        Icons.favorite,
+                        color: Colors.white.withValues(alpha: 0.9),
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text(
+                      "Favorites",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        final groupKey = groups[index - 1];
+        final variants = groupedVariants[groupKey]!;
+
+        String displayArtist;
+        String searchArtist;
+        bool isGroup;
+        int count = 0;
+        bool isPlaying = false;
+
+        if (variants.length == 1) {
+          // Single
+          displayArtist = variants.first;
+          searchArtist = variants.first;
+          isGroup = false;
+          count = allSongs.where((s) => s.artist == displayArtist).length;
+
+          // Check playing
+          if (provider.currentArtist.trim().toLowerCase() ==
+              displayArtist.trim().toLowerCase()) {
+            isPlaying = true;
+          }
+        } else {
+          // Group
+          searchArtist = normKeyToDisplay[groupKey]!;
+          displayArtist = "$searchArtist...";
+          isGroup = true;
+
+          for (var v in variants) {
+            count += allSongs.where((s) => s.artist == v).length;
+          }
+
+          // Check playing (if any variant matches)
+          final currentNorm = provider.currentArtist
+              .split('•')
+              .first
+              .trim()
+              .split(RegExp(r'[,&/]'))
+              .first
+              .trim()
+              .toLowerCase();
+          if (currentNorm == groupKey) isPlaying = true;
+        }
+
+        return _ArtistGridItem(
+          artist: searchArtist,
+          customDisplayName: displayArtist,
+          songCount: count,
+          isPlaying: isPlaying,
+          onTap: () {
+            setState(() {
+              // Reset other selections
+              _selectedPlaylistId = null;
+              _selectedAlbum = null;
+              _searchController.clear();
+
+              if (isGroup) {
+                _selectedArtist = groupKey; // key for filtering
+                _selectedArtistDisplay = displayArtist;
+                _selectedArtistIsGroup = true;
+              } else {
+                _selectedArtist = searchArtist; // original name
+                _selectedArtistDisplay = searchArtist;
+                _selectedArtistIsGroup = false;
+              }
+            });
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAlbumsGrid(
+    BuildContext context,
+    RadioProvider provider,
+    List<SavedSong> allSongs,
+  ) {
+    // ALBUM GROUPING LOGIC
+    final Map<String, Set<String>> groupedAlbums = {};
+    final Map<String, String> normKeyToDisplay = {};
+    final Map<String, SavedSong> representativeSongs =
+        {}; // One song per raw album to get art/artist
+
+    for (var s in allSongs) {
+      if (s.album.isEmpty) continue;
+      String raw = s.album;
+      // Normalization: Remove (Deluxe), [Live], etc.
+      String norm = raw.split('(').first.trim().split('[').first.trim();
+      String key = norm.toLowerCase();
+
+      if (!groupedAlbums.containsKey(key)) {
+        groupedAlbums[key] = {};
+        normKeyToDisplay[key] = norm;
+      }
+      groupedAlbums[key]!.add(raw);
+
+      if (!representativeSongs.containsKey(raw)) {
+        representativeSongs[raw] = s;
+      }
+    }
+
+    final groups = groupedAlbums.keys.toList()..sort((a, b) => a.compareTo(b));
+
+    if (groups.isEmpty) {
+      return const Center(
+        child: Text("No albums found", style: TextStyle(color: Colors.white54)),
+      );
+    }
+
+    return GridView.builder(
+      key: const PageStorageKey('albums_grid'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 180,
+        childAspectRatio: 0.8,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: groups.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          final favImage = GenreMapper.getGenreImage("Favorites");
+          bool isFavPlaying = provider.currentPlayingPlaylistId == 'favorites';
+
+          final currentId = int.tryParse(provider.currentSongId ?? "");
+          if (!isFavPlaying &&
+              currentId != null &&
+              provider.favorites.contains(currentId)) {
+            isFavPlaying = true;
+          }
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedPlaylistId = 'favorites';
+                _selectedArtist = null;
+                _selectedAlbum = null;
+                _searchController.clear();
+              });
+            },
+            child: Container(
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: isFavPlaying
+                    ? Border.all(
+                        color: Colors.redAccent.withValues(alpha: 0.8),
+                        width: 2,
+                      )
+                    : Border.all(color: Colors.white12),
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: isFavPlaying
+                    ? [
+                        BoxShadow(
+                          color: Colors.redAccent.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
+                image: favImage != null
+                    ? DecorationImage(
+                        image: NetworkImage(favImage),
+                        fit: BoxFit.cover,
+                        colorFilter: ColorFilter.mode(
+                          Colors.black.withValues(alpha: 0.5),
+                          BlendMode.darken,
+                        ),
+                      )
+                    : null,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: Icon(
+                        Icons.favorite,
+                        color: Colors.white.withValues(alpha: 0.9),
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text(
+                      "Favorites",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        final groupKey = groups[index - 1];
+        final variants = groupedAlbums[groupKey]!;
+
+        String displayAlbum;
+        String searchAlbum;
+        bool isGroup;
+        int count = 0;
+        bool isPlaying = false;
+        SavedSong? displaySong;
+
+        if (variants.length == 1) {
+          // Single
+          displayAlbum = variants.first;
+          searchAlbum = variants.first;
+          isGroup = false;
+          displaySong = representativeSongs[displayAlbum];
+
+          final albumSongs = allSongs
+              .where((s) => s.album == displayAlbum)
+              .toList();
+          count = albumSongs.length;
+
+          // Check playing
+          if (provider.currentAlbum.trim().toLowerCase() ==
+                  displayAlbum.trim().toLowerCase() &&
+              (displaySong != null &&
+                  provider.currentArtist.trim().toLowerCase() ==
+                      displaySong.artist.trim().toLowerCase())) {
+            isPlaying = true;
+          } else if (albumSongs.isNotEmpty) {
+            // If any song in this specific album is playing
+            isPlaying = albumSongs.any((s) => provider.audioOnlySongId == s.id);
+          }
+        } else {
+          // Group
+          searchAlbum = normKeyToDisplay[groupKey]!;
+          displayAlbum = "$searchAlbum...";
+          isGroup = true;
+          // Use first variant for art
+          displaySong = representativeSongs[variants.first];
+
+          for (var v in variants) {
+            count += allSongs.where((s) => s.album == v).length;
+          }
+
+          // Check playing (if any variant matches)
+          final currentNorm = provider.currentAlbum
+              .split('(')
+              .first
+              .trim()
+              .split('[')
+              .first
+              .trim()
+              .toLowerCase();
+          if (currentNorm == groupKey) isPlaying = true;
+        }
+
+        if (displaySong == null) return const SizedBox();
+
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              _selectedArtist = null;
+              _selectedPlaylistId = null;
+              _searchController.clear();
+
+              if (isGroup) {
+                _selectedAlbum = groupKey;
+                _selectedAlbumDisplay = displayAlbum;
+                _selectedAlbumIsGroup = true;
+              } else {
+                _selectedAlbum = searchAlbum;
+                _selectedAlbumDisplay = searchAlbum;
+                _selectedAlbumIsGroup = false;
+              }
+            });
+          },
+          child: Container(
+            foregroundDecoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: isPlaying
+                  ? Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.8),
+                      width: 2,
+                    )
+                  : Border.all(color: Colors.white12),
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: isPlaying
+                  ? [
+                      BoxShadow(
+                        color: Colors.redAccent.withValues(alpha: 0.4),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+              // No generic background image for album card generally, just the art
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16),
+                    ),
+                    child: displaySong.artUri != null
+                        ? Image.network(
+                            displaySong.artUri!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.white10,
+                              child: const Icon(
+                                Icons.album,
+                                color: Colors.white54,
+                                size: 40,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            color: Colors.white10,
+                            child: const Icon(
+                              Icons.album,
+                              color: Colors.white54,
+                              size: 40,
+                            ),
+                          ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayAlbum,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        displaySong.artist,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        "$count Songs",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _playSongs(
+    RadioProvider provider,
+    List<SavedSong> songs,
+    String name,
+  ) async {
+    if (songs.isEmpty) return;
+    final playlist = Playlist(
+      id: 'temp_view',
+      name: name,
+      songs: songs,
+      createdAt: DateTime.now(),
+    );
+    provider.playAdHocPlaylist(playlist, null);
+  }
 }
 
 class _AlbumGroupWidget extends StatefulWidget {
@@ -1865,6 +2857,163 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                 },
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ArtistGridItem extends StatefulWidget {
+  final String artist;
+  final String? customDisplayName;
+  final int songCount;
+  final VoidCallback onTap;
+  final bool isPlaying;
+
+  const _ArtistGridItem({
+    required this.artist,
+    this.customDisplayName,
+    required this.songCount,
+    required this.onTap,
+    this.isPlaying = false,
+  });
+
+  @override
+  State<_ArtistGridItem> createState() => _ArtistGridItemState();
+}
+
+class _ArtistGridItemState extends State<_ArtistGridItem> {
+  String? _imageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ArtistGridItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.artist != widget.artist) {
+      _fetchImage();
+    }
+  }
+
+  Future<void> _fetchImage() async {
+    try {
+      // Use the part before any comma or '&' for better search results
+      // ensuring we strip any "• Metadata" first if present in the passed string
+      // though for display we might show more.
+      var searchName = widget.artist.split('•').first.trim();
+      searchName = searchName.split(RegExp(r'[,&/]')).first.trim();
+
+      final uri = Uri.parse(
+        "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(searchName)}&limit=1",
+      );
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        if (json['data'] != null && (json['data'] as List).isNotEmpty) {
+          String? picture =
+              json['data'][0]['picture_xl'] ??
+              json['data'][0]['picture_big'] ??
+              json['data'][0]['picture_medium'];
+
+          if (picture != null && mounted) {
+            setState(() {
+              _imageUrl = picture;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors, default fallback will be shown
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Container(
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: widget.isPlaying
+              ? Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.8),
+                  width: 2,
+                )
+              : Border.all(color: Colors.white12),
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: widget.isPlaying
+              ? [
+                  BoxShadow(
+                    color: Colors.redAccent.withValues(alpha: 0.4),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+                child: _imageUrl != null
+                    ? Image.network(
+                        _imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.white10,
+                          child: const Icon(
+                            Icons.person,
+                            color: Colors.white54,
+                            size: 40,
+                          ),
+                        ),
+                      )
+                    : Container(
+                        color: Colors.white10,
+                        child: const Icon(
+                          Icons.person,
+                          color: Colors.white54,
+                          size: 40,
+                        ),
+                      ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    // Show full name (up to bullet) even if it contains , or &
+                    widget.customDisplayName ??
+                        widget.artist.split('•').first.trim(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    "${widget.songCount} Songs",
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

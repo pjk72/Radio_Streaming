@@ -436,7 +436,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           //const SizedBox(height: 60), // More top space
           SizedBox(
             height: 300,
-            child: provider.currentPlayingPlaylistId != null
+            child:
+                provider.currentPlayingPlaylistId != null &&
+                    provider.activeQueue.isNotEmpty
                 ? _buildCarousel(context, provider, height: 220)
                 : _buildAlbumArt(context, provider, mainImage, 220),
           ),
@@ -476,7 +478,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.all(8.0),
-                      child: provider.currentPlayingPlaylistId != null
+                      child:
+                          provider.currentPlayingPlaylistId != null &&
+                              provider.activeQueue.isNotEmpty
                           ? _buildCarousel(context, provider, height: 200)
                           : _buildAlbumArt(context, provider, mainImage, 200),
                     ),
