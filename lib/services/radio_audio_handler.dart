@@ -12,7 +12,6 @@ import '../data/station_data.dart' as static_data;
 import '../models/station.dart';
 import '../models/saved_song.dart';
 import 'playlist_service.dart';
-import 'log_service.dart';
 
 class RadioAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler {
@@ -102,7 +101,6 @@ class RadioAudioHandler extends BaseAudioHandler
 
       _setupPlayerListeners();
     } catch (e) {
-      LogService().log("Player initialization error: $e");
     } finally {
       _isInitializing = false;
     }
@@ -124,7 +122,6 @@ class RadioAudioHandler extends BaseAudioHandler
     _playerStateSubscription = _player.onPlayerStateChanged.listen(
       _broadcastState,
       onError: (Object e) {
-        LogService().log("Player State Error: $e");
         String es = e.toString();
         if (es.contains("-1005") || es.contains("what:1")) {
           // Common connection/media error - try to swallow if transient
@@ -132,24 +129,22 @@ class RadioAudioHandler extends BaseAudioHandler
       },
     );
 
-    _playerCompleteSubscription = _player.onPlayerComplete.listen(
-      (_) {
-        if (!_expectingStop) {
-          final hasDuration =
-              mediaItem.value?.duration != null &&
-              mediaItem.value!.duration! > Duration.zero;
+    _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
+      if (!_expectingStop) {
+        final hasDuration =
+            mediaItem.value?.duration != null &&
+            mediaItem.value!.duration! > Duration.zero;
 
-          if (hasDuration) {
-            skipToNext();
-          } else {
-            _handleConnectionError("Stream ended unexpectedly.");
-          }
+        if (hasDuration) {
+          skipToNext();
+        } else {
+          _handleConnectionError("Stream ended unexpectedly.");
         }
-      },
-      onError: (Object e) {
-        LogService().log("Player Complete Error: $e");
-      },
-    );
+      }
+    }, onError: (Object e) {});
+
+    // TODO: Implement metadata fetching for live radio (audioplayers v6 Removed onMetadata)
+    // Consider using 'icy_metadata' package or switching to 'just_audio' for this feature.
 
     _playerDurationSubscription = _player.onDurationChanged.listen((d) {
       final currentItem = mediaItem.value;
@@ -163,69 +158,52 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     });
 
-    _playerPositionSubscription = _player.onPositionChanged.listen(
-      (pos) {
-        _currentPosition = pos; // Track position
+    _playerPositionSubscription = _player.onPositionChanged.listen((pos) {
+      _currentPosition = pos; // Track position
 
-        if (_isInitialBuffering && !_expectingStop) {
-          _isInitialBuffering = false;
-          _broadcastState(_player.state);
-        } else {
-          // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
-          final expectedDuration = mediaItem.value?.duration;
-          if (expectedDuration != null) {
-            // Trigger preloading 10 seconds before end (increased from 5s)
-            if (expectedDuration - pos <= const Duration(seconds: 10) &&
-                expectedDuration > Duration.zero) {
-              if (!_hasTriggeredPreload &&
-                  mediaItem.value?.extras?['type'] == 'playlist_song') {
-                _hasTriggeredPreload = true;
-                LogService().log(
-                  "Triggering Preload (Time Remaining: ${expectedDuration - pos})",
-                );
-                if (onPreloadNext != null) onPreloadNext!();
-              }
-            }
-
-            if (pos >= expectedDuration) {
-              if (!_expectingStop) skipToNext();
-              return;
+      if (_isInitialBuffering && !_expectingStop) {
+        _isInitialBuffering = false;
+        _broadcastState(_player.state);
+      } else {
+        // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
+        final expectedDuration = mediaItem.value?.duration;
+        if (expectedDuration != null) {
+          // Trigger preloading 10 seconds before end (increased from 5s)
+          if (expectedDuration - pos <= const Duration(seconds: 10) &&
+              expectedDuration > Duration.zero) {
+            if (!_hasTriggeredPreload &&
+                mediaItem.value?.extras?['type'] == 'playlist_song') {
+              _hasTriggeredPreload = true;
+              if (onPreloadNext != null) onPreloadNext!();
             }
           }
 
-          final lastPos = playbackState.value.position;
-          if ((pos - lastPos).abs().inSeconds >= 2) {
-            _broadcastState(_player.state);
+          if (pos >= expectedDuration) {
+            if (!_expectingStop) skipToNext();
+            return;
           }
         }
-      },
-      onError: (Object e) {
-        LogService().log("Player Position Error: $e");
-      },
-    );
+
+        final lastPos = playbackState.value.position;
+        if ((pos - lastPos).abs().inSeconds >= 2) {
+          _broadcastState(_player.state);
+        }
+      }
+    }, onError: (Object e) {});
 
     // Global Error Monitoring
-    _player.onLog.listen(
-      (log) {
-        if (log.toLowerCase().contains("error") ||
-            log.toLowerCase().contains("exception")) {
-          LogService().log("Native Player Log: $log");
-          if (_isInitialBuffering &&
-              !_expectingStop &&
-              (log.contains("403") ||
-                  log.contains("-1005") ||
-                  log.contains("1002"))) {
-            LogService().log(
-              "Detected chronic playback error in logs, skipping...",
-            );
-            skipToNext();
-          }
+    _player.onLog.listen((log) {
+      if (log.toLowerCase().contains("error") ||
+          log.toLowerCase().contains("exception")) {
+        if (_isInitialBuffering &&
+            !_expectingStop &&
+            (log.contains("403") ||
+                log.contains("-1005") ||
+                log.contains("1002"))) {
+          skipToNext();
         }
-      },
-      onError: (Object e) {
-        LogService().log("Player Log Error: $e");
-      },
-    );
+      }
+    }, onError: (Object e) {});
   }
 
   RadioAudioHandler() {
@@ -326,18 +304,9 @@ class RadioAudioHandler extends BaseAudioHandler
     // Always reset preload flag
     _hasTriggeredPreload = false;
 
-    // Debug Cache State
-    LogService().log("Checking Cache for: ${song.id}-$videoId");
-    if (_cachedNextSongExtras != null) {
-      LogService().log("Cache content: ${_cachedNextSongExtras?['uniqueId']}");
-    } else {
-      LogService().log("Cache is empty");
-    }
-
     // Check for preloaded stream FIRST
     if (_cachedNextSongExtras?['uniqueId'] == "${song.id}-$videoId" &&
         _cachedNextSongUrl != null) {
-      LogService().log("Using preloaded stream for: $videoId");
       final streamUrl = _cachedNextSongUrl!;
       _cachedNextSongUrl = null;
       _cachedNextSongExtras = null;
@@ -387,7 +356,6 @@ class RadioAudioHandler extends BaseAudioHandler
     );
 
     try {
-      LogService().log("Cache miss for $videoId. Resolving...");
       var yt = YoutubeExplode();
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
       var streamInfo = manifest.muxed.withHighestBitrate();
@@ -411,7 +379,6 @@ class RadioAudioHandler extends BaseAudioHandler
       await playFromUri(Uri.parse(streamUrl), extras);
       playbackState.add(playbackState.value.copyWith(errorMessage: null));
     } catch (e) {
-      LogService().log("Error playing YouTube video: $e");
       playbackState.add(
         playbackState.value.copyWith(
           processingState: AudioProcessingState.error,
@@ -520,7 +487,6 @@ class RadioAudioHandler extends BaseAudioHandler
     try {
       if (_cachedNextSongExtras?['uniqueId'] == "$songId-$videoId") return;
 
-      LogService().log("Preloading next song: $videoId (ID: $songId)");
       var yt = YoutubeExplode();
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
       var streamInfo = manifest.muxed.withHighestBitrate();
@@ -532,10 +498,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'songId': songId,
         'uniqueId': "$songId-$videoId",
       };
-      LogService().log("Preload success. URL cached for $videoId");
-    } catch (e) {
-      LogService().log("Preload failed: $e");
-    }
+    } catch (e) {}
   }
 
   @override
@@ -743,7 +706,6 @@ class RadioAudioHandler extends BaseAudioHandler
           _broadcastState(PlayerState.playing);
         }
       } catch (e) {
-        LogService().log("Youtube Playback Error: $e");
         if (_currentSessionId == sessionId) {
           Future.delayed(const Duration(seconds: 1), skipToNext);
         }
@@ -913,16 +875,12 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       if (!success) {
-        if (errorMessage != null) {
-          LogService().log("Playback failed: $errorMessage");
-        }
-
+        if (errorMessage != null) {}
         final hasDuration =
             mediaItem.value?.duration != null &&
             mediaItem.value!.duration! > Duration.zero;
 
         if (hasDuration) {
-          LogService().log("Song playback failed, skipping to next...");
           skipToNext();
         } else {
           _handleConnectionError(
@@ -946,9 +904,6 @@ class RadioAudioHandler extends BaseAudioHandler
             mediaItem.value?.duration != null &&
             mediaItem.value!.duration! > Duration.zero;
         if (hasDuration) {
-          LogService().log(
-            "Watchdog: Song stuck in buffering too long, skipping...",
-          );
           skipToNext();
         }
       }

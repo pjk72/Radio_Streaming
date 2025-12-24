@@ -24,6 +24,7 @@ import '../utils/genre_mapper.dart';
 import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
 import '../services/log_service.dart';
+import '../services/lyrics_service.dart';
 
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -236,6 +237,7 @@ class RadioProvider with ChangeNotifier {
   final PlaylistService _playlistService = PlaylistService();
   final SongLinkService _songLinkService = SongLinkService();
   final MusicMetadataService _musicMetadataService = MusicMetadataService();
+  final LyricsService _lyricsService = LyricsService();
 
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
@@ -319,8 +321,32 @@ class RadioProvider with ChangeNotifier {
     _audioHandler.mediaItem.listen((item) {
       if (item == null) return;
 
-      // If the media item ID (URL) differs from current station, it means
-      // Android Auto or another source changed the station.
+      // 1. Sync Metadata if it changed (within same station or from external source)
+      bool metadataChanged = false;
+      if (_currentTrack != item.title) {
+        _currentTrack = item.title;
+        metadataChanged = true;
+      }
+      if (_currentArtist != (item.artist ?? "")) {
+        _currentArtist = item.artist ?? "";
+        metadataChanged = true;
+      }
+      if (_currentAlbum != (item.album ?? "")) {
+        _currentAlbum = item.album ?? "";
+        metadataChanged = true;
+      }
+      if (_currentAlbumArt != item.artUri?.toString()) {
+        _currentAlbumArt = item.artUri?.toString();
+        metadataChanged = true;
+      }
+
+      if (metadataChanged) {
+        // Trigger lyrics fetch and other updates
+        fetchLyrics();
+        notifyListeners();
+      }
+
+      // 2. Handle Station/Source Change
       if (_currentStation?.url != item.id) {
         // Prevent interference if we are handling YouTube locally
         if ((_currentStation?.url.startsWith('youtube://') ?? false) ||
@@ -336,17 +362,12 @@ class RadioProvider with ChangeNotifier {
           _currentStation = newStation;
           _isLoading = false;
 
-          // Reset metadata for the new station
-          _currentTrack = "Live Broadcast";
-          _currentArtist =
-              ""; // Placeholder, actual values would come from item.extras or similar
-          _currentAlbum = ""; // Placeholder
-          _currentAlbumArt = null; // Placeholder
-          _currentArtistImage = null; // Placeholder
-          _currentSpotifyUrl = null; // Placeholder
-          _currentYoutubeUrl = null; // Placeholder
-          _currentReleaseDate = null; // Placeholder
-          _currentGenre = null; // Placeholder
+          // If it was a station switch from outside but metadata was already handled above,
+          // we might want to ensure track isn't reset to "Live Broadcast" if item has info.
+          if (item.title == "Station" || item.title == newStation.name) {
+            _currentTrack = "Live Broadcast";
+            _currentArtist = "";
+          }
 
           notifyListeners();
         } catch (_) {
@@ -700,8 +721,22 @@ class RadioProvider with ChangeNotifier {
   String? _currentReleaseDate;
   String? _currentGenre;
 
+  LyricsData _currentLyrics = LyricsData.empty();
+  LyricsData get currentLyrics => _currentLyrics;
+  bool _isFetchingLyrics = false;
+  bool get isFetchingLyrics => _isFetchingLyrics;
+
   bool _isLoading = false;
   final List<String> _metadataLog = [];
+
+  // Lyrics Synchronization Offset
+  Duration _lyricsOffset = Duration.zero;
+  Duration get lyricsOffset => _lyricsOffset;
+
+  void setLyricsOffset(Duration offset) {
+    _lyricsOffset = offset;
+    notifyListeners();
+  }
 
   // Track invalid songs
   final List<String> _invalidSongIds = [];
@@ -1140,6 +1175,9 @@ class RadioProvider with ChangeNotifier {
 
     // Start Monitor
     _startPlaybackMonitor();
+
+    // Fetch lyrics for the song
+    fetchLyrics();
   }
 
   bool _isCheckingStallInternet = false;
@@ -1748,6 +1786,10 @@ class RadioProvider with ChangeNotifier {
       _isShuffleMode = false;
     }
 
+    // Ensure playlist mode is OFF so next/prev buttons work for Radio
+    _currentPlayingPlaylistId = null;
+    _audioOnlySongId = null;
+
     // Save as "last played" immediately
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyLastPlayedStationId, station.id);
@@ -1793,6 +1835,9 @@ class RadioProvider with ChangeNotifier {
       // This is needed because if we switch stations while already playing,
       // the 'playing' state toggle listener won't fire.
       // _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition); // FAZIO -- Intervallo ricerca musica via riconoscimento API
+
+      // Fetch lyrics for the station (if names are already available)
+      fetchLyrics();
     } catch (e) {
       _isLoading = false;
       // _addLog("Error: $e");
@@ -1917,13 +1962,6 @@ class RadioProvider with ChangeNotifier {
     int currentIndex = -1;
     if (_audioOnlySongId != null) {
       currentIndex = playlist.songs.indexWhere((s) => s.id == _audioOnlySongId);
-    }
-
-    // Debug
-    if (currentIndex == -1 && _audioOnlySongId != null) {
-      LogService().log(
-        "GetNext: ID $_audioOnlySongId not found in playlist (Size: ${playlist.songs.length})",
-      );
     }
 
     int attempts = 0;
@@ -2064,6 +2102,10 @@ class RadioProvider with ChangeNotifier {
       logo: song.artUri,
       category: "Playlist",
     );
+
+    // Fetch lyrics for the playlist song
+    fetchLyrics();
+
     _metadataTimer?.cancel(); // CANCEL recognition timer
     // _isLoading = true; // GAPLESS: Don't force loading state, let buffering event handle it
     _isPlaying = true; // Optimistically show pause icon
@@ -2159,6 +2201,36 @@ class RadioProvider with ChangeNotifier {
     _volume = vol;
     _audioHandler.customAction('setVolume', {'volume': vol});
     notifyListeners();
+  }
+
+  Future<void> fetchLyrics() async {
+    LogService().log(
+      "RadioProvider: fetchLyrics() called. Track: $_currentTrack",
+    );
+    if (_currentTrack == "Live Broadcast") {
+      _currentLyrics = LyricsData.empty();
+      _lyricsOffset = Duration.zero; // Reset offset
+      notifyListeners();
+      return;
+    }
+
+    _isFetchingLyrics = true;
+    _lyricsOffset = Duration.zero; // Reset offset
+    notifyListeners();
+
+    try {
+      _currentLyrics = await _lyricsService.fetchLyrics(
+        artist: _currentArtist,
+        title: _currentTrack,
+        album: _currentAlbum,
+      );
+    } catch (e) {
+      LogService().log("Error fetching lyrics: $e");
+      _currentLyrics = LyricsData.empty();
+    } finally {
+      _isFetchingLyrics = false;
+      notifyListeners();
+    }
   }
 
   void toggleFavorite(int id) async {
