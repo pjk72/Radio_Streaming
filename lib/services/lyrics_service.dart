@@ -31,9 +31,6 @@ class LyricsService {
   }) async {
     final cleanArtist = _cleanString(artist);
     final cleanTitle = _cleanString(title);
-    LogService().log(
-      "LyricsService: Fetching lyrics for '$cleanArtist' - '$cleanTitle' (Orig: '$artist' - '$title')",
-    );
 
     // 1. Try LRCLIB (Primary - supports Synced Lyrics)
     // Endpoint: https://lrclib.net/api/get
@@ -53,7 +50,6 @@ class LyricsService {
         _lrclibBaseUrl,
       ).replace(queryParameters: queryParameters);
 
-      LogService().log("LyricsService: Calling LRCLIB ($uri)");
       final response = await http.get(uri).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -62,14 +58,12 @@ class LyricsService {
         final String? plainLyrics = data['plainLyrics'];
 
         if (syncedLyrics != null && syncedLyrics.isNotEmpty) {
-          LogService().log("LyricsService: Found synced lyrics on LRCLIB");
           return LyricsData(
             lines: _parseLrc(syncedLyrics),
             source: 'LRCLIB (Synced)',
             isSynced: true,
           );
         } else if (plainLyrics != null && plainLyrics.isNotEmpty) {
-          LogService().log("LyricsService: Found plain lyrics on LRCLIB");
           return LyricsData(
             lines: plainLyrics
                 .split('\n')
@@ -77,31 +71,16 @@ class LyricsService {
                 .toList(),
             source: 'LRCLIB (Plain)',
           );
-        } else {
-          LogService().log(
-            "LyricsService: LRCLIB returned 200 but no lyrics content.",
-          );
-        }
-      } else if (response.statusCode == 404) {
-        LogService().log("LyricsService: Song not found on LRCLIB (404).");
-      } else {
-        LogService().log(
-          "LyricsService: LRCLIB error status ${response.statusCode}",
-        );
+        } 
       }
-    } catch (e) {
-      LogService().log('LyricsService: LRCLIB exception: $e');
-    }
+    } catch (e) {}
 
     // 2. Fallback to Lyrics.ovh (Secondary - Static only)
     // Endpoint: https://api.lyrics.ovh/v1/Artist/Title
-    LogService().log("LyricsService: Falling back to Lyrics.ovh...");
     try {
       final uri = Uri.parse(
         '$_lyricsOvhBaseUrl/${Uri.encodeComponent(cleanArtist)}/${Uri.encodeComponent(cleanTitle)}',
       );
-
-      LogService().log("LyricsService: Calling Lyrics.ovh ($uri)");
       final response = await http.get(uri).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -109,7 +88,6 @@ class LyricsService {
         final String? lyrics = data['lyrics'];
 
         if (lyrics != null && lyrics.isNotEmpty) {
-          LogService().log("LyricsService: Found lyrics on Lyrics.ovh");
           return LyricsData(
             lines: lyrics
                 .split('\n')
@@ -118,21 +96,9 @@ class LyricsService {
                 .toList(),
             source: 'Lyrics.ovh',
           );
-        } else {
-          LogService().log(
-            "LyricsService: Lyrics.ovh returned 200 but no content.",
-          );
         }
-      } else {
-        LogService().log(
-          "LyricsService: Lyrics.ovh error status ${response.statusCode}",
-        );
       }
-    } catch (e) {
-      LogService().log('LyricsService: Lyrics.ovh exception: $e');
-    }
-
-    LogService().log("LyricsService: No lyrics found on any source.");
+    } catch (e) {}
     return LyricsData.empty();
   }
 

@@ -14,6 +14,7 @@ import 'album_details_screen.dart';
 import '../widgets/youtube_popup.dart';
 import '../utils/genre_mapper.dart';
 import '../services/music_metadata_service.dart';
+import '../services/log_service.dart';
 
 class PlaylistScreen extends StatefulWidget {
   const PlaylistScreen({super.key});
@@ -40,7 +41,44 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _unlockTimer?.cancel();
     super.dispose();
+  }
+
+  Timer? _unlockTimer;
+
+  void _startUnlockTimer(
+    RadioProvider provider,
+    SavedSong song,
+    String playlistId,
+  ) {
+    _unlockTimer?.cancel();
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Keep holding to unlock..."),
+        duration: Duration(milliseconds: 2000),
+      ),
+    );
+
+    _unlockTimer = Timer(const Duration(seconds: 3), () async {
+      await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Song unlocked!")));
+        HapticFeedback.heavyImpact();
+      }
+    });
+  }
+
+  void _cancelUnlockTimer() {
+    if (_unlockTimer != null && _unlockTimer!.isActive) {
+      _unlockTimer!.cancel();
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    }
+    _unlockTimer = null;
   }
 
   @override
@@ -620,7 +658,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     bool isGrouped = false,
     int? groupIndex,
   }) {
-    final isInvalid = provider.invalidSongIds.contains(song.id);
+    final isInvalid =
+        !song.isValid || provider.invalidSongIds.contains(song.id);
 
     return Dismissible(
       key: Key(song.id),
@@ -695,68 +734,77 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 )
               : null,
         ),
-        child: ListTile(
-          onTap: isInvalid
-              ? null
-              : () => _handleSongAudioAction(provider, song, playlist.id),
-          onLongPress: isInvalid
-              ? () {
-                  provider.unmarkSongAsInvalid(song.id);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Song marked as valid")),
-                  );
-                }
+        child: GestureDetector(
+          onTapDown: isInvalid
+              ? (_) => _startUnlockTimer(provider, song, playlist.id)
               : null,
-          visualDensity: isGrouped
-              ? const VisualDensity(horizontal: 0, vertical: -4)
-              : VisualDensity.compact,
-          contentPadding: isGrouped
-              ? const EdgeInsets.symmetric(horizontal: 16, vertical: 0)
-              : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          leading: isGrouped
-              ? Container(
-                  width: 32,
-                  alignment: Alignment.center,
-                  child: Text(
-                    "${groupIndex ?? ''}",
-                    style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
+          onTapUp: isInvalid ? (_) => _cancelUnlockTimer() : null,
+          onTapCancel: isInvalid ? _cancelUnlockTimer : null,
+          child: ListTile(
+            onTap: isInvalid
+                ? null
+                : () => _handleSongAudioAction(provider, song, playlist.id),
+            // onLongPress removed, handled by GestureDetector's 3s timer via onTapDown
+            visualDensity: isGrouped
+                ? const VisualDensity(horizontal: 0, vertical: -4)
+                : VisualDensity.compact,
+            contentPadding: isGrouped
+                ? const EdgeInsets.symmetric(horizontal: 16, vertical: 0)
+                : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            leading: isGrouped
+                ? Container(
+                    width: 32,
+                    alignment: Alignment.center,
+                    child: Text(
+                      "${groupIndex ?? ''}",
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                )
-              : MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () {
-                      var albumName = song.album.trim();
-                      // Clean song title: remove content in parentheses/brackets for better search
-                      var songTitle = song.title
-                          .replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '')
-                          .trim();
+                  )
+                : MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: () {
+                        var albumName = song.album.trim();
+                        // Clean song title: remove content in parentheses/brackets for better search
+                        var songTitle = song.title
+                            .replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '')
+                            .trim();
 
-                      // Filter artist name: keep only text before '•'
-                      var cleanArtist = song.artist.split('•').first.trim();
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => AlbumDetailsScreen(
-                            albumName: albumName,
-                            artistName: cleanArtist,
-                            songName: songTitle,
+                        // Filter artist name: keep only text before '•'
+                        var cleanArtist = song.artist.split('•').first.trim();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => AlbumDetailsScreen(
+                              albumName: albumName,
+                              artistName: cleanArtist,
+                              songName: songTitle,
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: song.artUri != null
-                          ? Image.network(
-                              song.artUri!,
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => Container(
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: song.artUri != null
+                            ? Image.network(
+                                song.artUri!,
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  width: 48,
+                                  height: 48,
+                                  color: Colors.grey[900],
+                                  child: const Icon(
+                                    Icons.music_note,
+                                    color: Colors.white24,
+                                  ),
+                                ),
+                              )
+                            : Container(
                                 width: 48,
                                 height: 48,
                                 color: Colors.grey[900],
@@ -765,329 +813,334 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   color: Colors.white24,
                                 ),
                               ),
-                            )
-                          : Container(
-                              width: 48,
-                              height: 48,
-                              color: Colors.grey[900],
-                              child: const Icon(
-                                Icons.music_note,
-                                color: Colors.white24,
-                              ),
-                            ),
+                      ),
                     ),
                   ),
-                ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  song.title,
-                  style: TextStyle(
-                    color: isInvalid
-                        ? Colors.white38
-                        : (provider.audioOnlySongId == song.id ||
-                              (song.title.trim().toLowerCase() ==
-                                      provider.currentTrack
-                                          .trim()
-                                          .toLowerCase() &&
-                                  song.artist.trim().toLowerCase() ==
-                                      provider.currentArtist
-                                          .trim()
-                                          .toLowerCase()))
-                        ? Colors.redAccent
-                        : Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    song.title,
+                    style: TextStyle(
+                      color: isInvalid
+                          ? Colors.white38
+                          : (provider.audioOnlySongId == song.id ||
+                                (song.title.trim().toLowerCase() ==
+                                        provider.currentTrack
+                                            .trim()
+                                            .toLowerCase() &&
+                                    song.artist.trim().toLowerCase() ==
+                                        provider.currentArtist
+                                            .trim()
+                                            .toLowerCase()))
+                          ? Colors.redAccent
+                          : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              if (isGrouped)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(width: 8),
+                if (isGrouped)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: 8),
 
-                    if (isInvalid)
-                      const Padding(
-                        padding: EdgeInsets.only(right: 8.0),
-                        child: Icon(
-                          Icons.warning_amber_rounded,
-                          color: Colors.orange,
-                          size: 20,
-                        ),
-                      )
-                    else ...[
-                      GestureDetector(
-                        onTap: () async {
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (ctx) => const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.redAccent,
-                              ),
-                            ),
-                          );
-
-                          try {
-                            final links = await provider
-                                .resolveLinks(
-                                  title: song.title,
-                                  artist: song.artist,
-                                  spotifyUrl: song.spotifyUrl,
-                                  youtubeUrl: song.youtubeUrl,
-                                )
-                                .timeout(
-                                  const Duration(seconds: 10),
-                                  onTimeout: () {
-                                    throw TimeoutException(
-                                      "Connection timed out",
-                                    );
-                                  },
-                                );
-
-                            if (!mounted) return;
-                            Navigator.of(context, rootNavigator: true).pop();
-
-                            final url = links['youtube'] ?? song.youtubeUrl;
-                            if (url != null) {
-                              final videoId = YoutubePlayer.convertUrlToId(url);
-                              if (videoId != null) {
-                                provider.pause();
-                                if (!mounted) return;
-                                showDialog(
-                                  context: context,
-                                  builder: (_) =>
-                                      YouTubePopup(videoId: videoId),
-                                );
-                              } else {
-                                launchUrl(
-                                  Uri.parse(url),
-                                  mode: LaunchMode.externalApplication,
-                                );
-                              }
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("YouTube link not found"),
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            if (mounted) {
-                              Navigator.of(context, rootNavigator: true).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Error: $e")),
-                              );
-                            }
-                          }
-                        },
-                        child: const FaIcon(
-                          FontAwesomeIcons.youtube,
-                          color: Color(0xFFFF0000),
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      GestureDetector(
-                        onTap: () =>
-                            _handleSongAudioAction(provider, song, playlist.id),
-                        child:
-                            (provider.audioOnlySongId == song.id &&
-                                provider.isLoading)
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
+                      if (isInvalid)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 8.0),
+                          child: Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange,
+                            size: 20,
+                          ),
+                        )
+                      else ...[
+                        GestureDetector(
+                          onTap: () async {
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (ctx) => const Center(
                                 child: CircularProgressIndicator(
                                   color: Colors.redAccent,
-                                  strokeWidth: 2,
                                 ),
-                              )
-                            : Icon(
-                                (provider.audioOnlySongId == song.id &&
-                                        provider.isPlaying)
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                color: Colors.white,
-                                size: 28,
                               ),
-                      ),
-                    ],
-                  ], // close else...[ and children
-                ),
-              if (!isGrouped &&
-                  song.releaseDate != null &&
-                  song.releaseDate!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: Text(
-                    song.releaseDate!.split('-').first,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontWeight: FontWeight.normal,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (!isGrouped)
-                            Text(
-                              song.artist,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (!isGrouped)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (isInvalid)
-                            const Padding(
-                              padding: EdgeInsets.only(right: 8.0),
-                              child: Icon(
-                                Icons.warning_amber_rounded,
-                                color: Colors.orange,
-                                size: 20,
-                              ),
-                            )
-                          else ...[
-                            GestureDetector(
-                              onTap: () async {
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (ctx) => const Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.redAccent,
-                                    ),
+                            );
+
+                            try {
+                              final links = await provider
+                                  .resolveLinks(
+                                    title: song.title,
+                                    artist: song.artist,
+                                    spotifyUrl: song.spotifyUrl,
+                                    youtubeUrl: song.youtubeUrl,
+                                  )
+                                  .timeout(
+                                    const Duration(seconds: 10),
+                                    onTimeout: () {
+                                      throw TimeoutException(
+                                        "Connection timed out",
+                                      );
+                                    },
+                                  );
+
+                              if (!mounted) return;
+                              Navigator.of(context, rootNavigator: true).pop();
+
+                              final url = links['youtube'] ?? song.youtubeUrl;
+                              if (url != null) {
+                                final videoId = YoutubePlayer.convertUrlToId(
+                                  url,
+                                );
+                                if (videoId != null) {
+                                  provider.pause();
+                                  if (!mounted) return;
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) =>
+                                        YouTubePopup(videoId: videoId),
+                                  );
+                                } else {
+                                  launchUrl(
+                                    Uri.parse(url),
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("YouTube link not found"),
                                   ),
                                 );
-
-                                try {
-                                  final links = await provider
-                                      .resolveLinks(
-                                        title: song.title,
-                                        artist: song.artist,
-                                        spotifyUrl: song.spotifyUrl,
-                                        youtubeUrl: song.youtubeUrl,
-                                      )
-                                      .timeout(
-                                        const Duration(seconds: 10),
-                                        onTimeout: () {
-                                          throw TimeoutException(
-                                            "Connection timed out",
-                                          );
-                                        },
-                                      );
-
-                                  if (!mounted) return;
-                                  Navigator.of(
-                                    context,
-                                    rootNavigator: true,
-                                  ).pop();
-
-                                  final url =
-                                      links['youtube'] ?? song.youtubeUrl;
-                                  if (url != null) {
-                                    final videoId =
-                                        YoutubePlayer.convertUrlToId(url);
-                                    if (videoId != null) {
-                                      provider.pause();
-                                      if (!mounted) return;
-                                      showDialog(
-                                        context: context,
-                                        builder: (_) =>
-                                            YouTubePopup(videoId: videoId),
-                                      );
-                                    } else {
-                                      launchUrl(
-                                        Uri.parse(url),
-                                        mode: LaunchMode.externalApplication,
-                                      );
-                                    }
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text("YouTube link not found"),
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text("Error: $e")),
+                                );
+                              }
+                            }
+                          },
+                          child: const FaIcon(
+                            FontAwesomeIcons.youtube,
+                            color: Color(0xFFFF0000),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        GestureDetector(
+                          onTap: () => _handleSongAudioAction(
+                            provider,
+                            song,
+                            playlist.id,
+                          ),
+                          child:
+                              (provider.audioOnlySongId == song.id &&
+                                  provider.isLoading)
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.redAccent,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Icon(
+                                  (provider.audioOnlySongId == song.id &&
+                                          provider.isPlaying)
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                        ),
+                      ],
+                    ], // close else...[ and children
+                  ),
+                if (!isGrouped &&
+                    song.releaseDate != null &&
+                    song.releaseDate!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: Text(
+                      song.releaseDate!.split('-').first,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontWeight: FontWeight.normal,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!isGrouped)
+                              Text(
+                                song.artist,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (!isGrouped)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isInvalid)
+                              const Padding(
+                                padding: EdgeInsets.only(right: 8.0),
+                                child: Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: Colors.orange,
+                                  size: 20,
+                                ),
+                              )
+                            else ...[
+                              GestureDetector(
+                                onTap: () async {
+                                  showDialog(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (ctx) => const Center(
+                                      child: CircularProgressIndicator(
+                                        color: Colors.redAccent,
                                       ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
+                                    ),
+                                  );
+
+                                  try {
+                                    final links = await provider
+                                        .resolveLinks(
+                                          title: song.title,
+                                          artist: song.artist,
+                                          spotifyUrl: song.spotifyUrl,
+                                          youtubeUrl: song.youtubeUrl,
+                                        )
+                                        .timeout(
+                                          const Duration(seconds: 10),
+                                          onTimeout: () {
+                                            throw TimeoutException(
+                                              "Connection timed out",
+                                            );
+                                          },
+                                        );
+
+                                    if (!mounted) return;
                                     Navigator.of(
                                       context,
                                       rootNavigator: true,
                                     ).pop();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text("Error: $e")),
-                                    );
+
+                                    final url =
+                                        links['youtube'] ?? song.youtubeUrl;
+                                    if (url != null) {
+                                      final videoId =
+                                          YoutubePlayer.convertUrlToId(url);
+                                      if (videoId != null) {
+                                        provider.pause();
+                                        if (!mounted) return;
+                                        showDialog(
+                                          context: context,
+                                          builder: (_) =>
+                                              YouTubePopup(videoId: videoId),
+                                        );
+                                      } else {
+                                        launchUrl(
+                                          Uri.parse(url),
+                                          mode: LaunchMode.externalApplication,
+                                        );
+                                      }
+                                    } else {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            "YouTube link not found",
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      Navigator.of(
+                                        context,
+                                        rootNavigator: true,
+                                      ).pop();
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(content: Text("Error: $e")),
+                                      );
+                                    }
                                   }
-                                }
-                              },
-                              child: const FaIcon(
-                                FontAwesomeIcons.youtube,
-                                color: Color(0xFFFF0000),
-                                size: 20,
+                                },
+                                child: const FaIcon(
+                                  FontAwesomeIcons.youtube,
+                                  color: Color(0xFFFF0000),
+                                  size: 20,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 20),
-                            GestureDetector(
-                              onTap: () => _handleSongAudioAction(
-                                provider,
-                                song,
-                                playlist.id,
-                              ),
-                              child:
-                                  (provider.audioOnlySongId == song.id &&
-                                      provider.isLoading)
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.redAccent,
-                                        strokeWidth: 2,
+                              const SizedBox(width: 20),
+                              GestureDetector(
+                                onTap: () => _handleSongAudioAction(
+                                  provider,
+                                  song,
+                                  playlist.id,
+                                ),
+                                child:
+                                    (provider.audioOnlySongId == song.id &&
+                                        provider.isLoading)
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.redAccent,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Icon(
+                                        (provider.audioOnlySongId == song.id &&
+                                                provider.isPlaying)
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        color: Colors.white,
+                                        size: 28,
                                       ),
-                                    )
-                                  : Icon(
-                                      (provider.audioOnlySongId == song.id &&
-                                              provider.isPlaying)
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      color: Colors.white,
-                                      size: 28,
-                                    ),
-                            ),
-                          ],
-                        ], // close else...[ and children
-                      ),
-                  ],
-                ),
-              ],
+                              ),
+                            ],
+                          ], // close else...[ and children
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
+          ), // Close ListTile
+        ), // Close GestureDetector
       ),
     );
   }

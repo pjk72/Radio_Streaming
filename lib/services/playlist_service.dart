@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/saved_song.dart';
 import '../models/playlist.dart';
@@ -6,6 +7,17 @@ import '../models/playlist.dart';
 class PlaylistService {
   static const String _keyPlaylists = 'playlists_v2';
   static const String _keyOldSongs = 'saved_songs';
+
+  static final PlaylistService _instance = PlaylistService._internal();
+  factory PlaylistService() => _instance;
+  PlaylistService._internal();
+
+  final _playlistsUpdatedController = StreamController<void>.broadcast();
+  Stream<void> get onPlaylistsUpdated => _playlistsUpdatedController.stream;
+
+  void _notifyListeners() {
+    _playlistsUpdatedController.add(null);
+  }
 
   Future<List<Playlist>> loadPlaylists() async {
     final prefs = await SharedPreferences.getInstance();
@@ -83,6 +95,7 @@ class PlaylistService {
     playlists.add(newPlaylist);
 
     await _savePlaylists(prefs, playlists);
+    _notifyListeners();
     return newPlaylist;
   }
 
@@ -105,6 +118,7 @@ class PlaylistService {
     }
 
     await _savePlaylists(prefs, playlists);
+    _notifyListeners();
   }
 
   Future<void> addSongToPlaylist(String playlistId, SavedSong song) async {
@@ -121,6 +135,7 @@ class PlaylistService {
       )) {
         playlists[index].songs.insert(0, song);
         await _savePlaylists(prefs, playlists);
+        _notifyListeners();
       }
     }
   }
@@ -133,6 +148,7 @@ class PlaylistService {
     if (index != -1) {
       playlists[index].songs.removeWhere((s) => s.id == songId);
       await _savePlaylists(prefs, playlists);
+      _notifyListeners();
     }
   }
 
@@ -147,6 +163,7 @@ class PlaylistService {
     if (index != -1) {
       playlists[index].songs.removeWhere((s) => songIds.contains(s.id));
       await _savePlaylists(prefs, playlists);
+      _notifyListeners();
     }
   }
 
@@ -189,6 +206,7 @@ class PlaylistService {
         }
 
         await _savePlaylists(prefs, playlists);
+        _notifyListeners();
       }
     }
   }
@@ -230,6 +248,7 @@ class PlaylistService {
 
       if (changed) {
         await _savePlaylists(prefs, playlists);
+        _notifyListeners();
       }
     }
   }
@@ -281,6 +300,7 @@ class PlaylistService {
     }
 
     await _savePlaylists(prefs, playlists);
+    _notifyListeners();
   }
 
   Future<void> restoreSongsToPlaylist(
@@ -311,11 +331,71 @@ class PlaylistService {
         }
       }
       await _savePlaylists(prefs, playlists);
+      _notifyListeners();
+    }
+  }
+
+  Future<void> markSongAsInvalid(String playlistId, String songId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      final songIndex = playlists[index].songs.indexWhere(
+        (s) => s.id == songId,
+      );
+      if (songIndex != -1) {
+        playlists[index].songs[songIndex] = playlists[index].songs[songIndex]
+            .copyWith(isValid: false);
+        await _savePlaylists(prefs, playlists);
+        _notifyListeners();
+      }
+    }
+  }
+
+  Future<void> unmarkSongAsInvalid(String playlistId, String songId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      final songIndex = playlists[index].songs.indexWhere(
+        (s) => s.id == songId,
+      );
+      if (songIndex != -1) {
+        playlists[index].songs[songIndex] = playlists[index].songs[songIndex]
+            .copyWith(isValid: true);
+        await _savePlaylists(prefs, playlists);
+        _notifyListeners();
+      }
+    }
+  }
+
+  Future<void> updateSongDuration(
+    String playlistId,
+    String songId,
+    Duration duration,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      final songIndex = playlists[index].songs.indexWhere(
+        (s) => s.id == songId,
+      );
+      if (songIndex != -1) {
+        playlists[index].songs[songIndex] = playlists[index].songs[songIndex]
+            .copyWith(duration: duration);
+        await _savePlaylists(prefs, playlists);
+        _notifyListeners();
+      }
     }
   }
 
   Future<void> saveAll(List<Playlist> playlists) async {
     final prefs = await SharedPreferences.getInstance();
     await _savePlaylists(prefs, playlists);
+    _notifyListeners();
   }
 }

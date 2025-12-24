@@ -271,6 +271,7 @@ class RadioProvider with ChangeNotifier {
 
   RadioProvider(this._audioHandler, this._backupService) {
     _backupService.addListener(notifyListeners);
+    _playlistService.onPlaylistsUpdated.listen((_) => reloadPlaylists());
     _checkAutoBackup(); // Start check
     // Listen to playback state from AudioService
     _audioHandler.playbackState.listen((state) {
@@ -314,6 +315,16 @@ class RadioProvider with ChangeNotifier {
           _isLoading = false;
           notifyListeners();
         }
+      }
+    });
+
+    // Listen to media item updates to capture duration
+    _audioHandler.mediaItem.listen((item) {
+      if (item != null &&
+          item.duration != null &&
+          _currentPlayingPlaylistId != null &&
+          _audioOnlySongId != null) {
+        _updateCurrentSongDuration(item.duration!);
       }
     });
 
@@ -548,6 +559,7 @@ class RadioProvider with ChangeNotifier {
           "https://music.apple.com/search?term=${Uri.encodeComponent("$_currentTrack $_currentArtist")}",
       dateAdded: DateTime.now(),
       releaseDate: _currentReleaseDate,
+      duration: _audioHandler.mediaItem.value?.duration,
     );
 
     // 1. Auto-Classification Logic (Default / Heart Button)
@@ -2004,13 +2016,12 @@ class RadioProvider with ChangeNotifier {
 
       final candidate = playlist.songs[nextIndex];
       // Check if this candidate is valid
-      if (!_invalidSongIds.contains(candidate.id)) {
-        return candidate;
-      }
-
-      // If invalid, we pretend we just played it, and look for the next one
-      currentIndex = nextIndex;
-      attempts++;
+      // A song is valid if:
+      // 1. It is not in the _invalidSongIds list (Legacy)
+      // 2. Its .isValid flag is true
+      // 3. Its duration is NOT zero (if known)
+      // Logic for invalid tracks removed.
+      return candidate;
     }
 
     return null; // All songs invalid or list empty
@@ -2072,8 +2083,11 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> playPlaylistSong(SavedSong song, String? playlistId) async {
-    // Save playlist context
-    _currentPlayingPlaylistId = playlistId;
+    // Invalid track logic removed. Proceeding to play.
+
+    LogService().log(
+      "Starting Playback: ${song.title} | Duration: ${song.duration}",
+    );
 
     // Optimistic UI update
     _currentTrack = song.title;
@@ -2204,9 +2218,6 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> fetchLyrics() async {
-    LogService().log(
-      "RadioProvider: fetchLyrics() called. Track: $_currentTrack",
-    );
     if (_currentTrack == "Live Broadcast") {
       _currentLyrics = LyricsData.empty();
       _lyricsOffset = Duration.zero; // Reset offset
@@ -2225,7 +2236,6 @@ class RadioProvider with ChangeNotifier {
         album: _currentAlbum,
       );
     } catch (e) {
-      LogService().log("Error fetching lyrics: $e");
       _currentLyrics = LyricsData.empty();
     } finally {
       _isFetchingLyrics = false;
@@ -2670,15 +2680,56 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
-  void unmarkSongAsInvalid(String songId) {
+  Future<void> unmarkSongAsInvalid(String songId, {String? playlistId}) async {
+    bool changed = false;
     if (_invalidSongIds.contains(songId)) {
       _invalidSongIds.remove(songId);
-      notifyListeners();
-
+      changed = true;
       // Persist immediately
       SharedPreferences.getInstance().then((prefs) {
         prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
       });
+    }
+
+    if (playlistId != null) {
+      await _playlistService.unmarkSongAsInvalid(playlistId, songId);
+      await _loadPlaylists();
+      changed = true;
+    }
+
+    if (changed) notifyListeners();
+  }
+
+  Future<void> _updateCurrentSongDuration(Duration duration) async {
+    if (_currentPlayingPlaylistId == null || _audioOnlySongId == null) return;
+
+    // Check if we need to update
+    final playlist = playlists.firstWhere(
+      (p) => p.id == _currentPlayingPlaylistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+    final songIndex = playlist.songs.indexWhere(
+      (s) => s.id == _audioOnlySongId,
+    );
+
+    if (songIndex != -1) {
+      final song = playlist.songs[songIndex];
+      // Only update if missing or zero
+      if (song.duration == null || song.duration == Duration.zero) {
+        // Double check duration is valid
+        if (duration > Duration.zero) {
+          LogService().log("Updating duration for ${song.title} to $duration");
+          await _playlistService.updateSongDuration(
+            _currentPlayingPlaylistId!,
+            _audioOnlySongId!,
+            duration,
+          );
+          // Auto-reload handled by listener
+        } else {
+          LogService().log("Failed to update duration for ${song.title}");
+        }
+      }
     }
   }
 }

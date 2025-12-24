@@ -323,6 +323,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'videoId': videoId,
         'type': 'playlist_song',
         'is_resolved': true,
+        'duration': _cachedNextSongExtras?['duration'],
       };
       await playFromUri(Uri.parse(streamUrl), extras);
       return;
@@ -357,6 +358,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     try {
       var yt = YoutubeExplode();
+      var video = await yt.videos.get(videoId);
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
       var streamInfo = manifest.muxed.withHighestBitrate();
       yt.close();
@@ -374,6 +376,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'videoId': videoId,
         'type': 'playlist_song',
         'is_resolved': true,
+        'duration': video.duration?.inSeconds,
       };
 
       await playFromUri(Uri.parse(streamUrl), extras);
@@ -382,9 +385,16 @@ class RadioAudioHandler extends BaseAudioHandler
       playbackState.add(
         playbackState.value.copyWith(
           processingState: AudioProcessingState.error,
-          errorMessage: "Could not play song. Tap to skip.",
+          errorMessage: "Error playing. Skipping...",
         ),
       );
+      // Mark as invalid
+      await _playlistService.markSongAsInvalid(playlistId, song.id);
+
+      // Auto-skip after delay
+      Future.delayed(const Duration(seconds: 5), () {
+        skipToNext();
+      });
     }
   }
 
@@ -488,6 +498,7 @@ class RadioAudioHandler extends BaseAudioHandler
       if (_cachedNextSongExtras?['uniqueId'] == "$songId-$videoId") return;
 
       var yt = YoutubeExplode();
+      var video = await yt.videos.get(videoId);
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
       var streamInfo = manifest.muxed.withHighestBitrate();
       yt.close();
@@ -497,6 +508,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'videoId': videoId,
         'songId': songId,
         'uniqueId': "$songId-$videoId",
+        'duration': video.duration?.inSeconds,
       };
     } catch (e) {}
   }
@@ -1334,5 +1346,41 @@ class RadioAudioHandler extends BaseAudioHandler
       playable: true,
       extras: {'url': s.url},
     );
+  }
+
+  Future<Duration?> fetchDuration(String videoId) async {
+    try {
+      var yt = YoutubeExplode();
+      var video = await yt.videos.get(videoId);
+      yt.close();
+      return video.duration;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Verifies if a video is available (playable).
+  /// Returns [true] if available.
+  /// Returns [false] if permanently unavailable (e.g. deleted, private).
+  /// Throws exception if network error or other transient issue.
+  Future<bool> verifyVideoAvailability(String videoId) async {
+    var yt = YoutubeExplode();
+    try {
+      await yt.videos.get(videoId);
+      // We could also check manifest here to be super sure stream is extractable
+      // await yt.videos.streamsClient.getManifest(videoId);
+      yt.close();
+      return true;
+    } on VideoUnplayableException {
+      yt.close();
+      return false;
+    } on VideoUnavailableException {
+      yt.close();
+      return false;
+    } catch (e) {
+      yt.close();
+      // If network error, rethrow so provider knows it's not "Invalid" but "Offline"
+      rethrow;
+    }
   }
 }
