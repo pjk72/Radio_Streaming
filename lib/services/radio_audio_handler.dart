@@ -101,8 +101,7 @@ class RadioAudioHandler extends BaseAudioHandler
       } catch (_) {}
 
       _setupPlayerListeners();
-    } catch (e) {
-    } finally {
+    } catch (e) {} finally {
       _isInitializing = false;
     }
   }
@@ -143,9 +142,6 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       }
     }, onError: (Object e) {});
-
-    // TODO: Implement metadata fetching for live radio (audioplayers v6 Removed onMetadata)
-    // Consider using 'icy_metadata' package or switching to 'just_audio' for this feature.
 
     _playerDurationSubscription = _player.onDurationChanged.listen((d) {
       final currentItem = mediaItem.value;
@@ -1374,10 +1370,10 @@ class RadioAudioHandler extends BaseAudioHandler
       // await yt.videos.streamsClient.getManifest(videoId);
       yt.close();
       return true;
-    } on VideoUnplayableException {
+    } on VideoUnavailableException {
       yt.close();
       return false;
-    } on VideoUnavailableException {
+    } on VideoUnplayableException {
       yt.close();
       return false;
     } catch (e) {

@@ -246,7 +246,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     final double screenHeight = MediaQuery.of(context).size.height;
     final double screenWidth = MediaQuery.of(context).size.width;
     final double portraitHeight = isLandscape ? screenWidth : screenHeight;
-    final double currentHeight = isLandscape ? screenHeight : screenWidth;
 
     double dynamicSize = 0.15; // Non tocco più questa parte
     if (isLandscape) {

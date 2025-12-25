@@ -289,7 +289,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   ? Icons.people
                                   : _viewMode == MetadataViewMode.albums
                                   ? Icons.album
-                                  : Icons.playlist_play_rounded,
+                                  : Icons.category,
                               color: Colors.white,
                             ),
                           ),
@@ -1115,8 +1115,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     children: [
                       const SizedBox(width: 8),
 
-                      _InvalidSongIndicator(songId: song.id),
-                      if (!provider.invalidSongIds.contains(song.id)) ...[
+                      _InvalidSongIndicator(
+                        songId: song.id,
+                        isStaticInvalid: !song.isValid,
+                      ),
+                      if (!isInvalid) ...[
                         GestureDetector(
                           onTap: () async {
                             showDialog(
@@ -1269,8 +1272,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _InvalidSongIndicator(songId: song.id),
-                            if (!provider.invalidSongIds.contains(song.id)) ...[
+                            _InvalidSongIndicator(
+                              songId: song.id,
+                              isStaticInvalid: !song.isValid,
+                            ),
+                            if (!isInvalid) ...[
                               GestureDetector(
                                 onTap: () async {
                                   showDialog(
@@ -3051,8 +3057,12 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
 
 class _InvalidSongIndicator extends StatelessWidget {
   final String songId;
+  final bool isStaticInvalid;
 
-  const _InvalidSongIndicator({required this.songId, super.key});
+  const _InvalidSongIndicator({
+    required this.songId,
+    this.isStaticInvalid = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -3061,8 +3071,8 @@ class _InvalidSongIndicator extends StatelessWidget {
     // and it bypasses any potential staleness in the parent's data.
     return Selector<RadioProvider, bool>(
       selector: (_, provider) => provider.invalidSongIds.contains(songId),
-      builder: (context, isInvalid, _) {
-        if (!isInvalid) return const SizedBox.shrink();
+      builder: (context, isRefInvalid, _) {
+        if (!isStaticInvalid && !isRefInvalid) return const SizedBox.shrink();
         return const Padding(
           padding: EdgeInsets.only(right: 8.0),
           child: Icon(

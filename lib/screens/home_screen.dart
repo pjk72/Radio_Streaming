@@ -2,16 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/radio_provider.dart';
-import '../models/station.dart';
-import '../widgets/station_card.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/sidebar.dart';
 
 import 'playlist_screen.dart';
-import 'genres_screen.dart';
 import 'settings_screen.dart';
-import '../widgets/now_playing_header.dart';
-import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'radio_stream_home.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -165,19 +160,13 @@ class _HomeScreenState extends State<HomeScreen>
                           // 0. Radio Stream (Home)
                           const RadioStreamHome(),
 
-                          // 1. Genres
-                          Padding(
-                            padding: EdgeInsets.only(top: isDesktop ? 0 : 24.0),
-                            child: const GenresScreen(),
-                          ),
-
-                          // 2. Playlist
+                          // 1. Playlist
                           Padding(
                             padding: EdgeInsets.only(top: isDesktop ? 0 : 24.0),
                             child: const PlaylistScreen(),
                           ),
 
-                          // 3. Settings
+                          // 2. Settings
                           Padding(
                             padding: EdgeInsets.only(top: isDesktop ? 0 : 24.0),
                             child: const SettingsScreen(),
@@ -228,7 +217,6 @@ class _HomeScreenState extends State<HomeScreen>
             icon: Icon(Icons.radio),
             label: "Radio Stream",
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.category), label: "Genres"),
           BottomNavigationBarItem(
             icon: Icon(Icons.playlist_play_rounded),
             label: "Playlist",

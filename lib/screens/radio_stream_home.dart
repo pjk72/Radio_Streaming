@@ -170,7 +170,7 @@ class RadioStreamHome extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 8),
                                   const Text(
-                                    "Go to Genres to add stations",
+                                    "Search for stations to add them to your favorites",
                                     style: TextStyle(
                                       color: Colors.white54,
                                       fontSize: 14,

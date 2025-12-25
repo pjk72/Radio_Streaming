@@ -43,6 +43,8 @@ class RadioProvider with ChangeNotifier {
   static const String _keyCompactView = 'compact_view';
   static const String _keyShuffleMode = 'shuffle_mode';
   static const String _keyInvalidSongIds = 'invalid_song_ids';
+  static const String _keyManageGridView = 'manage_grid_view';
+  static const String _keyManageGroupingMode = 'manage_grouping_mode';
 
   Future<void> _loadStations() async {
     final prefs = await SharedPreferences.getInstance();
@@ -276,6 +278,12 @@ class RadioProvider with ChangeNotifier {
   bool _isCompactView = false;
   bool get isCompactView => _isCompactView;
 
+  bool _isManageGridView = false;
+  bool get isManageGridView => _isManageGridView;
+
+  int _manageGroupingMode = 0; // 0: none, 1: genre, 2: origin
+  int get manageGroupingMode => _manageGroupingMode;
+
   RadioProvider(this._audioHandler, this._backupService) {
     _backupService.addListener(notifyListeners);
     _playlistService.onPlaylistsUpdated.listen((_) => reloadPlaylists());
@@ -448,7 +456,15 @@ class RadioProvider with ChangeNotifier {
     _loadStationOrder();
     _loadStartupSettings(); // Load this before stations
     _loadYouTubeSettings();
+    _loadManageSettings();
     _loadStations();
+  }
+
+  Future<void> _loadManageSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _isManageGridView = prefs.getBool(_keyManageGridView) ?? false;
+    _manageGroupingMode = prefs.getInt(_keyManageGroupingMode) ?? 0;
+    notifyListeners();
   }
 
   List<Station> get _visualFavoriteOrder {
@@ -2806,6 +2822,20 @@ class RadioProvider with ChangeNotifier {
     _isCompactView = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyCompactView, value);
+    notifyListeners();
+  }
+
+  Future<void> setManageGridView(bool value) async {
+    _isManageGridView = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyManageGridView, value);
+    notifyListeners();
+  }
+
+  Future<void> setManageGroupingMode(int value) async {
+    _manageGroupingMode = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyManageGroupingMode, value);
     notifyListeners();
   }
 
