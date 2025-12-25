@@ -37,6 +37,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   final GlobalKey _carouselKey = GlobalKey();
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
+  Orientation? _lastOrientation;
 
   @override
   void initState() {
@@ -118,6 +119,24 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
     final station = provider.currentStation;
+    final bool isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final Orientation currentOrientation = MediaQuery.of(context).orientation;
+
+    // Reset sheet size when switching from landscape to portrait
+    if (_lastOrientation == Orientation.landscape &&
+        currentOrientation == Orientation.portrait) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (_sheetController.isAttached) {
+          _sheetController.animateTo(
+            0.15, // matches the current dynamicSize for portrait
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+    _lastOrientation = currentOrientation;
 
     if (station == null) {
       return const Scaffold(
@@ -166,7 +185,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           // 2. Blur / Dark Overlay
           BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(color: Colors.black.withValues(alpha: 0.5)),
+            child: Container(color: Colors.black.withOpacity(0.6)),
           ),
 
           // 3. Content
@@ -196,7 +215,20 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           ),
 
           // 4. Lyrics "Tendina" (Draggable Pull-up Sheet)
-          _buildDraggableLyrics(context, provider, visualizerColor),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            top: 0, // Full height container so it can drag from bottom to top
+            width: isLandscape
+                ? MediaQuery.of(context).size.width * 0.5
+                : MediaQuery.of(context).size.width,
+            child: _buildDraggableLyrics(
+              context,
+              provider,
+              visualizerColor,
+              isLandscape: isLandscape,
+            ),
+          ),
         ],
       ),
     );
@@ -205,22 +237,37 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   Widget _buildDraggableLyrics(
     BuildContext context,
     RadioProvider provider,
-    Color accentColor,
-  ) {
+    Color accentColor, {
+    bool isLandscape = false,
+  }) {
+    // Calculate size to maintain same physical height as in portrait
+    // Portrait: 15% of screen height
+    // Landscape: (0.15 * screenWidth) / screenHeight
+    final double screenHeight = MediaQuery.of(context).size.height;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final double portraitHeight = isLandscape ? screenWidth : screenHeight;
+    final double currentHeight = isLandscape ? screenHeight : screenWidth;
+
+    double dynamicSize = 0.15; // Non tocco più questa parte
+    if (isLandscape) {
+      // Ridotto il moltiplicatore da 0.22 a 0.18 per abbassarla in landscape
+      dynamicSize = (0.14 * portraitHeight / screenHeight).clamp(0.15, 0.5);
+    }
+
     return DraggableScrollableSheet(
       controller: _sheetController,
-      initialChildSize: 0.12, // Taller collapsed state
-      minChildSize: 0.12,
+      initialChildSize: dynamicSize,
+      minChildSize: dynamicSize,
       maxChildSize: 0.95,
       snap: true,
-      snapSizes: const [0.12, 0.5, 0.95],
+      snapSizes: [dynamicSize, 0.5, 0.95],
       builder: (context, scrollController) {
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
             child: Container(
-              color: Colors.black.withValues(alpha: 0.7),
+              color: Colors.black.withOpacity(0.7),
               child: Stack(
                 children: [
                   // Scrolling Lyrics Content
@@ -232,39 +279,40 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                               hasScrollBody: false,
                               child: Padding(
                                 padding: const EdgeInsets.only(
-                                  top: 80,
+                                  top: 0,
                                   left: 24,
                                   right: 24,
                                 ),
-                                child: Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.music_off_rounded,
-                                        color: Colors.white12,
-                                        size: 64,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      provider.isFetchingLyrics
+                                          ? Icons.sync_rounded
+                                          : Icons.music_off_rounded,
+                                      color: Colors.white30,
+                                      size: 32,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      provider.isFetchingLyrics
+                                          ? "Caricamento testi..."
+                                          : "Nessun testo sincronizzato trovato",
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white54,
+                                        fontSize: 16,
                                       ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        provider.isFetchingLyrics
-                                            ? "Caricamento testi..."
-                                            : "Nessun testo sincronizzato trovato",
-                                        style: const TextStyle(
-                                          color: Colors.white54,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             )
                           : SliverPadding(
-                              padding: EdgeInsets.only(
-                                top: MediaQuery.of(context).size.height * 0.45,
-                                bottom:
-                                    MediaQuery.of(context).size.height * 0.45,
+                              padding: const EdgeInsets.only(
+                                top:
+                                    40, // Reduced from 45% screen height to fit under header
+                                bottom: 40, // Reduced from 45% screen height
                                 left: 24,
                                 right: 24,
                               ),
@@ -289,7 +337,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         final newSize =
                             (currentSize -
                                     delta / MediaQuery.of(context).size.height)
-                                .clamp(0.12, 0.95);
+                                .clamp(0.15, 0.95);
                         _sheetController.jumpTo(newSize);
                       },
                       child: Container(
@@ -302,7 +350,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.black,
-                              Colors.black.withValues(alpha: 0.85),
+                              Colors.black.withOpacity(0.85),
                               Colors.transparent,
                             ],
                             stops: const [0.0, 0.7, 1.0],
@@ -336,7 +384,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                 children: [
                                   Icon(
                                     Icons.lyrics_rounded,
-                                    color: accentColor.withValues(alpha: 0.7),
+                                    color: accentColor.withOpacity(0.7),
                                     size: 20,
                                   ),
                                   const SizedBox(width: 10),
@@ -439,8 +487,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
             child:
                 provider.currentPlayingPlaylistId != null &&
                     provider.activeQueue.isNotEmpty
-                ? _buildCarousel(context, provider, height: 220)
-                : _buildAlbumArt(context, provider, mainImage, 220),
+                ? _buildCarousel(context, provider, height: 320)
+                : _buildAlbumArt(context, provider, mainImage, 320),
           ),
           const SizedBox(height: 24), // Space between art and info
           // Bottom Section: Info + Controls + Visualizer
@@ -464,42 +512,43 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     Color visualizerColor,
     String? bgImage,
   ) {
+    final double screenHeight = MediaQuery.of(context).size.height;
+    final double artSize = (screenHeight * 0.45).clamp(140.0, 200.0);
+
     return Column(
       children: [
-        _buildHeader(context, station.name, provider),
+        _buildHeader(context, station.name, provider, isLandscape: true),
         Expanded(
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Left: Album Art
               Expanded(
                 flex: 4,
-                child: Center(
-                  child: SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child:
-                          provider.currentPlayingPlaylistId != null &&
-                              provider.activeQueue.isNotEmpty
-                          ? _buildCarousel(context, provider, height: 200)
-                          : _buildAlbumArt(context, provider, mainImage, 200),
-                    ),
+                child: Container(
+                  alignment: Alignment.topCenter,
+                  padding: const EdgeInsets.only(
+                    top: 10.0,
+                    left: 16.0,
+                    right: 16.0,
                   ),
+                  child:
+                      provider.currentPlayingPlaylistId != null &&
+                          provider.activeQueue.isNotEmpty
+                      ? _buildCarousel(context, provider, height: artSize)
+                      : _buildAlbumArt(context, provider, mainImage, artSize),
                 ),
               ),
               // Right: Info + Controls
               Expanded(
                 flex: 6,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _buildBottomSection(
-                    context,
-                    provider,
-                    station,
-                    visualizerColor,
-                    bgImage,
-                    isLandscape: true,
-                  ),
+                child: _buildBottomSection(
+                  context,
+                  provider,
+                  station,
+                  visualizerColor,
+                  bgImage,
+                  isLandscape: true,
                 ),
               ),
             ],
@@ -512,21 +561,28 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   Widget _buildHeader(
     BuildContext context,
     String stationName,
-    RadioProvider provider,
-  ) {
+    RadioProvider provider, {
+    bool isLandscape = false,
+  }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      padding: EdgeInsets.symmetric(
+        horizontal: 16.0,
+        vertical: isLandscape ? 0.0 : 8.0,
+      ),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(
-              Icons.keyboard_arrow_down,
-              color: Colors.white,
-              size: 32,
+          Container(
+            width: 110,
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              icon: const Icon(
+                Icons.keyboard_arrow_down,
+                color: Colors.white,
+                size: 32,
+              ),
+              onPressed: () => Navigator.of(context).pop(),
             ),
-            onPressed: () => Navigator.of(context).pop(),
           ),
-
           Expanded(
             child: Text(
               stationName,
@@ -538,7 +594,45 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 48, height: 80), // Balance the close button
+          _buildVolumeControl(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVolumeControl() {
+    return SizedBox(
+      width: 110,
+      height: 40,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.volume_down_rounded,
+            color: Colors.white30,
+            size: 16,
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                activeTrackColor: Colors.white54,
+                inactiveTrackColor: Colors.white10,
+                thumbColor: Colors.white70,
+              ),
+              child: Slider(
+                value: _currentVolume.clamp(0.0, 1.0),
+                onChanged: (v) {
+                  setState(() {
+                    _currentVolume = v;
+                  });
+                  FlutterVolumeController.setVolume(v);
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -581,7 +675,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.4),
+                  color: Colors.black.withOpacity(0.3),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
                 ),
@@ -597,7 +691,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         child: Icon(
                           Icons.music_note_rounded,
                           size: 80,
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: Colors.white.withOpacity(0.5),
                         ),
                       );
                     },
@@ -606,7 +700,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     child: Icon(
                       Icons.music_note_rounded,
                       size: 80,
-                      color: Colors.white.withValues(alpha: 0.5),
+                      color: Colors.white.withOpacity(0.5),
                     ),
                   ),
           ),
@@ -623,266 +717,249 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     String? bgImage, {
     bool isLandscape = false,
   }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Info Section
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(
+        bottom: isLandscape ? 8 : 16,
+        left: isLandscape ? MediaQuery.of(context).size.width * 0.14 : 0,
+      ),
+      physics: isLandscape
+          ? const ClampingScrollPhysics()
+          : const NeverScrollableScrollPhysics(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Info Section
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.2, 0.0),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: Column(
+                key: ValueKey(
+                  "${provider.currentTrack}|${provider.currentArtist}",
+                ),
                 children: [
-                  Flexible(
-                    child: Text(
-                      provider.currentTrack.isNotEmpty
-                          ? provider.currentTrack
-                          : "Live Broadcast",
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          provider.currentTrack.isNotEmpty
+                              ? provider.currentTrack
+                              : "Live Broadcast",
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  MouseRegion(
+                    cursor:
+                        (provider.currentTrack != "Live Broadcast" &&
+                            provider.currentArtist.isNotEmpty)
+                        ? SystemMouseCursors.click
+                        : SystemMouseCursors.basic,
+                    child: GestureDetector(
+                      onTap: () {
+                        if (provider.currentTrack != "Live Broadcast" &&
+                            provider.currentArtist.isNotEmpty) {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => ArtistDetailsScreen(
+                                artistName: provider.currentArtist,
+                                artistImage: bgImage,
+                                genre: station.genre,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      child: Text(
+                        provider.currentArtist.isNotEmpty
+                            ? provider.currentArtist
+                            : station.genre,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontSize: 18,
+                          decoration:
+                              (provider.currentTrack != "Live Broadcast" &&
+                                  provider.currentArtist.isNotEmpty)
+                              ? TextDecoration.underline
+                              : null,
+                          decorationColor: Colors.white54,
+                        ),
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              MouseRegion(
-                cursor:
-                    (provider.currentTrack != "Live Broadcast" &&
-                        provider.currentArtist.isNotEmpty)
-                    ? SystemMouseCursors.click
-                    : SystemMouseCursors.basic,
-                child: GestureDetector(
-                  onTap: () {
-                    if (provider.currentTrack != "Live Broadcast" &&
-                        provider.currentArtist.isNotEmpty) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => ArtistDetailsScreen(
-                            artistName: provider.currentArtist,
-                            artistImage: bgImage,
-                            genre: station.genre,
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  child: Text(
-                    provider.currentArtist.isNotEmpty
-                        ? provider.currentArtist
-                        : station.genre,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 18,
-                      decoration:
-                          (provider.currentTrack != "Live Broadcast" &&
-                              provider.currentArtist.isNotEmpty)
-                          ? TextDecoration.underline
-                          : null,
-                      decorationColor: Colors.white54,
-                    ),
-                  ),
-                ),
-              ),
-              if (provider.currentAlbum.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  provider.currentAlbum,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 25),
-
-        // Progress Bar (Youtube) - Above Controls
-        if (provider.hiddenAudioController != null)
-          _buildProgressBar(context, provider.hiddenAudioController!)
-        else if (provider.currentPlayingPlaylistId != null)
-          _buildNativeProgressBar(context, provider),
-
-        // Controls
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Shuffle (Left)
-              if (provider.currentPlayingPlaylistId != null) ...[
-                IconButton(
-                  onPressed: () {
-                    provider.toggleShuffle();
-                    // Relayout and jump to start of list
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_pageController != null &&
-                          _pageController!.hasClients) {
-                        _pageController!.jumpToPage(0);
-                        if (provider.activeQueue.isNotEmpty &&
-                            provider.currentPlayingPlaylistId != null) {
-                          provider.playPlaylistSong(
-                            provider.activeQueue[0],
-                            provider.currentPlayingPlaylistId!,
-                          );
-                        }
-                      }
-                    });
-                  },
-                  icon: Icon(
-                    Icons.shuffle_rounded,
-                    color: provider.isShuffleMode
-                        ? const Color(0xFFE91E63)
-                        : Colors.white24,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-              ],
-
-              IconButton(
-                onPressed: () => provider.playPrevious(),
-                icon: const Icon(
-                  Icons.skip_previous_rounded,
-                  color: Colors.white,
-                  size: 36,
-                ),
-              ),
-              const SizedBox(width: 24),
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white.withOpacity(0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, 5),
+                  if (provider.currentAlbum.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      provider.currentAlbum,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.6),
+                        fontSize: 14,
+                      ),
                     ),
                   ],
-                ),
-                child: IconButton(
-                  onPressed: () => provider.togglePlay(),
-                  icon: provider.isLoading
-                      ? const SizedBox(
-                          width: 32,
-                          height: 32,
-                          child: CircularProgressIndicator(
-                            color: Colors.black,
-                            strokeWidth: 3,
-                          ),
-                        )
-                      : Icon(
-                          provider.isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          color: Colors.black,
-                          size: 32,
-                        ),
-                ),
+                ],
               ),
-              const SizedBox(width: 24),
-              IconButton(
-                onPressed: () => provider.playNext(),
-                icon: const Icon(
-                  Icons.skip_next_rounded,
-                  color: Colors.white,
-                  size: 36,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
 
-        const SizedBox(height: 12),
+          SizedBox(height: isLandscape ? 4 : 40),
 
-        // Volume Slider (System Volume)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.volume_mute_rounded,
-                color: Colors.white54,
-                size: 20,
-              ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 0,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 14,
-                    ),
-                    activeTrackColor: Colors.white,
-                    inactiveTrackColor: Colors.white24,
-                    thumbColor: Colors.white,
-                  ),
-                  child: Slider(
-                    value: _currentVolume.clamp(0.0, 1.0),
-                    onChanged: (v) {
-                      setState(() {
-                        _currentVolume = v;
+          // Progress Bar (Youtube) - Above Controls
+          if (provider.hiddenAudioController != null)
+            _buildProgressBar(context, provider.hiddenAudioController!)
+          else if (provider.currentPlayingPlaylistId != null)
+            _buildNativeProgressBar(context, provider)
+          else
+            const SizedBox(height: 40), // Space for Radio info separation
+          // Controls
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Shuffle (Left)
+                if (provider.currentPlayingPlaylistId != null) ...[
+                  IconButton(
+                    onPressed: () {
+                      provider.toggleShuffle();
+                      // Relayout and jump to start of list
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (_pageController != null &&
+                            _pageController!.hasClients) {
+                          _pageController!.jumpToPage(0);
+                          if (provider.activeQueue.isNotEmpty &&
+                              provider.currentPlayingPlaylistId != null) {
+                            provider.playPlaylistSong(
+                              provider.activeQueue[0],
+                              provider.currentPlayingPlaylistId!,
+                            );
+                          }
+                        }
                       });
-                      FlutterVolumeController.setVolume(v);
                     },
+                    icon: Icon(
+                      Icons.shuffle_rounded,
+                      color: provider.isShuffleMode
+                          ? const Color(0xFFE91E63)
+                          : Colors.white24,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                ],
+
+                IconButton(
+                  onPressed: () => provider.playPrevious(),
+                  icon: const Icon(
+                    Icons.skip_previous_rounded,
+                    color: Colors.white,
+                    size: 36,
                   ),
                 ),
-              ),
-              const Icon(
-                Icons.volume_up_rounded,
-                color: Colors.white54,
-                size: 20,
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        // Visualizer (Bottom)
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.fastOutSlowIn,
-          height: 60, // Lowered height
-          child: provider.isPlaying
-              ? Opacity(
-                  opacity:
-                      (provider.hiddenAudioController != null ||
-                          provider.currentPlayingPlaylistId != null)
-                      ? 0.3
-                      : 1.0,
-                  child: _MusicVisualizer(
-                    color: visualizerColor,
-                    barCount: 60,
-                    volume: _currentVolume,
+                const SizedBox(width: 24),
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.2),
+                        blurRadius: 20,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
-                )
-              : const SizedBox.shrink(),
-        ),
+                  child: IconButton(
+                    onPressed: () => provider.togglePlay(),
+                    icon: provider.isLoading
+                        ? const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                              strokeWidth: 3,
+                            ),
+                          )
+                        : Icon(
+                            provider.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.black,
+                            size: 32,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 24),
+                IconButton(
+                  onPressed: () => provider.playNext(),
+                  icon: const Icon(
+                    Icons.skip_next_rounded,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-        // Spacing for the curtain (initialChildSize is 0.12)
-        SizedBox(height: MediaQuery.of(context).size.height * 0.12),
-      ],
+          SizedBox(height: isLandscape ? 95 : 50),
+          // Visualizer (Bottom)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.fastOutSlowIn,
+            height: isLandscape ? 40 : 60, // Shorter in landscape
+            child: provider.isPlaying
+                ? Opacity(
+                    opacity:
+                        (provider.hiddenAudioController != null ||
+                            provider.currentPlayingPlaylistId != null)
+                        ? 0.3
+                        : 1.0,
+                    child: _MusicVisualizer(
+                      color: visualizerColor,
+                      barCount: 60,
+                      volume: _currentVolume,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+
+          // Spacing for the curtain (initialChildSize is 0.15)
+          SizedBox(height: MediaQuery.of(context).size.height * 0.15),
+        ],
+      ),
     );
   }
 
@@ -925,7 +1002,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         activeTrackColor: Colors.redAccent,
                         inactiveTrackColor: Colors.white24,
                         thumbColor: Colors.redAccent,
-                        overlayColor: Colors.redAccent.withValues(alpha: 0.2),
+                        overlayColor: Colors.redAccent.withOpacity(0.12),
                       ),
                       child: Slider(
                         value: val,
@@ -1039,24 +1116,45 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
       );
       _lastPlayingSongId = provider.audioOnlySongId;
     } else if (provider.audioOnlySongId != _lastPlayingSongId) {
+      final oldId = _lastPlayingSongId;
       _lastPlayingSongId = provider.audioOnlySongId;
 
       if (currentIndex != -1 &&
           !_isNavigatingCarousel &&
           _pageController!.hasClients) {
         _isNavigatingCarousel = true;
-        _pageController!
-            .animateToPage(
-              currentIndex,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            )
-            .then((_) {
-              // Wait a bit to ensure onPageChanged callbacks have fired and been ignored
-              Future.delayed(const Duration(milliseconds: 100), () {
-                if (mounted) _isNavigatingCarousel = false;
+
+        // Check if art is same as previous song to avoid visual slide
+        bool isSameArt = false;
+        if (oldId != null) {
+          final oldIndex = songs.indexWhere((s) => s.id == oldId);
+          if (oldIndex != -1 && oldIndex < songs.length) {
+            final oldSong = songs[oldIndex];
+            final newSong = songs[currentIndex];
+            if (oldSong.artUri == newSong.artUri && oldSong.artUri != null) {
+              isSameArt = true;
+            }
+          }
+        }
+
+        if (isSameArt) {
+          _pageController!.jumpToPage(currentIndex);
+          Future.delayed(const Duration(milliseconds: 50), () {
+            if (mounted) _isNavigatingCarousel = false;
+          });
+        } else {
+          _pageController!
+              .animateToPage(
+                currentIndex,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              )
+              .then((_) {
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  if (mounted) _isNavigatingCarousel = false;
+                });
               });
-            });
+        }
       }
     }
 
@@ -1135,8 +1233,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                 }
                 return Center(
                   child: SizedBox(
-                    height: Curves.easeOut.transform(value) * (height * 1),
-                    width: Curves.easeOut.transform(value) * (height * 1),
+                    height: Curves.easeOut.transform(value) * height,
+                    width: Curves.easeOut.transform(value) * height,
                     child: child,
                   ),
                 );
@@ -1247,7 +1345,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                 provider.lyricsOffset.inMilliseconds / 1000.0;
 
             return AlertDialog(
-              backgroundColor: Colors.grey[900],
+              backgroundColor: Colors.black.withOpacity(0.9),
               title: const Text(
                 'Sync Lyrics',
                 style: TextStyle(color: Colors.white),
@@ -1360,9 +1458,10 @@ class _LyricsWidget extends StatefulWidget {
 class _LyricsWidgetState extends State<_LyricsWidget> {
   int _currentIndex = -1;
   final Map<int, GlobalKey> _lineKeys = {};
+  double _lastViewportHeight = 0.0;
 
   void _scrollToIndex(int index) {
-    if (index == _currentIndex) return;
+    // Force scroll even if index is same, to realign on resize
     _currentIndex = index;
 
     final key = _lineKeys[index];
@@ -1404,42 +1503,60 @@ class _LyricsWidgetState extends State<_LyricsWidget> {
 
         return SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate((context, i) {
-              final isSynced = widget.lyrics.isSynced == true;
-              final isCurrent = isSynced ? (i == index) : true;
-              final line = widget.lyrics.lines[i];
+          sliver: SliverLayoutBuilder(
+            builder: (context, constraints) {
+              // Re-center if viewport size changes (e.g. closing the sheet)
+              if (_currentIndex != -1 &&
+                  (constraints.viewportMainAxisExtent - _lastViewportHeight)
+                          .abs() >
+                      1.0) {
+                _lastViewportHeight = constraints.viewportMainAxisExtent;
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _scrollToIndex(_currentIndex),
+                );
+              }
+              _lastViewportHeight = constraints.viewportMainAxisExtent;
 
-              // Ensure key exists
-              _lineKeys[i] ??= GlobalKey();
+              return SliverList(
+                delegate: SliverChildBuilderDelegate((context, i) {
+                  final isSynced = widget.lyrics.isSynced == true;
+                  final isCurrent = isSynced ? (i == index) : true;
+                  final line = widget.lyrics.lines[i];
 
-              return Padding(
-                key: _lineKeys[i],
-                padding: const EdgeInsets.symmetric(vertical: 12.0),
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 300),
-                  style: TextStyle(
-                    color: isCurrent ? Colors.white : Colors.white24,
-                    fontSize: isSynced
-                        ? (isCurrent ? 20 : 17)
-                        : 22, // Larger font for non-synced lyrics
-                    height: 1.4,
-                    fontWeight: (isSynced && isCurrent) || !isSynced
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    shadows: isCurrent && isSynced
-                        ? [
-                            Shadow(
-                              color: widget.accentColor.withValues(alpha: 0.6),
-                              blurRadius: 12,
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Text(line.text, textAlign: TextAlign.center),
-                ),
+                  // Ensure key exists
+                  _lineKeys[i] ??= GlobalKey();
+
+                  return Padding(
+                    key: _lineKeys[i],
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    child: AnimatedDefaultTextStyle(
+                      duration: const Duration(milliseconds: 300),
+                      style: TextStyle(
+                        color: isCurrent ? Colors.white : Colors.white24,
+                        fontSize: isSynced
+                            ? (isCurrent ? 20 : 17)
+                            : 22, // Larger font for non-synced lyrics
+                        height: 1.4,
+                        fontWeight: (isSynced && isCurrent) || !isSynced
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        shadows: isCurrent && isSynced
+                            ? [
+                                Shadow(
+                                  color: widget.accentColor.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                  blurRadius: 12,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Text(line.text, textAlign: TextAlign.center),
+                    ),
+                  );
+                }, childCount: widget.lyrics.lines.length),
               );
-            }, childCount: widget.lyrics.lines.length),
+            },
           ),
         );
       },
@@ -1552,7 +1669,7 @@ class _MusicVisualizerState extends State<_MusicVisualizer>
                 borderRadius: BorderRadius.circular(barWidth / 2),
                 boxShadow: [
                   BoxShadow(
-                    color: widget.color.withValues(alpha: 0.8),
+                    color: widget.color.withOpacity(0.6),
                     blurRadius: 8 * heightFactor * volumeScale,
                     spreadRadius: heightFactor * 1.5 * volumeScale,
                     offset: const Offset(0, 0),

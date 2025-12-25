@@ -14,6 +14,7 @@ import 'album_details_screen.dart';
 import '../widgets/youtube_popup.dart';
 import '../utils/genre_mapper.dart';
 import '../services/music_metadata_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -644,12 +645,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 if (bgImage != null)
                   Positioned.fill(
                     child: bgImage.startsWith('http')
-                        ? Image.network(
-                            bgImage,
+                        ? CachedNetworkImage(
+                            imageUrl: bgImage,
                             fit: BoxFit.cover,
                             color: Colors.black.withValues(alpha: 0.6),
                             colorBlendMode: BlendMode.darken,
-                            errorBuilder: (context, error, stackTrace) {
+                            errorWidget: (context, url, error) {
                               return Container(
                                 color: Colors.white.withValues(alpha: 0.1),
                               );
@@ -842,43 +843,60 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
         if (confirmed == true) {
           final songIds = groupSongs.map((s) => s.id).toList();
-          await provider.removeSongsFromPlaylist(playlist.id, songIds);
-
-          if (!provider.playlists.any((p) => p.id == playlist.id)) {
-            setState(() {
-              _selectedPlaylistId = null;
-            });
-          }
-
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Removed '${groupSongs.first.album}'"),
-                action: SnackBarAction(
-                  label: "Undo",
-                  onPressed: () {
-                    provider.restoreSongsToPlaylist(
-                      playlist.id,
-                      groupSongs,
-                      playlistName: playlist.name,
-                    );
-                  },
+          if (playlist.id == 'temp_view') {
+            await provider.removeSongsFromLibrary(songIds);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Removed '${groupSongs.first.album}' from library",
+                  ),
                 ),
-              ),
-            );
+              );
+            }
+          } else {
+            await provider.removeSongsFromPlaylist(playlist.id, songIds);
+
+            if (!provider.playlists.any((p) => p.id == playlist.id)) {
+              setState(() {
+                _selectedPlaylistId = null;
+              });
+            }
+
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Removed '${groupSongs.first.album}'"),
+                  action: SnackBarAction(
+                    label: "Undo",
+                    onPressed: () {
+                      provider.restoreSongsToPlaylist(
+                        playlist.id,
+                        groupSongs,
+                        playlistName: playlist.name,
+                      );
+                    },
+                  ),
+                ),
+              );
+            }
           }
           return true;
         }
         return false;
       },
-      songBuilder: (context, song, index) => _buildSongItem(
-        context,
-        provider,
-        playlist,
-        song,
-        isGrouped: true,
-        groupIndex: index,
-      ),
+      songBuilder: (ctx, song, index) {
+        // Ensure we use the latest provider state for invalid check
+        final freshProvider = Provider.of<RadioProvider>(ctx);
+        return _buildSongItem(
+          ctx,
+          freshProvider,
+          playlist,
+          song,
+          isGrouped: true,
+          groupIndex: index,
+        );
+      },
     );
   }
 
@@ -921,20 +939,32 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       onDismissed: (direction) {
         if (direction == DismissDirection.endToStart) {
           final deletedSong = song;
-          provider.removeFromPlaylist(playlist.id, song.id);
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text("Song removed from playlist"),
-              action: SnackBarAction(
-                label: 'Undo',
-                onPressed: () {
-                  provider.restoreSongToPlaylist(playlist.id, deletedSong);
-                },
+
+          if (playlist.id == 'temp_view') {
+            provider.removeSongFromLibrary(song.id);
+            ScaffoldMessenger.of(context).clearSnackBars();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Song removed from library"),
+                duration: Duration(seconds: 2),
               ),
-              duration: const Duration(seconds: 4),
-            ),
-          );
+            );
+          } else {
+            provider.removeFromPlaylist(playlist.id, song.id);
+            ScaffoldMessenger.of(context).clearSnackBars();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text("Song removed from playlist"),
+                action: SnackBarAction(
+                  label: 'Undo',
+                  onPressed: () {
+                    provider.restoreSongToPlaylist(playlist.id, deletedSong);
+                  },
+                ),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
         }
       },
       child: Container(
@@ -975,7 +1005,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           child: ListTile(
             onTap: isInvalid
                 ? null
-                : () => _handleSongAudioAction(provider, song, playlist.id),
+                : () => _handleSongAudioAction(
+                    provider,
+                    song,
+                    playlist.id,
+                    adHocPlaylist: playlist,
+                  ),
             // onLongPress removed, handled by GestureDetector's 3s timer via onTapDown
             visualDensity: isGrouped
                 ? const VisualDensity(horizontal: 0, vertical: -4)
@@ -1021,12 +1056,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: song.artUri != null
-                            ? Image.network(
-                                song.artUri!,
+                            ? CachedNetworkImage(
+                                imageUrl: song.artUri!,
                                 width: 48,
                                 height: 48,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
+                                errorWidget: (_, _, _) => Container(
                                   width: 48,
                                   height: 48,
                                   color: Colors.grey[900],
@@ -1054,19 +1089,19 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   child: Text(
                     song.title,
                     style: TextStyle(
-                      color: isInvalid
-                          ? Colors.white38
-                          : (provider.audioOnlySongId == song.id ||
-                                (song.title.trim().toLowerCase() ==
-                                        provider.currentTrack
-                                            .trim()
-                                            .toLowerCase() &&
-                                    song.artist.trim().toLowerCase() ==
-                                        provider.currentArtist
-                                            .trim()
-                                            .toLowerCase()))
+                      color:
+                          (provider.audioOnlySongId == song.id ||
+                              (provider.currentTrack.isNotEmpty &&
+                                  song.title.trim().toLowerCase() ==
+                                      provider.currentTrack
+                                          .trim()
+                                          .toLowerCase() &&
+                                  song.artist.trim().toLowerCase() ==
+                                      provider.currentArtist
+                                          .trim()
+                                          .toLowerCase()))
                           ? Colors.redAccent
-                          : Colors.white,
+                          : (isInvalid ? Colors.white54 : Colors.white),
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
@@ -1080,16 +1115,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     children: [
                       const SizedBox(width: 8),
 
-                      if (isInvalid)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 8.0),
-                          child: Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orange,
-                            size: 20,
-                          ),
-                        )
-                      else ...[
+                      _InvalidSongIndicator(songId: song.id),
+                      if (!provider.invalidSongIds.contains(song.id)) ...[
                         GestureDetector(
                           onTap: () async {
                             showDialog(
@@ -1242,16 +1269,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (isInvalid)
-                              const Padding(
-                                padding: EdgeInsets.only(right: 8.0),
-                                child: Icon(
-                                  Icons.warning_amber_rounded,
-                                  color: Colors.orange,
-                                  size: 20,
-                                ),
-                              )
-                            else ...[
+                            _InvalidSongIndicator(songId: song.id),
+                            if (!provider.invalidSongIds.contains(song.id)) ...[
                               GestureDetector(
                                 onTap: () async {
                                   showDialog(
@@ -1827,12 +1846,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
                                   child: s.artUri != null
-                                      ? Image.network(
-                                          s.artUri!,
+                                      ? CachedNetworkImage(
+                                          imageUrl: s.artUri!,
                                           width: 50,
                                           height: 50,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) => Container(
+                                          errorWidget: (_, _, _) => Container(
                                             width: 50,
                                             height: 50,
                                             color: Colors.white10,
@@ -2019,12 +2038,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: song.artUri != null
-                        ? Image.network(
-                            song.artUri!,
+                        ? CachedNetworkImage(
+                            imageUrl: song.artUri!,
                             width: 48,
                             height: 48,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorWidget: (_, __, ___) => Container(
                               width: 48,
                               height: 48,
                               color: Colors.grey[900],
@@ -2232,7 +2251,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     : null,
                 image: favImage != null
                     ? DecorationImage(
-                        image: NetworkImage(favImage),
+                        image: CachedNetworkImageProvider(favImage),
                         fit: BoxFit.cover,
                         colorFilter: ColorFilter.mode(
                           Colors.black.withValues(alpha: 0.5),
@@ -2432,7 +2451,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     : null,
                 image: favImage != null
                     ? DecorationImage(
-                        image: NetworkImage(favImage),
+                        image: CachedNetworkImageProvider(favImage),
                         fit: BoxFit.cover,
                         colorFilter: ColorFilter.mode(
                           Colors.black.withValues(alpha: 0.5),
@@ -2579,10 +2598,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       top: Radius.circular(16),
                     ),
                     child: displaySong.artUri != null
-                        ? Image.network(
-                            displaySong.artUri!,
+                        ? CachedNetworkImage(
+                            imageUrl: displaySong.artUri!,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorWidget: (_, __, ___) => Container(
                               color: Colors.white10,
                               child: const Icon(
                                 Icons.album,
@@ -2781,11 +2800,20 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: artUri != null
-                              ? Image.network(
-                                  artUri,
+                              ? CachedNetworkImage(
+                                  imageUrl: artUri,
                                   width: 60,
                                   height: 60,
                                   fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Container(
+                                    width: 60,
+                                    height: 60,
+                                    color: Colors.white10,
+                                    child: const Icon(
+                                      Icons.album,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
                                 )
                               : Container(
                                   width: 60,
@@ -2969,10 +2997,10 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                   top: Radius.circular(16),
                 ),
                 child: _imageUrl != null
-                    ? Image.network(
-                        _imageUrl!,
+                    ? CachedNetworkImage(
+                        imageUrl: _imageUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorWidget: (_, __, ___) => Container(
                           color: Colors.white10,
                           child: const Icon(
                             Icons.person,
@@ -3017,6 +3045,33 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _InvalidSongIndicator extends StatelessWidget {
+  final String songId;
+
+  const _InvalidSongIndicator({required this.songId, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Select specifically on whether the ID exists in the set.
+    // This allows the widget to rebuild ONLY when this specific condition changes,
+    // and it bypasses any potential staleness in the parent's data.
+    return Selector<RadioProvider, bool>(
+      selector: (_, provider) => provider.invalidSongIds.contains(songId),
+      builder: (context, isInvalid, _) {
+        if (!isInvalid) return const SizedBox.shrink();
+        return const Padding(
+          padding: EdgeInsets.only(right: 8.0),
+          child: Icon(
+            Icons.warning_amber_rounded,
+            color: Colors.orange,
+            size: 20,
+          ),
+        );
+      },
     );
   }
 }

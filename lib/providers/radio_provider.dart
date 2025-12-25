@@ -48,6 +48,12 @@ class RadioProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final String? jsonStr = prefs.getString(_keySavedStations);
 
+    final invalidIds = prefs.getStringList(_keyInvalidSongIds);
+    if (invalidIds != null) {
+      _invalidSongIds.clear();
+      _invalidSongIds.addAll(invalidIds);
+    }
+
     if (jsonStr != null) {
       try {
         final List<dynamic> decoded = jsonDecode(jsonStr);
@@ -698,6 +704,16 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  Future<void> removeSongFromLibrary(String songId) async {
+    await _playlistService.removeSongFromAllPlaylists(songId);
+    await _loadPlaylists();
+  }
+
+  Future<void> removeSongsFromLibrary(List<String> songIds) async {
+    await _playlistService.removeSongsFromAllPlaylists(songIds);
+    await _loadPlaylists();
+  }
+
   Future<List<SongSearchResult>> searchMusic(String query) async {
     return await _musicMetadataService.searchSongs(query: query, limit: 40);
   }
@@ -963,51 +979,38 @@ class RadioProvider with ChangeNotifier {
 
   Future<void> playAdHocPlaylist(Playlist playlist, String? startSongId) async {
     _tempPlaylist = playlist;
+    _currentPlayingPlaylistId = playlist.id;
 
-    SavedSong? song;
+    if (playlist.songs.isEmpty) return;
+
+    int startIndex = 0;
     if (startSongId != null) {
-      try {
-        song = playlist.songs.firstWhere((s) => s.id == startSongId);
-      } catch (_) {}
-    }
-    if (song == null && playlist.songs.isNotEmpty) {
-      song = playlist.songs.first;
+      final idx = playlist.songs.indexWhere((s) => s.id == startSongId);
+      if (idx != -1) startIndex = idx;
     }
 
-    if (song == null) return;
-
-    String? videoId;
-    if (song.youtubeUrl != null) {
-      videoId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
-    }
-    // Fallback if not cached
-    if (videoId == null) {
-      if (song.id.length == 11) {
-        videoId = song.id;
-      } else {
-        // Attempt resolution
-        try {
-          final links = await resolveLinks(
-            title: song.title,
-            artist: song.artist,
-            spotifyUrl: song.spotifyUrl,
-          );
-          final url = links['youtube'];
-          if (url != null) videoId = YoutubePlayer.convertUrlToId(url);
-        } catch (_) {}
+    SavedSong? songToPlay;
+    // Find first valid song starting from requested index
+    for (int i = startIndex; i < playlist.songs.length; i++) {
+      final s = playlist.songs[i];
+      if (s.isValid && !_invalidSongIds.contains(s.id)) {
+        songToPlay = s;
+        break;
       }
     }
 
-    if (videoId != null) {
-      await playYoutubeAudio(
-        videoId,
-        song.id,
-        playlistId: playlist.id,
-        overrideTitle: song.title,
-        overrideArtist: song.artist,
-        overrideAlbum: song.album,
-        overrideArtUri: song.artUri,
-      );
+    // Fallback: If no valid song found forward, or list empty
+    if (songToPlay == null) {
+      // Just try the requested one and let error handler deal with it
+      // or try finding one from the beginning if we started mid-way?
+      // Let's just try the startIndex one.
+      if (startIndex < playlist.songs.length) {
+        songToPlay = playlist.songs[startIndex];
+      }
+    }
+
+    if (songToPlay != null) {
+      await playPlaylistSong(songToPlay, playlist.id);
     }
   }
 
@@ -1120,12 +1123,6 @@ class RadioProvider with ChangeNotifier {
 
     try {
       // Race condition guard: Abort if song changed while fetching stream
-      if (_audioOnlySongId != songId) {
-        debugPrint(
-          "playYoutubeAudio: Song changed during stream fetch, aborting.",
-        );
-        return;
-      }
 
       // Bypass blocking resolution in Provider - Let AudioHandler handle it (and use cache)
       // We pass the VideoId as the URI.
@@ -1428,7 +1425,7 @@ class RadioProvider with ChangeNotifier {
 
     // 1. Explicit Error Check
     if (value.errorCode != 0) {
-      debugPrint(
+      LogService().log(
         "YouTube Player Error: ${value.errorCode}. Marking song invalid.",
       );
       _markCurrentSongAsInvalid();
@@ -1450,9 +1447,9 @@ class RadioProvider with ChangeNotifier {
         _lastProcessingTime = DateTime.now();
       } else {
         final diff = DateTime.now().difference(_lastProcessingTime!);
-        if (diff.inSeconds > 10) {
-          debugPrint(
-            "Playback Processing Timeout (>10s in $state). Marking invalid.",
+        if (diff.inSeconds > 5) {
+          LogService().log(
+            "Playback Processing Timeout (>5s in $state). Marking invalid.",
           );
           _markCurrentSongAsInvalid();
           playNext(false);
@@ -2098,7 +2095,11 @@ class RadioProvider with ChangeNotifier {
       // 1. It is not in the _invalidSongIds list (Legacy)
       // 2. Its .isValid flag is true
       // 3. Its duration is NOT zero (if known)
-      // Logic for invalid tracks removed.
+      if (!candidate.isValid || _invalidSongIds.contains(candidate.id)) {
+        currentIndex = nextIndex;
+        attempts++;
+        continue;
+      }
       return candidate;
     }
 
@@ -2167,12 +2168,12 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> playPlaylistSong(SavedSong song, String? playlistId) async {
-    // Invalid track logic removed. Proceeding to play.
-
-    LogService().log(
-      "Starting Playback: ${song.title} | Duration: ${song.duration}",
-    );
-
+    // Prevent playback of invalid songs
+    if (!song.isValid || _invalidSongIds.contains(song.id)) {
+      LogService().log("Skipping invalid song request: ${song.title}");
+      _playNextInPlaylist();
+      return;
+    }
     // Optimistic UI update
     _currentTrack = song.title;
     _currentArtist = song.artist;
@@ -2268,8 +2269,33 @@ class RadioProvider with ChangeNotifier {
         _isLoading = false;
         notifyListeners();
 
-        // If it was a playlist queue, skip to next. If manual one-off, just alert.
+        // No Video ID found -> Invalid Song (Metadata issue)
+        // Check internet just in case resolveLinks failed silently?
+        // But resolveLinks usually throws on connection error.
+        // Assuming we are online if we got here with null.
         if (playlistId != null) {
+          LogService().log(
+            "Marking song as invalid (No Video ID): ${song.title}",
+          );
+          await _playlistService.markSongAsInvalidGlobally(song.id);
+          if (!_invalidSongIds.contains(song.id)) {
+            _invalidSongIds.add(song.id);
+            // Persist locally
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+          }
+
+          // Also mark invalid in temp playlist if active
+          if (_tempPlaylist != null) {
+            final index = _tempPlaylist!.songs.indexWhere(
+              (s) => s.id == song.id,
+            );
+            if (index != -1) {
+              _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index]
+                  .copyWith(isValid: false);
+            }
+          }
+
           await Future.delayed(const Duration(seconds: 1));
           playNext(false);
         }
@@ -2277,6 +2303,38 @@ class RadioProvider with ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       notifyListeners();
+
+      LogService().log("Error in playPlaylistSong: $e");
+
+      // Check if error is network related
+      final errStr = e.toString().toLowerCase();
+      final isNetwork =
+          errStr.contains('socket') ||
+          errStr.contains('timeout') ||
+          errStr.contains('handshake') ||
+          errStr.contains('network') ||
+          errStr.contains('lookup');
+
+      if (!isNetwork && playlistId != null) {
+        LogService().log("Marking song as invalid (Playback Error): $e");
+        await _playlistService.markSongAsInvalidGlobally(song.id);
+        if (!_invalidSongIds.contains(song.id)) {
+          _invalidSongIds.add(song.id);
+          // Persist locally
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+        }
+
+        // Also mark invalid in temp playlist if active
+        if (_tempPlaylist != null) {
+          final index = _tempPlaylist!.songs.indexWhere((s) => s.id == song.id);
+          if (index != -1) {
+            _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index].copyWith(
+              isValid: false,
+            );
+          }
+        }
+      }
 
       if (playlistId != null) {
         await Future.delayed(const Duration(seconds: 1));
@@ -2310,6 +2368,7 @@ class RadioProvider with ChangeNotifier {
     }
 
     _isFetchingLyrics = true;
+    _currentLyrics = LyricsData.empty(); // Clear previous lyrics immediately
     _lyricsOffset = Duration.zero; // Reset offset
     notifyListeners();
 
@@ -2752,15 +2811,66 @@ class RadioProvider with ChangeNotifier {
 
   void _markCurrentSongAsInvalid() {
     if (_audioOnlySongId != null) {
+      LogService().log("Marking Current Song Invalid: $_audioOnlySongId");
       if (!_invalidSongIds.contains(_audioOnlySongId!)) {
         _invalidSongIds.add(_audioOnlySongId!);
+        LogService().log(
+          "Added to invalidSongIds. Count: ${_invalidSongIds.length}",
+        );
+
+        // 1. Update In-Memory Playlists Immediately (Instant UI Feedback)
+        bool memoryUpdated = false;
+        for (var i = 0; i < _playlists.length; i++) {
+          final p = _playlists[i];
+          final index = p.songs.indexWhere((s) => s.id == _audioOnlySongId);
+          if (index != -1) {
+            final updatedSong = p.songs[index].copyWith(isValid: false);
+            // We need to update the playlist in the list.
+            // Since Playlist.songs is a List<SavedSong>, we can modify it if mutable,
+            // or replace the Playlist object if immutable.
+            // Assuming Playlist is immutable-ish but songs list is mutable?
+            // Safer to replace the song in the list.
+            p.songs[index] = updatedSong;
+            memoryUpdated = true;
+          }
+        }
+        if (memoryUpdated) {
+          LogService().log("Updated _playlists in memory immediately.");
+        }
+
+        // 2. Notify UI immediately
         notifyListeners();
 
-        // Persist immediately
+        // 3. Persist ID list
         SharedPreferences.getInstance().then((prefs) {
           prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+          LogService().log("Persisted invalidSongIds to Prefs");
         });
+
+        // 4. Mark globally in DB (Async)
+        _playlistService.markSongAsInvalidGlobally(_audioOnlySongId!).then((_) {
+          LogService().log("Marked invalid globally via Service");
+        });
+
+        // 5. Update Temp Playlist
+        if (_tempPlaylist != null) {
+          final index = _tempPlaylist!.songs.indexWhere(
+            (s) => s.id == _audioOnlySongId,
+          );
+          if (index != -1) {
+            _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index].copyWith(
+              isValid: false,
+            );
+            LogService().log(
+              "Updated _tempPlaylist in memory for index $index",
+            );
+          }
+        }
+      } else {
+        LogService().log("Song ID $_audioOnlySongId already in invalidSongIds");
       }
+    } else {
+      LogService().log("Cannot mark invalid: _audioOnlySongId is null");
     }
   }
 
@@ -2775,11 +2885,21 @@ class RadioProvider with ChangeNotifier {
       });
     }
 
-    if (playlistId != null) {
-      await _playlistService.unmarkSongAsInvalid(playlistId, songId);
-      await _loadPlaylists();
-      changed = true;
+    // Always try to unmark globally, regardless of specific playlistId
+    await _playlistService.unmarkSongAsInvalidGlobally(songId);
+    await reloadPlaylists(); // Refresh local list
+
+    // Also unmark in temp playlist if active
+    if (_tempPlaylist != null) {
+      final index = _tempPlaylist!.songs.indexWhere((s) => s.id == songId);
+      if (index != -1) {
+        _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index].copyWith(
+          isValid: true,
+        );
+      }
     }
+
+    changed = true;
 
     if (changed) notifyListeners();
   }

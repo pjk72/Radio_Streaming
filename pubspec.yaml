@@ -64,6 +64,7 @@ dependencies:
   webview_flutter_android: ^4.10.11
   palette_generator: ^0.3.3+7
   reorderable_grid_view: ^2.2.8
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:

@@ -12,6 +12,7 @@ import '../data/station_data.dart' as static_data;
 import '../models/station.dart';
 import '../models/saved_song.dart';
 import 'playlist_service.dart';
+import 'log_service.dart';
 
 class RadioAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler {
@@ -719,6 +720,7 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       } catch (e) {
         if (_currentSessionId == sessionId) {
+          LogService().log("Error playing YouTube song in handler: $e");
           Future.delayed(const Duration(seconds: 1), skipToNext);
         }
       }
@@ -883,6 +885,7 @@ class RadioAudioHandler extends BaseAudioHandler
       } catch (e) {
         success = false;
         errorMessage = e.toString();
+        LogService().log("Error in generic player init/resume: $e");
         _expectingStop = false;
       }
 

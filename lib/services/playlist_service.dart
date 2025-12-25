@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/saved_song.dart';
 import '../models/playlist.dart';
+import 'log_service.dart';
 
 class PlaylistService {
   static const String _keyPlaylists = 'playlists_v2';
@@ -353,6 +354,55 @@ class PlaylistService {
     }
   }
 
+  Future<void> markSongAsInvalidGlobally(String songId) async {
+    LogService().log("Service: markSongAsInvalidGlobally for $songId");
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+    bool changed = false;
+
+    for (var i = 0; i < playlists.length; i++) {
+      final songIndex = playlists[i].songs.indexWhere((s) => s.id == songId);
+      if (songIndex != -1) {
+        playlists[i].songs[songIndex] = playlists[i].songs[songIndex].copyWith(
+          isValid: false,
+        );
+        changed = true;
+        LogService().log(
+          "Service: Found and marked invalid in playlist '${playlists[i].name}'",
+        );
+      }
+    }
+
+    if (changed) {
+      await _savePlaylists(prefs, playlists);
+      _notifyListeners();
+      LogService().log("Service: Saved playlists and notified listeners");
+    } else {
+      LogService().log("Service: Song ID $songId not found in any playlist");
+    }
+  }
+
+  Future<void> unmarkSongAsInvalidGlobally(String songId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+    bool changed = false;
+
+    for (var i = 0; i < playlists.length; i++) {
+      final songIndex = playlists[i].songs.indexWhere((s) => s.id == songId);
+      if (songIndex != -1) {
+        playlists[i].songs[songIndex] = playlists[i].songs[songIndex].copyWith(
+          isValid: true,
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await _savePlaylists(prefs, playlists);
+      _notifyListeners();
+    }
+  }
+
   Future<void> unmarkSongAsInvalid(String playlistId, String songId) async {
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();
@@ -390,6 +440,40 @@ class PlaylistService {
         await _savePlaylists(prefs, playlists);
         _notifyListeners();
       }
+    }
+  }
+
+  Future<void> removeSongFromAllPlaylists(String songId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+    bool changed = false;
+
+    for (var p in playlists) {
+      final initialLen = p.songs.length;
+      p.songs.removeWhere((s) => s.id == songId);
+      if (p.songs.length != initialLen) changed = true;
+    }
+
+    if (changed) {
+      await _savePlaylists(prefs, playlists);
+      _notifyListeners();
+    }
+  }
+
+  Future<void> removeSongsFromAllPlaylists(List<String> songIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+    bool changed = false;
+
+    for (var p in playlists) {
+      final initialLen = p.songs.length;
+      p.songs.removeWhere((s) => songIds.contains(s.id));
+      if (p.songs.length != initialLen) changed = true;
+    }
+
+    if (changed) {
+      await _savePlaylists(prefs, playlists);
+      _notifyListeners();
     }
   }
 
