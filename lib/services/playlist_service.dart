@@ -4,6 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/saved_song.dart';
 import '../models/playlist.dart';
 import 'log_service.dart';
+import 'package:flutter/foundation.dart';
+
+class PlaylistLoadResult {
+  final List<Playlist> playlists;
+  final List<SavedSong> uniqueSongs;
+  PlaylistLoadResult(this.playlists, this.uniqueSongs);
+}
 
 class PlaylistService {
   static const String _keyPlaylists = 'playlists_v2';
@@ -16,19 +23,33 @@ class PlaylistService {
   final _playlistsUpdatedController = StreamController<void>.broadcast();
   Stream<void> get onPlaylistsUpdated => _playlistsUpdatedController.stream;
 
+  List<Playlist>? _cachedPlaylists;
+  List<SavedSong>? _cachedUniqueSongs;
+
   void _notifyListeners() {
     _playlistsUpdatedController.add(null);
   }
 
   Future<List<Playlist>> loadPlaylists() async {
+    final result = await loadPlaylistsResult();
+    return result.playlists;
+  }
+
+  Future<PlaylistLoadResult> loadPlaylistsResult() async {
+    if (_cachedPlaylists != null && _cachedUniqueSongs != null) {
+      return PlaylistLoadResult(_cachedPlaylists!, _cachedUniqueSongs!);
+    }
+
     final prefs = await SharedPreferences.getInstance();
 
     // Check for V2 data
     if (prefs.containsKey(_keyPlaylists)) {
       final String? jsonString = prefs.getString(_keyPlaylists);
       if (jsonString != null) {
-        final List<dynamic> jsonList = jsonDecode(jsonString);
-        return jsonList.map((j) => Playlist.fromJson(j)).toList();
+        final result = await compute(_decodePlaylists, jsonString);
+        _cachedPlaylists = result.playlists;
+        _cachedUniqueSongs = result.uniqueSongs;
+        return result;
       }
     }
 
@@ -69,17 +90,53 @@ class PlaylistService {
     }
 
     await _savePlaylists(prefs, playlists);
-    return playlists;
+    _cachedPlaylists = playlists;
+
+    // Re-calculate unique songs for the result
+    final Set<String> ids = {};
+    final List<SavedSong> uniqueSongs = [];
+    for (var p in playlists) {
+      for (var s in p.songs) {
+        if (ids.add(s.id)) uniqueSongs.add(s);
+      }
+    }
+    _cachedUniqueSongs = uniqueSongs;
+
+    return PlaylistLoadResult(playlists, uniqueSongs);
   }
 
   Future<void> _savePlaylists(
     SharedPreferences prefs,
     List<Playlist> playlists,
   ) async {
-    final String jsonString = jsonEncode(
-      playlists.map((p) => p.toJson()).toList(),
-    );
+    _cachedPlaylists = playlists;
+    _cachedUniqueSongs = null; // Clear stale unique songs cache
+    final String jsonString = await compute(_encodePlaylists, playlists);
     await prefs.setString(_keyPlaylists, jsonString);
+  }
+
+  static String _encodePlaylists(List<Playlist> playlists) {
+    return jsonEncode(playlists.map((p) => p.toJson()).toList());
+  }
+
+  static PlaylistLoadResult _decodePlaylists(String jsonString) {
+    final List<dynamic> jsonList = jsonDecode(jsonString);
+    final playlists = jsonList.map((j) => Playlist.fromJson(j)).toList();
+
+    final Set<String> ids = {};
+    final List<SavedSong> uniqueSongs = [];
+    for (var p in playlists) {
+      for (var s in p.songs) {
+        if (ids.add(s.id)) {
+          uniqueSongs.add(s);
+        }
+      }
+    }
+    return PlaylistLoadResult(playlists, uniqueSongs);
+  }
+
+  void clearCache() {
+    _cachedPlaylists = null;
   }
 
   Future<Playlist> createPlaylist(String name) async {
@@ -309,30 +366,58 @@ class PlaylistService {
     List<SavedSong> songs, {
     String? playlistName,
   }) async {
+    await restoreSongsToMultiplePlaylists(
+      [playlistId],
+      songs,
+      playlistNames: playlistName != null ? {playlistId: playlistName} : null,
+    );
+  }
+
+  Future<void> restoreSongsToMultiplePlaylists(
+    List<String> playlistIds,
+    List<SavedSong> songs, {
+    Map<String, String>? playlistNames,
+  }) async {
+    LogService().log(
+      "PlaylistService: Restoring ${songs.length} songs to ${playlistIds.join(', ')}",
+    );
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();
+    bool anyChanged = false;
 
-    var index = playlists.indexWhere((p) => p.id == playlistId);
+    for (var playlistId in playlistIds) {
+      var index = playlists.indexWhere((p) => p.id == playlistId);
 
-    if (index == -1 && playlistName != null) {
-      final newPlaylist = Playlist(
-        id: playlistId,
-        name: playlistName,
-        songs: [],
-        createdAt: DateTime.now(),
-      );
-      playlists.add(newPlaylist);
-      index = playlists.length - 1;
-    }
+      if (index == -1 &&
+          playlistNames != null &&
+          playlistNames.containsKey(playlistId)) {
+        final newPlaylist = Playlist(
+          id: playlistId,
+          name: playlistNames[playlistId]!,
+          songs: [],
+          createdAt: DateTime.now(),
+        );
+        playlists.add(newPlaylist);
+        index = playlists.length - 1;
+      }
 
-    if (index != -1) {
-      for (var song in songs) {
-        if (!playlists[index].songs.any((s) => s.id == song.id)) {
-          playlists[index].songs.insert(0, song);
+      if (index != -1) {
+        final existingIds = playlists[index].songs.map((s) => s.id).toSet();
+        final List<SavedSong> newSongs = songs
+            .where((s) => !existingIds.contains(s.id))
+            .toList();
+
+        if (newSongs.isNotEmpty) {
+          playlists[index].songs.insertAll(0, newSongs);
+          anyChanged = true;
         }
       }
+    }
+
+    if (anyChanged) {
       await _savePlaylists(prefs, playlists);
       _notifyListeners();
+      LogService().log("PlaylistService: Bulk import complete.");
     }
   }
 

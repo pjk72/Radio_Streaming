@@ -833,8 +833,13 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                         if (mounted) {
                                           await showDialog(
                                             context: context,
-                                            builder: (_) =>
-                                                YouTubePopup(videoId: videoId!),
+                                            builder: (_) => YouTubePopup(
+                                              videoId: videoId!,
+                                              songName: trackName,
+                                              artistName: trackArtist,
+                                              albumName: displayName,
+                                              artworkUrl: displayImage,
+                                            ),
                                           );
                                         }
                                         return; // Done

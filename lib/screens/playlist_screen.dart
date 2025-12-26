@@ -105,16 +105,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
 
-    // Collect all unique songs
-    final Set<String> uniqueIds = {};
-    final List<SavedSong> allSongs = [];
-    for (var p in allPlaylists) {
-      for (var s in p.songs) {
-        if (uniqueIds.add(s.id)) {
-          allSongs.add(s);
-        }
-      }
-    }
+    // Use pre-computed unique songs from provider for better performance
+    final allSongs = provider.allUniqueSongs;
 
     // 1. Determine Selection State
     final bool isSelectionActive =
@@ -143,7 +135,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         (p) => p.id == _selectedPlaylistId,
         orElse: () => allPlaylists.first,
       );
-      headerTitle = p.name;
+      headerTitle = p.name.replaceAll('Spotify: ', '');
       currentSongList = p.songs;
       effectivePlaylist = p;
     } else if (_selectedArtist != null) {
@@ -669,11 +661,24 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   child: Icon(
                     playlist.id == 'favorites'
                         ? Icons.favorite
-                        : Icons.music_note,
+                        : (playlist.id.startsWith('spotify_')
+                              ? Icons
+                                    .music_note // Keeping the large bg icon
+                              : Icons.music_note),
                     size: 80,
                     color: Colors.white.withValues(alpha: 0.1),
                   ),
                 ),
+                if (playlist.id.startsWith('spotify_'))
+                  const Positioned(
+                    top: 12,
+                    right: 12,
+                    child: FaIcon(
+                      FontAwesomeIcons.spotify,
+                      color: Color(0xFF1DB954),
+                      size: 20,
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
@@ -699,7 +704,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           ),
                         ),
                       Text(
-                        playlist.name,
+                        playlist.name.replaceAll('Spotify: ', ''),
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
@@ -1162,8 +1167,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   if (!mounted) return;
                                   showDialog(
                                     context: context,
-                                    builder: (_) =>
-                                        YouTubePopup(videoId: videoId),
+                                    builder: (_) => YouTubePopup(
+                                      videoId: videoId,
+                                      songName: song.title,
+                                      artistName: song.artist,
+                                      albumName: song.album,
+                                      artworkUrl: song.artUri,
+                                    ),
                                   );
                                 } else {
                                   launchUrl(
@@ -1322,8 +1332,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         if (!mounted) return;
                                         showDialog(
                                           context: context,
-                                          builder: (_) =>
-                                              YouTubePopup(videoId: videoId),
+                                          builder: (_) => YouTubePopup(
+                                            videoId: videoId,
+                                            songName: song.title,
+                                            artistName: song.artist,
+                                            albumName: song.album,
+                                            artworkUrl: song.artUri,
+                                          ),
                                         );
                                       } else {
                                         launchUrl(
@@ -2178,6 +2193,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       );
     }
 
+    // Pre-calculate counts once to avoid N*M iterations in itemBuilder
+    final Map<String, int> artistCounts = {};
+    for (var s in allSongs) {
+      artistCounts[s.artist] = (artistCounts[s.artist] ?? 0) + 1;
+    }
+
     return GridView.builder(
       key: const PageStorageKey('artists_grid'),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
@@ -2307,7 +2328,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           displayArtist = variants.first;
           searchArtist = variants.first;
           isGroup = false;
-          count = allSongs.where((s) => s.artist == displayArtist).length;
+          count = artistCounts[displayArtist] ?? 0;
 
           // Check playing
           if (provider.currentArtist.trim().toLowerCase() ==
@@ -2321,7 +2342,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           isGroup = true;
 
           for (var v in variants) {
-            count += allSongs.where((s) => s.artist == v).length;
+            count += artistCounts[v] ?? 0;
           }
 
           // Check playing (if any variant matches)
@@ -2394,6 +2415,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     }
 
     final groups = groupedAlbums.keys.toList()..sort((a, b) => a.compareTo(b));
+
+    // Pre-calculate counts once to avoid N*M iterations in itemBuilder
+    final Map<String, int> albumCounts = {};
+    for (var s in allSongs) {
+      albumCounts[s.album] = (albumCounts[s.album] ?? 0) + 1;
+    }
 
     if (groups.isEmpty) {
       return const Center(
@@ -2510,10 +2537,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           isGroup = false;
           displaySong = representativeSongs[displayAlbum];
 
-          final albumSongs = allSongs
-              .where((s) => s.album == displayAlbum)
-              .toList();
-          count = albumSongs.length;
+          count = albumCounts[displayAlbum] ?? 0;
 
           // Check playing
           if (provider.currentAlbum.trim().toLowerCase() ==
@@ -2522,9 +2546,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   provider.currentArtist.trim().toLowerCase() ==
                       displaySong.artist.trim().toLowerCase())) {
             isPlaying = true;
-          } else if (albumSongs.isNotEmpty) {
-            // If any song in this specific album is playing
-            isPlaying = albumSongs.any((s) => provider.audioOnlySongId == s.id);
           }
         } else {
           // Group
@@ -2535,7 +2556,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           displaySong = representativeSongs[variants.first];
 
           for (var v in variants) {
-            count += allSongs.where((s) => s.album == v).length;
+            count += albumCounts[v] ?? 0;
           }
 
           // Check playing (if any variant matches)

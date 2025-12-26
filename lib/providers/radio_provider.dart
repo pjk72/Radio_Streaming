@@ -25,6 +25,7 @@ import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
 import '../services/log_service.dart';
 import '../services/lyrics_service.dart';
+import '../services/spotify_service.dart';
 
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -45,6 +46,14 @@ class RadioProvider with ChangeNotifier {
   static const String _keyInvalidSongIds = 'invalid_song_ids';
   static const String _keyManageGridView = 'manage_grid_view';
   static const String _keyManageGroupingMode = 'manage_grouping_mode';
+
+  bool _isImportingSpotify = false;
+  double _spotifyImportProgress = 0;
+  String? _spotifyImportName;
+
+  bool get isImportingSpotify => _isImportingSpotify;
+  double get spotifyImportProgress => _spotifyImportProgress;
+  String? get spotifyImportName => _spotifyImportName;
 
   Future<void> _loadStations() async {
     final prefs = await SharedPreferences.getInstance();
@@ -246,9 +255,14 @@ class RadioProvider with ChangeNotifier {
   final SongLinkService _songLinkService = SongLinkService();
   final MusicMetadataService _musicMetadataService = MusicMetadataService();
   final LyricsService _lyricsService = LyricsService();
+  final SpotifyService _spotifyService = SpotifyService();
+  SpotifyService get spotifyService => _spotifyService;
 
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
+
+  List<SavedSong> _allUniqueSongs = [];
+  List<SavedSong> get allUniqueSongs => _allUniqueSongs;
   Playlist? _tempPlaylist;
   DateTime? _lastPlayNextTime;
   DateTime? _zeroDurationStartTime;
@@ -451,6 +465,9 @@ class RadioProvider with ChangeNotifier {
     // Set initial volume if possible, or just default local
     setVolume(_volume);
 
+    // Initialize Spotify
+    _spotifyService.init().then((_) => notifyListeners());
+
     // Load persisted playlist
     _loadPlaylists();
     _loadStationOrder();
@@ -551,7 +568,10 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> _loadPlaylists() async {
-    _playlists = await _playlistService.loadPlaylists();
+    final result = await _playlistService.loadPlaylistsResult();
+    _playlists = result.playlists;
+    _allUniqueSongs = result.uniqueSongs;
+
     notifyListeners();
   }
 
@@ -2814,8 +2834,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> reloadPlaylists() async {
-    _playlists = await _playlistService.loadPlaylists();
-    notifyListeners();
+    await _loadPlaylists();
   }
 
   Future<void> setCompactView(bool value) async {
@@ -2964,6 +2983,73 @@ class RadioProvider with ChangeNotifier {
           LogService().log("Failed to update duration for ${song.title}");
         }
       }
+    }
+  }
+
+  // Spotify Auth methods
+  Future<bool> spotifyHandleAuthCode(String code) async {
+    final success = await _spotifyService.handleAuthCode(code);
+    if (success) notifyListeners();
+    return success;
+  }
+
+  Future<void> spotifyLogout() async {
+    await _spotifyService.logout();
+    notifyListeners();
+  }
+
+  Future<bool> importSpotifyPlaylist(
+    String name,
+    String spotifyId, {
+    int? total,
+  }) async {
+    _isImportingSpotify = true;
+    _spotifyImportProgress = 0;
+    _spotifyImportName = name;
+    notifyListeners();
+
+    try {
+      final tracks = await _spotifyService.getPlaylistTracks(
+        spotifyId,
+        total: total,
+        onProgress: (p) {
+          _spotifyImportProgress = p * 0.8;
+          notifyListeners();
+        },
+      );
+
+      if (tracks.isNotEmpty) {
+        _spotifyImportProgress = 0.85;
+        notifyListeners();
+
+        final playlistId = "spotify_$spotifyId";
+        final List<String> targetIds = [playlistId];
+        final Map<String, String> targetNames = {playlistId: name};
+
+        if (spotifyId == 'liked_songs') {
+          targetIds.add('favorites');
+          targetNames['favorites'] = 'Favorites';
+        }
+
+        await _playlistService.restoreSongsToMultiplePlaylists(
+          targetIds,
+          tracks,
+          playlistNames: targetNames,
+        );
+
+        _spotifyImportProgress = 0.95;
+        notifyListeners();
+
+        await reloadPlaylists();
+
+        _spotifyImportProgress = 1.0;
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } finally {
+      _isImportingSpotify = false;
+      notifyListeners();
     }
   }
 }

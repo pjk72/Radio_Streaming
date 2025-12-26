@@ -69,6 +69,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     _playbackTimer?.cancel();
     FlutterVolumeController.removeListener();
     _pageController?.dispose();
+    _syncOverlayEntry?.remove();
+    _syncOverlayEntry = null;
     super.dispose();
   }
 
@@ -444,7 +446,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                       ),
                                       tooltip: 'Sync Lyrics',
                                       onPressed: () {
-                                        _showSyncDialog(context, provider);
+                                        _openSyncOverlay(context, provider);
                                       },
                                     ),
                                 ],
@@ -1331,111 +1333,22 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     return "$minutes:$seconds";
   }
 
-  void _showSyncDialog(BuildContext context, RadioProvider provider) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        // Local state for the dialog slider to prevent continuous provider updates
-        // until released, or update continuously if performant enough.
-        // Let's us updating continuously for instant feedback.
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final double currentOffsetSecs =
-                provider.lyricsOffset.inMilliseconds / 1000.0;
+  OverlayEntry? _syncOverlayEntry;
 
-            return AlertDialog(
-              backgroundColor: Colors.black.withOpacity(0.9),
-              title: const Text(
-                'Sync Lyrics',
-                style: TextStyle(color: Colors.white),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Offset: ${currentOffsetSecs.toStringAsFixed(1)}s',
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove, color: Colors.white70),
-                        onPressed: () {
-                          final newValue = (currentOffsetSecs - 0.5).clamp(
-                            -20.0,
-                            20.0,
-                          );
-                          provider.setLyricsOffset(
-                            Duration(milliseconds: (newValue * 1000).toInt()),
-                          );
-                          setDialogState(() {});
-                        },
-                      ),
-                      Expanded(
-                        child: Slider(
-                          value: currentOffsetSecs,
-                          min: -20.0,
-                          max: 20.0,
-                          divisions: 80, // 0.5s increments
-                          activeColor: Colors.white,
-                          inactiveColor: Colors.white24,
-                          onChanged: (value) {
-                            setDialogState(() {});
-                            provider.setLyricsOffset(
-                              Duration(milliseconds: (value * 1000).toInt()),
-                            );
-                          },
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add, color: Colors.white70),
-                        onPressed: () {
-                          final newValue = (currentOffsetSecs + 0.5).clamp(
-                            -20.0,
-                            20.0,
-                          );
-                          provider.setLyricsOffset(
-                            Duration(milliseconds: (newValue * 1000).toInt()),
-                          );
-                          setDialogState(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "Earlier",
-                        style: TextStyle(color: Colors.white38, fontSize: 12),
-                      ),
-                      const Text(
-                        "Later",
-                        style: TextStyle(color: Colors.white38, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    provider.setLyricsOffset(Duration.zero);
-                    setDialogState(() {});
-                  },
-                  child: const Text('Reset'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Done'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  void _openSyncOverlay(BuildContext context, RadioProvider provider) {
+    if (_syncOverlayEntry != null) return; // Already open
+
+    _syncOverlayEntry = OverlayEntry(
+      builder: (context) => _DraggableSyncOverlay(
+        provider: provider,
+        onClose: () {
+          _syncOverlayEntry?.remove();
+          _syncOverlayEntry = null;
+        },
+      ),
     );
+
+    Overlay.of(context).insert(_syncOverlayEntry!);
   }
 }
 
@@ -1679,6 +1592,218 @@ class _MusicVisualizerState extends State<_MusicVisualizer>
           }),
         );
       },
+    );
+  }
+}
+
+class _DraggableSyncOverlay extends StatefulWidget {
+  final RadioProvider provider;
+  final VoidCallback onClose;
+
+  const _DraggableSyncOverlay({required this.provider, required this.onClose});
+
+  @override
+  State<_DraggableSyncOverlay> createState() => _DraggableSyncOverlayState();
+}
+
+class _DraggableSyncOverlayState extends State<_DraggableSyncOverlay> {
+  Offset _position = const Offset(20, 100);
+
+  @override
+  Widget build(BuildContext context) {
+    final double currentOffsetSecs =
+        widget.provider.lyricsOffset.inMilliseconds / 1000.0;
+
+    void updateOffset(double newTime) {
+      final clamped = newTime.clamp(-50.0, 50.0);
+      widget.provider.setLyricsOffset(
+        Duration(milliseconds: (clamped * 1000).toInt()),
+      );
+      setState(() {});
+    }
+
+    return Stack(
+      children: [
+        Positioned(
+          left: _position.dx,
+          top: _position.dy,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 300,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3), // Piu trasparente
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 10,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Draggable Header
+                  GestureDetector(
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _position += details.delta;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(16),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Icon(
+                            Icons.drag_indicator,
+                            color: Colors.white38,
+                            size: 20,
+                          ),
+                          const Text(
+                            "Sync Lyrics",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: widget.onClose,
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white70,
+                              size: 20,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Offset: ${currentOffsetSecs.toStringAsFixed(2)}s',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _buildSyncButton(
+                              Icons.fast_rewind_rounded,
+                              () => updateOffset(currentOffsetSecs - 1.0),
+                              "-1s",
+                            ),
+                            _buildSyncButton(
+                              Icons.remove_rounded,
+                              () => updateOffset(currentOffsetSecs - 0.1),
+                              "-0.1s",
+                            ),
+                            _buildSyncButton(
+                              Icons.add_rounded,
+                              () => updateOffset(currentOffsetSecs + 0.1),
+                              "+0.1s",
+                            ),
+                            _buildSyncButton(
+                              Icons.fast_forward_rounded,
+                              () => updateOffset(currentOffsetSecs + 1.0),
+                              "+1s",
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 2,
+                            overlayShape: SliderComponentShape.noOverlay,
+                          ),
+                          child: Slider(
+                            value: currentOffsetSecs.clamp(-50.0, 50.0),
+                            min: -50.0,
+                            max: 50.0,
+                            divisions: 200,
+                            activeColor: Colors.white,
+                            inactiveColor: Colors.white24,
+                            onChanged: updateOffset,
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "-50s",
+                              style: TextStyle(
+                                color: Colors.white38,
+                                fontSize: 10,
+                              ),
+                            ),
+                            const Text(
+                              "+50s",
+                              style: TextStyle(
+                                color: Colors.white38,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: () {
+                            widget.provider.setLyricsOffset(Duration.zero);
+                            setState(() {});
+                          },
+                          child: const Text(
+                            "Reset",
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSyncButton(IconData icon, VoidCallback onPressed, String label) {
+    return Column(
+      children: [
+        IconButton(
+          icon: Icon(icon, color: Colors.white70),
+          onPressed: onPressed,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white38, fontSize: 10),
+        ),
+      ],
     );
   }
 }
