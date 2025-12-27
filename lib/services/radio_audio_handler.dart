@@ -337,6 +337,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'type': 'playlist_song',
         'is_resolved': true,
         'duration': _cachedNextSongExtras?['duration'],
+        'user_initiated': true,
       };
       await playFromUri(Uri.parse(streamUrl), extras);
       return;
@@ -390,6 +391,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'type': 'playlist_song',
         'is_resolved': true,
         'duration': video.duration?.inSeconds,
+        'user_initiated': true,
       };
 
       await playFromUri(Uri.parse(streamUrl), extras);
@@ -606,10 +608,10 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Future<List<Station>> _getOrderedFavorites() async {
     final prefs = await SharedPreferences.getInstance();
-    final List<String> favoriteIds =
-        prefs.getStringList('favorite_station_ids') ?? [];
+    // Use correct key 'favorites' (matching RadioProvider)
+    final List<String> favoriteIds = prefs.getStringList('favorites') ?? [];
 
-    if (favoriteIds.isEmpty) return _stations;
+    if (favoriteIds.isEmpty) return [];
 
     List<Station> ordered = [];
     for (String id in favoriteIds) {
@@ -619,7 +621,6 @@ class RadioAudioHandler extends BaseAudioHandler
       } catch (_) {}
     }
 
-    if (ordered.isEmpty) return _stations;
     return ordered;
   }
 
@@ -1292,8 +1293,10 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     // 2. Stations List
+    // 2. Stations List
     if (parentMediaId == 'live_radio') {
-      return _stations.map(_stationToMediaItem).toList();
+      final stations = await _getOrderedFavorites();
+      return stations.map(_stationToMediaItem).toList();
     }
 
     // 3. Playlists Folder
@@ -1397,7 +1400,11 @@ class RadioAudioHandler extends BaseAudioHandler
     // 1. Check Stations
     try {
       final s = _stations.firstWhere((s) => s.url == mediaId);
-      await playFromUri(Uri.parse(s.url), {'type': 'station', 'title': s.name});
+      await playFromUri(Uri.parse(s.url), {
+        'type': 'station',
+        'title': s.name,
+        'user_initiated': true,
+      });
       return;
     } catch (_) {}
 
@@ -1499,7 +1506,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Fallback
     if (mediaId.startsWith('http')) {
-      await playFromUri(Uri.parse(mediaId));
+      await playFromUri(Uri.parse(mediaId), {'user_initiated': true});
     }
   }
 

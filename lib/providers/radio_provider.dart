@@ -491,47 +491,9 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  List<Station> get _visualFavoriteOrder {
-    if (_favorites.isEmpty) return [];
-
-    // 1. Get Favorites (uses station order)
-    final favs = allStations.where((s) => _favorites.contains(s.id)).toList();
-
-    // 2. Group by Genre (matches HomeScreen)
-    final Map<String, List<Station>> grouped = {};
-    for (var s in favs) {
-      if (!grouped.containsKey(s.genre)) grouped[s.genre] = [];
-      grouped[s.genre]!.add(s);
-    }
-
-    // 3. Sort Genres (matches HomeScreen)
-    final categories = grouped.keys.toList();
-    categories.sort((a, b) {
-      int indexA = genreOrder.indexOf(a);
-      int indexB = genreOrder.indexOf(b);
-      if (indexA == -1) indexA = 999;
-      if (indexB == -1) indexB = 999;
-      return indexA.compareTo(indexB);
-    });
-
-    // 4. Flatten
-    return categories.expand((cat) => grouped[cat]!).toList();
-  }
-
   void playNextFavorite() {
-    List<Station> list;
-
-    if (_useCustomOrder) {
-      // If user has manually reordered, respectful that specific order (Flat)
-      if (_favorites.isNotEmpty) {
-        list = allStations.where((s) => _favorites.contains(s.id)).toList();
-      } else {
-        list = allStations;
-      }
-    } else {
-      // Default behavior: Genre Grouped
-      list = _favorites.isEmpty ? allStations : _visualFavoriteOrder;
-    }
+    // Navigate through ALL stations, not just favorites
+    final list = allStations;
 
     if (list.isEmpty) return;
 
@@ -546,19 +508,8 @@ class RadioProvider with ChangeNotifier {
   }
 
   void playPreviousFavorite() {
-    List<Station> list;
-
-    if (_useCustomOrder) {
-      // If user has manually reordered, respectful that specific order (Flat)
-      if (_favorites.isNotEmpty) {
-        list = allStations.where((s) => _favorites.contains(s.id)).toList();
-      } else {
-        list = allStations;
-      }
-    } else {
-      // Default behavior: Genre Grouped
-      list = _favorites.isEmpty ? allStations : _visualFavoriteOrder;
-    }
+    // Navigate through ALL stations, not just favorites
+    final list = allStations;
 
     if (list.isEmpty) return;
 
