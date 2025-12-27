@@ -32,4 +32,17 @@ class Playlist {
       createdAt: DateTime.parse(json['createdAt']),
     );
   }
+  Playlist copyWith({
+    String? id,
+    String? name,
+    List<SavedSong>? songs,
+    DateTime? createdAt,
+  }) {
+    return Playlist(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      songs: songs ?? this.songs,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }

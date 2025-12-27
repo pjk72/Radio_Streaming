@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/saved_song.dart';
-import '../models/playlist.dart';
 import 'log_service.dart';
 
 class SpotifyService {
@@ -11,9 +10,12 @@ class SpotifyService {
   static const String _redirectUri = "http://127.0.0.1:8888/callback";
   String get redirectUri => _redirectUri;
 
-  static const String _keyAccessToken = 'spotify_access_token';
-  static const String _keyRefreshToken = 'spotify_refresh_token';
-  static const String _keyExpiresAt = 'spotify_expires_at';
+  static const String _keyAccessToken = 'spotify_access_token_v2';
+  static const String _keyRefreshToken = 'spotify_refresh_token_v2';
+  static const String _keyExpiresAt = 'spotify_expires_at_v2';
+
+  int _lastTotal = 0;
+  int get lastTotal => _lastTotal;
 
   String? _accessToken;
   String? _refreshToken;
@@ -34,10 +36,11 @@ class SpotifyService {
       (_expiresAt == null || _expiresAt!.isAfter(DateTime.now()));
 
   String getLoginUrl() {
+    // aligning scopes with Exportify to ensure identical access levels
     final scope = Uri.encodeComponent(
       "playlist-read-private playlist-read-collaborative user-library-read",
     );
-    return "https://accounts.spotify.com/authorize?response_type=code&client_id=$_clientId&redirect_uri=${Uri.encodeComponent(_redirectUri)}&scope=$scope";
+    return "https://accounts.spotify.com/authorize?show_dialog=true&response_type=code&client_id=$_clientId&redirect_uri=${Uri.encodeComponent(_redirectUri)}&scope=$scope";
   }
 
   Future<bool> handleAuthCode(String code) async {
@@ -45,7 +48,7 @@ class SpotifyService {
       Uri.parse("https://accounts.spotify.com/api/token"),
       headers: {
         'Authorization':
-            'Basic ' + base64Encode(utf8.encode("$_clientId:$_clientSecret")),
+            'Basic ${base64Encode(utf8.encode("$_clientId:$_clientSecret"))}',
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: {
@@ -95,22 +98,89 @@ class SpotifyService {
     }
     if (!isLoggedIn) return [];
 
-    List<Map<String, dynamic>> allPlaylists = [];
-    String? nextUrl = "https://api.spotify.com/v1/me/playlists?limit=50";
+    final List<Map<String, dynamic>> allPlaylists = [];
+    const int limit = 50;
+    String baseUrl = "https://api.spotify.com/v1/me/playlists";
 
-    while (nextUrl != null) {
-      final response = await http.get(
-        Uri.parse(nextUrl),
+    LogService().log(
+      "SpotifyService: Fetching playlists (strategy: parallel by offset)...",
+    );
+
+    try {
+      // 1. Fetch first page to get 'total'
+      final firstPageUrl = "$baseUrl?limit=$limit&offset=0";
+      final firstResp = await http.get(
+        Uri.parse(firstPageUrl),
         headers: {'Authorization': 'Bearer $_accessToken'},
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        allPlaylists.addAll(List<Map<String, dynamic>>.from(data['items']));
-        nextUrl = data['next'];
+      if (firstResp.statusCode == 200) {
+        final data = jsonDecode(firstResp.body);
+        final int total = data['total'] ?? 0;
+        final List<dynamic>? items = data['items'];
+
+        LogService().log("SpotifyService: Total playlists available: $total");
+
+        if (items != null) {
+          // Debug Log: Print all names found in raw JSON
+          try {
+            final names = items
+                .map((i) => i != null ? i['name'].toString() : 'null')
+                .toList();
+            LogService().log("SpotifyService: Raw items in first page: $names");
+          } catch (e) {
+            LogService().log("SpotifyService: Could not list raw names: $e");
+          }
+
+          _processPlaylistItems(items, allPlaylists);
+        }
+
+        // 2. Fetch remaining pages in parallel if needed
+        if (total > limit) {
+          List<Future<void>> requests = [];
+
+          for (int offset = limit; offset < total; offset += limit) {
+            // Stagger requests slightly to avoid immediate 429s (similar to JS logic)
+            final delayMs = (offset ~/ limit) * 100;
+
+            requests.add(
+              Future.delayed(Duration(milliseconds: delayMs), () async {
+                try {
+                  final url = "$baseUrl?limit=$limit&offset=$offset";
+                  final resp = await http.get(
+                    Uri.parse(url),
+                    headers: {'Authorization': 'Bearer $_accessToken'},
+                  );
+
+                  if (resp.statusCode == 200) {
+                    final pageData = jsonDecode(resp.body);
+                    final List<dynamic>? pageItems = pageData['items'];
+                    if (pageItems != null) {
+                      _processPlaylistItems(pageItems, allPlaylists);
+                    }
+                  } else {
+                    LogService().log(
+                      "SpotifyService: Failed to fetch offset $offset: ${resp.statusCode}",
+                    );
+                  }
+                } catch (e) {
+                  LogService().log(
+                    "SpotifyService: Error fetching offset $offset: $e",
+                  );
+                }
+              }),
+            );
+          }
+
+          await Future.wait(requests);
+        }
       } else {
-        break;
+        LogService().log(
+          "SpotifyService: Error fetching first page: ${firstResp.statusCode}",
+        );
       }
+    } catch (e) {
+      LogService().log("SpotifyService: Exception fetching playlists: $e");
     }
 
     // Add "Liked Songs" as a virtual playlist
@@ -121,9 +191,43 @@ class SpotifyService {
       'images': [
         {'url': 'https://misc.scdn.co/liked-songs/liked-songs-640.png'},
       ],
+      'owner': {'display_name': 'You'},
     });
 
-    return allPlaylists;
+    // Deduplicate just in case parallel requests messed something up (unlikely with distinct offsets but safe)
+    final uniquePlaylists = {
+      for (var p in allPlaylists) p['id']: p,
+    }.values.toList();
+
+    LogService().log(
+      "SpotifyService: Final resolved playlists count: ${uniquePlaylists.length}",
+    );
+    return uniquePlaylists;
+  }
+
+  void _processPlaylistItems(
+    List<dynamic> items,
+    List<Map<String, dynamic>> targetList,
+  ) {
+    for (var item in items) {
+      if (item != null) {
+        try {
+          final mapItem = Map<String, dynamic>.from(item);
+          // Ensure basic fields for UI safety
+          mapItem.putIfAbsent('tracks', () => {'total': 0});
+          mapItem.putIfAbsent('owner', () => {'display_name': 'Unknown'});
+          mapItem.putIfAbsent('images', () => []);
+
+          // Use a thread-safe way to add if this wasn't single-threaded event loop,
+          // but in Dart event loop, adding to list is safe from async callbacks.
+          targetList.add(mapItem);
+
+          LogService().log("SpotifyService: Found '${mapItem['name']}'");
+        } catch (e) {
+          // ignore bad items
+        }
+      }
+    }
   }
 
   Future<List<SavedSong>> getPlaylistTracks(
@@ -258,7 +362,7 @@ class SpotifyService {
       Uri.parse("https://accounts.spotify.com/api/token"),
       headers: {
         'Authorization':
-            'Basic ' + base64Encode(utf8.encode("$_clientId:$_clientSecret")),
+            'Basic ${base64Encode(utf8.encode("$_clientId:$_clientSecret"))}',
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: {'grant_type': 'refresh_token', 'refresh_token': _refreshToken},

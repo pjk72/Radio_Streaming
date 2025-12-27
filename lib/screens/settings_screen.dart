@@ -1132,11 +1132,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               builder: (ctx, scrollController) {
                 return Column(
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        "Import Playlist",
-                        style: TextStyle(
+                        "Import Playlist (${playlists.length} found)",
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -1186,7 +1186,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               style: const TextStyle(color: Colors.white),
                             ),
                             subtitle: Text(
-                              "${p['tracks']['total']} tracks",
+                              "${p['tracks']['total']} tracks • ${p['owner']?['display_name'] ?? 'Unknown'}",
                               style: const TextStyle(color: Colors.white54),
                             ),
                             onTap: () async {

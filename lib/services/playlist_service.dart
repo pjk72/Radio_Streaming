@@ -139,6 +139,36 @@ class PlaylistService {
     _cachedPlaylists = null;
   }
 
+  Future<void> renamePlaylist(String id, String newName) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == id);
+    if (index != -1) {
+      // Don't rename favorites
+      if (playlists[index].id == 'favorites') return;
+
+      playlists[index] = playlists[index].copyWith(name: newName);
+      await _savePlaylists(prefs, playlists);
+      _notifyListeners();
+    }
+  }
+
+  Future<void> reorderPlaylists(int oldIndex, int newIndex) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+
+    final Playlist item = playlists.removeAt(oldIndex);
+    playlists.insert(newIndex, item);
+
+    await _savePlaylists(prefs, playlists);
+    _notifyListeners();
+  }
+
   Future<Playlist> createPlaylist(String name) async {
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();

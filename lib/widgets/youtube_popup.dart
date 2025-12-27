@@ -273,17 +273,19 @@ class _YouTubePopupState extends State<YouTubePopup> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           // Spacer or Title
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8.0),
-                            child: Text(
-                              widget.songName ?? "YouTube",
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 8.0),
+                              child: Text(
+                                widget.songName ?? "YouTube",
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           IconButton(

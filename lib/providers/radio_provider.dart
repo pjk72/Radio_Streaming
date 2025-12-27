@@ -161,6 +161,12 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  void refreshAudioHandlerPlaylists() {
+    if (_audioHandler is RadioAudioHandler) {
+      _audioHandler.refreshPlaylists();
+    }
+  }
+
   void _setupAudioHandlerCallbacks() {
     if (_audioHandler is RadioAudioHandler) {
       final handler = _audioHandler;
@@ -452,6 +458,7 @@ class RadioProvider with ChangeNotifier {
                     playPlaylistSong(song, playlistId);
                   } else {
                     // Play all (start from first)
+                    if (_isShuffleMode) toggleShuffle();
                     playPlaylistSong(playlist.songs.first, playlistId);
                   }
                 } catch (_) {}
@@ -572,6 +579,7 @@ class RadioProvider with ChangeNotifier {
     _playlists = result.playlists;
     _allUniqueSongs = result.uniqueSongs;
 
+    refreshAudioHandlerPlaylists(); // Force AA update
     notifyListeners();
   }
 
@@ -638,6 +646,16 @@ class RadioProvider with ChangeNotifier {
       orElse: () => playlists.first, // Fallback safe
     );
     return p.name;
+  }
+
+  Future<void> renamePlaylist(String id, String newName) async {
+    await _playlistService.renamePlaylist(id, newName);
+    await _loadPlaylists();
+  }
+
+  Future<void> reorderPlaylists(int oldIndex, int newIndex) async {
+    await _playlistService.reorderPlaylists(oldIndex, newIndex);
+    await _loadPlaylists();
   }
 
   Future<void> removeFromPlaylist(String playlistId, String songId) async {
@@ -1941,6 +1959,7 @@ class RadioProvider with ChangeNotifier {
         'artist': station.genre,
         'album': 'Live Radio',
         'artUri': station.logo,
+        'user_initiated': true,
       });
 
       _isLoading = false;

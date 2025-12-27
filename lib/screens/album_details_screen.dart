@@ -1,11 +1,9 @@
 import 'dart:convert';
-import 'dart:ui';
 import 'dart:developer' as developer;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'artist_details_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -36,7 +34,6 @@ class AlbumDetailsScreen extends StatefulWidget {
 
 class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
   late Future<Map<String, dynamic>?> _albumInfoFuture;
-  String _selectedProvider = 'youtube'; // Default provider
   int? _selectedTrackIndex; // Track index to highlight
 
   @override
@@ -204,37 +201,6 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
       developer.log("Error fetching tracks: $e");
     }
     return [];
-  }
-
-  Widget _buildProviderIcon(IconData icon, Color color, String providerId) {
-    final isSelected = _selectedProvider == providerId;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            _selectedProvider = providerId;
-          });
-        },
-        borderRadius: BorderRadius.circular(50),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.2) : Colors.transparent,
-            shape: BoxShape.circle,
-            border: isSelected
-                ? Border.all(color: color.withOpacity(0.5), width: 2)
-                : Border.all(color: Colors.transparent, width: 2),
-          ),
-          child: FaIcon(
-            icon,
-            color: isSelected ? color : Colors.white.withOpacity(0.3),
-            size: 24,
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -453,47 +419,8 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                             ],
                           ),
                           const SizedBox(height: 24),
-                          // Provider Selector
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildProviderIcon(
-                                  FontAwesomeIcons.youtube,
-                                  Colors.red,
-                                  'youtube',
-                                ),
-                                const SizedBox(width: 24),
-                                _buildProviderIcon(
-                                  FontAwesomeIcons.spotify,
-                                  Colors.green,
-                                  'spotify',
-                                ),
-                                const SizedBox(width: 24),
-                                _buildProviderIcon(
-                                  FontAwesomeIcons.apple,
-                                  Colors.white,
-                                  'apple',
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            "Select provider to play tracks",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.4),
-                              fontSize: 10,
-                            ),
-                          ),
+
+                          // Provider Selector removed
                           if (albumData != null) ...[
                             const SizedBox(height: 16),
                             ElevatedButton.icon(
@@ -805,86 +732,64 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                       context,
                                       rootNavigator: true,
                                     ).pop(); // Dismiss loading
-                                    String? url;
 
-                                    if (_selectedProvider == 'youtube') {
-                                      String? videoUrl = links['youtube'];
-                                      String? videoId;
+                                    // Always force YouTube
+                                    String? videoUrl = links['youtube'];
+                                    String? videoId;
 
-                                      if (videoUrl != null) {
-                                        videoId = YoutubePlayer.convertUrlToId(
+                                    if (videoUrl != null) {
+                                      videoId = YoutubePlayer.convertUrlToId(
+                                        videoUrl,
+                                      );
+                                      // Fallback manual extraction
+                                      if (videoId == null) {
+                                        final regExp = RegExp(
+                                          r'[?&]v=([^&#]+)',
+                                        );
+                                        final match = regExp.firstMatch(
                                           videoUrl,
                                         );
-                                        // Fallback manual extraction if library fails
-                                        if (videoId == null) {
-                                          final regExp = RegExp(
-                                            r'[?&]v=([^&#]+)',
-                                          );
-                                          final match = regExp.firstMatch(
-                                            videoUrl,
-                                          );
-                                          if (match != null) {
-                                            videoId = match.group(1);
-                                          }
+                                        if (match != null) {
+                                          videoId = match.group(1);
                                         }
                                       }
-                                      if (videoId != null) {
-                                        provider.pause();
-                                        if (mounted) {
-                                          await showDialog(
-                                            context: context,
-                                            builder: (_) => YouTubePopup(
-                                              videoId: videoId!,
-                                              songName: trackName,
-                                              artistName: trackArtist,
-                                              albumName: displayName,
-                                              artworkUrl: displayImage,
-                                            ),
-                                          );
-                                        }
-                                        return; // Done
-                                      } else if (videoUrl != null) {
-                                        // Valid URL but not an ID we can extract (e.g. channel link?), launch external
-                                        await launchUrl(
-                                          Uri.parse(videoUrl),
-                                          mode: LaunchMode.externalApplication,
+                                    }
+                                    if (videoId != null) {
+                                      provider.pause();
+                                      if (mounted) {
+                                        await showDialog(
+                                          context: context,
+                                          builder: (_) => YouTubePopup(
+                                            videoId: videoId!,
+                                            songName: trackName,
+                                            artistName: trackArtist,
+                                            albumName: displayName,
+                                            artworkUrl: displayImage,
+                                          ),
                                         );
-                                        return;
-                                      } else {
-                                        // No link found
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "YouTube link not found",
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                        return;
                                       }
-                                    }
-
-                                    // Other providers
-                                    if (_selectedProvider == 'spotify') {
-                                      url = links['spotify'];
-                                      url ??=
-                                          "https://open.spotify.com/search/${Uri.encodeComponent("$trackArtist - $searchTitle")}";
-                                    } else if (_selectedProvider == 'apple') {
-                                      url =
-                                          links['appleMusic'] ??
-                                          track['trackViewUrl'];
-                                      url ??=
-                                          "https://music.apple.com/search?term=${Uri.encodeComponent("$trackArtist - $searchTitle")}";
-                                    }
-
-                                    if (url != null && url.isNotEmpty) {
+                                      return; // Done
+                                    } else if (videoUrl != null) {
+                                      // Valid URL outside library
                                       await launchUrl(
-                                        Uri.parse(url),
+                                        Uri.parse(videoUrl),
                                         mode: LaunchMode.externalApplication,
                                       );
+                                      return;
+                                    } else {
+                                      // No link found
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              "YouTube link not found",
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return;
                                     }
                                   } catch (e) {
                                     if (mounted) {
