@@ -5,12 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Playlist;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
 import 'album_details_screen.dart';
+import 'artist_details_screen.dart';
 import '../widgets/youtube_popup.dart';
 import '../utils/genre_mapper.dart';
 import '../services/music_metadata_service.dart';
@@ -42,6 +44,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   bool _selectedAlbumIsGroup = false;
   MetadataViewMode _viewMode = MetadataViewMode.playlists;
   PlaylistSortMode _sortMode = PlaylistSortMode.custom;
+  bool _isBulkChecking = false;
+  bool _showOnlyInvalid = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -93,27 +97,29 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     return songs;
   }
 
-  Playlist? get effectivePlaylist {
+  Playlist? get effectivePlaylist => _getEffectivePlaylist(applyFilter: true);
+  Playlist? get rawEffectivePlaylist =>
+      _getEffectivePlaylist(applyFilter: false);
+
+  Playlist? _getEffectivePlaylist({required bool applyFilter}) {
     final provider = Provider.of<RadioProvider>(context, listen: false);
 
+    Playlist? playlist;
     if (_selectedPlaylistId != null) {
       try {
-        return provider.playlists.firstWhere(
+        playlist = provider.playlists.firstWhere(
           (p) => p.id == _selectedPlaylistId,
         );
       } catch (_) {
         // Fallback if playlist not found
-        return Playlist(
+        playlist = Playlist(
           id: 'error',
           name: 'Error',
           songs: [],
           createdAt: DateTime.now(),
         );
       }
-    }
-
-    // Create temporary playlist for Artist/Album view
-    if (_selectedArtist != null) {
+    } else if (_selectedArtist != null) {
       final songs = _allSongs.where((s) {
         if (_selectedArtistIsGroup) {
           // Normalize to match grouping logic
@@ -130,15 +136,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         return s.artist == _selectedArtist;
       }).toList();
 
-      return Playlist(
+      playlist = Playlist(
         id: 'temp_artist_$_selectedArtist',
         name: _selectedArtistDisplay ?? _selectedArtist!,
         songs: songs,
         createdAt: DateTime.now(),
       );
-    }
-
-    if (_selectedAlbum != null) {
+    } else if (_selectedAlbum != null) {
       final songs = _allSongs.where((s) {
         if (_selectedAlbumIsGroup) {
           // Normalize to match grouping logic
@@ -155,7 +159,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         return s.album == _selectedAlbum;
       }).toList();
 
-      return Playlist(
+      playlist = Playlist(
         id: 'temp_album_$_selectedAlbum',
         name: _selectedAlbumDisplay ?? _selectedAlbum!,
         songs: songs,
@@ -163,7 +167,21 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       );
     }
 
-    return null;
+    if (playlist == null) return null;
+
+    if (applyFilter && _showOnlyInvalid) {
+      final filteredSongs = playlist.songs
+          .where((s) => !s.isValid || provider.invalidSongIds.contains(s.id))
+          .toList();
+      return Playlist(
+        id: playlist.id,
+        name: playlist.name,
+        songs: filteredSongs,
+        createdAt: playlist.createdAt,
+      );
+    }
+
+    return playlist;
   }
 
   List<SavedSong> get currentSongList => effectivePlaylist?.songs ?? [];
@@ -201,16 +219,404 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       ),
     );
 
-    _unlockTimer = Timer(const Duration(seconds: 3), () async {
+    _unlockTimer = Timer(const Duration(milliseconds: 1500), () async {
       await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text("Song unlocked!")));
-        HapticFeedback.heavyImpact();
+        HapticFeedback.mediumImpact();
       }
     });
+  }
+
+  void _showInvalidTrackOptions(
+    BuildContext context,
+    RadioProvider provider,
+    SavedSong song,
+    String playlistId,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange,
+                    size: 40,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    "Track Problematic",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    song.title,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white10),
+            ListTile(
+              leading: const Icon(Icons.refresh_rounded, color: Colors.green),
+              title: const Text(
+                "Try Again & Unlock",
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _testAndUnlockTrack(context, provider, song, playlistId);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                FontAwesomeIcons.youtube,
+                color: Color(0xFFFF0000),
+                size: 18,
+              ),
+              title: const Text(
+                "Search on YouTube",
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showYouTubeSearch(context, provider, song);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline, color: Colors.blueAccent),
+              title: const Text(
+                "View Song Details",
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showSongDetailsDialog(context, song);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline,
+                color: Colors.redAccent,
+              ),
+              title: const Text(
+                "Remove from Library",
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: const Color(0xFF222222),
+                    title: const Text(
+                      "Remove Song",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    content: const Text(
+                      "Remove this song from your library permanently?",
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text("Cancel"),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text(
+                          "Remove",
+                          style: TextStyle(color: Colors.redAccent),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  provider.removeSongFromLibrary(song.id);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showYouTubeSearch(
+    BuildContext context,
+    RadioProvider provider,
+    SavedSong song,
+  ) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: Colors.redAccent),
+      ),
+    );
+
+    try {
+      final links = await provider
+          .resolveLinks(
+            title: song.title,
+            artist: song.artist,
+            spotifyUrl: song.spotifyUrl,
+            youtubeUrl: song.youtubeUrl,
+          )
+          .timeout(const Duration(seconds: 10));
+
+      var url = links['youtube'] ?? song.youtubeUrl;
+
+      // FALLBACK: If SongLink API found nothing, use internal YouTube search engine
+      if (url == null || url.contains('search_query')) {
+        final yt = YoutubeExplode();
+        try {
+          final query = "${song.title} ${song.artist.split('•').first.trim()}";
+          final searchList = await yt.search.search(query);
+          if (searchList.isNotEmpty) {
+            url = searchList.first.url;
+          }
+        } catch (_) {
+          // ignore search errors
+        } finally {
+          yt.close();
+        }
+      }
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+
+      if (url != null) {
+        var videoId = YoutubePlayer.convertUrlToId(url);
+        if (videoId == null && url.length == 11) videoId = url;
+
+        if (videoId != null) {
+          final String vid = videoId;
+          provider.pause();
+          showDialog(
+            context: context,
+            builder: (_) => YouTubePopup(
+              videoId: vid,
+              songName: song.title,
+              artistName: song.artist,
+              albumName: song.album,
+              artworkUrl: song.artUri,
+            ),
+          );
+        } else {
+          launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("No YouTube results found")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    }
+  }
+
+  Future<void> _testAndUnlockTrack(
+    BuildContext context,
+    RadioProvider provider,
+    SavedSong song,
+    String playlistId,
+  ) async {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Testing track...")));
+
+    try {
+      final verifySuccess = await _verifyTrack(provider, song);
+
+      if (verifySuccess) {
+        await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Success! Track verified and unlocked."),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Verification failed: Link still problematic."),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Test failed. Keeping as invalid.")),
+        );
+      }
+    }
+  }
+
+  Future<bool> _verifyTrack(RadioProvider provider, SavedSong song) async {
+    try {
+      final links = await provider
+          .resolveLinks(
+            title: song.title,
+            artist: song.artist,
+            spotifyUrl: song.spotifyUrl,
+            youtubeUrl: song.youtubeUrl,
+          )
+          .timeout(const Duration(seconds: 10));
+
+      final candidateUrl = links['youtube'] ?? song.youtubeUrl;
+      if (candidateUrl != null) {
+        var videoId = YoutubePlayer.convertUrlToId(candidateUrl);
+        if (videoId == null && candidateUrl.length == 11)
+          videoId = candidateUrl;
+
+        if (videoId != null) {
+          final yt = YoutubeExplode();
+          try {
+            await yt.videos.get(videoId).timeout(const Duration(seconds: 10));
+            return true;
+          } catch (_) {
+            return false;
+          } finally {
+            yt.close();
+          }
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<void> _processAllInvalidTracks(
+    RadioProvider provider,
+    List<SavedSong> songs,
+    String? playlistId,
+  ) async {
+    final invalidSongs = songs.where((s) {
+      return !s.isValid || provider.invalidSongIds.contains(s.id);
+    }).toList();
+
+    if (invalidSongs.isEmpty) return;
+
+    setState(() => _isBulkChecking = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Checking ${invalidSongs.length} invalid tracks..."),
+      ),
+    );
+
+    int unlockedCount = 0;
+    for (var song in invalidSongs) {
+      if (!mounted) break;
+      final success = await _verifyTrack(provider, song);
+      if (success) {
+        await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
+        unlockedCount++;
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isBulkChecking = false;
+        if (unlockedCount == invalidSongs.length) {
+          _showOnlyInvalid = false;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Bulk Check Completed: $unlockedCount tracks fixed/unlocked.",
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showSongDetailsDialog(BuildContext context, SavedSong song) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text(
+          "Song Details",
+          style: TextStyle(color: Colors.white),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _detailItem("Title", song.title),
+              _detailItem("Artist", song.artist),
+              _detailItem("Album", song.album),
+              _detailItem("ID", song.id),
+              _detailItem("Date Added", song.dateAdded.toString()),
+              if (song.youtubeUrl != null)
+                _detailItem("YouTube URL", song.youtubeUrl!),
+              if (song.spotifyUrl != null)
+                _detailItem("Spotify URL", song.spotifyUrl!),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Close", style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          SelectableText(
+            value,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+        ],
+      ),
+    );
   }
 
   void _cancelUnlockTimer() {
@@ -236,6 +642,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         }
       }
     }
+
+    // Use rawEffectivePlaylist to check for invalid songs so the menu option
+    // remains visible even if the current filtered view is empty (preventing "trap").
+    final rawPlaylist = rawEffectivePlaylist;
+    final hasInvalidSongs =
+        rawPlaylist?.songs.any(
+          (s) => !s.isValid || provider.invalidSongIds.contains(s.id),
+        ) ??
+        false;
+
+    final currentSongs = currentSongList;
 
     // 4. Filter Playlists by Search (only if view mode is playlists and no selection)
     // NOTE: We use the natural order from provider (User Defined) for playlists
@@ -328,6 +745,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             icon: const Icon(Icons.arrow_back_ios_new_rounded),
                             color: Colors.white,
                             onPressed: () {
+                              FocusManager.instance.primaryFocus?.unfocus();
                               setState(() {
                                 _selectedPlaylistId = null;
                                 _selectedArtist = null;
@@ -345,7 +763,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   ? Icons.people
                                   : _viewMode == MetadataViewMode.albums
                                   ? Icons.album
-                                  : Icons.category,
+                                  : Icons.collections_bookmark_rounded,
                               color: Colors.white,
                             ),
                           ),
@@ -362,31 +780,55 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (hasInvalidSongs || _showOnlyInvalid)
+                          if (!_isBulkChecking)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: Tooltip(
+                                message: _showOnlyInvalid
+                                    ? "Show All Songs"
+                                    : "Show Invalid Only",
+                                child: IconButton(
+                                  icon: Icon(
+                                    _showOnlyInvalid
+                                        ? Icons.warning_rounded
+                                        : Icons.warning_amber_rounded,
+                                    color: Colors.orangeAccent,
+                                    size: 20,
+                                  ),
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: _showOnlyInvalid
+                                        ? Colors.orangeAccent.withValues(
+                                            alpha: 0.15,
+                                          )
+                                        : null,
+                                    padding: const EdgeInsets.all(8),
+                                    minimumSize: const Size(36, 36),
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _showOnlyInvalid = !_showOnlyInvalid;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
                         if (isSelectionActive) ...[
-                          if (_selectedPlaylistId != null)
-                            IconButton(
-                              icon: const Icon(Icons.cleaning_services_rounded),
-                              tooltip: "Scan for Duplicates",
-                              color: Colors.white,
-                              onPressed: () => scanForDuplicates(
-                                context,
-                                provider,
-                                effectivePlaylist!,
+                          if (_isBulkChecking)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 16.0),
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.greenAccent,
+                                ),
                               ),
                             ),
                           IconButton(
-                            icon: Icon(
-                              Icons.shuffle_rounded,
-                              color: provider.isShuffleMode
-                                  ? Colors.redAccent
-                                  : Colors.white,
-                            ),
-                            tooltip: "Shuffle",
-                            onPressed: () => provider.toggleShuffle(),
-                          ),
-                          IconButton(
                             icon: const Icon(
-                              Icons.play_circle_fill,
+                              Icons.playlist_play_rounded,
                               size: 32,
                               color: Colors.white,
                             ),
@@ -401,6 +843,107 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   headerTitle,
                                 );
                               }
+                            },
+                          ),
+                          PopupMenuButton<String>(
+                            icon: const Icon(
+                              Icons.more_vert_rounded,
+                              color: Colors.white,
+                            ),
+                            tooltip: "Options",
+                            onSelected: (value) {
+                              if (value == 'shuffle') {
+                                provider.toggleShuffle();
+                              } else if (value == 'duplicates') {
+                                scanForDuplicates(
+                                  context,
+                                  provider,
+                                  effectivePlaylist!,
+                                );
+                              } else if (value == 'bulk_check') {
+                                _processAllInvalidTracks(
+                                  provider,
+                                  currentSongs,
+                                  _selectedPlaylistId,
+                                );
+                              }
+                            },
+                            itemBuilder: (context) {
+                              return [
+                                PopupMenuItem(
+                                  value: 'shuffle',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.shuffle_rounded,
+                                        color: provider.isShuffleMode
+                                            ? Colors.redAccent
+                                            : Colors.grey,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        "Shuffle",
+                                        style: TextStyle(
+                                          color: provider.isShuffleMode
+                                              ? Colors.redAccent
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (_selectedPlaylistId != null)
+                                  const PopupMenuItem(
+                                    value: 'duplicates',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.cleaning_services_rounded,
+                                          color: Colors.white,
+                                        ),
+                                        SizedBox(width: 12),
+                                        Text(
+                                          "Scan Duplicates",
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (hasInvalidSongs || _showOnlyInvalid) ...[
+                                  if (hasInvalidSongs)
+                                    PopupMenuItem(
+                                      value: 'bulk_check',
+                                      enabled: !_isBulkChecking,
+                                      child: Row(
+                                        children: [
+                                          if (_isBulkChecking)
+                                            const SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          else
+                                            const Icon(
+                                              Icons
+                                                  .playlist_add_check_circle_rounded,
+                                              color: Colors.greenAccent,
+                                            ),
+                                          const SizedBox(width: 12),
+                                          Text(
+                                            _isBulkChecking
+                                                ? "Processing..."
+                                                : "Try Again & Unlock All",
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ];
                             },
                           ),
                           const SizedBox(width: 8),
@@ -1339,7 +1882,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           onPointerCancel: isInvalid ? (_) => _cancelUnlockTimer() : null,
           child: ListTile(
             onTap: isInvalid
-                ? null
+                ? () => _showInvalidTrackOptions(
+                    context,
+                    provider,
+                    song,
+                    playlist.id,
+                  )
                 : () => _handleSongAudioAction(
                     provider,
                     song,
@@ -2767,31 +3315,72 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                    child: displaySong.artUri != null
-                        ? CachedNetworkImage(
-                            imageUrl: displaySong.artUri!,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => Container(
-                              color: Colors.white10,
-                              child: const Icon(
-                                Icons.album,
-                                color: Colors.white54,
-                                size: 40,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
+                          ),
+                          child: displaySong.artUri != null
+                              ? CachedNetworkImage(
+                                  imageUrl: displaySong.artUri!,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Container(
+                                    color: Colors.white10,
+                                    child: const Icon(
+                                      Icons.album,
+                                      color: Colors.white54,
+                                      size: 40,
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  color: Colors.white10,
+                                  child: const Icon(
+                                    Icons.album,
+                                    color: Colors.white54,
+                                    size: 40,
+                                  ),
+                                ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AlbumDetailsScreen(
+                                  albumName: searchAlbum,
+                                  artistName: displaySong!.artist,
+                                  artworkUrl: displaySong.artUri,
+                                  appleMusicUrl: displaySong.appleMusicUrl,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white24,
+                                width: 0.5,
                               ),
                             ),
-                          )
-                        : Container(
-                            color: Colors.white10,
                             child: const Icon(
-                              Icons.album,
-                              color: Colors.white54,
-                              size: 40,
+                              Icons.arrow_forward_ios_rounded,
+                              color: Colors.white,
+                              size: 14,
                             ),
                           ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Padding(
@@ -3166,31 +3755,67 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-                child: _imageUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: _imageUrl!,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Container(
-                          color: Colors.white10,
-                          child: const Icon(
-                            Icons.person,
-                            color: Colors.white54,
-                            size: 40,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                      child: _imageUrl != null
+                          ? CachedNetworkImage(
+                              imageUrl: _imageUrl!,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Container(
+                                color: Colors.white10,
+                                child: const Icon(
+                                  Icons.person,
+                                  color: Colors.white54,
+                                  size: 40,
+                                ),
+                              ),
+                            )
+                          : Container(
+                              color: Colors.white10,
+                              child: const Icon(
+                                Icons.person,
+                                color: Colors.white54,
+                                size: 40,
+                              ),
+                            ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ArtistDetailsScreen(
+                              artistName: widget.artist,
+                              artistImage: _imageUrl,
+                            ),
                           ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white24, width: 0.5),
                         ),
-                      )
-                    : Container(
-                        color: Colors.white10,
                         child: const Icon(
-                          Icons.person,
-                          color: Colors.white54,
-                          size: 40,
+                          Icons.arrow_forward_ios_rounded,
+                          color: Colors.white,
+                          size: 14,
                         ),
                       ),
+                    ),
+                  ),
+                ],
               ),
             ),
             Padding(

@@ -19,6 +19,10 @@ class RadioAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler {
   List<Station> _stations = [];
   AudioPlayer _player = AudioPlayer();
+  AudioPlayer _nextPlayer = AudioPlayer(); // For Gapless transitions
+  String? _nextPlayerSourceUrl; // Track what's preloaded in _nextPlayer
+  bool _hasTriggeredEarlyStart = false; // Prevent multiple early triggers
+  bool _isSwapping = false; // Flag for seamless transition state
 
   // ... (existing helper methods if any)
 
@@ -37,6 +41,7 @@ class RadioAudioHandler extends BaseAudioHandler
   int _currentSessionId = 0;
   final double _volume = 1.0;
   Duration _currentPosition = Duration.zero;
+  String? _currentPlayingPlaylistId;
 
   // Callbacks
   VoidCallback? onSkipNext;
@@ -86,25 +91,27 @@ class RadioAudioHandler extends BaseAudioHandler
 
       // 3. Configure (Use defaults to match Test Screen, add minimal config)
 
-      try {
-        await _player.setReleaseMode(ReleaseMode.stop);
-        // Set context again just in case, similar to fresh start
-        await _player.setAudioContext(
-          AudioContext(
-            android: const AudioContextAndroid(
-              isSpeakerphoneOn: false,
-              stayAwake: true,
-              contentType: AndroidContentType.music,
-              usageType: AndroidUsageType.media,
-              audioFocus: AndroidAudioFocus.gain,
+      // 3. Configure both players for gapless
+      for (var p in [_player, _nextPlayer]) {
+        try {
+          await p.setReleaseMode(ReleaseMode.stop);
+          await p.setAudioContext(
+            AudioContext(
+              android: const AudioContextAndroid(
+                isSpeakerphoneOn: false,
+                stayAwake: true,
+                contentType: AndroidContentType.music,
+                usageType: AndroidUsageType.media,
+                audioFocus: AndroidAudioFocus.gain,
+              ),
+              iOS: AudioContextIOS(
+                category: AVAudioSessionCategory.playback,
+                options: const {},
+              ),
             ),
-            iOS: AudioContextIOS(
-              category: AVAudioSessionCategory.playback,
-              options: const {},
-            ),
-          ),
-        );
-      } catch (_) {}
+          );
+        } catch (_) {}
+      }
 
       _setupPlayerListeners();
     } catch (e) {
@@ -132,7 +139,10 @@ class RadioAudioHandler extends BaseAudioHandler
       onError: (Object e) {
         String es = e.toString();
         if (es.contains("-1005") || es.contains("what:1")) {
-          // Common connection/media error - try to swallow if transient
+          LogService().log(
+            "Critical Player Error Detected: $es. Triggering recovery...",
+          );
+          _handleConnectionError("Connection failed (Error -1005)");
         }
       },
     );
@@ -173,13 +183,25 @@ class RadioAudioHandler extends BaseAudioHandler
         // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
         final expectedDuration = mediaItem.value?.duration;
         if (expectedDuration != null) {
-          // Trigger preloading 10 seconds before end (increased from 5s)
+          // Trigger preloading 10 seconds before end
           if (expectedDuration - pos <= const Duration(seconds: 10) &&
               expectedDuration > Duration.zero) {
             if (!_hasTriggeredPreload &&
                 mediaItem.value?.extras?['type'] == 'playlist_song') {
               _hasTriggeredPreload = true;
               if (onPreloadNext != null) onPreloadNext!();
+            }
+          }
+
+          // Trigger early start 5 seconds before end
+          if (expectedDuration - pos <= const Duration(seconds: 5) &&
+              expectedDuration > Duration.zero) {
+            if (!_hasTriggeredEarlyStart &&
+                mediaItem.value?.extras?['type'] == 'playlist_song' &&
+                _nextPlayerSourceUrl != null) {
+              _hasTriggeredEarlyStart = true;
+              skipToNext();
+              return;
             }
           }
 
@@ -314,17 +336,15 @@ class RadioAudioHandler extends BaseAudioHandler
     SavedSong song,
     String playlistId,
   ) async {
-    // Always reset preload flag
+    // Always reset flags
     _hasTriggeredPreload = false;
+    _hasTriggeredEarlyStart = false;
 
     // Check for preloaded stream FIRST
     if (_cachedNextSongExtras?['uniqueId'] == "${song.id}-$videoId" &&
         _cachedNextSongUrl != null) {
       final streamUrl = _cachedNextSongUrl!;
-      _cachedNextSongUrl = null;
-      _cachedNextSongExtras = null;
 
-      // FAST PATH: Go directly to playback without stopping/buffering UI
       final extras = {
         'title': song.title,
         'artist': song.artist,
@@ -338,7 +358,18 @@ class RadioAudioHandler extends BaseAudioHandler
         'is_resolved': true,
         'duration': _cachedNextSongExtras?['duration'],
         'user_initiated': true,
+        'stableId': song.youtubeUrl ?? 'song_${song.id}',
       };
+
+      // DO WE HAVE A WARM PLAYER? (Gapless Swap)
+      if (_nextPlayerSourceUrl == streamUrl) {
+        await _swapPlayers(streamUrl, extras);
+        return;
+      }
+
+      // Fallback: Clear cache and use normal flow if player wasn't warm
+      _cachedNextSongUrl = null;
+      _cachedNextSongExtras = null;
       await playFromUri(Uri.parse(streamUrl), extras);
       return;
     }
@@ -346,9 +377,9 @@ class RadioAudioHandler extends BaseAudioHandler
     // SLOW PATH: Not cached.
     // 1. Give Feedback
     await _player.stop();
-
+    final String stableId = song.youtubeUrl ?? 'song_${song.id}';
     final placeholderItem = MediaItem(
-      id: "api_resolve_${song.id}",
+      id: stableId,
       album: song.album,
       title: song.title,
       artist: song.artist,
@@ -358,6 +389,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'playlistId': playlistId,
         'songId': song.id,
         'videoId': videoId,
+        'stableId': stableId,
       },
     );
     mediaItem.add(placeholderItem);
@@ -392,6 +424,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'is_resolved': true,
         'duration': video.duration?.inSeconds,
         'user_initiated': true,
+        'stableId': stableId,
       };
 
       await playFromUri(Uri.parse(streamUrl), extras);
@@ -406,7 +439,6 @@ class RadioAudioHandler extends BaseAudioHandler
       // Mark as invalid
       await _playlistService.markSongAsInvalid(playlistId, song.id);
 
-      // Auto-skip after delay
       Future.delayed(const Duration(seconds: 5), () {
         skipToNext();
       });
@@ -534,13 +566,20 @@ class RadioAudioHandler extends BaseAudioHandler
       var streamInfo = manifest.muxed.withHighestBitrate();
       yt.close();
 
-      _cachedNextSongUrl = streamInfo.url.toString();
+      final streamUrl = streamInfo.url.toString();
+      _cachedNextSongUrl = streamUrl;
       _cachedNextSongExtras = {
         'videoId': videoId,
         'songId': songId,
         'uniqueId': "$songId-$videoId",
         'duration': video.duration?.inSeconds,
       };
+
+      // PRE-LOAD into the SECOND player for gapless swap
+      _nextPlayerSourceUrl = streamUrl;
+      await _nextPlayer.setSource(UrlSource(streamUrl));
+      // Ensure it stays paused/stopped while buffering
+      await _nextPlayer.stop();
     } catch (e) {
       // Ignore preloading errors; playback will resolve on demand if needed.
     }
@@ -577,6 +616,65 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       }
     }
+  }
+
+  Future<void> _swapPlayers(String url, Map<String, dynamic> extras) async {
+    // 1. Prepare Metadata
+    final String title = extras['title'] ?? "Song";
+    final String artist = extras['artist'] ?? "Artist";
+    final String album = extras['album'] ?? "Playlist";
+    final String? artUri = extras['artUri'];
+
+    MediaItem newItem = MediaItem(
+      id: extras['stableId'] ?? url,
+      album: album,
+      title: title,
+      artist: artist,
+      duration: extras['duration'] != null
+          ? Duration(seconds: extras['duration'])
+          : null,
+      artUri: artUri != null ? Uri.parse(artUri) : null,
+      playable: true,
+      extras: extras,
+    );
+    mediaItem.add(newItem);
+
+    // 2. The Swap
+    _isSwapping = true;
+    _expectingStop = true; // Silence the dying player events
+
+    // Switch references
+    final oldPlayer = _player;
+    _player = _nextPlayer;
+    _nextPlayer = oldPlayer;
+    _nextPlayerSourceUrl = null; // Clear warm flag
+
+    // 3. Start the NEW main player
+    await _player.resume();
+    _setupPlayerListeners(); // Re-attach listeners to the new main
+    _isSwapping = false;
+    _expectingStop = false;
+
+    _broadcastState(PlayerState.playing);
+
+    // 4. Fade out and stop the OLD player (now in _nextPlayer)
+    _fadeOutAndStop(_nextPlayer);
+
+    // Clear cache
+    _cachedNextSongUrl = null;
+    _cachedNextSongExtras = null;
+  }
+
+  Future<void> _fadeOutAndStop(AudioPlayer player) async {
+    try {
+      // Short crossfade: 2 seconds
+      for (double v = 1.0; v >= 0; v -= 0.2) {
+        await player.setVolume(v);
+        await Future.delayed(const Duration(milliseconds: 400));
+      }
+      await player.stop();
+      await player.setVolume(1.0); // Reset volume for next time it becomes main
+    } catch (_) {}
   }
 
   // --- RESTORED HELPER METHODS ---
@@ -714,7 +812,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Set MediaItem
     MediaItem newItem = MediaItem(
-      id: url,
+      id: extras['stableId'] ?? url,
       album: album,
       title: title,
       artist: artist,
@@ -906,16 +1004,19 @@ class RadioAudioHandler extends BaseAudioHandler
         // Logic: specific 1005 errors usually need a fresh player.
       } catch (_) {}
 
-      // Hard Reset: Recreate player instance to clear binary buffers if it's a playlist song (prone to issues)
-      if (extras?['type'] == 'playlist_song') {
-        // Full recreation is necessary for persistent -1005 errors
+      // Hard Reset: Recreate player instance to clear binary buffers if it's a playlist song
+      // OR if we've had repeated failures (retryCount > 0) to ensure fresh native state.
+      if (extras?['type'] == 'playlist_song' || _retryCount > 0) {
+        LogService().log(
+          "Performing Hard Reset of AudioPlayer (Retry: $_retryCount)",
+        );
         try {
           await _player.dispose();
         } catch (_) {}
         _player = AudioPlayer();
         _setupPlayerListeners(); // Re-attach listeners to new instance
         await Future.delayed(
-          const Duration(milliseconds: 200),
+          const Duration(milliseconds: 300),
         ); // Give it a moment to stabilize
       } else {
         await _player.release();
@@ -951,7 +1052,11 @@ class RadioAudioHandler extends BaseAudioHandler
           await _player.setReleaseMode(ReleaseMode.stop);
         }
 
-        await _player.setSource(UrlSource(finalUrl));
+        String? mimeType;
+        if (finalUrl.toLowerCase().contains(".m3u8")) {
+          mimeType = "application/x-mpegURL";
+        }
+        await _player.setSource(UrlSource(finalUrl, mimeType: mimeType));
         await _player.setVolume(_volume);
 
         await _player.resume();
@@ -1171,7 +1276,7 @@ class RadioAudioHandler extends BaseAudioHandler
     // Determine if it is a playlist song
     final isPlaylistSong = mediaItem.value?.extras?['type'] == 'playlist_song';
 
-    // CRITICAL: During station switch (_expectingStop), force "Buffering" state
+    // CRITICAL: During station switch (_expectingStop), force "Buffering" or "Ready" state
     if (_expectingStop) {
       // Build controls for buffering state
       final List<MediaControl> bufferControls = [
@@ -1186,9 +1291,12 @@ class RadioAudioHandler extends BaseAudioHandler
 
       playbackState.add(
         playbackState.value.copyWith(
-          processingState: AudioProcessingState.buffering,
+          processingState: _isSwapping
+              ? AudioProcessingState.ready
+              : AudioProcessingState.buffering,
           playing: true,
           controls: bufferControls,
+          queueIndex: isPlaylistSong ? _playlistIndex : null,
           shuffleMode: (_isShuffleMode && isPlaylistSong)
               ? AudioServiceShuffleMode.all
               : AudioServiceShuffleMode.none,
@@ -1261,7 +1369,7 @@ class RadioAudioHandler extends BaseAudioHandler
         updatePosition: _currentPosition,
         bufferedPosition: Duration.zero,
         speed: 1.0,
-        queueIndex: index >= 0 ? index : 0,
+        queueIndex: isPlaylistSong ? _playlistIndex : (index >= 0 ? index : 0),
         errorMessage: null,
         shuffleMode: (_isShuffleMode && isPlaylistSong)
             ? AudioServiceShuffleMode.all
@@ -1334,8 +1442,9 @@ class RadioAudioHandler extends BaseAudioHandler
       try {
         final playlist = playlists.firstWhere((p) => p.id == playlistId);
 
-        final songItems = playlist.songs.map((s) {
+        final List<MediaItem> songItems = playlist.songs.map((s) {
           final String mId = s.youtubeUrl ?? 'song_${s.id}';
+          final String stableId = s.youtubeUrl ?? 'song_${s.id}';
           return MediaItem(
             id: mId,
             title: s.title,
@@ -1348,31 +1457,28 @@ class RadioAudioHandler extends BaseAudioHandler
               'type': 'playlist_song',
               'playlistId': playlist.id,
               'songId': s.id,
+              'stableId': stableId,
             },
           );
         }).toList();
 
-        // Add Play/Shuffle Action Items at the top
+        // Standard Action Items
         final actionItems = [
           MediaItem(
             id: 'play_all_${playlist.id}',
-            title: 'Play All (Sequential)',
-            album: 'Actions',
+            title: 'Play ${playlist.name}',
+            album: 'Sequential',
             playable: true,
             extras: {'style': 'list_item'},
-            artUri: Uri.parse(
-              "https://cdn-icons-png.flaticon.com/512/727/727245.png",
-            ), // Play Icon
+            artUri: Uri.parse("https://img.icons8.com/fluency/512/play.png"),
           ),
           MediaItem(
             id: 'shuffle_all_${playlist.id}',
-            title: 'Shuffle All',
-            album: 'Actions',
+            title: 'Shuffle ${playlist.name}',
+            album: 'Random',
             playable: true,
             extras: {'style': 'list_item'},
-            artUri: Uri.parse(
-              "https://cdn-icons-png.flaticon.com/512/727/727242.png",
-            ), // Shuffle Icon
+            artUri: Uri.parse("https://img.icons8.com/fluency/512/shuffle.png"),
           ),
         ];
 
@@ -1457,7 +1563,6 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     // 3. Check Playlists (Individual Songs)
-    // 3. Check Playlists (Individual Songs)
     final playlists = await _playlistService.loadPlaylists();
     for (var p in playlists) {
       for (var s in p.songs) {
@@ -1466,22 +1571,44 @@ class RadioAudioHandler extends BaseAudioHandler
           String videoId;
           String finalUrl;
 
+          // Standard Behavior: If user picks a song from a playlist, load context as Queue
+          if (_currentPlayingPlaylistId != p.id) {
+            _currentPlayingPlaylistId = p.id;
+            _playlistQueue = p.songs.map((ps) {
+              final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
+              return MediaItem(
+                id: pId,
+                title: ps.title,
+                artist: ps.artist,
+                album: ps.album,
+                artUri: ps.artUri != null ? Uri.parse(ps.artUri!) : null,
+                duration: ps.duration,
+                extras: {
+                  'type': 'playlist_song',
+                  'playlistId': p.id,
+                  'songId': ps.id,
+                  'youtubeUrl': ps.youtubeUrl,
+                  'stableId': pId,
+                },
+              );
+            }).toList();
+            queue.add(_playlistQueue);
+          }
+
           if (s.youtubeUrl == null) {
-            // Unresolved Song - Need to search
+            // ... (resolution logic)
             try {
               final yt = YoutubeExplode();
               final query = "${s.artist} - ${s.title}";
               final results = await yt.search.search(query);
               if (results.isEmpty) {
                 yt.close();
-                return; // Failed to find
+                return;
               }
               final video = results.first;
               videoId = video.id.value;
               finalUrl = "https://www.youtube.com/watch?v=$videoId";
               yt.close();
-
-              // Optionally update song in storage (future optimization)
             } catch (_) {
               return;
             }
@@ -1491,12 +1618,15 @@ class RadioAudioHandler extends BaseAudioHandler
             if (videoId.isEmpty) return;
           }
 
-          // Use _playYoutubeVideo for consistent playback/caching logic
+          // Update Index
+          final idx = _playlistQueue.indexWhere((item) => item.id == mId);
+          if (idx != -1) {
+            _playlistIndex = idx;
+          }
+
           await _playYoutubeVideo(
             videoId,
-            s.copyWith(
-              youtubeUrl: finalUrl,
-            ), // Ensure song has URL for analytics
+            s.copyWith(youtubeUrl: finalUrl),
             p.id,
           );
           return;
