@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http; // Added import
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -11,7 +12,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../data/station_data.dart' as static_data;
 import '../models/station.dart';
 import '../models/saved_song.dart';
-import 'playlist_service.dart';
+import '../services/playlist_service.dart';
+import '../models/playlist.dart' as model;
 import 'log_service.dart';
 import '../utils/genre_mapper.dart';
 
@@ -273,12 +275,55 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     });
 
-    _loadQueue();
+    // Load persisted stations independent of UI
+    _loadStationsFromPrefs().then((_) => _loadQueue());
+  }
+
+  Future<void> _loadStationsFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 1. Load Stations
+      final String? jsonStr = prefs.getString('saved_stations');
+      List<Station> loaded = [];
+      if (jsonStr != null) {
+        final List<dynamic> decoded = jsonDecode(jsonStr);
+        loaded = decoded.map((e) => Station.fromJson(e)).toList();
+      }
+
+      if (loaded.isEmpty) return;
+
+      // 2. Load Order
+      final bool useCustomOrder = prefs.getBool('use_custom_order') ?? false;
+      final List<String>? orderStr = prefs.getStringList('station_order');
+
+      if (useCustomOrder && orderStr != null) {
+        final order = orderStr
+            .map((e) => int.tryParse(e) ?? -1)
+            .where((e) => e != -1)
+            .toList();
+        final Map<int, Station> map = {for (var s in loaded) s.id: s};
+        final List<Station> sorted = [];
+
+        for (var id in order) {
+          if (map.containsKey(id)) {
+            sorted.add(map[id]!);
+            map.remove(id);
+          }
+        }
+        sorted.addAll(map.values);
+        _stations = sorted;
+      } else {
+        _stations = loaded;
+      }
+    } catch (e) {
+      // Fallback
+    }
   }
 
   Future<void> _loadQueue() async {
     // START: Filter logic for Android Auto (Matches Home Screen Favorites)
-    final targetStations = await _getOrderedFavorites();
+    final targetStations = _stations; // Use loaded sorted stations
     // END: Filter logic
 
     final queueItems = targetStations
@@ -295,6 +340,83 @@ class RadioAudioHandler extends BaseAudioHandler
         )
         .toList();
     queue.add(queueItems);
+
+    // Ensure Android Auto sees the app as "Ready" immediately with valid content
+    if (queueItems.isNotEmpty && mediaItem.value == null) {
+      MediaItem? startupItem;
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final lastId = prefs.getString('last_media_id');
+        final lastType = prefs.getString('last_media_type');
+
+        if (lastId != null) {
+          if (lastType == 'station' || lastType == null) {
+            // Restore Station
+            startupItem = queueItems.firstWhere(
+              (item) => item.id == lastId,
+              orElse: () => queueItems.first,
+            );
+          } else if (lastType == 'playlist_song') {
+            // Restore Playlist Context
+            final lastPlaylistId = prefs.getString('last_playlist_id');
+            if (lastPlaylistId != null) {
+              final playlists = await _playlistService.loadPlaylists();
+              final playlist = playlists.firstWhere(
+                (p) => p.id == lastPlaylistId,
+                orElse: () => model.Playlist(
+                  id: '',
+                  name: '',
+                  songs: [],
+                  createdAt: DateTime.now(),
+                ),
+              );
+
+              if (playlist.id == lastPlaylistId) {
+                // Rebuild Queue logic (similar to playFromMediaId)
+                _currentPlayingPlaylistId = playlist.id;
+                _playlistQueue = playlist.songs.map((ps) {
+                  final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
+                  return MediaItem(
+                    id: pId,
+                    title: ps.title,
+                    artist: ps.artist,
+                    album: ps.album,
+                    artUri: ps.artUri != null ? Uri.parse(ps.artUri!) : null,
+                    duration: ps.duration,
+                    extras: {
+                      'type': 'playlist_song',
+                      'playlistId': playlist.id,
+                      'songId': ps.id,
+                      'youtubeUrl': ps.youtubeUrl,
+                      'stableId': pId,
+                    },
+                  );
+                }).toList();
+
+                // Find specific song
+                final songIndex = _playlistQueue.indexWhere(
+                  (item) => item.id == lastId,
+                );
+                if (songIndex != -1) {
+                  _playlistIndex = songIndex;
+                  startupItem = _playlistQueue[songIndex];
+                  queue.add(_playlistQueue); // Update system queue
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Fallback to first station if restoration failed
+      startupItem ??= queueItems.first;
+
+      mediaItem.add(startupItem);
+    }
+
+    // Broadcast "Ready" state so AA shows controls immediately
+    _broadcastState(PlayerState.stopped);
   }
 
   void _handleConnectionError(String message) {
@@ -988,6 +1110,22 @@ class RadioAudioHandler extends BaseAudioHandler
       ),
     );
 
+    // Save Last Played State
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_media_id', url);
+
+      final String type = extras?['type'] ?? 'station';
+      await prefs.setString('last_media_type', type);
+
+      if (type == 'playlist_song') {
+        final pId = extras?['playlistId'];
+        if (pId != null) {
+          await prefs.setString('last_playlist_id', pId);
+        }
+      }
+    } catch (_) {}
+
     // 3. Defer all heavy player interactions (Stop, Resolve, SetSource, Play)
     // to a microtask with immediate return to UI.
     final sessionId = DateTime.now().millisecondsSinceEpoch;
@@ -1260,9 +1398,17 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   static const _shuffleControl = MediaControl(
+    androidIcon: 'drawable/ic_repeat',
+    label: 'Sequential',
+    action: MediaAction.custom,
+    customAction: CustomMediaAction(name: 'toggle_shuffle'),
+  );
+
+  static const _sequentialControl = MediaControl(
     androidIcon: 'drawable/ic_shuffle',
     label: 'Shuffle',
-    action: MediaAction.setShuffleMode,
+    action: MediaAction.custom,
+    customAction: CustomMediaAction(name: 'toggle_shuffle'),
   );
 
   // ... (existing helper methods if any)
@@ -1286,7 +1432,9 @@ class RadioAudioHandler extends BaseAudioHandler
       ];
       // ADD SHUFFLE if it's a playlist
       if (isPlaylistSong) {
-        bufferControls.add(_shuffleControl);
+        bufferControls.add(
+          _isShuffleMode ? _sequentialControl : _shuffleControl,
+        );
       }
 
       playbackState.add(
@@ -1333,11 +1481,9 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Custom Actions (Shuffle for Playlist, Like for Radio)
     if (isPlaylistSong) {
-      // If shuffle is ON, arguably we should show a specific "Shuffle On" icon/state
-      // But standard MediaControl uses label/icon.
-      // Highlighting typically handled by Android Auto based on shuffleMode state.
-      // But button presence is what user wanted.
-      standardControls.add(_shuffleControl);
+      standardControls.add(
+        _isShuffleMode ? _sequentialControl : _shuffleControl,
+      );
     } else {
       // Radio: Show Like/Liked button
       standardControls.add(
@@ -1385,6 +1531,19 @@ class RadioAudioHandler extends BaseAudioHandler
   ]) async {
     // 1. Root Level
     if (parentMediaId == 'root') {
+      // Auto-start logic for Android Auto (First Run only)
+      if (!_hasTriggeredEarlyStart &&
+          !playbackState.value.playing &&
+          _stations.isNotEmpty) {
+        _hasTriggeredEarlyStart = true; // Re-using flag or create new if needed
+        // Defer play to avoid blocking getChildren
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (!playbackState.value.playing) {
+            play();
+          }
+        });
+      }
+
       return [
         const MediaItem(
           id: 'live_radio',
@@ -1403,8 +1562,7 @@ class RadioAudioHandler extends BaseAudioHandler
     // 2. Stations List
     // 2. Stations List
     if (parentMediaId == 'live_radio') {
-      final stations = await _getOrderedFavorites();
-      return stations.map(_stationToMediaItem).toList();
+      return _stations.map(_stationToMediaItem).toList();
     }
 
     // 3. Playlists Folder

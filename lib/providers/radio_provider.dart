@@ -157,7 +157,7 @@ class RadioProvider with ChangeNotifier {
 
   void _updateAudioHandler() {
     if (_audioHandler is RadioAudioHandler) {
-      _audioHandler.updateStations(stations);
+      _audioHandler.updateStations(allStations);
     }
   }
 
