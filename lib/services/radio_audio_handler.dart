@@ -293,7 +293,9 @@ class RadioAudioHandler extends BaseAudioHandler
 
       if (loaded.isEmpty) return;
 
-      // 2. Load Order
+      // 2. Load Favorites
+
+      // 3. Load Order & Sort
       final bool useCustomOrder = prefs.getBool('use_custom_order') ?? false;
       final List<String>? orderStr = prefs.getStringList('station_order');
 
@@ -311,6 +313,7 @@ class RadioAudioHandler extends BaseAudioHandler
             map.remove(id);
           }
         }
+        // Append remaining sorted-by-default
         sorted.addAll(map.values);
         _stations = sorted;
       } else {
@@ -664,15 +667,14 @@ class RadioAudioHandler extends BaseAudioHandler
     if (onSkipNext != null) {
       onSkipNext!();
     } else {
-      final stations = await _getOrderedFavorites();
-      if (stations.isNotEmpty) {
+      if (_stations.isNotEmpty) {
         final current = mediaItem.value;
         if (current == null) {
-          await playFromUri(Uri.parse(stations.first.url));
+          await playFromUri(Uri.parse(_stations.first.url));
         } else {
-          int index = stations.indexWhere((s) => s.url == current.id);
-          int nextIndex = (index + 1) % stations.length;
-          await playFromUri(Uri.parse(stations[nextIndex].url));
+          int index = _stations.indexWhere((s) => s.url == current.id);
+          int nextIndex = (index + 1) % _stations.length;
+          await playFromUri(Uri.parse(_stations[nextIndex].url));
         }
       }
     }
@@ -727,14 +729,13 @@ class RadioAudioHandler extends BaseAudioHandler
     if (onSkipPrevious != null) {
       onSkipPrevious!();
     } else {
-      final stations = await _getOrderedFavorites();
-      if (stations.isNotEmpty) {
+      if (_stations.isNotEmpty) {
         final current = mediaItem.value;
         if (current != null) {
-          int index = stations.indexWhere((s) => s.url == current.id);
+          int index = _stations.indexWhere((s) => s.url == current.id);
           int prevIndex = index - 1;
-          if (prevIndex < 0) prevIndex = stations.length - 1;
-          await playFromUri(Uri.parse(stations[prevIndex].url));
+          if (prevIndex < 0) prevIndex = _stations.length - 1;
+          await playFromUri(Uri.parse(_stations[prevIndex].url));
         }
       }
     }
@@ -824,24 +825,6 @@ class RadioAudioHandler extends BaseAudioHandler
     // Expose this to allow UI to trigger AA refresh
     notifyChildrenChanged('playlists_root');
     // Also refresh specific playlists if possible, but root is usually enough to re-enter
-  }
-
-  Future<List<Station>> _getOrderedFavorites() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Use correct key 'favorites' (matching RadioProvider)
-    final List<String> favoriteIds = prefs.getStringList('favorites') ?? [];
-
-    if (favoriteIds.isEmpty) return [];
-
-    List<Station> ordered = [];
-    for (String id in favoriteIds) {
-      try {
-        final station = _stations.firstWhere((s) => s.id.toString() == id);
-        ordered.add(station);
-      } catch (_) {}
-    }
-
-    return ordered;
   }
 
   Future<String> _resolveStreamUrl(
@@ -1385,14 +1368,53 @@ class RadioAudioHandler extends BaseAudioHandler
     final wasShuffle = _isShuffleMode;
     _isShuffleMode = shuffleMode == AudioServiceShuffleMode.all;
 
-    if (wasShuffle != _isShuffleMode && _playlistQueue.isNotEmpty) {
-      if (_isShuffleMode) {
-        // Shuffle the remaining queue (simple approach) or full shuffle
-        // For simplicity in this handler, we just flag it.
-        // To do it right, we'd shuffle _playlistQueue.
-        // But we need to keep the current song as current.
-        // Let's just update UI state for now as requested.
-      }
+    if (wasShuffle != _isShuffleMode && _currentPlayingPlaylistId != null) {
+      // Reorganize Queue
+      try {
+        final playlists = await _playlistService.loadPlaylists();
+        final playlist = playlists.firstWhere(
+          (p) => p.id == _currentPlayingPlaylistId,
+        );
+
+        List<MediaItem> newQueue = playlist.songs.map((ps) {
+          final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
+          return MediaItem(
+            id: pId,
+            title: ps.title,
+            artist: ps.artist,
+            album: ps.album,
+            artUri: ps.artUri != null ? Uri.parse(ps.artUri!) : null,
+            duration: ps.duration,
+            extras: {
+              'type': 'playlist_song',
+              'playlistId': playlist.id,
+              'songId': ps.id,
+              'youtubeUrl': ps.youtubeUrl,
+              'stableId': pId,
+            },
+          );
+        }).toList();
+
+        if (_isShuffleMode) {
+          newQueue.shuffle();
+        }
+
+        // Maintain current song position
+        final currentId = mediaItem.value?.id;
+        if (currentId != null) {
+          final index = newQueue.indexWhere((item) => item.id == currentId);
+          if (index != -1) {
+            _playlistIndex = index;
+            // Optionally move current song to top? No, just track index is fine.
+          } else {
+            // Reset if lost (shouldn't happen)
+            _playlistIndex = 0;
+          }
+        }
+
+        _playlistQueue = newQueue;
+        queue.add(_playlistQueue);
+      } catch (_) {}
     }
     _broadcastState(_player.state);
   }
@@ -1576,16 +1598,22 @@ class RadioAudioHandler extends BaseAudioHandler
 
         Uri? artUri = baseImage != null ? Uri.tryParse(baseImage) : null;
 
+        final isSpotify = p.id.startsWith('spotify_');
+        final subTitle = isSpotify ? 'Spotify Playlist' : 'Playlist';
+
         return MediaItem(
           id: 'playlist_${p.id}',
           title: p.name,
-          album: 'Playlist',
+          album: subTitle,
           playable: false,
           artUri: artUri,
           extras: {
             'android.media.metadata.DISPLAY_ICON_URI': artUri.toString(),
             'android.media.metadata.ART_URI': artUri.toString(),
             'android.media.metadata.ALBUM_ART_URI': artUri.toString(),
+            if (isSpotify)
+              'style':
+                  'list_item', // Optional: Ensure it looks distinct if supported
           },
         );
       });
@@ -1603,8 +1631,11 @@ class RadioAudioHandler extends BaseAudioHandler
         final List<MediaItem> songItems = playlist.songs.map((s) {
           final String mId = s.youtubeUrl ?? 'song_${s.id}';
           final String stableId = s.youtubeUrl ?? 'song_${s.id}';
+          // Create Context-Aware ID to identify WHICH playlist this song click comes from
+          final String contextId = 'ctx_${playlist.id}_$mId';
+
           return MediaItem(
-            id: mId,
+            id: contextId,
             title: s.title,
             artist: s.artist,
             album: s.album,
@@ -1616,6 +1647,7 @@ class RadioAudioHandler extends BaseAudioHandler
               'playlistId': playlist.id,
               'songId': s.id,
               'stableId': stableId,
+              'youtubeUrl': s.youtubeUrl,
             },
           );
         }).toList();
@@ -1722,6 +1754,116 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 3. Check Playlists (Individual Songs)
     final playlists = await _playlistService.loadPlaylists();
+
+    // START: Context-Aware Resolution
+    if (mediaId.startsWith('ctx_')) {
+      try {
+        // Format: ctx_{playlistId}_{originalId}
+        // Be careful with parsing if playlistId has underscores, but usually it's timestamp or "favorites".
+        // Assuming playlistId matches first segment after ctx_.
+        // Actually, we can just search for the playlist that matches.
+
+        // ctx_favorites_https...
+        // ctx_17123..._https...
+
+        // Safer strategy: Iterate playlists and check if mediaId starts with ctx_{p.id}_
+        for (var p in playlists) {
+          final prefix = 'ctx_${p.id}_';
+          if (mediaId.startsWith(prefix)) {
+            final realMediaId = mediaId.substring(prefix.length);
+
+            // Now find song in THIS playlist
+            final song = p.songs.firstWhere(
+              (s) {
+                final String sId = s.youtubeUrl ?? 'song_${s.id}';
+                return sId == realMediaId;
+              },
+              orElse: () => SavedSong(
+                id: '',
+                title: '',
+                artist: '',
+                album: '',
+                dateAdded: DateTime.now(),
+              ),
+            );
+
+            if (song.id.isNotEmpty) {
+              // Determine Video ID / URL
+              // ... (reuse logic)
+              String videoId;
+              String finalUrl;
+
+              // Force Context
+              if (_currentPlayingPlaylistId != p.id || _isShuffleMode) {
+                _currentPlayingPlaylistId = p.id;
+                _isShuffleMode = false;
+                _playlistQueue = p.songs.map((ps) {
+                  final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
+                  return MediaItem(
+                    id: 'ctx_${p.id}_$pId', // Keep consistent IDs in queue
+                    title: ps.title,
+                    artist: ps.artist,
+                    album: ps.album,
+                    artUri: ps.artUri != null ? Uri.parse(ps.artUri!) : null,
+                    duration: ps.duration,
+                    extras: {
+                      'type': 'playlist_song',
+                      'playlistId': p.id,
+                      'songId': ps.id,
+                      'youtubeUrl': ps.youtubeUrl,
+                      'stableId': pId,
+                    },
+                  );
+                }).toList();
+                queue.add(_playlistQueue);
+              }
+
+              // Set Index
+              _playlistIndex = _playlistQueue.indexWhere(
+                (item) => item.id == mediaId,
+              );
+
+              // Resolve URL
+              if (song.youtubeUrl == null) {
+                // ... Search Logic ...
+                final yt = YoutubeExplode();
+                final query = "${song.artist} - ${song.title}";
+                try {
+                  final results = await yt.search.search(query);
+                  if (results.isNotEmpty) {
+                    final video = results.first;
+                    finalUrl =
+                        "https://www.youtube.com/watch?v=${video.id.value}";
+                  } else {
+                    yt.close();
+                    return;
+                  }
+                } catch (_) {
+                  yt.close();
+                  return;
+                }
+                yt.close();
+                videoId = _extractVideoId(finalUrl) ?? '';
+              } else {
+                finalUrl = song.youtubeUrl!;
+                videoId = _extractVideoId(finalUrl) ?? '';
+              }
+
+              if (videoId.isNotEmpty) {
+                await _playYoutubeVideo(
+                  videoId,
+                  song.copyWith(youtubeUrl: finalUrl),
+                  p.id,
+                );
+                return;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    // END: Context-Aware Resolution
+
     for (var p in playlists) {
       for (var s in p.songs) {
         final String mId = s.youtubeUrl ?? 'song_${s.id}';
@@ -1730,12 +1872,19 @@ class RadioAudioHandler extends BaseAudioHandler
           String finalUrl;
 
           // Standard Behavior: If user picks a song from a playlist, load context as Queue
-          if (_currentPlayingPlaylistId != p.id) {
+          if (_currentPlayingPlaylistId != p.id || _isShuffleMode) {
+            // ... existing logic ...
+            // We need to match the queue IDs to what we just defined in getChildren
+            // If we use ctx_ IDs in getChildren, we should probably use them in queue too?
+            // YES. If Android Auto sees ctx_ IDs, the queue must have ctx_ IDs for highlighting.
+
             _currentPlayingPlaylistId = p.id;
+            _isShuffleMode =
+                false; // Force sequential when clicking specific song
             _playlistQueue = p.songs.map((ps) {
               final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
               return MediaItem(
-                id: pId,
+                id: 'ctx_${p.id}_$pId', // Update to use context ID!
                 title: ps.title,
                 artist: ps.artist,
                 album: ps.album,

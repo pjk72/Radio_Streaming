@@ -157,7 +157,9 @@ class RadioProvider with ChangeNotifier {
 
   void _updateAudioHandler() {
     if (_audioHandler is RadioAudioHandler) {
-      _audioHandler.updateStations(allStations);
+      // Send ALL stations to the background handler (Android Auto)
+      // This ensures Next/Prev buttons work for the entire list, not just favorites.
+      _audioHandler.updateStations(stations);
     }
   }
 
