@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../models/station.dart';
 import '../data/station_data.dart' as default_data;
@@ -306,7 +307,24 @@ class RadioProvider with ChangeNotifier {
   int _manageGroupingMode = 0; // 0: none, 1: genre, 2: origin
   int get manageGroupingMode => _manageGroupingMode;
 
+  bool _isOffline = false; // Internal connectivity state
+
   RadioProvider(this._audioHandler, this._backupService) {
+    // connectivity_plus listener
+    Connectivity().onConnectivityChanged.listen((results) {
+      final bool isNowOffline = results.contains(ConnectivityResult.none);
+      // Detected change from Offline -> Online
+      if (_isOffline && !isNowOffline) {
+        LogService().log("Internet Restored: Attempting auto-resume...");
+        _retryAfterConnectionRestored();
+      }
+      _isOffline = isNowOffline;
+    });
+    // Check initial state
+    Connectivity().checkConnectivity().then((results) {
+      _isOffline = results.contains(ConnectivityResult.none);
+    });
+
     _backupService.addListener(notifyListeners);
     _playlistService.onPlaylistsUpdated.listen((_) => reloadPlaylists());
     _checkAutoBackup(); // Start check
@@ -1314,6 +1332,13 @@ class RadioProvider with ChangeNotifier {
                   _lastMonitoredPositionTime!,
                 );
                 if (diff.inSeconds > 5) {
+                  if (_isOffline) {
+                    // If offline, assume stall is due to network and just wait.
+                    _lastMonitoredPositionTime =
+                        null; // Reset timer to allow re-check later
+                    return;
+                  }
+
                   if (_isCheckingStallInternet) return;
 
                   _isCheckingStallInternet = true;
@@ -1424,6 +1449,46 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  void _retryAfterConnectionRestored() async {
+    // 1. If we have a YouTube controller, try resume
+    if (_hiddenAudioController != null) {
+      if (_hiddenAudioController!.value.errorCode != 0) {
+        _hiddenAudioController!.reload();
+      } else {
+        _hiddenAudioController!.play();
+      }
+    }
+
+    // 2. Resume Native Playback (AudioHandler)
+    if (_audioHandler.playbackState.value.processingState ==
+            AudioProcessingState.error ||
+        _audioHandler.playbackState.value.errorMessage ==
+            "No Internet Connection") {
+      _audioHandler.customAction('retryPlayback');
+    }
+
+    // 3. If we stalled during "Loading" (e.g. Resolution failed)
+    if ((_isLoading || _errorMessage == "No Internet Connection") &&
+        _currentPlayingPlaylistId != null &&
+        _audioOnlySongId != null) {
+      // Helper to find song
+      SavedSong? targetSong;
+      try {
+        final p = playlists.firstWhere(
+          (p) => p.id == _currentPlayingPlaylistId,
+        );
+        targetSong = p.songs.firstWhere((s) => s.id == _audioOnlySongId);
+      } catch (_) {}
+
+      if (targetSong != null) {
+        LogService().log("Retrying playlist song: ${targetSong.title}");
+        _isLoading = true;
+        notifyListeners();
+        playPlaylistSong(targetSong, _currentPlayingPlaylistId!);
+      }
+    }
+  }
+
   void _youtubeListener() {
     if (_hiddenAudioController == null) return;
 
@@ -1432,6 +1497,12 @@ class RadioProvider with ChangeNotifier {
 
     // 1. Explicit Error Check
     if (value.errorCode != 0) {
+      if (_isOffline) {
+        LogService().log(
+          "Offline: Ignoring YouTube Error code ${value.errorCode}",
+        );
+        return;
+      }
       LogService().log(
         "YouTube Player Error: ${value.errorCode}. Marking song invalid.",
       );
@@ -1455,6 +1526,11 @@ class RadioProvider with ChangeNotifier {
       } else {
         final diff = DateTime.now().difference(_lastProcessingTime!);
         if (diff.inSeconds > 5) {
+          if (_isOffline) {
+            LogService().log("Offline: Ignoring buffering stuck detected.");
+            _lastProcessingTime = null;
+            return;
+          }
           LogService().log(
             "Playback Processing Timeout (>5s in $state). Marking invalid.",
           );
@@ -1498,12 +1574,17 @@ class RadioProvider with ChangeNotifier {
               // Check elapsed time
               final diff = DateTime.now().difference(_zeroDurationStartTime!);
               if (diff.inSeconds >= 5) {
-                debugPrint(
-                  "Song has had Zero Duration for >5s in Playing State. Marking invalid.",
-                );
-                _markCurrentSongAsInvalid();
-                playNext(false);
-                _zeroDurationStartTime = null;
+                if (_isOffline) {
+                  debugPrint("Offline: Ignoring zero duration.");
+                  _zeroDurationStartTime = null;
+                } else {
+                  debugPrint(
+                    "Song has had Zero Duration for >5s in Playing State. Marking invalid.",
+                  );
+                  _markCurrentSongAsInvalid();
+                  playNext(false);
+                  _zeroDurationStartTime = null;
+                }
               }
             }
           } else {
@@ -2278,10 +2359,18 @@ class RadioProvider with ChangeNotifier {
         notifyListeners();
 
         // No Video ID found -> Invalid Song (Metadata issue)
-        // Check internet just in case resolveLinks failed silently?
-        // But resolveLinks usually throws on connection error.
-        // Assuming we are online if we got here with null.
         if (playlistId != null) {
+          if (_isOffline) {
+            LogService().log(
+              "Offline: Cannot resolve video ID for ${song.title}. Waiting for connection...",
+            );
+            // We should probably show an error state or stop loading?
+            _isLoading = false;
+            // Resetting state effectively pauses/stops without erroring out to invalid
+            notifyListeners();
+            return;
+          }
+
           LogService().log(
             "Marking song as invalid (No Video ID): ${song.title}",
           );
@@ -2830,7 +2919,14 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void _markCurrentSongAsInvalid() {
+  void _markCurrentSongAsInvalid() async {
+    // Connectivity Check: Do NOT mark invalid if internet is down
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      LogService().log("Blocking 'Mark Invalid' - No Internet Connection");
+      return;
+    }
+
     if (_audioOnlySongId != null) {
       LogService().log("Marking Current Song Invalid: $_audioOnlySongId");
       if (!_invalidSongIds.contains(_audioOnlySongId!)) {

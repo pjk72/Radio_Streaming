@@ -558,15 +558,28 @@ class RadioAudioHandler extends BaseAudioHandler
       playbackState.add(
         playbackState.value.copyWith(
           processingState: AudioProcessingState.error,
-          errorMessage: "Error playing. Skipping...",
+          errorMessage: "Error playing. Checking connection...",
         ),
       );
-      // Mark as invalid
-      await _playlistService.markSongAsInvalid(playlistId, song.id);
 
-      Future.delayed(const Duration(seconds: 5), () {
-        skipToNext();
-      });
+      // Verify Internet before marking invalid
+      final connectivityResult = await Connectivity().checkConnectivity();
+      if (!connectivityResult.contains(ConnectivityResult.none)) {
+        // Only mark if we have some connection
+        await _playlistService.markSongAsInvalid(playlistId, song.id);
+
+        Future.delayed(const Duration(seconds: 5), () {
+          skipToNext();
+        });
+      } else {
+        // No internet: Just show error and don't skip/invalidate
+        playbackState.add(
+          playbackState.value.copyWith(
+            errorMessage: "No Internet Connection",
+            processingState: AudioProcessingState.error,
+          ),
+        );
+      }
     }
   }
 
@@ -658,14 +671,23 @@ class RadioAudioHandler extends BaseAudioHandler
         _playlistIndex = 0; // Loop
       }
       final item = _playlistQueue[_playlistIndex];
-      // Use playFromMediaId to handle resolution
       await playFromMediaId(item.id);
       return;
     }
 
     // 2. Fallback to Provider / Radio
     if (onSkipNext != null) {
-      onSkipNext!();
+      // Determine if we are strictly in "Playlist Mode" but queue is desynced
+      // If so, we should prefer simple next track logic over potentially switching context
+      if (_currentPlayingPlaylistId != null &&
+          mediaItem.value?.extras?['type'] == 'playlist_song') {
+        // We are likely in a playlist but queue is empty/desynced.
+        // Let Provider handle it (it knows the full playlist)
+        onSkipNext!();
+      } else {
+        // Standard Radio/Provider logic
+        onSkipNext!();
+      }
     } else {
       if (_stations.isNotEmpty) {
         final current = mediaItem.value;
@@ -825,6 +847,76 @@ class RadioAudioHandler extends BaseAudioHandler
     // Expose this to allow UI to trigger AA refresh
     notifyChildrenChanged('playlists_root');
     // Also refresh specific playlists if possible, but root is usually enough to re-enter
+  }
+
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    _startupLock = false; // Action unlocks
+    if (name == 'stopExternalPlayback') {
+      playbackState.add(playbackState.value.copyWith(playing: false));
+    } else if (name == 'startExternalPlayback') {
+      // No-op, provider handles logic
+    } else if (name == 'updatePlaybackPosition') {
+      final position = extras?['position'];
+      final duration = extras?['duration'];
+      final isPlaying = extras?['isPlaying'] ?? false;
+      if (position != null) {
+        final current = playbackState.value;
+        playbackState.add(
+          current.copyWith(
+            updatePosition: Duration(milliseconds: position),
+            playing: isPlaying,
+            bufferedPosition: duration != null
+                ? Duration(milliseconds: duration)
+                : Duration.zero,
+          ),
+        );
+      }
+    } else if (name == 'retryPlayback') {
+      await _retryPlayback();
+    } else if (name == 'setVolume') {
+      final vol = extras?['volume'] as double?;
+      if (vol != null) {
+        try {
+          await _player.setVolume(vol);
+        } catch (_) {}
+      }
+    } else if (name == 'add_to_playlist') {
+      final item = mediaItem.value;
+      if (item != null) {
+        final song = SavedSong(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: item.title,
+          artist: item.artist ?? 'Unknown',
+          album: item.album ?? 'Unknown',
+          artUri: item.artUri.toString(),
+          dateAdded: DateTime.now(),
+          youtubeUrl: item.extras?['url'],
+        );
+
+        // Lookup station genre
+        String genre = "Mix";
+        final url = item.extras?['url'];
+        if (url != null) {
+          try {
+            final station = _stations.firstWhere((s) => s.url == url);
+            genre = station.genre.split('|').first.trim();
+            genre = genre.split('/').first.trim();
+          } catch (_) {}
+        }
+
+        await _playlistService.addToGenrePlaylist(genre, song);
+        _isCurrentSongSaved = true;
+        _broadcastState(_player.state);
+        // Show Toast or notification? AudioHandler can't show toast easily.
+      }
+    } else if (name == 'noop') {
+      // Do nothing, just feedback
+    }
+    return null;
   }
 
   Future<String> _resolveStreamUrl(
@@ -1125,49 +1217,50 @@ class RadioAudioHandler extends BaseAudioHandler
         // Logic: specific 1005 errors usually need a fresh player.
       } catch (_) {}
 
-      // Hard Reset: Recreate player instance to clear binary buffers if it's a playlist song
-      // OR if we've had repeated failures (retryCount > 0) to ensure fresh native state.
-      if (extras?['type'] == 'playlist_song' || _retryCount > 0) {
-        LogService().log(
-          "Performing Hard Reset of AudioPlayer (Retry: $_retryCount)",
-        );
+      // OPTIMIZATION: Run Player Reset and URL Resolution in PARALLEL
+      // This hides the 100ms hardware safety delay inside the network request time.
+
+      // Task 1: Hard Reset Player
+      final resetTask = (() async {
         try {
           await _player.dispose();
         } catch (_) {}
         _player = AudioPlayer();
-        _setupPlayerListeners(); // Re-attach listeners to new instance
-        await Future.delayed(
-          const Duration(milliseconds: 300),
-        ); // Give it a moment to stabilize
-      } else {
-        await _player.release();
-      }
+        _setupPlayerListeners();
+        // Hardware cooldown
+        await Future.delayed(const Duration(milliseconds: 100));
+      })();
+
+      // Task 2: Resolve URL (Network I/O)
+      final urlTask = (() async {
+        try {
+          return await _resolveStreamUrl(
+            url,
+            isPlaylistSong: extras?['type'] == 'playlist_song',
+          ).timeout(const Duration(seconds: 3), onTimeout: () => url);
+        } catch (_) {
+          return url;
+        }
+      })();
+
+      // Wait for both to finish
+      await resetTask;
+      final finalUrl = await urlTask;
 
       bool success = true;
       String? errorMessage;
 
-      String finalUrl = url;
-      // Resolve playlists if needed (non-blocking)
-      try {
-        finalUrl = await _resolveStreamUrl(
-          url,
-          isPlaylistSong: extras?['type'] == 'playlist_song',
-        ).timeout(const Duration(seconds: 3), onTimeout: () => url);
-      } catch (_) {}
-
-      // Re-check session barrier after I/O wait
+      // Re-check session barrier
       if (_currentSessionId != sessionId) return;
 
       // 4. Init & Play
       try {
-        _expectingStop = false; // Ready to receive events
         await _initializePlayer();
 
         if (extras?['type'] == 'playlist_song') {
           await _player.setReleaseMode(
             ReleaseMode.release,
           ); // Allow seamless transitions
-          _expectingStop = false;
         } else {
           // Radio
           await _player.setReleaseMode(ReleaseMode.stop);
@@ -1226,131 +1319,6 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       }
     });
-  }
-
-  @override
-  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
-    _startupLock = false; // Action unlocks
-    if (name == 'setVolume') {
-      final vol = extras?['volume'] as double?;
-      if (vol != null) {
-        try {
-          await _player.setVolume(vol);
-        } catch (_) {}
-      }
-    } else if (name == 'add_to_playlist') {
-      final item = mediaItem.value;
-      if (item != null) {
-        final song = SavedSong(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          title: item.title,
-          artist: item.artist ?? 'Unknown',
-          album: item.album ?? 'Radio',
-          artUri: item.artUri?.toString(),
-          spotifyUrl: item.extras?['spotifyUrl'],
-          youtubeUrl: item.extras?['youtubeUrl'],
-          dateAdded: DateTime.now(),
-        );
-
-        // Lookup station genre
-        String genre = "Mix";
-        final url = item.extras?['url'];
-        if (url != null) {
-          try {
-            final station = _stations.firstWhere((s) => s.url == url);
-            genre = station.genre.split('|').first.trim();
-            genre = genre.split('/').first.trim();
-          } catch (_) {}
-        }
-
-        await _playlistService.addToGenrePlaylist(genre, song);
-        _isCurrentSongSaved = true;
-        _broadcastState(_player.state);
-      }
-    } else if (name == 'startExternalPlayback') {
-      // 1. Stop internal radio player
-      try {
-        await _player.stop();
-      } catch (_) {}
-
-      _expectingStop = false;
-
-      // 2. Update Metadata for External Audio
-      final title = extras?['title'] ?? "External Audio";
-      final artist = extras?['artist'] ?? "YouTube";
-      final artUri = extras?['artUri'];
-
-      final item = MediaItem(
-        id: "external_audio",
-        album: "YouTube Audio",
-        title: title,
-        artist: artist,
-        artUri: artUri != null ? Uri.parse(artUri) : null,
-        playable: true,
-      );
-      mediaItem.add(item);
-
-      // 3. Force Playing State to keep Service Alive
-      // Use controls that make sense: Pause (to stop), Stop.
-      // Added Skip controls as requested
-      playbackState.add(
-        playbackState.value.copyWith(
-          processingState: AudioProcessingState.ready,
-          playing: true,
-          controls: [
-            MediaControl.skipToPrevious,
-            MediaControl.pause, // Allows user to pause using system controls
-            MediaControl.skipToNext,
-            MediaControl.stop,
-          ],
-          systemActions: const {
-            MediaAction.seek,
-            MediaAction.seekForward,
-            MediaAction.seekBackward,
-            MediaAction.skipToNext,
-            MediaAction.skipToPrevious,
-          },
-          errorMessage: null,
-        ),
-      );
-    } else if (name == 'stopExternalPlayback') {
-      // Just update state to stopped/paused
-      playbackState.add(
-        playbackState.value.copyWith(
-          playing: false,
-          processingState: AudioProcessingState.ready,
-        ),
-      );
-    } else if (name == 'updatePlaybackPosition') {
-      // Update progressive icon / progress bar
-      if (extras != null) {
-        final int posMs = extras['position'] ?? 0;
-        final int durMs = extras['duration'] ?? 0;
-        final bool isPlaying = extras['isPlaying'] ?? false;
-
-        playbackState.add(
-          playbackState.value.copyWith(
-            playing: isPlaying,
-            updatePosition: Duration(milliseconds: posMs),
-            bufferedPosition: Duration(milliseconds: posMs),
-            processingState: AudioProcessingState.ready,
-          ),
-        );
-
-        // Update Metadata Duration if needed
-        if (mediaItem.value != null && durMs > 0) {
-          final currentDuration =
-              mediaItem.value!.duration?.inMilliseconds ?? 0;
-          if (currentDuration != durMs) {
-            mediaItem.add(
-              mediaItem.value!.copyWith(
-                duration: Duration(milliseconds: durMs),
-              ),
-            );
-          }
-        }
-      }
-    }
   }
 
   @override
@@ -1520,11 +1488,10 @@ class RadioAudioHandler extends BaseAudioHandler
       MediaAction.play,
       MediaAction.pause,
       MediaAction.stop,
-      MediaAction.seek,
-      MediaAction.setShuffleMode,
     };
     if (isPlaylistSong) {
       actions.add(MediaAction.seek);
+      actions.add(MediaAction.setShuffleMode);
     }
 
     playbackState.add(
@@ -1581,7 +1548,6 @@ class RadioAudioHandler extends BaseAudioHandler
       ];
     }
 
-    // 2. Stations List
     // 2. Stations List
     if (parentMediaId == 'live_radio') {
       return _stations.map(_stationToMediaItem).toList();

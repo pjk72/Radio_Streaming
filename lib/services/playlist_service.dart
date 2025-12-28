@@ -5,6 +5,7 @@ import '../models/saved_song.dart';
 import '../models/playlist.dart';
 import 'log_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class PlaylistLoadResult {
   final List<Playlist> playlists;
@@ -452,6 +453,15 @@ class PlaylistService {
   }
 
   Future<void> markSongAsInvalid(String playlistId, String songId) async {
+    // 1. Connectivity Check (Safety Guard)
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      LogService().log(
+        "Service: markSongAsInvalid blocked - No Internet connection.",
+      );
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();
 
@@ -471,6 +481,16 @@ class PlaylistService {
 
   Future<void> markSongAsInvalidGlobally(String songId) async {
     LogService().log("Service: markSongAsInvalidGlobally for $songId");
+
+    // 1. Connectivity Check (Safety Guard)
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      LogService().log(
+        "Service: markSongAsInvalidGlobally blocked - No Internet connection.",
+      );
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();
     bool changed = false;

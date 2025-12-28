@@ -14,6 +14,7 @@ import 'services/radio_audio_handler.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/background_tasks.dart';
 import 'widgets/global_hidden_player.dart';
+import 'widgets/connectivity_banner.dart';
 
 late AudioHandler audioHandler;
 
@@ -187,11 +188,11 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       title: 'Radio Stream',
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        // DevicePreview removed
         return Stack(
           children: [
             child!,
             const GlobalHiddenPlayer(), // Persists across navigation
+            const ConnectivityBanner(), // Shows "No Internet" when offline
           ],
         );
       },
