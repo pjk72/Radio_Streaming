@@ -26,7 +26,9 @@ class _StationCardState extends State<StationCard> {
     final isCompact = provider.isCompactView;
 
     final isPlaying =
-        provider.currentStation?.id == widget.station.id && provider.isPlaying;
+        provider.currentStation?.id == widget.station.id &&
+        provider.isPlaying &&
+        !provider.isLoading;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovering = true),

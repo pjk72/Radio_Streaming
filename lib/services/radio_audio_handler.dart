@@ -671,7 +671,7 @@ class RadioAudioHandler extends BaseAudioHandler
         _playlistIndex = 0; // Loop
       }
       final item = _playlistQueue[_playlistIndex];
-      await playFromMediaId(item.id);
+      await playFromMediaId(item.id, {'queue_ready': true});
       return;
     }
 
@@ -743,7 +743,7 @@ class RadioAudioHandler extends BaseAudioHandler
         _playlistIndex = _playlistQueue.length - 1; // Loop
       }
       final item = _playlistQueue[_playlistIndex];
-      await playFromMediaId(item.id);
+      await playFromMediaId(item.id, {'queue_ready': true});
       return;
     }
 
@@ -913,6 +913,11 @@ class RadioAudioHandler extends BaseAudioHandler
         _broadcastState(_player.state);
         // Show Toast or notification? AudioHandler can't show toast easily.
       }
+    } else if (name == 'toggle_shuffle') {
+      final newMode = _isShuffleMode
+          ? AudioServiceShuffleMode.none
+          : AudioServiceShuffleMode.all;
+      await setShuffleMode(newMode);
     } else if (name == 'noop') {
       // Do nothing, just feedback
     }
@@ -1346,8 +1351,58 @@ class RadioAudioHandler extends BaseAudioHandler
 
         List<MediaItem> newQueue = playlist.songs.map((ps) {
           final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
+          // Consistently use context-aware IDs if that's what we are doing
+          // But wait, the existing queue might have ctx_ IDs or bare IDs.
+          // Let's standardise on ctx_ IDs for playlist playback.
+          // CRITICAL FIX: If this is the CURRENTLY PLAYING song, we MUST use the ID
+          // that is currently in mediaItem to avoid a "New Track" signal which resets the UI counter.
+
+          String contextId = 'ctx_${playlist.id}_$pId';
+
+          // Check if this matches current song
+          final currentMediaItem = mediaItem.value;
+          bool isMatch = false;
+
+          if (currentMediaItem != null) {
+            final currentExtras = currentMediaItem.extras;
+            // Priority 1: Exact Song ID Match (if available in extras)
+            if (currentExtras?['songId'] == ps.id) {
+              isMatch = true;
+            }
+            // Priority 2: Youtube URL Match
+            else if (ps.youtubeUrl != null &&
+                ps.youtubeUrl == currentExtras?['youtubeUrl']) {
+              isMatch = true;
+            }
+            // Priority 3: Stable ID / Fallback Match
+            else {
+              final currentStableId =
+                  currentExtras?['stableId'] ??
+                  currentExtras?['youtubeUrl'] ??
+                  currentMediaItem.id;
+
+              String cleanPId = pId.startsWith('song_')
+                  ? pId.substring(5)
+                  : pId;
+              String cleanCurrent =
+                  (currentStableId != null &&
+                      currentStableId.startsWith('song_'))
+                  ? currentStableId.substring(5)
+                  : (currentStableId ?? '');
+
+              if (cleanPId == cleanCurrent) {
+                isMatch = true;
+              }
+            }
+          }
+
+          if (isMatch) {
+            // MATCH! Use the EXISTING ID to keep UI seamless
+            contextId = currentMediaItem!.id;
+          }
+
           return MediaItem(
-            id: pId,
+            id: contextId,
             title: ps.title,
             artist: ps.artist,
             album: ps.album,
@@ -1368,15 +1423,57 @@ class RadioAudioHandler extends BaseAudioHandler
         }
 
         // Maintain current song position
-        final currentId = mediaItem.value?.id;
+        final String? currentId = mediaItem.value?.id;
         if (currentId != null) {
-          final index = newQueue.indexWhere((item) => item.id == currentId);
+          // Normalize IDs for comparison:
+          // currentId might be 'ctx_...' or just a raw URL/ID depending on how it started
+          // The newQueue items are definitely 'ctx_...'.
+          // We need to match based on the underlying 'stableId' or 'youtubeUrl'.
+
+          String currentStableId =
+              mediaItem.value?.extras?['stableId'] ??
+              mediaItem.value?.extras?['youtubeUrl'] ??
+              currentId;
+
+          if (currentStableId.startsWith('song_')) {
+            currentStableId = currentStableId.substring(5);
+          }
+
+          final index = newQueue.indexWhere((item) {
+            String itemStableId =
+                item.extras?['stableId'] ?? item.extras?['youtubeUrl'] ?? '';
+
+            if (itemStableId.startsWith('song_')) {
+              itemStableId = itemStableId.substring(5);
+            }
+
+            // More robust match: Check explicit ID match first (handled by previous loop fix)
+            // then check stableId match.
+            if (item.id == currentId) {
+              return true;
+            }
+
+            // Robust Extras Match
+            if (mediaItem.value?.extras?['songId'] == item.extras?['songId'] &&
+                item.extras?['songId'] != null) {
+              return true;
+            }
+
+            return itemStableId == currentStableId;
+          });
+
           if (index != -1) {
             _playlistIndex = index;
-            // Optionally move current song to top? No, just track index is fine.
           } else {
-            // Reset if lost (shouldn't happen)
-            _playlistIndex = 0;
+            // If we really can't find it, using the OLD index is safer than resetting to 0
+            // if the old index is valid for the new queue length.
+            // This prevents "Always restart at 1" behavior if match fails.
+            if (_playlistIndex >= newQueue.length) {
+              _playlistIndex = 0;
+            }
+            LogService().log(
+              "WARNING: Song match failed during shuffle swap. Keeping index $_playlistIndex",
+            );
           }
         }
 
@@ -1384,19 +1481,24 @@ class RadioAudioHandler extends BaseAudioHandler
         queue.add(_playlistQueue);
       } catch (_) {}
     }
+    // Update position before broadcasting to ensure seek bar doesn't jump
+    final pos = await _player.getCurrentPosition();
+    if (pos != null) {
+      _currentPosition = pos;
+    }
     _broadcastState(_player.state);
   }
 
   static const _shuffleControl = MediaControl(
-    androidIcon: 'drawable/ic_repeat',
-    label: 'Sequential',
+    androidIcon: 'drawable/ic_shuffle',
+    label: 'Shuffle',
     action: MediaAction.custom,
     customAction: CustomMediaAction(name: 'toggle_shuffle'),
   );
 
   static const _sequentialControl = MediaControl(
-    androidIcon: 'drawable/ic_shuffle',
-    label: 'Shuffle',
+    androidIcon: 'drawable/ic_repeat',
+    label: 'Sequential',
     action: MediaAction.custom,
     customAction: CustomMediaAction(name: 'toggle_shuffle'),
   );
@@ -1423,7 +1525,7 @@ class RadioAudioHandler extends BaseAudioHandler
       // ADD SHUFFLE if it's a playlist
       if (isPlaylistSong) {
         bufferControls.add(
-          _isShuffleMode ? _sequentialControl : _shuffleControl,
+          _isShuffleMode ? _shuffleControl : _sequentialControl,
         );
       }
 
@@ -1472,7 +1574,7 @@ class RadioAudioHandler extends BaseAudioHandler
     // Custom Actions (Shuffle for Playlist, Like for Radio)
     if (isPlaylistSong) {
       standardControls.add(
-        _isShuffleMode ? _sequentialControl : _shuffleControl,
+        _isShuffleMode ? _shuffleControl : _sequentialControl,
       );
     } else {
       // Radio: Show Like/Liked button
@@ -1712,7 +1814,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
           // Play First Song
           final firstItem = _playlistQueue.first;
-          await playFromMediaId(firstItem.id);
+          await playFromMediaId(firstItem.id, {'queue_ready': true});
         }
       } catch (_) {}
       return;
@@ -1760,7 +1862,9 @@ class RadioAudioHandler extends BaseAudioHandler
               String finalUrl;
 
               // Force Context
-              if (_currentPlayingPlaylistId != p.id || _isShuffleMode) {
+              final bool queueIsReady = extras?['queue_ready'] == true;
+              if (!queueIsReady &&
+                  (_currentPlayingPlaylistId != p.id || _isShuffleMode)) {
                 _currentPlayingPlaylistId = p.id;
                 _isShuffleMode = false;
                 _playlistQueue = p.songs.map((ps) {
@@ -1838,7 +1942,10 @@ class RadioAudioHandler extends BaseAudioHandler
           String finalUrl;
 
           // Standard Behavior: If user picks a song from a playlist, load context as Queue
-          if (_currentPlayingPlaylistId != p.id || _isShuffleMode) {
+          final bool queueIsReady = extras?['queue_ready'] == true;
+
+          if (!queueIsReady &&
+              (_currentPlayingPlaylistId != p.id || _isShuffleMode)) {
             // ... existing logic ...
             // We need to match the queue IDs to what we just defined in getChildren
             // If we use ctx_ IDs in getChildren, we should probably use them in queue too?
