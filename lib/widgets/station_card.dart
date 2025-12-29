@@ -5,7 +5,7 @@ import '../models/station.dart';
 import '../providers/radio_provider.dart';
 
 import 'realistic_visualizer.dart';
-import 'pulsing_indicator.dart';
+
 import '../utils/icon_library.dart';
 
 class StationCard extends StatefulWidget {
@@ -101,45 +101,33 @@ class _StationCardState extends State<StationCard> {
                           mainAxisAlignment: MainAxisAlignment.end,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            if (provider.isRecognizing)
-                              Padding(
+                            Flexible(
+                              child: Padding(
                                 padding: const EdgeInsets.only(
-                                  right: 16,
-                                  bottom: 8,
+                                  right: 8,
+                                  bottom: 0,
                                 ),
-                                child: PulsingIndicator(
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  size: 40,
-                                ),
-                              )
-                            else
-                              Flexible(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: 8,
-                                    bottom: 0,
-                                  ),
-                                  child: ShaderMask(
-                                    shaderCallback: (bounds) => LinearGradient(
-                                      colors: [
-                                        Colors.white.withValues(alpha: 0.6),
-                                        Colors.white.withValues(alpha: 0.1),
-                                      ],
-                                      begin: Alignment.bottomCenter,
-                                      end: Alignment.topCenter,
-                                    ).createShader(bounds),
-                                    blendMode: BlendMode.dstIn,
-                                    child: RealisticVisualizer(
-                                      color: Color(
-                                        int.parse(widget.station.color),
-                                      ),
-                                      barCount: 20,
-                                      isBackground: true,
-                                      volume: provider.volume,
+                                child: ShaderMask(
+                                  shaderCallback: (bounds) => LinearGradient(
+                                    colors: [
+                                      Colors.white.withValues(alpha: 0.6),
+                                      Colors.white.withValues(alpha: 0.1),
+                                    ],
+                                    begin: Alignment.bottomCenter,
+                                    end: Alignment.topCenter,
+                                  ).createShader(bounds),
+                                  blendMode: BlendMode.dstIn,
+                                  child: RealisticVisualizer(
+                                    color: Color(
+                                      int.parse(widget.station.color),
                                     ),
+                                    barCount: 20,
+                                    isBackground: true,
+                                    volume: provider.volume,
                                   ),
                                 ),
                               ),
+                            ),
                           ],
                         ),
                       ),
@@ -308,19 +296,14 @@ class _LiveBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          isRecognizing
-              ? const Padding(
-                  padding: EdgeInsets.only(right: 4),
-                  child: PulsingIndicator(color: Colors.white70, size: 10),
-                )
-              : Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: SizedBox(
-                    width: 20,
-                    height: 12,
-                    child: RealisticVisualizer(color: color),
-                  ),
-                ),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: SizedBox(
+              width: 20,
+              height: 12,
+              child: RealisticVisualizer(color: color),
+            ),
+          ),
           Text(
             "LIVE",
             style: TextStyle(

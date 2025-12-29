@@ -361,6 +361,9 @@ class PlayerBar extends StatelessWidget {
           // Bottom Progress Bar (Full Width)
           if (provider.hiddenAudioController != null)
             _buildYoutubeProgressBar(context, provider.hiddenAudioController!)
+          else if (provider.isRecognizing &&
+              provider.currentPlayingPlaylistId == null)
+            _buildRadioProgressBar(context, provider)
           else if (provider.currentPlayingPlaylistId != null)
             _buildNativeProgressBar(context, provider),
         ],
@@ -777,6 +780,21 @@ class PlayerBar extends StatelessWidget {
     );
   }
 
+  Widget _buildRadioProgressBar(BuildContext context, RadioProvider provider) {
+    if (!provider.isRecognizing) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      height: 4,
+      margin: const EdgeInsets.symmetric(horizontal: 0),
+      alignment: Alignment.bottomCenter,
+      child: const LinearProgressIndicator(
+        minHeight: 4,
+        backgroundColor: Colors.transparent,
+      ),
+    );
+  }
+
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final minutes = twoDigits(duration.inMinutes.remainder(60));
@@ -855,6 +873,54 @@ class PlayerBar extends StatelessWidget {
           iconSize: isDesktop ? 32 : 28,
           onPressed: () => provider.playNext(),
         ),
+
+        // Add to Genre Playlist Button (Radio Only)
+        if (provider.currentPlayingPlaylistId == null &&
+            provider.currentTrack.isNotEmpty &&
+            provider.currentTrack != "Live Broadcast" &&
+            provider.currentTrack != "Unknown Title") ...[
+          const SizedBox(width: 8),
+          IconButton(
+            icon: Icon(
+              provider.currentSongIsSaved
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+            ),
+            color: provider.currentSongIsSaved
+                ? Theme.of(context).primaryColor
+                : Colors.white70,
+            iconSize: 20,
+            tooltip: provider.currentSongIsSaved
+                ? "Already saved"
+                : "Add to Genre Playlist",
+            onPressed: provider.currentSongIsSaved
+                ? null // Disable if already saved
+                : () async {
+                    final genre = await provider
+                        .addCurrentSongToGenrePlaylist();
+                    if (context.mounted) {
+                      if (genre != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: const Color(
+                              0xFF1a4d2e,
+                            ), // Dark Green
+                            content: Text("Added to $genre Playlist"),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Could not identify song to save."),
+                          ),
+                        );
+                      }
+                    }
+                  },
+          ),
+        ],
       ],
     );
   }

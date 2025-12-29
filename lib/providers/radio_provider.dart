@@ -39,6 +39,26 @@ class RadioProvider with ChangeNotifier {
   List<Station> stations = [];
   static const String _keySavedStations = 'saved_stations';
   Timer? _metadataTimer;
+
+  // --- Song Duration Tracking (ACRCloud) ---
+  Duration? _currentSongDuration;
+  Duration? _initialSongOffset;
+  DateTime? _songSyncTime;
+
+  Duration? get currentSongDuration => _currentSongDuration;
+  Duration get currentSongPosition {
+    if (_songSyncTime == null || _initialSongOffset == null) {
+      return Duration.zero;
+    }
+    final elapsed = DateTime.now().difference(_songSyncTime!);
+    final pos = _initialSongOffset! + elapsed;
+    // Don't go beyond duration if we have it
+    if (_currentSongDuration != null && pos > _currentSongDuration!) {
+      return _currentSongDuration!;
+    }
+    return pos;
+  }
+
   static const String _keyStartOption =
       'start_option'; // 'none', 'last', 'specific'
   static const String _keyStartupStationId = 'startup_station_id';
@@ -49,13 +69,18 @@ class RadioProvider with ChangeNotifier {
   static const String _keyManageGridView = 'manage_grid_view';
   static const String _keyManageGroupingMode = 'manage_grouping_mode';
 
+  bool _currentSongIsSaved = false;
+  bool get currentSongIsSaved => _currentSongIsSaved;
+
   bool _isImportingSpotify = false;
   double _spotifyImportProgress = 0;
   String? _spotifyImportName;
+  bool _isRecognizing = false; // Add recognition state flag
 
   bool get isImportingSpotify => _isImportingSpotify;
   double get spotifyImportProgress => _spotifyImportProgress;
   String? get spotifyImportName => _spotifyImportName;
+  bool get isRecognizing => _isRecognizing;
 
   Future<void> _loadStations() async {
     final prefs = await SharedPreferences.getInstance();
@@ -865,7 +890,7 @@ class RadioProvider with ChangeNotifier {
 
   Station? get currentStation => _currentStation;
   bool get isPlaying => _isPlaying;
-  bool get isRecognizing => false;
+
   //   bool get isLoading => _isLoading; // duplicate removed
   double get volume => _volume;
   List<int> get favorites => _favorites;
@@ -2065,7 +2090,7 @@ class RadioProvider with ChangeNotifier {
       // This is needed because if we switch stations while already playing,
       // the 'playing' state toggle listener won't fire.
       _metadataTimer?.cancel();
-      _metadataTimer = Timer(const Duration(seconds: 10), _attemptRecognition);
+      _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition);
 
       // Fetch lyrics for the station (if names are already available)
       fetchLyrics();
@@ -2535,6 +2560,7 @@ class RadioProvider with ChangeNotifier {
         artist: _currentArtist,
         title: _currentTrack,
         album: _currentAlbum,
+        isRadio: _currentPlayingPlaylistId == null,
       );
     } catch (e) {
       _currentLyrics = LyricsData.empty();
@@ -2561,8 +2587,57 @@ class RadioProvider with ChangeNotifier {
 
   // --- External Links (SongLink) ---
 
+  Future<String?> addCurrentSongToGenrePlaylist() async {
+    if (_currentTrack.isEmpty || _currentStation == null) return null;
+
+    final songId = "${_currentTrack}_${_currentArtist}";
+    final genre = _currentGenre ?? "Mix";
+
+    final song = SavedSong(
+      id: songId,
+      title: _currentTrack,
+      artist: _currentArtist,
+      album: _currentAlbum,
+      artUri: _currentAlbumArt ?? _currentStation!.logo ?? "",
+      duration: _currentSongDuration ?? Duration.zero,
+      dateAdded: DateTime.now(),
+      spotifyUrl: _currentSpotifyUrl,
+      youtubeUrl: _currentYoutubeUrl,
+      isValid: true,
+    );
+
+    // Use service to add to specific genre playlist
+    await _playlistService.addToGenrePlaylist(genre, song);
+
+    // Update local state immediately
+    _currentSongIsSaved = true;
+    notifyListeners();
+
+    return genre;
+  }
+
+  Future<void> checkIfCurrentSongIsSaved() async {
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") {
+      _currentSongIsSaved = false;
+    } else {
+      _currentSongIsSaved = await _playlistService.isSongInFavorites(
+        _currentTrack,
+        _currentArtist,
+      );
+    }
+    notifyListeners();
+  }
+
   Future<void> fetchSmartLinks() async {
     if (_currentTrack == "Live Broadcast") return;
+
+    // Reset images to prevent showing previous song's art
+    _currentAlbumArt = null;
+    _currentArtistImage = null;
+
+    // Check if song is already saved
+    checkIfCurrentSongIsSaved();
+    notifyListeners();
 
     final links = await resolveLinks(
       title: _currentTrack,
@@ -3216,9 +3291,12 @@ class RadioProvider with ChangeNotifier {
       "ACRCloud: Starting recognition for ${_currentStation!.name}",
     );
     _lastApiResponse = "Identifying...";
+    _isRecognizing = true; // Start loading state
     notifyListeners();
 
     final result = await _acrCloudService.identifyStream(_currentStation!.url);
+    _isRecognizing = false; // Stop loading state
+    notifyListeners();
 
     if (result != null &&
         result['status']['code'] == 0 &&
@@ -3243,8 +3321,45 @@ class RadioProvider with ChangeNotifier {
           _currentAlbum = album ?? "";
           _currentReleaseDate = releaseDate;
 
-          // Reset artwork for now, fetchSmartLinks involves searching which might update it
+          // Extract Genre
+          String? genre;
+          if (trackInfo['genres'] != null &&
+              trackInfo['genres'] is List &&
+              trackInfo['genres'].isNotEmpty) {
+            genre = trackInfo['genres'][0]['name'];
+          }
+          _currentGenre = genre;
+
+          // Reset artwork/state
           _currentAlbumArt = null;
+          _currentArtistImage = null;
+
+          // Reset External Links
+          _currentSpotifyUrl = null;
+          _currentYoutubeUrl = null;
+          _currentAppleMusicUrl = null;
+          _currentDeezerUrl = null;
+          _currentTidalUrl = null;
+          _currentAmazonMusicUrl = null;
+          _currentNapsterUrl = null;
+
+          // --- Reset Duration Info ---
+          _currentSongDuration = null;
+          _initialSongOffset = null;
+          _songSyncTime = null;
+
+          // --- Set New Duration Info ---
+          int durationMs = trackInfo['duration_ms'] ?? 0;
+          int offsetMs = trackInfo['play_offset_ms'] ?? 0;
+          if (durationMs > 0) {
+            _currentSongDuration = Duration(milliseconds: durationMs);
+            _initialSongOffset = Duration(milliseconds: offsetMs);
+            _currentSongDuration = Duration(milliseconds: durationMs);
+            _initialSongOffset = Duration(milliseconds: offsetMs);
+            _songSyncTime = DateTime.now();
+          }
+
+          checkIfCurrentSongIsSaved(); // Check if this new song is already saved
 
           notifyListeners();
 
@@ -3254,15 +3369,70 @@ class RadioProvider with ChangeNotifier {
         } else {
           LogService().log("ACRCloud: Same song detected.");
           _lastApiResponse = "Same song: $title";
+          // Update offset for better accuracy even if same song
+          int durationMs = trackInfo['duration_ms'] ?? 0;
+          int offsetMs = trackInfo['play_offset_ms'] ?? 0;
+          if (durationMs > 0) {
+            _currentSongDuration = Duration(milliseconds: durationMs);
+            _initialSongOffset = Duration(milliseconds: offsetMs);
+            _songSyncTime = DateTime.now();
+          }
+
+          // Ensure genre is updated even if song is same (in case it wasn't caught before)
+          String? genre;
+          if (trackInfo['genres'] != null &&
+              trackInfo['genres'] is List &&
+              trackInfo['genres'].isNotEmpty) {
+            genre = trackInfo['genres'][0]['name'];
+          }
+          if (genre != null) _currentGenre = genre;
+
+          checkIfCurrentSongIsSaved();
+
           notifyListeners();
+        }
+
+        // --- INTELLIGENT SCHEDULING ---
+        // Calculate when this song ends to schedule next check
+        int durationMs = trackInfo['duration_ms'] ?? 0;
+        int offsetMs = trackInfo['play_offset_ms'] ?? 0;
+
+        if (durationMs > 0 && offsetMs > 0) {
+          int remainingMs = durationMs - offsetMs;
+          // Add a buffer of 10 seconds to ensure next song has started
+          int nextCheckDelay = remainingMs + 10000;
+
+          // Safety limits (e.g. if offset is wrong or song is effectively over)
+          if (nextCheckDelay < 10000) nextCheckDelay = 10000;
+
+          LogService().log(
+            "ACRCloud: Next check in ${nextCheckDelay ~/ 1000}s (Song ends in ${remainingMs ~/ 1000}s)",
+          );
+
+          _metadataTimer?.cancel();
+          _metadataTimer = Timer(
+            Duration(milliseconds: nextCheckDelay),
+            _attemptRecognition,
+          );
+        } else {
+          // Fallback if no duration info
+          _scheduleRetry(60);
         }
       } else {
         _lastApiResponse = "No music found in stream sample.";
         notifyListeners();
+        _scheduleRetry(45); // Retry sooner if just talk/ad
       }
     } else {
       _lastApiResponse = "Recognition failed or no match.";
       notifyListeners();
+      _scheduleRetry(45); // Retry
     }
+  }
+
+  void _scheduleRetry(int seconds) {
+    LogService().log("ACRCloud: Retrying in ${seconds}s");
+    _metadataTimer?.cancel();
+    _metadataTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
   }
 }

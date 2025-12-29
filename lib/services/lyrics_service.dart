@@ -27,6 +27,7 @@ class LyricsService {
     required String title,
     String? album,
     int? durationSeconds,
+    bool isRadio = false,
   }) async {
     final cleanArtist = _cleanString(artist);
     final cleanTitle = _cleanString(title);
@@ -56,7 +57,24 @@ class LyricsService {
         final String? syncedLyrics = data['syncedLyrics'];
         final String? plainLyrics = data['plainLyrics'];
 
-        if (syncedLyrics != null && syncedLyrics.isNotEmpty) {
+        // Radio Mode: Prefer Plain Text (Un-synced)
+        if (isRadio) {
+          if (plainLyrics != null && plainLyrics.isNotEmpty) {
+            return LyricsData(
+              lines: plainLyrics
+                  .split('\n')
+                  .map((l) => LyricLine(time: Duration.zero, text: l.trim()))
+                  .toList(),
+              source: 'LRCLIB (Plain)',
+              isSynced: false,
+            );
+          }
+          // If only synced available for radio, strip timestamps?
+          // Assuming plainLyrics is usually there.
+          // If fall through, it might pick up synced below if we are not careful.
+        }
+
+        if (syncedLyrics != null && syncedLyrics.isNotEmpty && !isRadio) {
           return LyricsData(
             lines: _parseLrc(syncedLyrics),
             source: 'LRCLIB (Synced)',
@@ -70,7 +88,7 @@ class LyricsService {
                 .toList(),
             source: 'LRCLIB (Plain)',
           );
-        } 
+        }
       }
     } catch (e) {}
 
