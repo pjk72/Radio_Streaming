@@ -173,8 +173,20 @@ class RadioProvider with ChangeNotifier {
   void _setupAudioHandlerCallbacks() {
     if (_audioHandler is RadioAudioHandler) {
       final handler = _audioHandler;
-      handler.onSkipNext = () => playNext(true);
-      handler.onSkipPrevious = () => playPrevious();
+      handler.onSkipNext = () {
+        if (_currentPlayingPlaylistId != null) {
+          playNext(true);
+        } else {
+          playNextStationInFavorites();
+        }
+      };
+      handler.onSkipPrevious = () {
+        if (_currentPlayingPlaylistId != null) {
+          playPrevious();
+        } else {
+          playPreviousStationInFavorites();
+        }
+      };
       handler.onPreloadNext = _preloadNextSong;
     }
   }
@@ -387,6 +399,13 @@ class RadioProvider with ChangeNotifier {
     _audioHandler.mediaItem.listen((item) {
       if (item == null) return;
 
+      // CRITICAL FIX: Detect Radio Mode Return
+      // If we are playing a station, ensure we exit Playlist Mode immediately
+      if (item.extras?['type'] == 'station' ||
+          stations.any((s) => s.url == item.id)) {
+        _currentPlayingPlaylistId = null;
+      }
+
       // 1. Sync Metadata if it changed (within same station or from external source)
       bool metadataChanged = false;
       if (_currentTrack != item.title) {
@@ -427,6 +446,8 @@ class RadioProvider with ChangeNotifier {
           // Update local state without triggering a play command (since it's already playing)
           _currentStation = newStation;
           _isLoading = false;
+          _currentPlayingPlaylistId =
+              null; // FORCE RESET: We are in Radio Mode now
 
           // If it was a station switch from outside but metadata was already handled above,
           // we might want to ensure track isn't reset to "Live Broadcast" if item has info.
@@ -530,6 +551,44 @@ class RadioProvider with ChangeNotifier {
   void playPreviousFavorite() {
     // Navigate through ALL stations, not just favorites
     final list = allStations;
+
+    if (list.isEmpty) return;
+
+    int currentIndex = list.indexWhere((s) => s.id == _currentStation?.id);
+
+    int prevIndex = 0;
+    if (currentIndex != -1) {
+      prevIndex = (currentIndex - 1 + list.length) % list.length;
+    } else {
+      prevIndex = list.length - 1;
+    }
+
+    playStation(list[prevIndex]);
+  }
+
+  void playNextStationInFavorites() {
+    List<Station> list = allStations
+        .where((s) => _favorites.contains(s.id))
+        .toList();
+    if (list.isEmpty) list = allStations;
+
+    if (list.isEmpty) return;
+
+    int currentIndex = list.indexWhere((s) => s.id == _currentStation?.id);
+
+    int nextIndex = 0;
+    if (currentIndex != -1) {
+      nextIndex = (currentIndex + 1) % list.length;
+    }
+
+    playStation(list[nextIndex]);
+  }
+
+  void playPreviousStationInFavorites() {
+    List<Station> list = allStations
+        .where((s) => _favorites.contains(s.id))
+        .toList();
+    if (list.isEmpty) list = allStations;
 
     if (list.isEmpty) return;
 

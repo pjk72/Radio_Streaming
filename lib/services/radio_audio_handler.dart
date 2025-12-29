@@ -663,6 +663,12 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> skipToNext() async {
     _startupLock = false;
 
+    // 0. Safety Check: If current item is a STATION, force clear queue to ensure we use Radio Logic
+    if (mediaItem.value?.extras?['type'] == 'station') {
+      _playlistQueue.clear();
+      _currentPlayingPlaylistId = null;
+    }
+
     // 1. Check Internal Queue (Android Auto / Background Priority)
     if (_playlistQueue.isNotEmpty) {
       if (_playlistIndex < _playlistQueue.length - 1) {
@@ -734,6 +740,12 @@ class RadioAudioHandler extends BaseAudioHandler
   @override
   Future<void> skipToPrevious() async {
     _startupLock = false;
+
+    // 0. Safety Check: If current item is a STATION, force clear queue to ensure we use Radio Logic
+    if (mediaItem.value?.extras?['type'] == 'station') {
+      _playlistQueue.clear();
+      _currentPlayingPlaylistId = null;
+    }
 
     // 1. Check Internal Queue
     if (_playlistQueue.isNotEmpty) {
@@ -1142,6 +1154,12 @@ class RadioAudioHandler extends BaseAudioHandler
     }
     _isCurrentSongSaved = false;
     _isInitialBuffering = true; // Flag that we are starting new
+
+    // RESET PLAYLIST STATE: Ensure we are in "Radio Mode"
+    _playlistQueue.clear();
+    queue.add([]); // Notify system that queue is empty
+    _currentPlayingPlaylistId = null;
+    _playlistIndex = -1;
 
     // Stop existing playback immediately
     try {
@@ -1720,27 +1738,7 @@ class RadioAudioHandler extends BaseAudioHandler
           );
         }).toList();
 
-        // Standard Action Items
-        final actionItems = [
-          MediaItem(
-            id: 'play_all_${playlist.id}',
-            title: 'Play ${playlist.name}',
-            album: 'Sequential',
-            playable: true,
-            extras: {'style': 'list_item'},
-            artUri: Uri.parse("https://img.icons8.com/fluency/512/play.png"),
-          ),
-          MediaItem(
-            id: 'shuffle_all_${playlist.id}',
-            title: 'Shuffle ${playlist.name}',
-            album: 'Random',
-            playable: true,
-            extras: {'style': 'list_item'},
-            artUri: Uri.parse("https://img.icons8.com/fluency/512/shuffle.png"),
-          ),
-        ];
-
-        return [...actionItems, ...songItems];
+        return songItems;
       } catch (_) {}
     }
 
@@ -1863,10 +1861,11 @@ class RadioAudioHandler extends BaseAudioHandler
 
               // Force Context
               final bool queueIsReady = extras?['queue_ready'] == true;
-              if (!queueIsReady &&
-                  (_currentPlayingPlaylistId != p.id || _isShuffleMode)) {
+              if (!queueIsReady && _currentPlayingPlaylistId != p.id) {
                 _currentPlayingPlaylistId = p.id;
-                _isShuffleMode = false;
+                // Respect existing Shuffle Mode
+                // _isShuffleMode = false; // REMOVED
+
                 _playlistQueue = p.songs.map((ps) {
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
                   return MediaItem(
@@ -1885,6 +1884,11 @@ class RadioAudioHandler extends BaseAudioHandler
                     },
                   );
                 }).toList();
+
+                if (_isShuffleMode) {
+                  _playlistQueue.shuffle();
+                }
+
                 queue.add(_playlistQueue);
               }
 
@@ -1944,16 +1948,16 @@ class RadioAudioHandler extends BaseAudioHandler
           // Standard Behavior: If user picks a song from a playlist, load context as Queue
           final bool queueIsReady = extras?['queue_ready'] == true;
 
-          if (!queueIsReady &&
-              (_currentPlayingPlaylistId != p.id || _isShuffleMode)) {
+          if (!queueIsReady && _currentPlayingPlaylistId != p.id) {
             // ... existing logic ...
             // We need to match the queue IDs to what we just defined in getChildren
             // If we use ctx_ IDs in getChildren, we should probably use them in queue too?
             // YES. If Android Auto sees ctx_ IDs, the queue must have ctx_ IDs for highlighting.
 
             _currentPlayingPlaylistId = p.id;
-            _isShuffleMode =
-                false; // Force sequential when clicking specific song
+            // Respect existing Shuffle Mode
+            // _isShuffleMode = false; // REMOVED
+
             _playlistQueue = p.songs.map((ps) {
               final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
               return MediaItem(
@@ -1972,6 +1976,11 @@ class RadioAudioHandler extends BaseAudioHandler
                 },
               );
             }).toList();
+
+            if (_isShuffleMode) {
+              _playlistQueue.shuffle();
+            }
+
             queue.add(_playlistQueue);
           }
 
