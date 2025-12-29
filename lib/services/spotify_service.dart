@@ -373,4 +373,49 @@ class SpotifyService {
       await _saveTokens(data);
     }
   }
+
+  Future<String?> getArtistImage(String spotifyId) async {
+    if (!isLoggedIn && _refreshToken != null) {
+      await _refreshAccessToken();
+    }
+    if (!isLoggedIn) return null;
+
+    try {
+      // 1. Get Track (to get Artist ID) - Wait, we might be passed a Track ID or Artist ID?
+      // The parameter calls it spotifyId. If it's a Track ID, we need to look up track -> artist -> image.
+      // If it's an Artist ID, we look up artist -> image.
+      // Usage in RadioProvider implies we are extracting it from a Track URL.
+
+      // So first, fetch Track to get Artist ID
+      final trackResp = await http.get(
+        Uri.parse("https://api.spotify.com/v1/tracks/$spotifyId"),
+        headers: {'Authorization': 'Bearer $_accessToken'},
+      );
+
+      if (trackResp.statusCode == 200) {
+        final trackData = jsonDecode(trackResp.body);
+        final artists = trackData['artists'] as List;
+        if (artists.isNotEmpty) {
+          final artistId = artists[0]['id'];
+
+          // 2. Fetch Artist to get Image
+          final artistResp = await http.get(
+            Uri.parse("https://api.spotify.com/v1/artists/$artistId"),
+            headers: {'Authorization': 'Bearer $_accessToken'},
+          );
+
+          if (artistResp.statusCode == 200) {
+            final artistData = jsonDecode(artistResp.body);
+            final images = artistData['images'] as List;
+            if (images.isNotEmpty) {
+              return images[0]['url'];
+            }
+          }
+        }
+      }
+    } catch (e) {
+      LogService().log("SpotifyService: Error fetching artist image: $e");
+    }
+    return null;
+  }
 }

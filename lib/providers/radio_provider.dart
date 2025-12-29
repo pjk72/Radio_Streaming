@@ -21,6 +21,7 @@ import '../services/radio_audio_handler.dart'; // Import for casting
 import 'package:workmanager/workmanager.dart';
 import '../services/background_tasks.dart';
 import '../services/backup_service.dart';
+import '../services/acr_cloud_service.dart';
 import '../utils/genre_mapper.dart';
 import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
@@ -278,6 +279,7 @@ class RadioProvider with ChangeNotifier {
   final LyricsService _lyricsService = LyricsService();
   final SpotifyService _spotifyService = SpotifyService();
   SpotifyService get spotifyService => _spotifyService;
+  final ACRCloudService _acrCloudService = ACRCloudService();
 
   List<Playlist> _playlists = [];
   List<Playlist> get playlists => _playlists;
@@ -2059,11 +2061,11 @@ class RadioProvider with ChangeNotifier {
       notifyListeners();
       // _addLog("Playing via Service");
 
-      // Explicitly schedule recognition since playback state might not toggle
       // Explicitly schedule recognition for the new station
       // This is needed because if we switch stations while already playing,
       // the 'playing' state toggle listener won't fire.
-      // _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition); // FAZIO -- Intervallo ricerca musica via riconoscimento API
+      _metadataTimer?.cancel();
+      _metadataTimer = Timer(const Duration(seconds: 10), _attemptRecognition);
 
       // Fetch lyrics for the station (if names are already available)
       fetchLyrics();
@@ -2570,7 +2572,30 @@ class RadioProvider with ChangeNotifier {
     );
 
     // Update State
-    if (links.containsKey('spotify')) _currentSpotifyUrl = links['spotify'];
+    if (links.containsKey('thumbnailUrl')) {
+      _currentAlbumArt = links['thumbnailUrl'];
+    }
+
+    if (links.containsKey('spotify')) {
+      _currentSpotifyUrl = links['spotify'];
+
+      // Fetch Artist Image if we have a Spotify ID
+      try {
+        if (_currentSpotifyUrl != null &&
+            _currentSpotifyUrl!.contains('/track/')) {
+          final spotId = _currentSpotifyUrl!
+              .split('track/')
+              .last
+              .split('?')
+              .first;
+          final artistImg = await _spotifyService.getArtistImage(spotId);
+          if (artistImg != null) {
+            _currentArtistImage = artistImg;
+          }
+        }
+      } catch (_) {}
+    }
+
     if (links.containsKey('youtube')) _currentYoutubeUrl = links['youtube'];
     if (links.containsKey('appleMusic')) {
       _currentAppleMusicUrl = links['appleMusic'];
@@ -2590,9 +2615,13 @@ class RadioProvider with ChangeNotifier {
         MediaItem(
           id: _currentStation!.url,
           title: _currentTrack,
-          artist: "$_currentArtist • $_currentGenre",
+          artist: (_currentGenre != null && _currentGenre!.isNotEmpty)
+              ? "$_currentArtist • $_currentGenre"
+              : _currentArtist,
           album: _currentAlbum.isNotEmpty
-              ? "$_currentAlbum • $_currentGenre"
+              ? ((_currentGenre != null && _currentGenre!.isNotEmpty)
+                    ? "$_currentAlbum • $_currentGenre"
+                    : _currentAlbum)
               : _currentGenre,
           genre: _currentGenre,
           artUri: _currentAlbumArt != null
@@ -3176,6 +3205,63 @@ class RadioProvider with ChangeNotifier {
       return false;
     } finally {
       _isImportingSpotify = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _attemptRecognition() async {
+    if (_currentStation == null || _currentPlayingPlaylistId != null) return;
+
+    LogService().log(
+      "ACRCloud: Starting recognition for ${_currentStation!.name}",
+    );
+    _lastApiResponse = "Identifying...";
+    notifyListeners();
+
+    final result = await _acrCloudService.identifyStream(_currentStation!.url);
+
+    if (result != null &&
+        result['status']['code'] == 0 &&
+        result['metadata'] != null) {
+      final music = result['metadata']['music'];
+      if (music != null && music.isNotEmpty) {
+        final trackInfo = music[0];
+        final title = trackInfo['title'];
+        final artists = trackInfo['artists']?.map((a) => a['name']).join(', ');
+        final album = trackInfo['album']?['name'];
+        final releaseDate = trackInfo['release_date'];
+
+        // Log raw response for debug
+        _lastApiResponse = jsonEncode(result);
+
+        // Update Metadata
+        if (title != _currentTrack || artists != _currentArtist) {
+          LogService().log("ACRCloud: Match found: $title - $artists");
+
+          _currentTrack = title;
+          _currentArtist = artists ?? "Unknown Artist";
+          _currentAlbum = album ?? "";
+          _currentReleaseDate = releaseDate;
+
+          // Reset artwork for now, fetchSmartLinks involves searching which might update it
+          _currentAlbumArt = null;
+
+          notifyListeners();
+
+          // Trigger fetchSmartLinks (which does SongLink search and updates artwork/links)
+          fetchSmartLinks();
+          fetchLyrics();
+        } else {
+          LogService().log("ACRCloud: Same song detected.");
+          _lastApiResponse = "Same song: $title";
+          notifyListeners();
+        }
+      } else {
+        _lastApiResponse = "No music found in stream sample.";
+        notifyListeners();
+      }
+    } else {
+      _lastApiResponse = "Recognition failed or no match.";
       notifyListeners();
     }
   }
