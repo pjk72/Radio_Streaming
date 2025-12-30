@@ -16,6 +16,8 @@ import '../services/playlist_service.dart';
 import '../models/playlist.dart' as model;
 import 'log_service.dart';
 import '../utils/genre_mapper.dart';
+import 'acr_cloud_service.dart';
+import 'song_link_service.dart';
 
 class RadioAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler {
@@ -54,6 +56,12 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _hasTriggeredPreload = false;
   String? _cachedNextSongUrl;
   Map<String, dynamic>? _cachedNextSongExtras;
+
+  // Recognition
+  final ACRCloudService _acrCloudService = ACRCloudService();
+  final SongLinkService _songLinkService = SongLinkService();
+  Timer? _recognitionTimer;
+  bool _isACRCloudEnabled = true;
 
   static const _addToPlaylistControl = MediaControl(
     androidIcon: 'drawable/ic_favorite_border',
@@ -181,6 +189,13 @@ class RadioAudioHandler extends BaseAudioHandler
       if (_isInitialBuffering && !_expectingStop) {
         _isInitialBuffering = false;
         _broadcastState(_player.state);
+        // Start recognition if in Radio Mode
+        if (playbackState.value.playing &&
+            mediaItem.value?.extras?['type'] != 'playlist_song') {
+          if (_recognitionTimer == null || !_recognitionTimer!.isActive) {
+            _attemptRecognition();
+          }
+        }
       } else {
         // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
         final expectedDuration = mediaItem.value?.duration;
@@ -277,6 +292,12 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Load persisted stations independent of UI
     _loadStationsFromPrefs().then((_) => _loadQueue());
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _isACRCloudEnabled = prefs.getBool('enable_acrcloud') ?? true;
   }
 
   Future<void> _loadStationsFromPrefs() async {
@@ -293,7 +314,12 @@ class RadioAudioHandler extends BaseAudioHandler
 
       if (loaded.isEmpty) return;
 
-      // 2. Load Favorites
+      // 2. Load Favorites Filter (Explicit)
+      // If user has a specific "Favorites" subset separate from "Saved" (or if Saved IS Favorites but we want to be sure)
+      final List<String>? favIds = prefs.getStringList('favorite_station_ids');
+      if (favIds != null && favIds.isNotEmpty) {
+        loaded = loaded.where((s) => favIds.contains(s.id.toString())).toList();
+      }
 
       // 3. Load Order & Sort
       final bool useCustomOrder = prefs.getBool('use_custom_order') ?? false;
@@ -624,6 +650,7 @@ class RadioAudioHandler extends BaseAudioHandler
         await _player.pause();
       } else {
         await _player.stop();
+        _recognitionTimer?.cancel();
       }
     } catch (_) {}
     // Manually update state so UI knows we paused
@@ -649,6 +676,12 @@ class RadioAudioHandler extends BaseAudioHandler
           processingState: AudioProcessingState.ready,
         ),
       );
+
+      // Restart Recognition Cycle if Radio Mode
+      if (_isACRCloudEnabled &&
+          mediaItem.value?.extras?['type'] != 'playlist_song') {
+        _attemptRecognition();
+      }
       return;
     }
 
@@ -798,6 +831,8 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 2. The Swap
     _isSwapping = true;
+    _recognitionTimer?.cancel(); // Cancel recognition during swap
+
     _expectingStop = true; // Silence the dying player events
 
     // Switch references
@@ -932,6 +967,19 @@ class RadioAudioHandler extends BaseAudioHandler
       await setShuffleMode(newMode);
     } else if (name == 'noop') {
       // Do nothing, just feedback
+    } else if (name == 'setACRCloudEnabled') {
+      final value = extras?['value'] as bool?;
+      if (value != null) {
+        _isACRCloudEnabled = value;
+        if (!_isACRCloudEnabled) {
+          _recognitionTimer?.cancel();
+        } else {
+          if (playbackState.value.playing &&
+              mediaItem.value?.extras?['type'] != 'playlist_song') {
+            _attemptRecognition();
+          }
+        }
+      }
     }
     return null;
   }
@@ -1670,6 +1718,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 2. Stations List
     if (parentMediaId == 'live_radio') {
+      await _loadStationsFromPrefs(); // Force refresh to get latest order/favorites
       return _stations.map(_stationToMediaItem).toList();
     }
 
@@ -2045,6 +2094,189 @@ class RadioAudioHandler extends BaseAudioHandler
     if (url.contains('v=')) return url.split('v=')[1].split('&')[0];
     if (url.contains('youtu.be/'))
       return url.split('youtu.be/')[1].split('?')[0];
+    return null;
+  }
+  // --- RECOGNITION LOGIC ---
+
+  Future<void> _attemptRecognition() async {
+    if (!_isACRCloudEnabled) return;
+
+    // Validations
+    final currentItem = mediaItem.value;
+    if (currentItem == null) return;
+    if (currentItem.extras?['type'] == 'playlist_song')
+      return; // Don't recognize playlist songs
+    if (!playbackState.value.playing) return;
+
+    final streamUrl = currentItem.id;
+
+    LogService().log("ACRCloud: Starting recognition for $streamUrl");
+
+    // We don't change state to loading here to avoid UI flickering, strictly background update
+
+    final result = await _acrCloudService.identifyStream(streamUrl);
+
+    if (result != null &&
+        result['status']['code'] == 0 &&
+        result['metadata'] != null) {
+      final music = result['metadata']['music'];
+      if (music != null && music.isNotEmpty) {
+        final trackInfo = music[0];
+        final title = trackInfo['title'];
+        final artists = trackInfo['artists']?.map((a) => a['name']).join(', ');
+        final album = trackInfo['album']?['name'];
+        // final releaseDate = trackInfo['release_date'];
+
+        LogService().log("ACRCloud: Match found: $title - $artists");
+
+        // Update MediaItem immediately with basic info
+        final newMediaItem = currentItem.copyWith(
+          title: title,
+          artist: artists ?? "Unknown Artist",
+          album: album ?? "",
+          artUri: null, // Reset art temporarily
+        );
+        mediaItem.add(newMediaItem);
+        _isCurrentSongSaved = await _playlistService.isSongInFavorites(
+          title,
+          artists ?? "",
+        );
+
+        // Try to find artwork from ACRCloud
+        String? acrArtwork;
+        if (trackInfo['album'] != null && trackInfo['album']['cover'] != null) {
+          acrArtwork = trackInfo['album']['cover'];
+        }
+
+        // Start Smart Link Resolution (Album Art Recovery)
+        _resolveAndApplyMetadata(title, artists ?? "", acrArtwork);
+
+        // Schedule Next Check
+        int durationMs = trackInfo['duration_ms'] ?? 0;
+        int offsetMs = trackInfo['play_offset_ms'] ?? 0;
+
+        if (durationMs > 0 && offsetMs > 0) {
+          int remainingMs = durationMs - offsetMs;
+          int nextCheckDelay = remainingMs + 10000; // +10s buffer
+          if (nextCheckDelay < 10000) nextCheckDelay = 10000;
+
+          LogService().log(
+            "ACRCloud: Next check in ${nextCheckDelay ~/ 1000}s",
+          );
+
+          _recognitionTimer?.cancel();
+          _recognitionTimer = Timer(
+            Duration(milliseconds: nextCheckDelay),
+            _attemptRecognition,
+          );
+        } else {
+          _scheduleRetry(60);
+        }
+      } else {
+        _handleNoMatch();
+      }
+    } else {
+      _handleNoMatch();
+    }
+  }
+
+  void _handleNoMatch() {
+    // Reset to Station Info
+    final currentUrl = mediaItem.value?.id;
+    Station? station;
+    try {
+      station = _stations.firstWhere((s) => s.url == currentUrl);
+    } catch (_) {}
+
+    if (station != null) {
+      final newItem = mediaItem.value?.copyWith(
+        title: station.name,
+        artist: station.genre,
+        album: "Live Radio",
+        artUri: station.logo != null ? Uri.parse(station.logo!) : null,
+      );
+      if (newItem != null) mediaItem.add(newItem);
+    }
+    _scheduleRetry(45);
+  }
+
+  void _scheduleRetry(int seconds) {
+    _recognitionTimer?.cancel();
+    _recognitionTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
+  }
+
+  Future<void> _resolveAndApplyMetadata(
+    String title,
+    String artist,
+    String? initialArt,
+  ) async {
+    // 1. Resolve Links to get Art
+    String? finalArt = initialArt;
+
+    // If we have initial art, update immediately
+    if (finalArt != null) {
+      final item = mediaItem.value;
+      if (item != null) {
+        mediaItem.add(item.copyWith(artUri: Uri.parse(finalArt)));
+      }
+    }
+
+    try {
+      // 2. Fetch iTunes/SongLink
+      // Fallback logic
+      String? sourceUrl;
+      // Use iTunes search as base
+      sourceUrl = await _fetchItunesUrl("$title $artist");
+
+      if (sourceUrl != null) {
+        final links = await _songLinkService.fetchLinks(
+          url: sourceUrl,
+          countryCode: 'US', // Default
+        );
+
+        if (links.containsKey('thumbnailUrl')) {
+          finalArt = links['thumbnailUrl'];
+        }
+
+        // Update MediaItem with resolved art and links
+        final item = mediaItem.value;
+        if (item != null) {
+          final newExtras = Map<String, dynamic>.from(item.extras ?? {});
+          if (links.containsKey('spotify'))
+            newExtras['spotifyUrl'] = links['spotify'];
+          if (links.containsKey('youtube'))
+            newExtras['youtubeUrl'] = links['youtube'];
+
+          mediaItem.add(
+            item.copyWith(
+              artUri: finalArt != null ? Uri.parse(finalArt) : item.artUri,
+              extras: newExtras,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      LogService().log("Error resolving metadata links: $e");
+    }
+  }
+
+  Future<String?> _fetchItunesUrl(String query) async {
+    try {
+      final encodedOriginal = Uri.encodeComponent(query);
+      final url = Uri.parse(
+        'https://itunes.apple.com/search?term=$encodedOriginal&limit=1&media=music',
+      );
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['resultCount'] > 0) {
+          final result = data['results'][0];
+          return result['trackViewUrl'] as String?;
+        }
+      }
+    } catch (_) {}
     return null;
   }
 }
