@@ -785,11 +785,11 @@ class PlayerBar extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      height: 4,
+      height: 1,
       margin: const EdgeInsets.symmetric(horizontal: 0),
       alignment: Alignment.bottomCenter,
       child: const LinearProgressIndicator(
-        minHeight: 4,
+        minHeight: 1,
         backgroundColor: Colors.transparent,
       ),
     );
@@ -826,6 +826,55 @@ class PlayerBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
         ],
+
+        // Add to Genre Playlist Button (Radio Only)
+        // Moved to the left of controls
+        if (provider.currentPlayingPlaylistId == null &&
+            provider.currentTrack.isNotEmpty &&
+            provider.currentTrack != "Live Broadcast" &&
+            provider.currentTrack != "Unknown Title") ...[
+          IconButton(
+            icon: Icon(
+              provider.currentSongIsSaved
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+            ),
+            // Always Red (RedAccent matches other UI elements better than plain Red)
+            color: Colors.redAccent,
+            iconSize: 20,
+            tooltip: provider.currentSongIsSaved
+                ? "Already saved"
+                : "Add to Genre Playlist",
+            onPressed: provider.currentSongIsSaved
+                ? null // Disable if already saved
+                : () async {
+                    final genre = await provider
+                        .addCurrentSongToGenrePlaylist();
+                    if (context.mounted) {
+                      if (genre != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: const Color(
+                              0xFF1a4d2e,
+                            ), // Dark Green
+                            content: Text("Added to $genre Playlist"),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Could not identify song to save."),
+                          ),
+                        );
+                      }
+                    }
+                  },
+          ),
+          const SizedBox(width: 8),
+        ],
+
         IconButton(
           icon: const Icon(Icons.skip_previous_rounded),
           color: Colors.white,
@@ -873,54 +922,6 @@ class PlayerBar extends StatelessWidget {
           iconSize: isDesktop ? 32 : 28,
           onPressed: () => provider.playNext(),
         ),
-
-        // Add to Genre Playlist Button (Radio Only)
-        if (provider.currentPlayingPlaylistId == null &&
-            provider.currentTrack.isNotEmpty &&
-            provider.currentTrack != "Live Broadcast" &&
-            provider.currentTrack != "Unknown Title") ...[
-          const SizedBox(width: 8),
-          IconButton(
-            icon: Icon(
-              provider.currentSongIsSaved
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-            ),
-            color: provider.currentSongIsSaved
-                ? Theme.of(context).primaryColor
-                : Colors.white70,
-            iconSize: 20,
-            tooltip: provider.currentSongIsSaved
-                ? "Already saved"
-                : "Add to Genre Playlist",
-            onPressed: provider.currentSongIsSaved
-                ? null // Disable if already saved
-                : () async {
-                    final genre = await provider
-                        .addCurrentSongToGenrePlaylist();
-                    if (context.mounted) {
-                      if (genre != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: const Color(
-                              0xFF1a4d2e,
-                            ), // Dark Green
-                            content: Text("Added to $genre Playlist"),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Could not identify song to save."),
-                          ),
-                        );
-                      }
-                    }
-                  },
-          ),
-        ],
       ],
     );
   }

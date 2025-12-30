@@ -1625,16 +1625,36 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         foundSongId != null &&
         foundSongId != _lastScrolledSongId) {
       _lastScrolledSongId = foundSongId;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_itemScrollController.isAttached) {
-          _itemScrollController.scrollTo(
-            index: scrollIndex,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeInOut,
-            alignment: 0.3, // Top-third of screen
-          );
-        }
-      });
+
+      // Only scroll if we have enough items to warrant positioning
+      // This prevents single items from being pushed down by alignment
+      if (groupedSongs.length > 3) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_itemScrollController.isAttached) {
+            _itemScrollController.scrollTo(
+              index: scrollIndex,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+              alignment: 0.3, // Top-third of screen
+            );
+          }
+        });
+      }
+    }
+
+    if (scrollIndex == -1) {
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: groupedSongs.length,
+        itemBuilder: (context, index) {
+          final group = groupedSongs[index];
+          if (group.length == 1) {
+            return _buildSongItem(context, provider, playlist, group.first);
+          }
+          return _buildAlbumGroup(context, provider, playlist, group);
+        },
+      );
     }
 
     return ScrollablePositionedList.builder(
@@ -2781,7 +2801,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               subtitle: Text(
-                                "${s.artist} • ${item.genre}",
+                                "${s.artist}",
                                 style: const TextStyle(color: Colors.white70),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,

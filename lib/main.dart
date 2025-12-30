@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 // import 'package:device_preview/device_preview.dart'; // Disabled for debugging
 import 'package:flutter/foundation.dart'; // For kReleaseMode
 
@@ -20,6 +21,7 @@ late AudioHandler audioHandler;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   debugPrint("App Entry Point");
 
   if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {

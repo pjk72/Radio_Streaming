@@ -335,7 +335,7 @@ class RadioAudioHandler extends BaseAudioHandler
             id: s.url,
             album: "Live Radio",
             title: s.name,
-            artist: s.genre,
+            artist: '',
             artUri: s.logo != null ? Uri.parse(s.logo!) : null,
             playable: true,
             extras: {'url': s.url},
@@ -1176,8 +1176,8 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (_) {}
 
     final String title = extras?['title'] ?? station?.name ?? "Station";
-    final String artist = extras?['artist'] ?? station?.genre ?? "Live Radio";
-    final String album = extras?['album'] ?? station?.category ?? "Live Radio";
+    final String artist = extras?['artist'] ?? "";
+    final String album = extras?['album'] ?? "";
     final String? artUri = extras?['artUri'] ?? station?.logo;
 
     MediaItem newItem = MediaItem(

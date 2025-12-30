@@ -798,7 +798,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       child: Text(
                         provider.currentArtist.isNotEmpty
                             ? provider.currentArtist
-                            : station.genre,
+                            : "",
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

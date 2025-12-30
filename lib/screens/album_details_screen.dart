@@ -316,7 +316,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                             children: [
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     GestureDetector(
                                       onTap: () {
@@ -404,7 +404,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                                 year,
                                                 style: TextStyle(
                                                   color: Colors.white
-                                                      .withOpacity(0.5),
+                                                      .withValues(alpha: 0.5),
                                                   fontSize: 12,
                                                 ),
                                               ),

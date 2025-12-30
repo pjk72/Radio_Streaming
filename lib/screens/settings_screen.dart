@@ -239,6 +239,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         value: radio.isCompactView,
                         onChanged: (val) => radio.setCompactView(val),
                       ),
+                    if (showGeneral)
+                      _buildSettingsSwitchTile(
+                        context,
+                        icon: Icons.music_note_rounded,
+                        title: "Enable Song Recognition",
+                        subtitle: "Identify songs using ACRCloud",
+                        value: radio.isACRCloudEnabled,
+                        onChanged: (val) => radio.setACRCloudEnabled(val),
+                      ),
 
                     if (showManageStations && showBackup)
                       const SizedBox(height: 32),
@@ -1186,7 +1195,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               style: const TextStyle(color: Colors.white),
                             ),
                             subtitle: Text(
-                              "${p['tracks']['total']} tracks • ${p['owner']?['display_name'] ?? 'Unknown'}",
+                              "${p['tracks']['total']} tracks",
                               style: const TextStyle(color: Colors.white54),
                             ),
                             onTap: () async {

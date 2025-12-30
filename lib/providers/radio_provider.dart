@@ -404,10 +404,30 @@ class RadioProvider with ChangeNotifier {
 
         if (isBuffering && !_isLoading) {
           _isLoading = true;
+          _metadataTimer?.cancel(); // Cancel any pending recognition
           notifyListeners();
         } else if (isReadyOrError && _isLoading) {
           _isLoading = false;
           notifyListeners();
+
+          // Wait for loading to finish before identifying song
+          if (state.processingState == AudioProcessingState.ready &&
+              _currentStation != null &&
+              _currentPlayingPlaylistId == null) {
+            _metadataTimer?.cancel();
+            // Delay recognition by 2 seconds using Timer for cancellability
+            _metadataTimer = Timer(const Duration(seconds: 5), () {
+              // Ensure we are still playing the radio and not loading
+              if (_isPlaying &&
+                  !_isLoading &&
+                  _currentPlayingPlaylistId == null) {
+                // Double check if ACRCloud is enabled
+                if (_isACRCloudEnabled) {
+                  _attemptRecognition();
+                }
+              }
+            });
+          }
         }
       }
     });
@@ -1735,7 +1755,12 @@ class RadioProvider with ChangeNotifier {
   static const String _keyPreferYouTubeAudioOnly = 'prefer_youtube_audio_only';
 
   bool _preferYouTubeAudioOnly = false;
+
   bool get preferYouTubeAudioOnly => _preferYouTubeAudioOnly;
+
+  static const String _keyEnableACRCloud = 'enable_acrcloud';
+  bool _isACRCloudEnabled = true;
+  bool get isACRCloudEnabled => _isACRCloudEnabled;
 
   List<String> _genreOrder = [];
   List<String> get genreOrder => _genreOrder;
@@ -1968,6 +1993,7 @@ class RadioProvider with ChangeNotifier {
     _startOption = prefs.getString(_keyStartOption) ?? 'none';
     _hasPerformedRestore = prefs.getBool(_keyHasPerformedRestore) ?? false;
     _startupStationId = prefs.getInt(_keyStartupStationId);
+    _isACRCloudEnabled = prefs.getBool(_keyEnableACRCloud) ?? true;
     _isCompactView = prefs.getBool(_keyCompactView) ?? false;
     _isShuffleMode = prefs.getBool(_keyShuffleMode) ?? false;
 
@@ -2082,18 +2108,12 @@ class RadioProvider with ChangeNotifier {
         'user_initiated': true,
       });
 
-      _isLoading = false;
-      notifyListeners();
+      // _isLoading = false; // Remove manual reset, let listener handle it for accuracy
+      // notifyListeners();
       // _addLog("Playing via Service");
 
-      // Explicitly schedule recognition for the new station
-      // This is needed because if we switch stations while already playing,
-      // the 'playing' state toggle listener won't fire.
-      _metadataTimer?.cancel();
-      _metadataTimer = Timer(const Duration(seconds: 5), _attemptRecognition);
-
-      // Fetch lyrics for the station (if names are already available)
-      fetchLyrics();
+      // Recognition and Lyrics are now triggered by the playback state listener
+      // once buffering is complete.
     } catch (e) {
       _isLoading = false;
       // _addLog("Error: $e");
@@ -2543,7 +2563,8 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> fetchLyrics() async {
-    if (_currentTrack == "Live Broadcast") {
+    if (_currentTrack == "Live Broadcast" ||
+        (_currentStation != null && _currentTrack == _currentStation!.name)) {
       _currentLyrics = LyricsData.empty();
       _lyricsOffset = Duration.zero; // Reset offset
       notifyListeners();
@@ -2557,7 +2578,7 @@ class RadioProvider with ChangeNotifier {
 
     try {
       _currentLyrics = await _lyricsService.fetchLyrics(
-        artist: _currentArtist,
+        artist: _sanitizeArtistName(_currentArtist),
         title: _currentTrack,
         album: _currentAlbum,
         isRadio: _currentPlayingPlaylistId == null,
@@ -2628,12 +2649,23 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> fetchSmartLinks() async {
+  String _sanitizeArtistName(String artist) {
+    // Stop at first occurrence of ( , & /
+    // Regex split using [\(,&/]
+    if (artist.isEmpty) return artist;
+    return artist.split(RegExp(r'[\\(,&/]')).first.trim();
+  }
+
+  Future<void> fetchSmartLinks({bool keepExistingArtwork = false}) async {
     if (_currentTrack == "Live Broadcast") return;
 
     // Reset images to prevent showing previous song's art
-    _currentAlbumArt = null;
-    _currentArtistImage = null;
+    // respecting the flag
+    if (!keepExistingArtwork) {
+      _currentAlbumArt = null;
+    }
+    _currentArtistImage =
+        null; // Always reset artist image for now? Or keep? stick to album art for now.
 
     // Check if song is already saved
     checkIfCurrentSongIsSaved();
@@ -2648,27 +2680,41 @@ class RadioProvider with ChangeNotifier {
 
     // Update State
     if (links.containsKey('thumbnailUrl')) {
-      _currentAlbumArt = links['thumbnailUrl'];
+      if (!keepExistingArtwork || _currentAlbumArt == null) {
+        _currentAlbumArt = links['thumbnailUrl'];
+      }
     }
 
     if (links.containsKey('spotify')) {
       _currentSpotifyUrl = links['spotify'];
 
-      // Fetch Artist Image if we have a Spotify ID
+      // Fetch Artist Image using Deezer (Requested Method)
       try {
-        if (_currentSpotifyUrl != null &&
-            _currentSpotifyUrl!.contains('/track/')) {
-          final spotId = _currentSpotifyUrl!
-              .split('track/')
-              .last
-              .split('?')
-              .first;
-          final artistImg = await _spotifyService.getArtistImage(spotId);
-          if (artistImg != null) {
-            _currentArtistImage = artistImg;
+        if (_currentArtist.isNotEmpty) {
+          final query = _sanitizeArtistName(_currentArtist);
+          final uri = Uri.parse(
+            "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(query)}&limit=1",
+          );
+          final response = await http.get(uri);
+          if (response.statusCode == 200) {
+            final json = jsonDecode(response.body);
+            if (json['data'] != null && (json['data'] as List).isNotEmpty) {
+              String? picture =
+                  json['data'][0]['picture_xl'] ??
+                  json['data'][0]['picture_big'] ??
+                  json['data'][0]['picture_medium'];
+
+              if (picture != null) {
+                _currentArtistImage = picture;
+              }
+            }
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint("Error fetching artist image from Deezer: $e");
+      }
+
+      // Fallback or additional Spotify check could be here if needed, but user requested consistent method.
     }
 
     if (links.containsKey('youtube')) _currentYoutubeUrl = links['youtube'];
@@ -2691,17 +2737,19 @@ class RadioProvider with ChangeNotifier {
           id: _currentStation!.url,
           title: _currentTrack,
           artist: (_currentGenre != null && _currentGenre!.isNotEmpty)
-              ? "$_currentArtist • $_currentGenre"
+              ? "$_currentArtist"
               : _currentArtist,
           album: _currentAlbum.isNotEmpty
               ? ((_currentGenre != null && _currentGenre!.isNotEmpty)
-                    ? "$_currentAlbum • $_currentGenre"
+                    ? "$_currentAlbum"
                     : _currentAlbum)
               : _currentGenre,
           genre: _currentGenre,
           artUri: _currentAlbumArt != null
               ? Uri.parse(_currentAlbumArt!)
-              : null,
+              : (_currentStation?.logo != null
+                    ? Uri.parse(_currentStation!.logo!)
+                    : null),
           extras: {
             'url': _currentStation!.url,
             'spotifyUrl': _currentSpotifyUrl,
@@ -2932,6 +2980,10 @@ class RadioProvider with ChangeNotifier {
       _addLog("Restore Complete");
       _hasPerformedRestore = true;
       await _saveHasPerformedRestore();
+
+      // Automatically set backup frequency to daily after first restore
+      await setBackupFrequency('daily');
+
       notifyListeners();
     } catch (e) {
       if (e.toString().contains("No backup found")) {
@@ -3065,6 +3117,13 @@ class RadioProvider with ChangeNotifier {
     _isCompactView = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyCompactView, value);
+    notifyListeners();
+  }
+
+  Future<void> setACRCloudEnabled(bool value) async {
+    _isACRCloudEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyEnableACRCloud, value);
     notifyListeners();
   }
 
@@ -3285,6 +3344,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> _attemptRecognition() async {
+    if (!_isACRCloudEnabled) return;
     if (_currentStation == null || _currentPlayingPlaylistId != null) return;
 
     LogService().log(
@@ -3361,10 +3421,21 @@ class RadioProvider with ChangeNotifier {
 
           checkIfCurrentSongIsSaved(); // Check if this new song is already saved
 
+          // Try to find artwork in ACRCloud response
+          String? acrArtwork;
+          if (trackInfo['album'] != null &&
+              trackInfo['album']['cover'] != null) {
+            acrArtwork = trackInfo['album']['cover'];
+          }
+
+          if (acrArtwork != null) {
+            _currentAlbumArt = acrArtwork;
+          }
+
           notifyListeners();
 
           // Trigger fetchSmartLinks (which does SongLink search and updates artwork/links)
-          fetchSmartLinks();
+          await fetchSmartLinks(keepExistingArtwork: acrArtwork != null);
           fetchLyrics();
         } else {
           LogService().log("ACRCloud: Same song detected.");
@@ -3420,11 +3491,55 @@ class RadioProvider with ChangeNotifier {
         }
       } else {
         _lastApiResponse = "No music found in stream sample.";
+
+        // Reset to default station images as requested
+        _currentAlbumArt = _currentStation?.logo;
+        _currentArtistImage = null; // Will fallback to station logo in UI
+        _currentTrack = _currentStation?.name ?? "Live Broadcast";
+        _currentArtist = _currentStation?.genre ?? "";
+        _currentLyrics = LyricsData.empty();
+
+        if (_currentStation != null) {
+          _audioHandler.updateMediaItem(
+            MediaItem(
+              id: _currentStation!.url,
+              title: _currentTrack,
+              artist: _currentArtist,
+              album: "Live Radio",
+              artUri: _currentStation!.logo != null
+                  ? Uri.parse(_currentStation!.logo!)
+                  : null,
+            ),
+          );
+        }
+
         notifyListeners();
         _scheduleRetry(45); // Retry sooner if just talk/ad
       }
     } else {
       _lastApiResponse = "Recognition failed or no match.";
+
+      // Reset to default station images as requested
+      _currentAlbumArt = _currentStation?.logo;
+      _currentArtistImage = null; // Will fallback to station logo in UI
+      _currentTrack = _currentStation?.name ?? "Live Broadcast";
+      _currentArtist = _currentStation?.genre ?? "";
+      _currentLyrics = LyricsData.empty();
+
+      if (_currentStation != null) {
+        _audioHandler.updateMediaItem(
+          MediaItem(
+            id: _currentStation!.url,
+            title: _currentTrack,
+            artist: _currentArtist,
+            album: "Live Radio",
+            artUri: _currentStation!.logo != null
+                ? Uri.parse(_currentStation!.logo!)
+                : null,
+          ),
+        );
+      }
+
       notifyListeners();
       _scheduleRetry(45); // Retry
     }

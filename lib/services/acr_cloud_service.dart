@@ -14,12 +14,11 @@ class ACRCloudService {
       final resolvedUrl = await _resolveStreamUrl(streamUrl);
       print("ACRCloud: Resolved URL: $resolvedUrl");
 
-      // 1. Download a buffer of the stream (approx 10-12 seconds)
-      // MP3 128kbps = 16KB/s. 12s ~= 192KB. Let's safe bet on 250KB - 300KB.
-      // AAC might be smaller, but more is usually fine up to 1MB limit.
+      // 1. Download a buffer of the stream
+      // Reduced package size for faster/lighter request. ~6s is sufficient.
       final Uint8List? audioData = await _downloadStreamChunk(
         resolvedUrl,
-        300 * 1024,
+        150 * 1024,
       );
 
       if (audioData == null || audioData.isEmpty) {

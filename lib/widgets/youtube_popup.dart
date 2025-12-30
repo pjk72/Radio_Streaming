@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/lyrics_service.dart';
 import '../widgets/lyrics_components.dart';
+import 'package:flutter/services.dart';
 
 class YouTubePopup extends StatefulWidget {
   final String videoId;
@@ -30,6 +32,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
   late YoutubePlayerController _videoController;
   bool _isAudioOnly = false;
   bool _isFullScreen = false;
+  bool _isInPipMode = false;
 
   // Lyrics State
   LyricsData? _lyrics;
@@ -43,6 +46,16 @@ class _YouTubePopupState extends State<YouTubePopup> {
     _initializeVideoPlayer();
     _isAudioOnly = widget.initialAudioOnly;
     _fetchLyrics();
+
+    platform.setMethodCallHandler((call) async {
+      if (call.method == 'pipModeChanged') {
+        if (mounted) {
+          setState(() {
+            _isInPipMode = call.arguments as bool;
+          });
+        }
+      }
+    });
   }
 
   void _initializeVideoPlayer() {
@@ -171,19 +184,85 @@ class _YouTubePopupState extends State<YouTubePopup> {
     super.dispose();
   }
 
+  static const platform = MethodChannel('com.antigravity.radio/pip');
+
+  Future<void> _enterPip() async {
+    try {
+      await platform.invokeMethod('enterPip');
+    } catch (e) {
+      debugPrint("Failed to enter PiP: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("PiP Error: $e")));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final playerAspectRatio = _isFullScreen
-        ? MediaQuery.of(context).size.aspectRatio
-        : 16 / 9;
+    final player = YoutubePlayer(
+      controller: _videoController,
+      aspectRatio: _isFullScreen
+          ? MediaQuery.of(context).size.aspectRatio
+          : 16 / 9,
+      showVideoProgressIndicator: true,
+      progressIndicatorColor: Colors.redAccent,
+      topActions: [
+        // We need to include default back button behavior or at least a spacer
+        const SizedBox(width: 8),
+        const Spacer(),
+        if (Platform.isAndroid)
+          IconButton(
+            icon: const Icon(Icons.picture_in_picture_alt, color: Colors.white),
+            onPressed: _enterPip,
+            tooltip: "Picture-in-Picture",
+          ),
+        if (_isFullScreen) ...[
+          if (_lyrics != null)
+            IconButton(
+              icon: Icon(
+                Icons.lyrics,
+                color: _lyricsOverlayEntry != null
+                    ? Colors.redAccent
+                    : Colors.white,
+              ),
+              onPressed: () => _toggleLyrics(context),
+            ),
+          if (_lyricsOverlayEntry != null)
+            IconButton(
+              icon: const Icon(Icons.tune, color: Colors.white),
+              onPressed: () => _openSyncOverlay(context),
+            ),
+          // Settings button is default in YoutubePlayer but we might be overriding actions.
+          // YoutubePlayer default topActions is just empty? No.
+          // If we provide topActions, we override defaults?
+          // Actually YoutubePlayer adds PlaybackSpeed button etc in bottomActions usually.
+          // Let's explicitly add defaults if needed, but YoutubePlayer usually manages its own unless we completely replace controls.
+          // Wait, `topActions` property ADDS to the top bar or REPLACES it?
+          // Documentation: "Custom widgets to display in the top control bar."
+          // It implies replacement of content there, usually just title.
+          // We'll see.
+        ],
+      ],
+      onEnded: (_) {},
+    );
 
     return YoutubePlayerBuilder(
       onEnterFullScreen: () {
+        SystemChrome.setSystemUIOverlayStyle(
+          const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+          ),
+        );
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
         setState(() {
           _isFullScreen = true;
         });
       },
       onExitFullScreen: () {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
         setState(() {
           _isFullScreen = false;
         });
@@ -193,45 +272,9 @@ class _YouTubePopupState extends State<YouTubePopup> {
         // Let's remove them for safety to avoid overlay issues on dialog.
         if (_lyricsOverlayEntry != null) _toggleLyrics(context);
       },
-      player: YoutubePlayer(
-        controller: _videoController,
-        aspectRatio: playerAspectRatio,
-        showVideoProgressIndicator: true,
-        progressIndicatorColor: Colors.redAccent,
-        topActions: [
-          // We need to include default back button behavior or at least a spacer
-          const SizedBox(width: 8),
-          if (_isFullScreen) ...[
-            const Spacer(),
-            if (_lyrics != null)
-              IconButton(
-                icon: Icon(
-                  Icons.lyrics,
-                  color: _lyricsOverlayEntry != null
-                      ? Colors.redAccent
-                      : Colors.white,
-                ),
-                onPressed: () => _toggleLyrics(context),
-              ),
-            if (_lyricsOverlayEntry != null)
-              IconButton(
-                icon: const Icon(Icons.tune, color: Colors.white),
-                onPressed: () => _openSyncOverlay(context),
-              ),
-            // Settings button is default in YoutubePlayer but we might be overriding actions.
-            // YoutubePlayer default topActions is just empty? No.
-            // If we provide topActions, we override defaults?
-            // Actually YoutubePlayer adds PlaybackSpeed button etc in bottomActions usually.
-            // Let's explicitly add defaults if needed, but YoutubePlayer usually manages its own unless we completely replace controls.
-            // Wait, `topActions` property ADDS to the top bar or REPLACES it?
-            // Documentation: "Custom widgets to display in the top control bar."
-            // It implies replacement of content there, usually just title.
-            // We'll see.
-          ],
-        ],
-        onEnded: (_) {},
-      ),
+      player: player,
       builder: (context, player) {
+        if (_isInPipMode) return player;
         return Dialog(
           backgroundColor: Colors.transparent,
           insetPadding: EdgeInsets.zero,
