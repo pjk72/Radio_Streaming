@@ -808,9 +808,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
   Future<void> _autoCompleteStation() async {
     final query = _nameController.text.trim();
-    if (query.isEmpty) {
+
+    // If query is empty, we only proceed if a specific country is selected.
+    if (query.isEmpty && _selectedSearchCountry == "ALL") {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a station name")),
+        const SnackBar(
+          content: Text("Please enter a name or select a specific Country"),
+        ),
       );
       return;
     }
@@ -821,29 +825,49 @@ class _EditStationScreenState extends State<EditStationScreen> {
     setState(() => _isSearching = true);
 
     try {
-      Uri url;
+      List<dynamic> stations = [];
+      String? successServer;
 
-      if (_selectedSearchCountry == "ALL") {
-        url = Uri.parse(
-          "https://de1.api.radio-browser.info/json/stations/byname/${Uri.encodeComponent(query)}?limit=30",
-        );
-      } else {
-        url = Uri.parse(
-          "https://de1.api.radio-browser.info/json/stations/search?name=${Uri.encodeComponent(query)}&countrycode=${_selectedSearchCountry}&limit=30",
-        );
+      // Try servers de1 to de5
+      for (int i = 1; i <= 5; i++) {
+        final server = "de$i.api.radio-browser.info";
+        Uri url;
+
+        if (query.isEmpty) {
+          url = Uri.parse(
+            "https://$server/json/stations/search?countrycode=${_selectedSearchCountry.toLowerCase()}&limit=100&order=clickcount&reverse=true",
+          );
+        } else if (_selectedSearchCountry == "ALL") {
+          url = Uri.parse(
+            "https://$server/json/stations/byname/${Uri.encodeComponent(query)}?limit=100",
+          );
+        } else {
+          url = Uri.parse(
+            "https://$server/json/stations/search?name=${Uri.encodeComponent(query)}&countrycode=${_selectedSearchCountry.toLowerCase()}&limit=100",
+          );
+        }
+
+        try {
+          debugPrint("Trying Radio Browser Server: $server");
+          final response = await http
+              .get(url)
+              .timeout(
+                const Duration(seconds: 4),
+              ); // Short timeout for faster failover
+
+          if (response.statusCode == 200) {
+            stations = json.decode(response.body);
+            successServer = server;
+            break; // Success! Exit loop.
+          }
+        } catch (e) {
+          debugPrint("Failed to fetch from $server: $e");
+          // Continue to next server
+        }
       }
 
-      List<dynamic> stations = [];
-      try {
-        final response = await http
-            .get(url)
-            .timeout(const Duration(seconds: 5));
-
-        if (response.statusCode == 200) {
-          stations = json.decode(response.body);
-        }
-      } catch (e) {
-        debugPrint("Station search exception: $e");
+      if (successServer == null) {
+        debugPrint("All Radio Browser servers failed.");
       }
 
       if (!mounted) return;
@@ -865,10 +889,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
           (a, b) => (b['bitrate'] ?? 0).compareTo(a['bitrate'] ?? 0),
         );
 
-        final candidates = [
-          ...stationsWithImages,
-          ...stationsOthers,
-        ].take(20).toList();
+        final candidates = [...stationsWithImages, ...stationsOthers].toList();
 
         if (candidates.isNotEmpty) {
           setState(() => _isSearching = false);
