@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'log_service.dart';
 
 class SongLinkService {
   static const String _baseUrl = 'https://api.song.link/v1-alpha.1/links';
@@ -40,6 +41,9 @@ class SongLinkService {
 
       if (response.statusCode == 200) {
         _lastRawJson += response.body; // Append raw response
+        LogService().log(
+          "SongLink (Odesli) Response: ${response.body}",
+        ); // Log JSON
         final json = jsonDecode(response.body);
         final links = json['linksByPlatform'] as Map<String, dynamic>?;
 

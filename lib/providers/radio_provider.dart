@@ -2562,15 +2562,54 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isObservingLyrics = false;
+  String? _lastLyricsSearch;
+
+  void setObservingLyrics(bool isObserving) {
+    _isObservingLyrics = isObserving;
+  }
+
   Future<void> fetchLyrics() async {
+    // Only fetch if UI is observing or explicitly requested (implicit via this check)
+    if (!_isObservingLyrics) return;
+
+    // Guard: Do not fetch if nothing is playing
+    if (!_isPlaying &&
+        _currentStation == null &&
+        _currentPlayingPlaylistId == null)
+      return;
+
+    if (_currentTrack.isEmpty ||
+        _currentTrack == "Live Broadcast" ||
+        _currentArtist.isEmpty) {
+      _currentLyrics = LyricsData.empty();
+      _lastLyricsSearch = null;
+      notifyListeners();
+      return;
+    }
     if (_currentTrack == "Live Broadcast" ||
         (_currentStation != null && _currentTrack == _currentStation!.name)) {
       _currentLyrics = LyricsData.empty();
       _lyricsOffset = Duration.zero; // Reset offset
+      _lastLyricsSearch = null;
       notifyListeners();
       return;
     }
 
+    final sanitizedArtist = _sanitizeArtistName(_currentArtist);
+    final searchKey = "$sanitizedArtist|$_currentTrack";
+
+    // Skip if already fetched/fetching for this song
+    if (_lastLyricsSearch == searchKey &&
+        !_isFetchingLyrics &&
+        _currentLyrics.lines.isNotEmpty) {
+      return;
+    }
+
+    // Check if we are currently fetching the exact same thing
+    if (_isFetchingLyrics && _lastLyricsSearch == searchKey) return;
+
+    _lastLyricsSearch = searchKey;
     _isFetchingLyrics = true;
     _currentLyrics = LyricsData.empty(); // Clear previous lyrics immediately
     _lyricsOffset = Duration.zero; // Reset offset
@@ -2578,13 +2617,15 @@ class RadioProvider with ChangeNotifier {
 
     try {
       _currentLyrics = await _lyricsService.fetchLyrics(
-        artist: _sanitizeArtistName(_currentArtist),
+        artist: sanitizedArtist,
         title: _currentTrack,
         album: _currentAlbum,
         isRadio: _currentPlayingPlaylistId == null,
       );
     } catch (e) {
       _currentLyrics = LyricsData.empty();
+      // Allow retry if failed
+      _lastLyricsSearch = null;
     } finally {
       _isFetchingLyrics = false;
       notifyListeners();
@@ -2657,7 +2698,18 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> fetchSmartLinks({bool keepExistingArtwork = false}) async {
-    if (_currentTrack == "Live Broadcast") return;
+    // If not playing, don't fetch anything to save resources
+    if (!_isPlaying &&
+        _currentPlayingPlaylistId == null &&
+        (_hiddenAudioController == null ||
+            !_hiddenAudioController!.value.isPlaying)) {
+      // However, we must allow fetching if we are PAUSED but have content.
+      // Easiest check: do we have a station or playlist active?
+      // If we are completely stopped (no station, no playlist), return.
+      if (_currentStation == null && _currentPlayingPlaylistId == null) return;
+    }
+
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") return;
 
     // Reset images to prevent showing previous song's art
     // respecting the flag
@@ -3345,7 +3397,12 @@ class RadioProvider with ChangeNotifier {
 
   Future<void> _attemptRecognition() async {
     if (!_isACRCloudEnabled) return;
-    if (_currentStation == null || _currentPlayingPlaylistId != null) return;
+
+    // Strict Input Guard: Must be playing a station to recognize
+    if (!_isPlaying ||
+        _currentStation == null ||
+        _currentPlayingPlaylistId != null)
+      return;
 
     LogService().log(
       "ACRCloud: Starting recognition for ${_currentStation!.name}",
@@ -3549,5 +3606,13 @@ class RadioProvider with ChangeNotifier {
     LogService().log("ACRCloud: Retrying in ${seconds}s");
     _metadataTimer?.cancel();
     _metadataTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
+  }
+
+  // Allow external updates (e.g. from UI fetch)
+  void setArtistImage(String? imageUrl) {
+    if (_currentArtistImage != imageUrl) {
+      _currentArtistImage = imageUrl;
+      notifyListeners();
+    }
   }
 }

@@ -9,7 +9,11 @@ import '../providers/radio_provider.dart';
 import '../screens/artist_details_screen.dart';
 import 'realistic_visualizer.dart';
 
-class NowPlayingHeader extends StatelessWidget {
+import 'dart:convert';
+import 'package:http/http.dart' as http; // Add http import
+import 'package:cached_network_image/cached_network_image.dart';
+
+class NowPlayingHeader extends StatefulWidget {
   final double height;
   final double minHeight;
   final double maxHeight;
@@ -24,25 +28,118 @@ class NowPlayingHeader extends StatelessWidget {
   });
 
   @override
+  State<NowPlayingHeader> createState() => _NowPlayingHeaderState();
+}
+
+class _NowPlayingHeaderState extends State<NowPlayingHeader> {
+  String? _fetchedArtistImage;
+  String? _lastArtistChecked;
+
+  // Removed redundant lifecycle methods as we handle check in build
+
+  Future<void> _fetchArtistImage(String artistName) async {
+    try {
+      // Logic copied from ArtistDetailsScreen
+      final uri = Uri.parse(
+        "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(artistName)}&limit=1",
+      );
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        if (json['data'] != null && (json['data'] as List).isNotEmpty) {
+          String? picture =
+              json['data'][0]['picture_xl'] ??
+              json['data'][0]['picture_big'] ??
+              json['data'][0]['picture_medium'];
+
+          if (picture != null && mounted) {
+            // Only update if it matches the currently checked artist to avoid race conditions
+            if (_lastArtistChecked == artistName) {
+              setState(() {
+                _fetchedArtistImage = picture;
+              });
+
+              // Push to provider so StationCard can see it too
+              Provider.of<RadioProvider>(
+                context,
+                listen: false,
+              ).setArtistImage(picture);
+              return;
+            }
+          }
+        }
+      }
+
+      // If we reach here, we found nothing or valid response but no image
+      if (mounted && _lastArtistChecked == artistName) {
+        setState(() {
+          _fetchedArtistImage = null; // Clear if not found
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching artist image in header: $e");
+      if (mounted && _lastArtistChecked == artistName) {
+        setState(() {
+          _fetchedArtistImage = null; // Clear on error
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Calculate scale factor (0.0 to 1.0)
     // t goes from 0.0 (at minHeight) to 1.0 (at maxHeight)
     // Adjust range to account for the fact that minHeight and maxHeight MIGHT include topPadding
     // But height passes the actual height.
-    final double range = maxHeight - minHeight;
+    final double range = widget.maxHeight - widget.minHeight;
     final double t = range > 0
-        ? ((height - minHeight) / range).clamp(0.0, 1.0)
+        ? ((widget.height - widget.minHeight) / range).clamp(0.0, 1.0)
         : 1.0;
 
     final provider = Provider.of<RadioProvider>(context);
     final station = provider.currentStation;
+    final artist = provider.currentArtist;
+
+    // Check for artist change
+    if (artist != _lastArtistChecked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          // Update state to trigger fetch but KEEP old image to prevent flashing
+          setState(() {
+            _lastArtistChecked = artist;
+
+            // Check placeholder logic
+            final isPlaceholder =
+                (station != null &&
+                (artist == station.genre || artist == station.name));
+
+            if (artist.isNotEmpty &&
+                artist != "Unknown Artist" &&
+                !isPlaceholder) {
+              _fetchArtistImage(artist);
+            } else {
+              // If valid artist is gone (e.g. unknown), clear immediately
+              _fetchedArtistImage = null;
+            }
+          });
+        }
+      });
+    }
+
+    // PRIORITY: Local Fetch -> Provider Artist Image -> Provider Album Art -> Station Logo
     final String? imageUrl = station != null
-        ? (provider.currentArtistImage ??
+        ? (_fetchedArtistImage ??
+              provider.currentArtistImage ??
               provider.currentAlbumArt ??
               station.logo)
         : null;
+
     final bool hasEnrichedImage =
-        (provider.currentArtistImage ?? provider.currentAlbumArt) != null;
+        (_fetchedArtistImage ??
+            provider.currentArtistImage ??
+            provider.currentAlbumArt) !=
+        null;
 
     final double titleSize = 16.0 + (10.0 * t); // 16 to 30
     final double trackSize = 12.0 + (8.0 * t); // 12 to 20
@@ -56,7 +153,7 @@ class NowPlayingHeader extends StatelessWidget {
     // When t=0 (Collapsed): padding is standard + safeArea (16.0 + topPadding).
     // Adding extra buffer to be safe.
     final double dynamicTopPadding =
-        (16.0 * t) + ((topPadding + 35.0) * (1.0 - t));
+        (16.0 * t) + ((widget.topPadding + 35.0) * (1.0 - t));
 
     return Stack(
       children: [
@@ -78,7 +175,8 @@ class NowPlayingHeader extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (context) => ArtistDetailsScreen(
                       artistName: provider.currentArtist,
-                      artistImage: provider.currentArtistImage,
+                      artistImage:
+                          _fetchedArtistImage ?? provider.currentArtistImage,
                       genre: station.genre,
                     ),
                   ),
@@ -87,7 +185,7 @@ class NowPlayingHeader extends StatelessWidget {
             },
             child: Container(
               width: double.infinity,
-              height: height,
+              height: widget.height,
               margin: EdgeInsets.only(
                 bottom: 24.0 * t,
                 left: 20.0 * t,
@@ -139,7 +237,7 @@ class NowPlayingHeader extends StatelessWidget {
                     if (imageUrl != null && hasEnrichedImage)
                       Positioned(
                         top:
-                            topPadding *
+                            widget.topPadding *
                             (1.0 -
                                 t), // Slide down to respect safe area when collapsed
                         bottom: 0,
@@ -492,7 +590,7 @@ class NowPlayingHeader extends StatelessWidget {
           left: 0,
           right: 0,
           top: 0,
-          height: topPadding + 100.0,
+          height: widget.topPadding + 100.0,
           child: Opacity(
             // Fade in earlier and stay opaque longer
             opacity: ((0.8 - t) * 2).clamp(0.0, 1.0),
@@ -514,11 +612,10 @@ class NowPlayingHeader extends StatelessWidget {
                     stops: [
                       0.0,
                       // extend the solid part slightly below the status bar
-                      topPadding > 0
-                          ? ((topPadding + 10) / (topPadding + 100.0)).clamp(
-                              0.0,
-                              1.0,
-                            )
+                      widget.topPadding > 0
+                          ? ((widget.topPadding + 10) /
+                                    (widget.topPadding + 100.0))
+                                .clamp(0.0, 1.0)
                           : 0.3,
                       1.0,
                     ],
@@ -581,12 +678,18 @@ class NowPlayingHeader extends StatelessWidget {
         alignment: alignment ?? Alignment.center,
       );
     } else {
-      return Image.network(
-        url,
+      return CachedNetworkImage(
+        imageUrl: url,
         fit: fit,
         color: color,
         colorBlendMode: colorBlendMode,
         alignment: alignment ?? Alignment.center,
+        fadeInDuration: const Duration(milliseconds: 300),
+        useOldImageOnUrlChange: true, // Reduce flickering
+        // Optimization: Cap the cache size.
+        // 1024 should be enough for a header on most phones/tablets without consuming too much RAM.
+        memCacheWidth: 1024,
+        maxWidthDiskCache: 1024,
       );
     }
   }

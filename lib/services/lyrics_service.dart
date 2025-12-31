@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'log_service.dart';
 
 class LyricLine {
   final Duration time;
@@ -32,6 +33,10 @@ class LyricsService {
     final cleanArtist = _cleanString(artist);
     final cleanTitle = _cleanString(title);
 
+    LogService().log(
+      "Lyrics Search: '$artist' - '$title' -> Cleaned: '$cleanArtist' - '$cleanTitle'",
+    );
+
     // 1. Try LRCLIB (Primary - supports Synced Lyrics)
     // Endpoint: https://lrclib.net/api/get
     try {
@@ -50,12 +55,18 @@ class LyricsService {
         _lrclibBaseUrl,
       ).replace(queryParameters: queryParameters);
 
+      LogService().log("Trying LRCLIB: $uri");
+
       final response = await http.get(uri).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final String? syncedLyrics = data['syncedLyrics'];
         final String? plainLyrics = data['plainLyrics'];
+
+        LogService().log(
+          "LRCLIB Success. Synced: ${syncedLyrics != null}, Plain: ${plainLyrics != null}, Mode: ${isRadio ? 'Radio' : 'Normal'}",
+        );
 
         // Radio Mode: Prefer Plain Text (Un-synced)
         if (isRadio) {
@@ -69,9 +80,6 @@ class LyricsService {
               isSynced: false,
             );
           }
-          // If only synced available for radio, strip timestamps?
-          // Assuming plainLyrics is usually there.
-          // If fall through, it might pick up synced below if we are not careful.
         }
 
         if (syncedLyrics != null && syncedLyrics.isNotEmpty && !isRadio) {
@@ -89,8 +97,12 @@ class LyricsService {
             source: 'LRCLIB (Plain)',
           );
         }
+      } else {
+        LogService().log("LRCLIB Failed/Not Found: ${response.statusCode}");
       }
-    } catch (e) {}
+    } catch (e) {
+      LogService().log("LRCLIB Error: $e");
+    }
 
     // 2. Fallback to Lyrics.ovh (Secondary - Static only)
     // Endpoint: https://api.lyrics.ovh/v1/Artist/Title
@@ -98,6 +110,9 @@ class LyricsService {
       final uri = Uri.parse(
         '$_lyricsOvhBaseUrl/${Uri.encodeComponent(cleanArtist)}/${Uri.encodeComponent(cleanTitle)}',
       );
+
+      LogService().log("Trying Lyrics.ovh: $uri");
+
       final response = await http.get(uri).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -105,6 +120,7 @@ class LyricsService {
         final String? lyrics = data['lyrics'];
 
         if (lyrics != null && lyrics.isNotEmpty) {
+          LogService().log("Lyrics.ovh Success.");
           return LyricsData(
             lines: lyrics
                 .split('\n')
@@ -113,9 +129,17 @@ class LyricsService {
                 .toList(),
             source: 'Lyrics.ovh',
           );
+        } else {
+          LogService().log("Lyrics.ovh: Empty response");
         }
+      } else {
+        LogService().log("Lyrics.ovh Failed: ${response.statusCode}");
       }
-    } catch (e) {}
+    } catch (e) {
+      LogService().log("Lyrics.ovh Error: $e");
+    }
+
+    LogService().log("Lyrics NOT FOUND for: $cleanArtist - $cleanTitle");
     return LyricsData.empty();
   }
 

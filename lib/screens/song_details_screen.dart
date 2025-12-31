@@ -43,6 +43,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   void initState() {
     super.initState();
     _initVolume();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<RadioProvider>(
+          context,
+          listen: false,
+        ).setObservingLyrics(true);
+      }
+    });
   }
 
   Future<void> _initVolume() async {
@@ -66,6 +74,13 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
   @override
   void dispose() {
+    try {
+      Provider.of<RadioProvider>(
+        context,
+        listen: false,
+      ).setObservingLyrics(false);
+    } catch (_) {}
+
     _playbackTimer?.cancel();
     FlutterVolumeController.removeListener();
     _pageController?.dispose();

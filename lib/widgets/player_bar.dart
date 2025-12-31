@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../providers/radio_provider.dart';
 import 'package:audio_service/audio_service.dart';
@@ -572,9 +573,24 @@ class PlayerBar extends StatelessWidget {
     ImageErrorWidgetBuilder? errorBuilder,
   }) {
     if (url.startsWith('assets/')) {
-      return Image.asset(url, fit: fit, errorBuilder: errorBuilder);
+      return Image.asset(
+        url,
+        fit: fit,
+        errorBuilder: errorBuilder,
+        gaplessPlayback: true,
+      );
     } else {
-      return Image.network(url, fit: fit, errorBuilder: errorBuilder);
+      return CachedNetworkImage(
+        imageUrl: url,
+        fit: fit,
+        errorWidget: errorBuilder != null
+            ? (context, url, error) =>
+                  errorBuilder(context, error, StackTrace.current)
+            : null,
+        memCacheWidth: 150, // Optimize memory for small thumbnail
+        maxWidthDiskCache: 150, // Optimize disk storage
+        fadeInDuration: const Duration(milliseconds: 300), // Smooth transition
+      );
     }
   }
 
