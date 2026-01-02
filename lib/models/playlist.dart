@@ -5,12 +5,14 @@ class Playlist {
   final String name;
   final List<SavedSong> songs;
   final DateTime createdAt;
+  final String creator; // 'app', 'user', 'spotify', etc.
 
   Playlist({
     required this.id,
     required this.name,
     required this.songs,
     required this.createdAt,
+    this.creator = 'app',
   });
 
   Map<String, dynamic> toJson() {
@@ -19,6 +21,7 @@ class Playlist {
       'name': name,
       'songs': songs.map((s) => s.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
+      'creator': creator,
     };
   }
 
@@ -30,6 +33,7 @@ class Playlist {
           .map((s) => SavedSong.fromJson(s))
           .toList(),
       createdAt: DateTime.parse(json['createdAt']),
+      creator: json['creator'] ?? 'app',
     );
   }
   Playlist copyWith({
@@ -37,12 +41,14 @@ class Playlist {
     String? name,
     List<SavedSong>? songs,
     DateTime? createdAt,
+    String? creator,
   }) {
     return Playlist(
       id: id ?? this.id,
       name: name ?? this.name,
       songs: songs ?? this.songs,
       createdAt: createdAt ?? this.createdAt,
+      creator: creator ?? this.creator,
     );
   }
 }

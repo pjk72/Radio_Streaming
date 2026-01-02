@@ -68,6 +68,12 @@ class RadioProvider with ChangeNotifier {
   static const String _keyInvalidSongIds = 'invalid_song_ids';
   static const String _keyManageGridView = 'manage_grid_view';
   static const String _keyManageGroupingMode = 'manage_grouping_mode';
+  static const String _keyPlaylistCreatorFilter = 'playlist_creator_filter';
+  static const String _keyFollowedArtists = 'followed_artists';
+  static const String _keyFollowedAlbums = 'followed_albums';
+
+  final Set<String> _followedArtists = {};
+  final Set<String> _followedAlbums = {};
 
   bool _currentSongIsSaved = false;
   bool get currentSongIsSaved => _currentSongIsSaved;
@@ -82,6 +88,12 @@ class RadioProvider with ChangeNotifier {
   String? get spotifyImportName => _spotifyImportName;
   bool get isRecognizing => _isRecognizing;
 
+  List<String> get followedArtists => _followedArtists.toList();
+  List<String> get followedAlbums => _followedAlbums.toList();
+
+  bool isArtistFollowed(String artist) => _followedArtists.contains(artist);
+  bool isAlbumFollowed(String album) => _followedAlbums.contains(album);
+
   Future<void> _loadStations() async {
     final prefs = await SharedPreferences.getInstance();
     final String? jsonStr = prefs.getString(_keySavedStations);
@@ -90,6 +102,18 @@ class RadioProvider with ChangeNotifier {
     if (invalidIds != null) {
       _invalidSongIds.clear();
       _invalidSongIds.addAll(invalidIds);
+    }
+
+    final savedArtists = prefs.getStringList(_keyFollowedArtists);
+    if (savedArtists != null) {
+      _followedArtists.clear();
+      _followedArtists.addAll(savedArtists);
+    }
+
+    final savedAlbums = prefs.getStringList(_keyFollowedAlbums);
+    if (savedAlbums != null) {
+      _followedAlbums.clear();
+      _followedAlbums.addAll(savedAlbums);
     }
 
     if (jsonStr != null) {
@@ -264,6 +288,18 @@ class RadioProvider with ChangeNotifier {
 
   Future<void> addStation(Station s) async {
     stations.add(s);
+    // Explicitly add to order list to ensure it exists for reordering immediately
+    if (!_stationOrder.contains(s.id)) {
+      _stationOrder.add(s.id);
+      // We don't necessarily need to persist order immediately unless we want to be safe.
+      // Saving stations already persists the station data.
+      // But preserving order is good.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _keyStationOrder,
+        _stationOrder.map((e) => e.toString()).toList(),
+      );
+    }
     await _saveStations();
   }
 
@@ -345,6 +381,49 @@ class RadioProvider with ChangeNotifier {
 
   int _manageGroupingMode = 0; // 0: none, 1: genre, 2: origin
   int get manageGroupingMode => _manageGroupingMode;
+
+  List<String> _playlistCreatorFilter = []; // Empty = Show All
+  List<String> get playlistCreatorFilter => _playlistCreatorFilter;
+
+  // Filtered Playlists Getter
+  List<Playlist> get filteredPlaylists {
+    if (_playlistCreatorFilter.isEmpty) return _playlists;
+    return _playlists.where((p) {
+      if (_playlistCreatorFilter.contains('all')) return true;
+
+      // Determine creator type
+      String type = p.creator;
+      // Handle legacy/edge cases
+      if (p.id.startsWith('spotify_'))
+        type = 'spotify';
+      else if (p.id == 'favorites')
+        type = 'app';
+
+      return _playlistCreatorFilter.contains(type);
+    }).toList();
+  }
+
+  Future<void> toggleFollowArtist(String artist) async {
+    if (_followedArtists.contains(artist)) {
+      _followedArtists.remove(artist);
+    } else {
+      _followedArtists.add(artist);
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyFollowedArtists, _followedArtists.toList());
+  }
+
+  Future<void> toggleFollowAlbum(String album) async {
+    if (_followedAlbums.contains(album)) {
+      _followedAlbums.remove(album);
+    } else {
+      _followedAlbums.add(album);
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyFollowedAlbums, _followedAlbums.toList());
+  }
 
   bool _isOffline = false; // Internal connectivity state
 
@@ -569,7 +648,36 @@ class RadioProvider with ChangeNotifier {
     _loadStartupSettings(); // Load this before stations
     _loadYouTubeSettings();
     _loadManageSettings();
+    _loadPlaylistCreatorFilter();
     _loadStations();
+  }
+
+  Future<void> _loadPlaylistCreatorFilter() async {
+    final prefs = await SharedPreferences.getInstance();
+    _playlistCreatorFilter =
+        prefs.getStringList(_keyPlaylistCreatorFilter) ?? [];
+    notifyListeners();
+  }
+
+  Future<void> togglePlaylistCreatorFilter(String type) async {
+    if (_playlistCreatorFilter.contains(type)) {
+      _playlistCreatorFilter.remove(type);
+    } else {
+      _playlistCreatorFilter.add(type);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _keyPlaylistCreatorFilter,
+      _playlistCreatorFilter,
+    );
+    notifyListeners();
+  }
+
+  Future<void> clearPlaylistCreatorFilter() async {
+    _playlistCreatorFilter.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyPlaylistCreatorFilter);
+    notifyListeners();
   }
 
   Future<void> _loadManageSettings() async {
@@ -757,48 +865,22 @@ class RadioProvider with ChangeNotifier {
     await _loadPlaylists();
   }
 
-  Future<void> moveSong(
+  Future<void> copySong(
     String songId,
     String fromPayloadId,
     String toPayloadId,
   ) async {
-    await _playlistService.moveSong(songId, fromPayloadId, toPayloadId);
+    await _playlistService.copySong(songId, fromPayloadId, toPayloadId);
     await _loadPlaylists();
-
-    if (fromPayloadId == 'favorites') return;
-
-    final p = _playlists.firstWhere(
-      (element) => element.id == fromPayloadId,
-      orElse: () =>
-          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
-    );
-
-    if (p.id.isNotEmpty && p.songs.isEmpty) {
-      await _playlistService.deletePlaylist(fromPayloadId);
-      await _loadPlaylists();
-    }
   }
 
-  Future<void> moveSongs(
+  Future<void> copySongs(
     List<String> songIds,
     String fromPayloadId,
     String toPayloadId,
   ) async {
-    await _playlistService.moveSongs(songIds, fromPayloadId, toPayloadId);
+    await _playlistService.copySongs(songIds, fromPayloadId, toPayloadId);
     await _loadPlaylists();
-
-    if (fromPayloadId == 'favorites') return;
-
-    final p = _playlists.firstWhere(
-      (element) => element.id == fromPayloadId,
-      orElse: () =>
-          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
-    );
-
-    if (p.id.isNotEmpty && p.songs.isEmpty) {
-      await _playlistService.deletePlaylist(fromPayloadId);
-      await _loadPlaylists();
-    }
   }
 
   Future<void> restoreSongsToPlaylist(
@@ -1882,13 +1964,32 @@ class RadioProvider with ChangeNotifier {
     int? afterStationId,
     int? beforeStationId,
   ) async {
-    // Ensure order list is fully populated
-    if (_stationOrder.isEmpty || _stationOrder.length != stations.length) {
-      // Re-sync with current stations if needed
-      final existing = _stationOrder.toSet();
-      final missing = stations
-          .where((s) => !existing.contains(s.id))
-          .map((s) => s.id);
+    LogService().log(
+      "moveStation: Moving $stationId. After: $afterStationId, Before: $beforeStationId",
+    );
+
+    // Ensure order list is fully populated and CLEAN
+    // We must check if the CONTENTS match, not just the length.
+    // 1. Remove "Ghost" IDs (IDs in order list that no longer exist in stations)
+    final Set<int> currentStationIds = stations.map((s) => s.id).toSet();
+    final int removedCount = _stationOrder.length;
+    _stationOrder.removeWhere((id) => !currentStationIds.contains(id));
+    if (_stationOrder.length != removedCount) {
+      LogService().log(
+        "moveStation: Cleaned up ${removedCount - _stationOrder.length} ghost stations.",
+      );
+    }
+
+    // 2. Add Missing IDs (IDs in stations but not in order list)
+    final existingOrderIds = _stationOrder.toSet();
+    final missing = stations
+        .where((s) => !existingOrderIds.contains(s.id))
+        .map((s) => s.id);
+
+    if (missing.isNotEmpty) {
+      LogService().log(
+        "moveStation: Adding ${missing.length} missing stations to order...",
+      );
       _stationOrder.addAll(missing);
     }
 
@@ -1900,7 +2001,12 @@ class RadioProvider with ChangeNotifier {
     }
 
     final int currentIndex = _stationOrder.indexOf(stationId);
-    if (currentIndex == -1) return;
+    if (currentIndex == -1) {
+      LogService().log(
+        "moveStation: Error - Station ID $stationId not found in order list.",
+      );
+      return;
+    }
 
     _stationOrder.removeAt(currentIndex);
 

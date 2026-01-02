@@ -162,13 +162,13 @@ class _HomeScreenState extends State<HomeScreen>
 
                           // 1. Playlist
                           Padding(
-                            padding: EdgeInsets.only(top: isDesktop ? 0 : 24.0),
+                            padding: EdgeInsets.only(top: isDesktop ? 0 : 0.0),
                             child: const PlaylistScreen(),
                           ),
 
                           // 2. Settings
                           Padding(
-                            padding: EdgeInsets.only(top: isDesktop ? 0 : 24.0),
+                            padding: EdgeInsets.only(top: isDesktop ? 0 : 0.0),
                             child: const SettingsScreen(),
                           ),
                         ],

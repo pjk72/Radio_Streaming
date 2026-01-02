@@ -179,6 +179,7 @@ class PlaylistService {
       name: name,
       songs: [],
       createdAt: DateTime.now(),
+      creator: 'user',
     );
 
     playlists.add(newPlaylist);
@@ -256,7 +257,7 @@ class PlaylistService {
     }
   }
 
-  Future<void> moveSong(
+  Future<void> copySong(
     String songId,
     String fromPlaylistId,
     String toPlaylistId,
@@ -274,13 +275,6 @@ class PlaylistService {
       if (songIndex != -1) {
         final song = playlists[fromIndex].songs[songIndex];
 
-        // Logic: specific request "only when you move a song ON THE FAVORITES CARD create a copy"
-        // If moving TO favorites -> COPY (do not remove from source)
-        // If moving TO others -> MOVE (remove from source)
-        if (toPlaylistId != 'favorites') {
-          playlists[fromIndex].songs.removeAt(songIndex);
-        }
-
         // Add to destination (check duplicates)
         if (!playlists[toIndex].songs.any(
           (s) =>
@@ -288,19 +282,14 @@ class PlaylistService {
               (s.title == song.title && s.artist == song.artist),
         )) {
           playlists[toIndex].songs.insert(0, song);
-        } else {
-          // If already exists:
-          // If we did a MOVE (removed from source), and it is valid to "merge", it's fine.
-          // If we did a COPY, it just means it's already there.
+          await _savePlaylists(prefs, playlists);
+          _notifyListeners();
         }
-
-        await _savePlaylists(prefs, playlists);
-        _notifyListeners();
       }
     }
   }
 
-  Future<void> moveSongs(
+  Future<void> copySongs(
     List<String> songIds,
     String fromPlaylistId,
     String toPlaylistId,
@@ -320,18 +309,14 @@ class PlaylistService {
         if (songIndex != -1) {
           final song = playlists[fromIndex].songs[songIndex];
 
-          if (toPlaylistId != 'favorites') {
-            playlists[fromIndex].songs.removeAt(songIndex);
-          }
-
           if (!playlists[toIndex].songs.any(
             (s) =>
                 s.id == song.id ||
                 (s.title == song.title && s.artist == song.artist),
           )) {
             playlists[toIndex].songs.insert(0, song);
+            changed = true;
           }
-          changed = true;
         }
       }
 
@@ -375,6 +360,7 @@ class PlaylistService {
           name: targetName, // e.g. "Pop", "Rock"
           songs: [],
           createdAt: DateTime.now(),
+          creator: 'app',
         );
         playlists.add(newPlaylist);
         genreIndex = playlists.length - 1;

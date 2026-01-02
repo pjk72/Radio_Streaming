@@ -300,282 +300,329 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                           bottom: 16.0,
                           top: dynamicTopPadding,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: t < 0.3
-                              ? MainAxisAlignment
-                                    .start // Align to top when collapsed to ignore extra bottom space
-                              : MainAxisAlignment.end,
-                          children: [
-                            if (station == null) ...[
-                              // ... existing default view ...
-                              const Spacer(),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(20),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.radio,
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Text(
-                                    "Discover Radio",
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                              if (t > 0.2) ...[
-                                const SizedBox(height: 8),
-                                const Text(
-                                  "Tune in to the world's best stations.",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.white70,
-                                  ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              physics: const NeverScrollableScrollPhysics(),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
                                 ),
-                              ],
-                            ] else ...[
-                              // Check if we have valid artist info to highlight
-                              if (provider.currentArtist.isNotEmpty &&
-                                  provider.currentArtist != "Unknown Artist" &&
-                                  provider.currentTrack !=
-                                      "Live Broadcast") ...[
-                                if (t > 0.3) const Spacer(),
-
-                                // ARTIST HIGHLIGHT MODE
-                                Text(
-                                  provider.currentTrack.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: titleSize,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: -1.0,
-                                    color: Color(int.parse(station.color)),
-                                    height: 1.0,
-                                    shadows: const [
-                                      Shadow(
-                                        blurRadius: 15.0,
-                                        color: Colors.black,
-                                        offset: Offset(2, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                SizedBox(height: (4.0 * t)),
-                                Text.rich(
-                                  TextSpan(
-                                    text: provider.currentArtist,
-                                    style: TextStyle(
-                                      fontSize: trackSize,
-                                      fontWeight: FontWeight.w300,
-                                      color: Colors.white,
-                                    ),
-                                    children: [
-                                      if (provider.currentReleaseDate != null &&
-                                          provider.currentReleaseDate!.length >=
-                                              4)
-                                        TextSpan(
-                                          text:
-                                              "   ${provider.currentReleaseDate!.substring(0, 4)}",
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.white38,
-                                            fontWeight: FontWeight.normal,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-
-                                // Hide secondary info when very collapsed to save space
-                                if (t > 0.3) ...[
-                                  const Spacer(),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.radio,
-                                        size: 12.0,
-                                        color: Colors.white60,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        "ON ${station.name.toUpperCase()}",
-                                        style: const TextStyle(
-                                          fontSize: 12.0,
-                                          color: Colors.white60,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 1.0,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ] else ...[
-                                  // When collapsed, just use a small spacer so content is centered vertically
-                                  const SizedBox(height: 8),
-                                ],
-
-                                if (t >
-                                    0.1) // Keep NOW PLAYING tag mostly visible but tighter layout
-                                  SizedBox(height: 2.0 * t),
-
-                                Row(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                    AnimatedOpacity(
-                                      duration: const Duration(
-                                        milliseconds: 300,
-                                      ),
-                                      opacity: provider.isPlaying ? 1.0 : 0.0,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Padding(
-                                              padding: const EdgeInsets.only(
-                                                right: 4,
+                                    if (t < 0.3) const SizedBox(height: 0),
+
+                                    if (station == null) ...[
+                                      // ... existing default view ...
+                                      SizedBox(
+                                        height: 40 * t,
+                                      ), // spacer replacement
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(20),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.1,
                                               ),
-                                              child: RealisticVisualizer(
-                                                color: Colors.white70,
-                                                volume: provider.volume,
-                                              ),
+                                              shape: BoxShape.circle,
                                             ),
-                                            const Text(
-                                              "NOW PLAYING",
-                                              style: TextStyle(
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: 0.5,
-                                                color: Colors.white70,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                  ],
-                                ),
-                              ] else ...[
-                                // STATION DEFAULT MODE
-                                const Spacer(),
-                                Text(
-                                  station.name,
-                                  style: TextStyle(
-                                    fontSize: stationSize,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -1.0,
-                                    color: Colors.white,
-                                    height: 1.0,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                // Hide genre when very collapsed to save space or scale it down
-                                if (t > 0.1) ...[
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      FaIcon(
-                                        IconLibrary.getIcon(station.icon),
-                                        size: trackSize, // Scale icon
-                                        color: Colors.white70,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        station.genre,
-                                        style: TextStyle(
-                                          fontSize: trackSize, // Scale text
-                                          color: Colors.white70,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ] else
-                                  const SizedBox(height: 4),
-                                SizedBox(height: 4.0 + (2.0 * t)),
-                                AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 300),
-                                  opacity: provider.isPlaying ? 1.0 : 0.0,
-                                  child: Container(
-                                    height:
-                                        32, // Match height of icon row in artist mode roughly
-                                    alignment: Alignment.centerLeft,
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.1,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
+                                            child: const Icon(
+                                              Icons.radio,
+                                              color: Colors.white,
+                                              size: 24,
                                             ),
                                           ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  right: 4,
-                                                ),
-                                                child: RealisticVisualizer(
-                                                  color: Colors.white70,
-                                                  volume: provider.volume,
-                                                ),
-                                              ),
-                                              const Text(
-                                                "NOW PLAYING",
-                                                style: TextStyle(
-                                                  fontSize: 9,
+                                          const SizedBox(width: 16),
+                                          Text(
+                                            "Discover Radio",
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .headlineSmall
+                                                ?.copyWith(
                                                   fontWeight: FontWeight.bold,
-                                                  letterSpacing: 0.5,
-                                                  color: Colors.white70,
+                                                  color: Colors.white,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (t > 0.2) ...[
+                                        const SizedBox(height: 8),
+                                        const Text(
+                                          "Tune in to the world's best stations.",
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ],
+                                    ] else ...[
+                                      // Check if we have valid artist info to highlight
+                                      if (provider.currentArtist.isNotEmpty &&
+                                          provider.currentArtist !=
+                                              "Unknown Artist" &&
+                                          provider.currentTrack !=
+                                              "Live Broadcast") ...[
+                                        if (t > 0.3)
+                                          SizedBox(
+                                            height: 40 * t,
+                                          ), // spacer replacement
+                                        // ARTIST HIGHLIGHT MODE
+                                        Text(
+                                          provider.currentTrack.toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: titleSize,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -1.0,
+                                            color: Color(
+                                              int.parse(station.color),
+                                            ),
+                                            height: 1.0,
+                                            shadows: const [
+                                              Shadow(
+                                                blurRadius: 15.0,
+                                                color: Colors.black,
+                                                offset: Offset(2, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        SizedBox(height: (4.0 * t)),
+                                        Text.rich(
+                                          TextSpan(
+                                            text: provider.currentArtist,
+                                            style: TextStyle(
+                                              fontSize: trackSize,
+                                              fontWeight: FontWeight.w300,
+                                              color: Colors.white,
+                                            ),
+                                            children: [
+                                              if (provider.currentReleaseDate !=
+                                                      null &&
+                                                  provider
+                                                          .currentReleaseDate!
+                                                          .length >=
+                                                      4)
+                                                TextSpan(
+                                                  text:
+                                                      "   ${provider.currentReleaseDate!.substring(0, 4)}",
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.white38,
+                                                    fontWeight:
+                                                        FontWeight.normal,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+
+                                        // Hide secondary info when very collapsed to save space
+                                        if (t > 0.3) ...[
+                                          SizedBox(
+                                            height: 40 * t,
+                                          ), // spacer replacement
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.radio,
+                                                size: 12.0,
+                                                color: Colors.white60,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                "ON ${station.name.toUpperCase()}",
+                                                style: const TextStyle(
+                                                  fontSize: 12.0,
+                                                  color: Colors.white60,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: 1.0,
                                                 ),
                                               ),
                                             ],
                                           ),
+                                        ] else ...[
+                                          // When collapsed, just use a small spacer so content is centered vertically
+                                          const SizedBox(height: 8),
+                                        ],
+
+                                        if (t >
+                                            0.1) // Keep NOW PLAYING tag mostly visible but tighter layout
+                                          SizedBox(height: 2.0 * t),
+
+                                        Row(
+                                          children: [
+                                            AnimatedOpacity(
+                                              duration: const Duration(
+                                                milliseconds: 300,
+                                              ),
+                                              opacity: provider.isPlaying
+                                                  ? 1.0
+                                                  : 0.0,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            right: 4,
+                                                          ),
+                                                      child:
+                                                          RealisticVisualizer(
+                                                            color:
+                                                                Colors.white70,
+                                                            volume:
+                                                                provider.volume,
+                                                          ),
+                                                    ),
+                                                    const Text(
+                                                      "NOW PLAYING",
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        letterSpacing: 0.5,
+                                                        color: Colors.white70,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                          ],
+                                        ),
+                                      ] else ...[
+                                        // STATION DEFAULT MODE
+                                        SizedBox(
+                                          height: 40 * t,
+                                        ), // spacer replacement
+                                        Text(
+                                          station.name,
+                                          style: TextStyle(
+                                            fontSize: stationSize,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: -1.0,
+                                            color: Colors.white,
+                                            height: 1.0,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        // Hide genre when very collapsed to save space or scale it down
+                                        if (t > 0.1) ...[
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              FaIcon(
+                                                IconLibrary.getIcon(
+                                                  station.icon,
+                                                ),
+                                                size: trackSize, // Scale icon
+                                                color: Colors.white70,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                station.genre,
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      trackSize, // Scale text
+                                                  color: Colors.white70,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ] else
+                                          const SizedBox(height: 4),
+                                        SizedBox(height: 4.0 + (2.0 * t)),
+                                        AnimatedOpacity(
+                                          duration: const Duration(
+                                            milliseconds: 300,
+                                          ),
+                                          opacity: provider.isPlaying
+                                              ? 1.0
+                                              : 0.0,
+                                          child: Container(
+                                            height:
+                                                32, // Match height of icon row in artist mode roughly
+                                            alignment: Alignment.centerLeft,
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              right: 4,
+                                                            ),
+                                                        child:
+                                                            RealisticVisualizer(
+                                                              color: Colors
+                                                                  .white70,
+                                                              volume: provider
+                                                                  .volume,
+                                                            ),
+                                                      ),
+                                                      const Text(
+                                                        "NOW PLAYING",
+                                                        style: TextStyle(
+                                                          fontSize: 9,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          letterSpacing: 0.5,
+                                                          color: Colors.white70,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       ],
-                                    ),
-                                  ),
+                                    ],
+                                  ],
                                 ),
-                              ],
-                            ],
-                          ],
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
