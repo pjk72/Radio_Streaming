@@ -19,8 +19,7 @@ import '../widgets/youtube_popup.dart';
 import '../utils/genre_mapper.dart';
 import '../services/music_metadata_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'playlist_screen_duplicates_logic.dart';
@@ -3494,6 +3493,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     // Grouping Logic
     final Map<String, Set<String>> groupedVariants = {};
     final Map<String, String> normKeyToDisplay = {};
+    final Map<String, SavedSong> representativeSongs = {}; // Store rep song
     final Map<String, String> songIdToGroupKey = {}; // Map song ID to group key
 
     for (var s in allSongs) {
@@ -3515,6 +3515,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         normKeyToDisplay[key] = norm;
       }
       groupedVariants[key]!.add(raw);
+
+      // Store representative song for artwork fallback
+      if (!representativeSongs.containsKey(key)) {
+        representativeSongs[key] = s;
+      }
     }
 
     final groups = groupedVariants.keys.toList()
@@ -3646,10 +3651,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             }
 
             final bool isFollowed = provider.isArtistFollowed(searchArtist);
+            final SavedSong? repSong = representativeSongs[groupKey];
 
             return _ArtistGridItem(
               artist: searchArtist,
               customDisplayName: displayArtist,
+              fallbackImageUrl: repSong?.artUri,
               songCount: count,
               isPlaying: isPlaying,
               isFollowed: isFollowed,
@@ -4319,6 +4326,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
 class _ArtistGridItem extends StatefulWidget {
   final String artist;
   final String? customDisplayName;
+  final String? fallbackImageUrl;
   final int songCount;
   final VoidCallback onTap;
   final bool isPlaying;
@@ -4328,6 +4336,7 @@ class _ArtistGridItem extends StatefulWidget {
   const _ArtistGridItem({
     required this.artist,
     this.customDisplayName,
+    this.fallbackImageUrl,
     required this.songCount,
     required this.onTap,
     this.isPlaying = false,
@@ -4345,6 +4354,8 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
   @override
   void initState() {
     super.initState();
+    // Initialize with fallback immediately
+    _imageUrl = widget.fallbackImageUrl;
     _fetchImage();
   }
 
@@ -4352,39 +4363,27 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
   void didUpdateWidget(covariant _ArtistGridItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.artist != widget.artist) {
+      // proper reset on change
+      setState(() {
+        _imageUrl = widget.fallbackImageUrl;
+      });
       _fetchImage();
     }
   }
 
   Future<void> _fetchImage() async {
+    if (!mounted) return;
     try {
-      // Use the part before any comma or '&' for better search results
-      // ensuring we strip any "• Metadata" first if present in the passed string
-      // though for display we might show more.
-      var searchName = widget.artist.split('•').first.trim();
-      searchName = searchName.split(RegExp(r'[,&/]')).first.trim();
+      final provider = Provider.of<RadioProvider>(context, listen: false);
+      final image = await provider.fetchArtistImage(widget.artist);
 
-      final uri = Uri.parse(
-        "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(searchName)}&limit=1",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        if (json['data'] != null && (json['data'] as List).isNotEmpty) {
-          String? picture =
-              json['data'][0]['picture_xl'] ??
-              json['data'][0]['picture_big'] ??
-              json['data'][0]['picture_medium'];
-
-          if (picture != null && mounted) {
-            setState(() {
-              _imageUrl = picture;
-            });
-          }
-        }
+      if (mounted && image != null) {
+        setState(() {
+          _imageUrl = image;
+        });
       }
     } catch (e) {
-      // Ignore errors, default fallback will be shown
+      // Ignore errors
     }
   }
 

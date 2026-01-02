@@ -625,12 +625,12 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                     IconButton(
                                       icon: Icon(
                                         isSaved
-                                            ? Icons.favorite
-                                            : Icons.favorite_border,
+                                            ? Icons.check_circle
+                                            : Icons.add_circle_outline,
                                         color: isSaved
-                                            ? Colors.redAccent
+                                            ? Colors.greenAccent
                                             : Colors.white54,
-                                        size: 20,
+                                        size: 24,
                                       ),
                                       onPressed: () {
                                         if (isSaved) {

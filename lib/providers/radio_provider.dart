@@ -3714,6 +3714,98 @@ class RadioProvider with ChangeNotifier {
     _metadataTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
   }
 
+  // --- Artist Image Caching ---
+  final Map<String, String?> _artistImageCache = {};
+
+  Future<String?> fetchArtistImage(String artistName) async {
+    // 1. Normalize name for cache key
+    final rawKey = artistName.trim().toLowerCase();
+
+    // 2. Check Cache
+    if (_artistImageCache.containsKey(rawKey)) {
+      return _artistImageCache[rawKey];
+    }
+
+    // Helper: Returns URL (String), "NOT_FOUND" (String), or null (Error)
+    Future<String?> searchDeezer(String query) async {
+      if (query.isEmpty) return "NOT_FOUND";
+      try {
+        final uri = Uri.parse(
+          "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(query)}&limit=1",
+        );
+        final response = await http.get(uri);
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body);
+          if (json['data'] != null && (json['data'] as List).isNotEmpty) {
+            return json['data'][0]['picture_xl'] ??
+                json['data'][0]['picture_big'] ??
+                json['data'][0]['picture_medium'];
+          } else {
+            return "NOT_FOUND";
+          }
+        } else {
+          LogService().log(
+            "Artist fetch failed ($query): ${response.statusCode}",
+          );
+        }
+      } catch (e) {
+        LogService().log("Error fetching artist '$query': $e");
+      }
+      return null; // Network or Server Error
+    }
+
+    // 3. Prepare Sanitized Name
+    String searchName = artistName;
+    searchName = searchName.split('•').first;
+    searchName = searchName.split('(').first;
+    searchName = searchName.split('[').first;
+    searchName = searchName.split('{').first;
+
+    final lowerName = searchName.toLowerCase();
+    if (lowerName.contains(' feat')) {
+      searchName = searchName.substring(0, lowerName.indexOf(' feat'));
+    } else if (lowerName.contains(' ft.')) {
+      searchName = searchName.substring(0, lowerName.indexOf(' ft.'));
+    }
+
+    searchName = searchName.split(' - ').first; // "Artist - Title" split
+    searchName = searchName
+        .split(RegExp(r'[,;&/|+\*\._]'))
+        .first; // Special chars
+    searchName = searchName.trim();
+
+    // 4. Attempt 1: Sanitized Name
+    String? result = await searchDeezer(searchName);
+
+    // 5. Attempt 2: Raw Name (Fallback if Sanitized failed/empty, mimicking Artist Page)
+    if ((result == "NOT_FOUND" || result == null) &&
+        searchName != artistName.trim()) {
+      // LogService().log("Sanitized search failed for '$searchName', trying raw: '$artistName'");
+      final rawResult = await searchDeezer(artistName.trim());
+
+      // If Raw found something, use it
+      if (rawResult != null && rawResult != "NOT_FOUND") {
+        result = rawResult;
+      } else if (rawResult == "NOT_FOUND" && result == "NOT_FOUND") {
+        // Both confirmed NOT FOUND
+        result = "NOT_FOUND";
+      }
+      // If rawResult is null (Error), keep previous result (which might be NOT_FOUND or null)
+    }
+
+    // 6. Cache & Return
+    if (result != null && result != "NOT_FOUND") {
+      _artistImageCache[rawKey] = result;
+      return result;
+    } else if (result == "NOT_FOUND") {
+      _artistImageCache[rawKey] = null;
+      return null;
+    } else {
+      // Error case: Do not cache, allow retry
+      return null;
+    }
+  }
+
   // Allow external updates (e.g. from UI fetch)
   void setArtistImage(String? imageUrl) {
     if (_currentArtistImage != imageUrl) {
