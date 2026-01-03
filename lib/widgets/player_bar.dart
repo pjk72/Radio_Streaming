@@ -592,7 +592,7 @@ class PlayerBar extends StatelessWidget {
             tooltip: "Shuffle",
             onPressed: () => provider.toggleShuffle(),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
 
         // Add to Genre Playlist Button (Radio Only)
@@ -685,7 +685,7 @@ class PlayerBar extends StatelessWidget {
             onPressed: () => provider.togglePlay(),
           ),
         ),
-        SizedBox(width: isDesktop ? 24 : 12),
+        const SizedBox(width: 4),
         IconButton(
           icon: const Icon(Icons.skip_next_rounded),
           color: Colors.white,

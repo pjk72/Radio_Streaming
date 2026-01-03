@@ -2848,6 +2848,42 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
+  Widget _buildDialogIcon(BuildContext context, Playlist p) {
+    if (p.id.startsWith('spotify_')) {
+      return const FaIcon(FontAwesomeIcons.spotify, color: Color(0xFF1DB954));
+    }
+    if (p.creator == 'app' || p.id == 'favorites') {
+      return ClipOval(
+        child: Image.asset(
+          'assets/icon.png',
+          width: 24,
+          height: 24,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    // User
+    try {
+      final backupService = Provider.of<BackupService>(context, listen: false);
+      final photoUrl = backupService.currentUser?.photoUrl;
+
+      if (photoUrl != null) {
+        return ClipOval(
+          child: Image.network(
+            photoUrl,
+            width: 24,
+            height: 24,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.person, color: Colors.white),
+          ),
+        );
+      }
+    } catch (_) {}
+
+    return const Icon(Icons.person, color: Colors.white);
+  }
+
   Future<bool> _showCopySongDialog(
     BuildContext context,
     RadioProvider provider,
@@ -2895,9 +2931,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   children: others
                       .map(
                         (p) => ListTile(
-                          leading: const Icon(
-                            Icons.folder,
-                            color: Colors.white38,
+                          leading: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Center(child: _buildDialogIcon(context, p)),
                           ),
                           title: Text(
                             p.name,
@@ -2973,9 +3010,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   children: others
                       .map(
                         (p) => ListTile(
-                          leading: const Icon(
-                            Icons.folder,
-                            color: Colors.white38,
+                          leading: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Center(child: _buildDialogIcon(context, p)),
                           ),
                           title: Text(
                             p.name,

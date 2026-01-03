@@ -63,6 +63,11 @@ class RadioAudioHandler extends BaseAudioHandler
   Timer? _recognitionTimer;
   bool _isACRCloudEnabled = true;
 
+  // Stuck Playback Monitoring
+  Timer? _stuckCheckTimer;
+  Duration _lastStuckCheckPosition = Duration.zero;
+  int _stuckSecondsCount = 0;
+
   static const _addToPlaylistControl = MediaControl(
     androidIcon: 'drawable/ic_favorite_border',
     label: 'Like',
@@ -272,7 +277,13 @@ class RadioAudioHandler extends BaseAudioHandler
       if (!hasConnection) {
         // Internet Lost: Stop player to prevent buffering stale data
         if (playbackState.value.playing) {
-          _player.stop(); // Clear buffer
+          // If playlist song, pause to preserve position logic more naturally
+          if (mediaItem.value?.extras?['type'] == 'playlist_song') {
+            _player.pause();
+          } else {
+            _player.stop(); // Clear buffer for radio
+          }
+
           _isRetryPending = true;
           // Show buffering/waiting state
           playbackState.add(
@@ -485,8 +496,9 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _playYoutubeVideo(
     String videoId,
     SavedSong song,
-    String playlistId,
-  ) async {
+    String playlistId, {
+    Duration? startAt,
+  }) async {
     // Always reset flags
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
@@ -509,7 +521,9 @@ class RadioAudioHandler extends BaseAudioHandler
         'is_resolved': true,
         'duration': _cachedNextSongExtras?['duration'],
         'user_initiated': true,
+
         'stableId': song.youtubeUrl ?? 'song_${song.id}',
+        'startAt': startAt,
       };
 
       // DO WE HAVE A WARM PLAYER? (Gapless Swap)
@@ -576,6 +590,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'duration': video.duration?.inSeconds,
         'user_initiated': true,
         'stableId': stableId,
+        'startAt': startAt,
       };
 
       await playFromUri(Uri.parse(streamUrl), extras);
@@ -638,7 +653,17 @@ class RadioAudioHandler extends BaseAudioHandler
       ),
     );
 
-    await playFromUri(Uri.parse(currentUrl), mediaItem.value?.extras);
+    var extras = mediaItem.value?.extras;
+    if (extras != null && extras['type'] == 'playlist_song') {
+      // Create copy to add resume position
+      extras = Map<String, dynamic>.from(extras);
+      extras['startAt'] = _currentPosition;
+      // CRITICAL: Force resolution because the ID in mediaItem is likely the stableId,
+      // not the stream URL. We need _playYoutubeVideo to re-resolve it.
+      extras['is_resolved'] = false;
+    }
+
+    await playFromUri(Uri.parse(currentUrl), extras);
     _internalRetry = false;
   }
 
@@ -1138,6 +1163,11 @@ class RadioAudioHandler extends BaseAudioHandler
         }
 
         await _player.setSource(UrlSource(url));
+        if (extras['startAt'] != null && extras['startAt'] is Duration) {
+          try {
+            await _player.seek(extras['startAt']);
+          } catch (_) {}
+        }
         await _player.resume();
 
         if (_currentSessionId == sessionId) {
@@ -1188,6 +1218,7 @@ class RadioAudioHandler extends BaseAudioHandler
           uri.toString(),
           song,
           extras['playlistId'] ?? '',
+          startAt: extras['startAt'] as Duration?,
         );
       }
       return;
@@ -1571,7 +1602,66 @@ class RadioAudioHandler extends BaseAudioHandler
 
   // ... (existing helper methods if any)
 
+  void _startStuckMonitor() {
+    if (_stuckCheckTimer != null && _stuckCheckTimer!.isActive) return;
+
+    _stuckSecondsCount = 0;
+    _lastStuckCheckPosition = _currentPosition;
+
+    // Only monitor if this is a playlist song
+    if (mediaItem.value?.extras?['type'] != 'playlist_song') return;
+
+    _stuckCheckTimer = Timer.periodic(const Duration(seconds: 1), (
+      timer,
+    ) async {
+      // Safety check: if not playing, stop.
+      if (_player.state != PlayerState.playing) {
+        _stopStuckMonitor();
+        return;
+      }
+
+      // Double check it's still a playlist song
+      if (mediaItem.value?.extras?['type'] != 'playlist_song') {
+        _stopStuckMonitor();
+        return;
+      }
+
+      final currentPos = _currentPosition;
+
+      // If position hasn't moved significantly (< 100ms)
+      if ((currentPos - _lastStuckCheckPosition).abs().inMilliseconds < 100) {
+        _stuckSecondsCount++;
+      } else {
+        _stuckSecondsCount = 0;
+        _lastStuckCheckPosition = currentPos;
+      }
+
+      if (_stuckSecondsCount >= 8) {
+        // Check internet
+        final connectivity = await Connectivity().checkConnectivity();
+        if (!connectivity.contains(ConnectivityResult.none)) {
+          LogService().log("Stuck playback detected (8s). Skipping to next.");
+          _stuckSecondsCount = 0; // Reset to avoid multiple triggers
+          skipToNext();
+        }
+      }
+    });
+  }
+
+  void _stopStuckMonitor() {
+    _stuckCheckTimer?.cancel();
+    _stuckCheckTimer = null;
+    _stuckSecondsCount = 0;
+  }
+
   void _broadcastState(PlayerState state) {
+    // Monitor Stuck Playback
+    if (state == PlayerState.playing) {
+      _startStuckMonitor();
+    } else {
+      _stopStuckMonitor();
+    }
+
     // If we are pending a retry, don't clear notification
     if (_isRetryPending) {
       return;
