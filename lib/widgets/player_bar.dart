@@ -585,7 +585,9 @@ class PlayerBar extends StatelessWidget {
         if (provider.currentPlayingPlaylistId != null) ...[
           IconButton(
             icon: Icon(
-              Icons.shuffle_rounded,
+              provider.isShuffleMode
+                  ? Icons.shuffle_rounded
+                  : Icons.repeat_rounded,
               color: provider.isShuffleMode ? Colors.redAccent : Colors.grey,
             ),
             iconSize: 20,

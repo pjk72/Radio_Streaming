@@ -312,8 +312,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                     const SizedBox(height: 8),
                                     Text(
                                       provider.isFetchingLyrics
-                                          ? "Caricamento testi..."
-                                          : "Nessun testo sincronizzato trovato",
+                                          ? "Loading lyrics..."
+                                          : "No lyrics found",
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         color: Colors.white54,
@@ -861,7 +861,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
             ),
           ),
 
-          SizedBox(height: isLandscape ? 4 : 40),
+          SizedBox(height: isLandscape ? 4 : 10),
 
           // Progress Bar (Youtube) - Above Controls
           if (provider.hiddenAudioController != null)
@@ -869,106 +869,183 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           else if (provider.currentPlayingPlaylistId != null)
             _buildNativeProgressBar(context, provider)
           else
-            const SizedBox(height: 40), // Space for Radio info separation
+            const SizedBox(height: 20), // Space for Radio info separation
+          // Controls
           // Controls
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Shuffle (Left)
-                if (provider.currentPlayingPlaylistId != null) ...[
-                  IconButton(
-                    onPressed: () {
-                      provider.toggleShuffle();
-                      // Relayout and jump to start of list
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_pageController != null &&
-                            _pageController!.hasClients) {
-                          _pageController!.jumpToPage(0);
-                          if (provider.activeQueue.isNotEmpty &&
-                              provider.currentPlayingPlaylistId != null) {
-                            provider.playPlaylistSong(
-                              provider.activeQueue[0],
-                              provider.currentPlayingPlaylistId!,
-                            );
-                          }
-                        }
-                      });
-                    },
-                    icon: Icon(
-                      Icons.shuffle_rounded,
-                      color: provider.isShuffleMode
-                          ? const Color(0xFFE91E63)
-                          : Colors.white24,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                ],
-
-                IconButton(
-                  onPressed: () => provider.playPrevious(),
-                  icon: const Icon(
-                    Icons.skip_previous_rounded,
-                    color: Colors.white,
-                    size: 36,
-                  ),
-                ),
-                const SizedBox(width: 24),
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withOpacity(0.2),
-                        blurRadius: 20,
-                        offset: const Offset(0, 5),
+            child: SizedBox(
+              height: 60,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Main Controls (Centered)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: () => provider.playPrevious(),
+                        icon: const Icon(
+                          Icons.skip_previous_rounded,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withOpacity(0.2),
+                              blurRadius: 20,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          onPressed: () => provider.togglePlay(),
+                          icon: provider.isLoading
+                              ? const SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.black,
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : Icon(
+                                  provider.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  color: Colors.black,
+                                  size: 32,
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                      IconButton(
+                        onPressed: () => provider.playNext(),
+                        icon: const Icon(
+                          Icons.skip_next_rounded,
+                          color: Colors.white,
+                          size: 36,
+                        ),
                       ),
                     ],
                   ),
-                  child: IconButton(
-                    onPressed: () => provider.togglePlay(),
-                    icon: provider.isLoading
-                        ? const SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: CircularProgressIndicator(
-                              color: Colors.black,
-                              strokeWidth: 3,
+
+                  // Left Side Controls (Shuffle / Add)
+                  Positioned(
+                    left: 20,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Shuffle
+                        if (provider.currentPlayingPlaylistId != null) ...[
+                          IconButton(
+                            onPressed: () {
+                              provider.toggleShuffle();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (_pageController != null &&
+                                    _pageController!.hasClients) {
+                                  _pageController!.jumpToPage(0);
+                                  if (provider.activeQueue.isNotEmpty &&
+                                      provider.currentPlayingPlaylistId !=
+                                          null) {
+                                    provider.playPlaylistSong(
+                                      provider.activeQueue[0],
+                                      provider.currentPlayingPlaylistId!,
+                                    );
+                                  }
+                                }
+                              });
+                            },
+                            icon: Icon(
+                              provider.isShuffleMode
+                                  ? Icons.shuffle_rounded
+                                  : Icons.repeat_rounded,
+                              color: provider.isShuffleMode
+                                  ? const Color(0xFFE91E63)
+                                  : Colors.white24,
+                              size: 24,
                             ),
-                          )
-                        : Icon(
-                            provider.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: Colors.black,
-                            size: 32,
                           ),
+                        ],
+                        // Add to Genre Playlist Button (Radio Only)
+                        if (provider.currentPlayingPlaylistId == null &&
+                            provider.currentTrack.isNotEmpty &&
+                            provider.currentTrack != "Live Broadcast" &&
+                            provider.currentTrack != "Unknown Title" &&
+                            provider.currentAlbumArt !=
+                                provider.currentStation?.logo)
+                          IconButton(
+                            icon: Icon(
+                              provider.currentSongIsSaved
+                                  ? Icons.check_circle
+                                  : Icons.add_circle_outline,
+                            ),
+                            color: provider.currentSongIsSaved
+                                ? Colors.greenAccent
+                                : Colors.white54,
+                            iconSize: 28,
+                            tooltip: provider.currentSongIsSaved
+                                ? "Already saved"
+                                : "Add to Genre Playlist",
+                            onPressed: provider.currentSongIsSaved
+                                ? null
+                                : () async {
+                                    final genre = await provider
+                                        .addCurrentSongToGenrePlaylist();
+                                    if (context.mounted) {
+                                      if (genre != null) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            behavior: SnackBarBehavior.floating,
+                                            backgroundColor: const Color(
+                                              0xFF1a4d2e,
+                                            ),
+                                            content: Text(
+                                              "Added to $genre Playlist",
+                                            ),
+                                            duration: const Duration(
+                                              seconds: 2,
+                                            ),
+                                          ),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              "Could not identify song to save.",
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 24),
-                IconButton(
-                  onPressed: () => provider.playNext(),
-                  icon: const Icon(
-                    Icons.skip_next_rounded,
-                    color: Colors.white,
-                    size: 36,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
-          SizedBox(height: isLandscape ? 95 : 50),
+          SizedBox(height: isLandscape ? 95 : 10),
           // Visualizer (Bottom)
           AnimatedContainer(
             duration: const Duration(milliseconds: 600),
             curve: Curves.fastOutSlowIn,
-            height: isLandscape ? 40 : 60, // Shorter in landscape
+            height: isLandscape ? 40 : 130, // Shorter in landscape
             child: provider.isPlaying
                 ? Opacity(
                     opacity:
@@ -1589,7 +1666,7 @@ class _MusicVisualizerState extends State<_MusicVisualizer>
 
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: List.generate(widget.barCount, (index) {
             double heightFactor = _currentHeights[index];
             final double volumeScale = widget.volume.clamp(0.0, 1.0);
@@ -1600,7 +1677,7 @@ class _MusicVisualizerState extends State<_MusicVisualizer>
                 right: index < widget.barCount - 1 ? gap : 0,
               ),
               width: barWidth,
-              height: (constraints.maxHeight * heightFactor * volumeScale * 1.2)
+              height: (constraints.maxHeight * heightFactor * volumeScale * 1.5)
                   .clamp(0.0, constraints.maxHeight),
               decoration: BoxDecoration(
                 color: accentColor.withValues(
@@ -1609,7 +1686,7 @@ class _MusicVisualizerState extends State<_MusicVisualizer>
                 borderRadius: BorderRadius.circular(barWidth / 2),
                 boxShadow: [
                   BoxShadow(
-                    color: widget.color.withOpacity(0.6),
+                    color: widget.color.withValues(alpha: 0.6),
                     blurRadius: 8 * heightFactor * volumeScale,
                     spreadRadius: heightFactor * 1.5 * volumeScale,
                     offset: const Offset(0, 0),

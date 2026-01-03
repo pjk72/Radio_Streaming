@@ -44,9 +44,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Group stations
-    final provider = Provider.of<RadioProvider>(context);
-
     final isDesktop = MediaQuery.of(context).size.width > 700;
 
     return Stack(

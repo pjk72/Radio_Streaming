@@ -2047,6 +2047,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     List<SavedSong> groupSongs,
   ) {
     return _AlbumGroupWidget(
+      showFavoritesButton: playlist.id != 'favorites',
       groupSongs: groupSongs,
       dismissDirection:
           (playlist.id.startsWith('temp_artist_') ||
@@ -2391,48 +2392,50 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      GestureDetector(
-                        onTap: () async {
-                          if (isFavorite) {
-                            await provider.removeFromPlaylist(
-                              'favorites',
-                              song.id,
-                            );
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).clearSnackBars();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Removed from Favorites"),
-                                  duration: Duration(seconds: 1),
-                                ),
+                      if (playlist.id != 'favorites') ...[
+                        GestureDetector(
+                          onTap: () async {
+                            if (isFavorite) {
+                              await provider.removeFromPlaylist(
+                                'favorites',
+                                song.id,
                               );
-                            }
-                          } else {
-                            await provider.copySong(
-                              song.id,
-                              playlist.id,
-                              'favorites',
-                            );
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).clearSnackBars();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Added to Favorites"),
-                                  duration: Duration(seconds: 1),
-                                ),
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).clearSnackBars();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Removed from Favorites"),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                            } else {
+                              await provider.copySong(
+                                song.id,
+                                playlist.id,
+                                'favorites',
                               );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).clearSnackBars();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Added to Favorites"),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                              }
                             }
-                          }
-                        },
-                        child: Icon(
-                          isFavorite ? Icons.favorite : Icons.favorite_border,
-                          color: isFavorite
-                              ? Colors.pinkAccent
-                              : Colors.white54,
-                          size: 18,
+                          },
+                          child: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            color: isFavorite
+                                ? Colors.pinkAccent
+                                : Colors.white54,
+                            size: 18,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 24),
+                        const SizedBox(width: 24),
+                      ],
 
                       _InvalidSongIndicator(
                         songId: song.id,
@@ -2601,61 +2604,63 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               isStaticInvalid: !song.isValid,
                             ),
                             if (!isInvalid) ...[
-                              GestureDetector(
-                                onTap: () async {
-                                  if (isFavorite) {
-                                    await provider.removeFromPlaylist(
-                                      'favorites',
-                                      song.id,
-                                    );
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).clearSnackBars();
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            "Removed from Favorites",
+                              if (playlist.id != 'favorites') ...[
+                                GestureDetector(
+                                  onTap: () async {
+                                    if (isFavorite) {
+                                      await provider.removeFromPlaylist(
+                                        'favorites',
+                                        song.id,
+                                      );
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).clearSnackBars();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              "Removed from Favorites",
+                                            ),
+                                            duration: Duration(seconds: 1),
                                           ),
-                                          duration: Duration(seconds: 1),
-                                        ),
+                                        );
+                                      }
+                                    } else {
+                                      // Copy to favorites
+                                      await provider.copySong(
+                                        song.id,
+                                        playlist.id,
+                                        'favorites',
                                       );
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).clearSnackBars();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text("Added to Favorites"),
+                                            duration: Duration(seconds: 1),
+                                          ),
+                                        );
+                                      }
                                     }
-                                  } else {
-                                    // Copy to favorites
-                                    await provider.copySong(
-                                      song.id,
-                                      playlist.id,
-                                      'favorites',
-                                    );
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).clearSnackBars();
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text("Added to Favorites"),
-                                          duration: Duration(seconds: 1),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
-                                child: Icon(
-                                  isFavorite
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  color: isFavorite
-                                      ? Colors.pinkAccent
-                                      : Colors.white54,
-                                  size: 20,
+                                  },
+                                  child: Icon(
+                                    isFavorite
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color: isFavorite
+                                        ? Colors.pinkAccent
+                                        : Colors.white54,
+                                    size: 20,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 20),
+                                const SizedBox(width: 20),
+                              ],
                               GestureDetector(
                                 onTap: () async {
                                   showDialog(
@@ -4130,6 +4135,7 @@ class _AlbumGroupWidget extends StatefulWidget {
   final Future<bool> Function() onMove;
   final Future<bool> Function() onRemove;
   final DismissDirection? dismissDirection;
+  final bool showFavoritesButton;
 
   const _AlbumGroupWidget({
     required this.groupSongs,
@@ -4137,6 +4143,7 @@ class _AlbumGroupWidget extends StatefulWidget {
     required this.onMove,
     required this.onRemove,
     this.dismissDirection,
+    this.showFavoritesButton = true,
   });
 
   @override
@@ -4316,18 +4323,20 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                           ],
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () async {
-                          provider.toggleFollowAlbum(normalizedAlbumName);
-                        },
-                        child: Icon(
-                          isFollowed ? Icons.favorite : Icons.favorite_border,
-                          color: isFollowed
-                              ? Colors.pinkAccent
-                              : Colors.white54,
-                          size: 24,
+                      if (widget.showFavoritesButton) ...[
+                        GestureDetector(
+                          onTap: () async {
+                            provider.toggleFollowAlbum(normalizedAlbumName);
+                          },
+                          child: Icon(
+                            isFollowed ? Icons.favorite : Icons.favorite_border,
+                            color: isFollowed
+                                ? Colors.pinkAccent
+                                : Colors.white54,
+                            size: 24,
+                          ),
                         ),
-                      ),
+                      ],
                       const SizedBox(width: 16),
                       Icon(
                         _isExpanded

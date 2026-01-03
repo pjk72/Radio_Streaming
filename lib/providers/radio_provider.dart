@@ -473,6 +473,22 @@ class RadioProvider with ChangeNotifier {
         }
       }
 
+      // Sync Shuffle Mode from System/Notification
+      // Only sync if we are in Playlist Mode.
+      // AudioHandler forces shuffleMode=none for Radio, which would incorrectly wipe our preference if we didn't check.
+      if (_currentPlayingPlaylistId != null || _hiddenAudioController != null) {
+        final bool isShuffle = state.shuffleMode == AudioServiceShuffleMode.all;
+        if (_isShuffleMode != isShuffle) {
+          _isShuffleMode = isShuffle;
+          if (_isShuffleMode && _currentPlayingPlaylistId != null) {
+            _generateShuffleList();
+          } else {
+            _shuffledIndices.clear();
+          }
+          notifyListeners();
+        }
+      }
+
       // Sync loading state for Radio (when no YouTube controller is active)
       if (_hiddenAudioController == null) {
         final bool isBuffering =
@@ -1144,6 +1160,11 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyShuffleMode, _isShuffleMode);
+    await _audioHandler.setShuffleMode(
+      _isShuffleMode
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none,
+    );
   }
 
   void _generateShuffleList() {
@@ -2102,6 +2123,12 @@ class RadioProvider with ChangeNotifier {
     _isACRCloudEnabled = prefs.getBool(_keyEnableACRCloud) ?? true;
     _isCompactView = prefs.getBool(_keyCompactView) ?? false;
     _isShuffleMode = prefs.getBool(_keyShuffleMode) ?? false;
+    // Sync initial state to AudioHandler
+    if (_isShuffleMode) {
+      _audioHandler.setShuffleMode(AudioServiceShuffleMode.all);
+    } else {
+      _audioHandler.setShuffleMode(AudioServiceShuffleMode.none);
+    }
 
     // Load invalid songs
     final invalidList = prefs.getStringList(_keyInvalidSongIds);
