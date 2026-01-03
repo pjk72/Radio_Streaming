@@ -82,62 +82,11 @@ class _HomeScreenState extends State<HomeScreen>
         Scaffold(
           key: _scaffoldKey,
           backgroundColor: Colors.transparent,
-          extendBodyBehindAppBar: false, // Prevent overlap
-          appBar: !isDesktop && _navIndex != 0
-              ? AppBar(
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  title: const Text(
-                    "Radio Stream",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  centerTitle: false,
-                  actions: [
-                    Row(
-                      children: [
-                        Text(
-                          provider.backupService.currentUser?.displayName
-                                  ?.split(' ')
-                                  .first ??
-                              "Guest",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.white24,
-                          backgroundImage:
-                              provider.backupService.currentUser?.photoUrl !=
-                                  null
-                              ? NetworkImage(
-                                  provider.backupService.currentUser!.photoUrl!,
-                                )
-                              : null,
-                          child:
-                              provider.backupService.currentUser?.photoUrl ==
-                                  null
-                              ? const Icon(
-                                  Icons.person,
-                                  size: 16,
-                                  color: Colors.white,
-                                )
-                              : null,
-                        ),
-                        const SizedBox(width: 16),
-                      ],
-                    ),
-                  ],
-                )
-              : null,
-          bottomNavigationBar: !isDesktop ? _buildBottomNav(context) : null,
           body: Column(
             children: [
+              // Unified Top Header (Title + Nav)
+              if (!isDesktop) _buildTopHeader(context),
+
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -152,25 +101,14 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
 
-                    // Main Content Area with IndexedStack
+                    // Main Content Area
                     Expanded(
                       child: IndexedStack(
                         index: _navIndex,
                         children: [
-                          // 0. Radio Stream (Home)
                           const RadioStreamHome(),
-
-                          // 1. Playlist
-                          Padding(
-                            padding: EdgeInsets.only(top: isDesktop ? 0 : 0.0),
-                            child: const PlaylistScreen(),
-                          ),
-
-                          // 2. Settings
-                          Padding(
-                            padding: EdgeInsets.only(top: isDesktop ? 0 : 0.0),
-                            child: const SettingsScreen(),
-                          ),
+                          const PlaylistScreen(),
+                          const SettingsScreen(),
                         ],
                       ),
                     ),
@@ -187,46 +125,146 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  @override
-  void dispose() {
-    _bgController.dispose();
-    super.dispose();
-  }
+  Widget _buildTopHeader(BuildContext context) {
+    // Only for Mobile/Tablet (!isDesktop)
+    final provider = Provider.of<RadioProvider>(context);
 
-  Widget _buildBottomNav(BuildContext context) {
     return Container(
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 8,
+        bottom: 12,
+        left: 16,
+        right: 16,
+      ),
       decoration: BoxDecoration(
-        color: const Color(
-          0xFF1a1a2e,
-        ).withValues(alpha: 0.95), // Deep dark, slightly transparent
-        border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF14141E).withValues(alpha: 0.95),
+            const Color(0xFF14141E).withValues(alpha: 0.0),
+          ],
+          stops: const [0.7, 1.0],
         ),
       ),
-      child: BottomNavigationBar(
-        currentIndex: _navIndex,
-        onTap: (index) => setState(() => _navIndex = index),
-        backgroundColor: Colors.transparent, // Handled by Container
-        type: BottomNavigationBarType.fixed,
-        elevation: 0,
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.white60,
-        showUnselectedLabels: true,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.radio),
-            label: "Radio Stream",
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Row 1: Profile + Title
+          SizedBox(
+            height: 32,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Colors.white24,
+                      backgroundImage:
+                          provider.backupService.currentUser?.photoUrl != null
+                          ? NetworkImage(
+                              provider.backupService.currentUser!.photoUrl!,
+                            )
+                          : null,
+                      child:
+                          provider.backupService.currentUser?.photoUrl == null
+                          ? const Icon(
+                              Icons.person,
+                              size: 14,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+                const Center(
+                  child: Text(
+                    "Radio Stream",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.playlist_play_rounded),
-            label: "Playlist",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: "Settings",
+          const SizedBox(height: 2),
+          // Row 2: Navigation Menu (Pill Style)
+          Container(
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                _buildTopNavItem(Icons.radio, "Radio", 0),
+                _buildTopNavItem(Icons.playlist_play_rounded, "Playlist", 1),
+                _buildTopNavItem(Icons.settings, "Settings", 2),
+              ],
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildTopNavItem(IconData icon, String label, int index) {
+    final isSelected = _navIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _navIndex = index),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            border: isSelected
+                ? Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    width: 1,
+                  )
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? Colors.white : Colors.white60,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white60,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  fontSize: 13,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _bgController.dispose();
+    super.dispose();
   }
 }

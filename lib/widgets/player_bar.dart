@@ -492,7 +492,7 @@ class PlayerBar extends StatelessWidget {
 
         return Container(
           width: double.infinity,
-          height: 24,
+          height: 28,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           alignment: Alignment.center,
           child: Row(

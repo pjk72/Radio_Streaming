@@ -56,64 +56,6 @@ class RadioStreamHome extends StatelessWidget {
       child: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
-            if (!isDesktop) ...[
-              SliverSafeArea(
-                top: true,
-                bottom: false,
-                sliver: SliverAppBar(
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  floating: false,
-                  pinned: false,
-                  title: const Text(
-                    "Radio Stream",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  centerTitle: false,
-                  actions: [
-                    Row(
-                      children: [
-                        Text(
-                          provider.backupService.currentUser?.displayName
-                                  ?.split(' ')
-                                  .first ??
-                              "Guest",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Colors.white24,
-                          backgroundImage:
-                              provider.backupService.currentUser?.photoUrl !=
-                                  null
-                              ? NetworkImage(
-                                  provider.backupService.currentUser!.photoUrl!,
-                                )
-                              : null,
-                          child:
-                              provider.backupService.currentUser?.photoUrl ==
-                                  null
-                              ? const Icon(
-                                  Icons.person,
-                                  size: 16,
-                                  color: Colors.white,
-                                )
-                              : null,
-                        ),
-                        const SizedBox(width: 16),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
             SliverOverlapAbsorber(
               handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
               sliver: SliverSafeArea(
@@ -122,7 +64,7 @@ class RadioStreamHome extends StatelessWidget {
                 sliver: SliverPersistentHeader(
                   pinned: true,
                   delegate: NowPlayingHeaderDelegate(
-                    minHeight: 110 + MediaQuery.of(context).padding.top,
+                    minHeight: 90 + MediaQuery.of(context).padding.top,
                     maxHeight: 160 + MediaQuery.of(context).padding.top,
                     topPadding: MediaQuery.of(context).padding.top,
                   ),

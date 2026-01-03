@@ -159,7 +159,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     // When t=0 (Collapsed): padding is standard + safeArea (16.0 + topPadding).
     // Adding extra buffer to be safe.
     final double dynamicTopPadding =
-        (16.0 * t) + ((widget.topPadding + 35.0) * (1.0 - t));
+        (16.0 * t) + ((widget.topPadding + 30.0) * (1.0 - t));
 
     return Stack(
       children: [
@@ -194,9 +194,9 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
               decoration: BoxDecoration(
                 // Increase opacity when collapsed (t -> 0) to prevent background content mix
                 // Increase opacity when collapsed (t -> 0) to prevent background content mix
-                color: Theme.of(context).scaffoldBackgroundColor.withValues(
-                  alpha: 0.3 + (0.65 * (1.0 - t)),
-                ),
+                color: Theme.of(
+                  context,
+                ).scaffoldBackgroundColor.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(borderRadius),
                 border: Border.all(
                   color: Colors.white.withValues(
@@ -224,9 +224,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                           child: _buildImage(
                             imageUrl,
                             fit: BoxFit.cover,
-                            color: Colors.black.withValues(
-                              alpha: 0.4 + (0.4 * (1.0 - t)),
-                            ), // Darker when collapsed
+                            color: Colors.black.withValues(alpha: 0.3),
                             colorBlendMode: BlendMode.darken,
                           ),
                         ),
@@ -245,23 +243,34 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                         right: 0,
                         child: Align(
                           alignment: Alignment.centerRight,
-                          child: FractionallySizedBox(
-                            widthFactor: 0.75, // Even wider (75%)
-                            heightFactor: 1.0,
+                          child: AspectRatio(
+                            aspectRatio: 1.8,
                             child: ShaderMask(
                               shaderCallback: (rect) {
                                 return const LinearGradient(
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
-                                  stops: [0.0, 0.7], // Soft blend
-                                  colors: [Colors.transparent, Colors.white],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  stops: [0.6, 1.0],
+                                  colors: [Colors.white, Colors.transparent],
                                 ).createShader(rect);
                               },
                               blendMode: BlendMode.dstIn,
-                              child: _buildImage(
-                                imageUrl,
-                                fit: BoxFit.cover,
-                                alignment: Alignment.topCenter, // Focus on face
+                              child: ShaderMask(
+                                shaderCallback: (rect) {
+                                  return const LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    stops: [0.0, 0.7], // Soft blend
+                                    colors: [Colors.transparent, Colors.white],
+                                  ).createShader(rect);
+                                },
+                                blendMode: BlendMode.dstIn,
+                                child: _buildImage(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  alignment:
+                                      Alignment.topCenter, // Focus on face
+                                ),
                               ),
                             ),
                           ),
@@ -297,7 +306,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                         padding: EdgeInsets.only(
                           left: 24.0,
                           right: 24.0,
-                          bottom: 16.0,
+                          bottom: 5.0,
                           top: dynamicTopPadding,
                         ),
                         child: LayoutBuilder(
@@ -310,7 +319,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  mainAxisAlignment: MainAxisAlignment.start,
                                   children: [
                                     if (t < 0.3) const SizedBox(height: 0),
 
@@ -367,7 +376,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                               "Live Broadcast") ...[
                                         if (t > 0.3)
                                           SizedBox(
-                                            height: 40 * t,
+                                            height: 20 * t,
                                           ), // spacer replacement
                                         // ARTIST HIGHLIGHT MODE
                                         Text(
@@ -426,7 +435,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                         // Hide secondary info when very collapsed to save space
                                         if (t > 0.3) ...[
                                           SizedBox(
-                                            height: 40 * t,
+                                            height: 20 * t,
                                           ), // spacer replacement
                                           Row(
                                             children: [
@@ -632,79 +641,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
             ),
           ),
         ),
+
         // Upper Status Bar Gradient (Already exists, preserving it)
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          height: widget.topPadding + 100.0,
-          child: Opacity(
-            // Fade in earlier and stay opaque longer
-            opacity: ((0.8 - t) * 2).clamp(0.0, 1.0),
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Theme.of(context).scaffoldBackgroundColor,
-                      Theme.of(
-                        context,
-                      ).scaffoldBackgroundColor.withValues(alpha: 0.95),
-                      Theme.of(
-                        context,
-                      ).scaffoldBackgroundColor.withValues(alpha: 0.0),
-                    ],
-                    stops: [
-                      0.0,
-                      // extend the solid part slightly below the status bar
-                      widget.topPadding > 0
-                          ? ((widget.topPadding + 10) /
-                                    (widget.topPadding + 100.0))
-                                .clamp(0.0, 1.0)
-                          : 0.3,
-                      1.0,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
 
         // Bottom Gradient (Fade to Background) using the extra space
-        if (t < 0.2)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 30,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      const Color.fromARGB(
-                        255,
-                        30,
-                        30,
-                        62,
-                      ).withValues(alpha: 0),
-                      const Color.fromARGB(
-                        255,
-                        30,
-                        30,
-                        62,
-                      ).withValues(alpha: 1),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
