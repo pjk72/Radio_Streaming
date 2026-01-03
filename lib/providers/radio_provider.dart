@@ -2774,12 +2774,19 @@ class RadioProvider with ChangeNotifier {
       isValid: true,
     );
 
-    // Use service to add to specific genre playlist
-    await _playlistService.addToGenrePlaylist(genre, song);
-
-    // Update local state immediately
+    // Optimistic Update
     _currentSongIsSaved = true;
     notifyListeners();
+
+    try {
+      // Use service to add to specific genre playlist
+      await _playlistService.addToGenrePlaylist(genre, song);
+    } catch (e) {
+      // Revert if failed
+      _currentSongIsSaved = false;
+      notifyListeners();
+      return null;
+    }
 
     return genre;
   }

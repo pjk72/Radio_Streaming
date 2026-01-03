@@ -135,11 +135,17 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
               station.logo)
         : null;
 
+    // Logic to determine if we are showing a specific image (Artist/Album) or just the default Station Logo
+    // We consider it "Enriched" if we have a specific image AND it differs from the fallback station logo.
     final bool hasEnrichedImage =
-        (_fetchedArtistImage ??
-            provider.currentArtistImage ??
-            provider.currentAlbumArt) !=
-        null;
+        (imageUrl != null && station != null && imageUrl != station.logo);
+
+    final bool isLinkEnabled =
+        station != null &&
+        provider.currentArtist.isNotEmpty &&
+        provider.currentArtist != "Unknown Artist" &&
+        provider.currentTrack != "Live Broadcast" &&
+        hasEnrichedImage;
 
     final double titleSize = 16.0 + (10.0 * t); // 16 to 30
     final double trackSize = 12.0 + (8.0 * t); // 12 to 20
@@ -158,31 +164,25 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     return Stack(
       children: [
         MouseRegion(
-          cursor:
-              (station != null &&
-                  provider.currentArtist.isNotEmpty &&
-                  provider.currentArtist != "Unknown Artist" &&
-                  provider.currentTrack != "Live Broadcast")
+          cursor: isLinkEnabled
               ? SystemMouseCursors.click
               : SystemMouseCursors.basic,
           child: GestureDetector(
-            onTap: () {
-              if (station != null &&
-                  provider.currentArtist.isNotEmpty &&
-                  provider.currentArtist != "Unknown Artist" &&
-                  provider.currentTrack != "Live Broadcast") {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ArtistDetailsScreen(
-                      artistName: provider.currentArtist,
-                      artistImage:
-                          _fetchedArtistImage ?? provider.currentArtistImage,
-                      genre: station.genre,
-                    ),
-                  ),
-                );
-              }
-            },
+            onTap: isLinkEnabled
+                ? () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => ArtistDetailsScreen(
+                          artistName: provider.currentArtist,
+                          artistImage:
+                              _fetchedArtistImage ??
+                              provider.currentArtistImage,
+                          genre: station.genre,
+                        ),
+                      ),
+                    );
+                  }
+                : null,
             child: Container(
               width: double.infinity,
               height: widget.height,
@@ -234,7 +234,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
 
                     // 2. Right-Aligned Image with Fade (blends into background)
                     // Resize logic: width factor reduces as t -> 0
-                    if (imageUrl != null && hasEnrichedImage)
+                    if (imageUrl != null)
                       Positioned(
                         top:
                             widget.topPadding *

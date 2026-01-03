@@ -27,7 +27,13 @@ class GenreMapper {
 
     // Fallback: Use Generative AI for new/unknown genres
     // This creates an image pertinent to the genre name on the fly.
-    final safeGenre = Uri.encodeComponent(genre);
+    // Improve prompt specifically for "Mix" or generic terms to ensure vibrant style
+    String promptTerm = genre;
+    if (lower == 'mix' || lower == 'favorites') {
+      promptTerm = 'colorful abstract musical variety';
+    }
+
+    final safeGenre = Uri.encodeComponent(promptTerm);
     // Determine a seed for consistency so the image doesn't change on every reload
     // Use lower case hash to ensure 'Pop' and 'pop' generate the same image
     final seed = lower.hashCode;

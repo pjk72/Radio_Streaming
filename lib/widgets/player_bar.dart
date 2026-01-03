@@ -7,7 +7,7 @@ import 'package:audio_service/audio_service.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/icon_library.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import '../screens/song_details_screen.dart';
 import '../screens/artist_details_screen.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -49,8 +49,6 @@ class PlayerBar extends StatelessWidget {
                               MouseRegion(
                                 cursor: SystemMouseCursors.click,
                                 child: GestureDetector(
-                                  onLongPress: () =>
-                                      _showExternalLinks(context, provider),
                                   onTap: () {
                                     Navigator.of(context).push(
                                       PageRouteBuilder(
@@ -166,11 +164,6 @@ class PlayerBar extends StatelessWidget {
                                         children: [
                                           Expanded(
                                             child: GestureDetector(
-                                              onLongPress: () =>
-                                                  _showExternalLinks(
-                                                    context,
-                                                    provider,
-                                                  ),
                                               behavior:
                                                   HitTestBehavior.translucent,
                                               child: Column(
@@ -201,26 +194,54 @@ class PlayerBar extends StatelessWidget {
                                                     ],
                                                   ),
                                                   const SizedBox(height: 4),
-                                                  MouseRegion(
-                                                    cursor:
+                                                  Builder(
+                                                    builder: (context) {
+                                                      final bool isLinkEnabled =
+                                                          provider
+                                                              .currentArtist
+                                                              .isNotEmpty &&
+                                                          provider.currentAlbumArt !=
+                                                              null &&
+                                                          provider.currentAlbumArt !=
+                                                              provider
+                                                                  .currentStation
+                                                                  ?.logo;
+
+                                                      final Widget
+                                                      artistText = Text(
                                                         provider
-                                                            .currentArtist
-                                                            .isNotEmpty
-                                                        ? SystemMouseCursors
-                                                              .click
-                                                        : SystemMouseCursors
-                                                              .basic,
-                                                    child: GestureDetector(
-                                                      onTap: () {
-                                                        if (provider
-                                                            .currentArtist
-                                                            .isNotEmpty) {
-                                                          Navigator.of(
-                                                            context,
-                                                          ).push(
-                                                            MaterialPageRoute(
-                                                              builder: (context) =>
-                                                                  ArtistDetailsScreen(
+                                                                .currentArtist
+                                                                .isNotEmpty
+                                                            ? provider
+                                                                  .currentArtist
+                                                            : "Unknown Artist",
+                                                        style: TextStyle(
+                                                          color: isLinkEnabled
+                                                              ? Theme.of(
+                                                                  context,
+                                                                ).primaryColor
+                                                              : Colors.white70,
+                                                          fontSize: 13,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      );
+
+                                                      if (isLinkEnabled) {
+                                                        return MouseRegion(
+                                                          cursor:
+                                                              SystemMouseCursors
+                                                                  .click,
+                                                          child: GestureDetector(
+                                                            onTap: () {
+                                                              Navigator.of(
+                                                                context,
+                                                              ).push(
+                                                                MaterialPageRoute(
+                                                                  builder: (context) => ArtistDetailsScreen(
                                                                     artistName:
                                                                         provider
                                                                             .currentArtist,
@@ -230,30 +251,16 @@ class PlayerBar extends StatelessWidget {
                                                                     genre: station
                                                                         .genre,
                                                                   ),
-                                                            ),
-                                                          );
-                                                        }
-                                                      },
-                                                      child: Text(
-                                                        provider
-                                                                .currentArtist
-                                                                .isNotEmpty
-                                                            ? provider
-                                                                  .currentArtist
-                                                            : "Unknown Artist",
-                                                        style: TextStyle(
-                                                          color: Theme.of(
-                                                            context,
-                                                          ).primaryColor,
-                                                          fontSize: 13,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ),
+                                                                ),
+                                                              );
+                                                            },
+                                                            child: artistText,
+                                                          ),
+                                                        );
+                                                      } else {
+                                                        return artistText;
+                                                      }
+                                                    },
                                                   ),
                                                   if (provider
                                                           .currentAlbum
@@ -372,201 +379,6 @@ class PlayerBar extends StatelessWidget {
     );
   }
 
-  void _showExternalLinks(BuildContext context, RadioProvider provider) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF13131f),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-          child: SingleChildScrollView(
-            // Prevent overflow
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  "Options",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.fontFamily,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Add to Playlist
-                Material(
-                  color: Theme.of(context).primaryColor,
-                  borderRadius: BorderRadius.circular(16),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () async {
-                      final playlistName = await provider.addToPlaylist(null);
-                      if (context.mounted) {
-                        Navigator.pop(context);
-                        if (playlistName != null) {
-                          _showSavedSnackBar(context, playlistName);
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                "Cannot save: No song identified yet.",
-                              ),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 16,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            provider.isCurrentSongSaved
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            provider.isCurrentSongSaved
-                                ? "Saved to Favorites"
-                                : "Add to Favorites",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                Divider(color: Colors.white.withValues(alpha: 0.1)),
-                const SizedBox(height: 10),
-
-                Text(
-                  "Open in...",
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Spotify
-                _buildServiceTile(
-                  context,
-                  "Spotify",
-                  FontAwesomeIcons.spotify,
-                  const Color(0xFF1DB954),
-                  provider.currentSpotifyUrl,
-                ),
-
-                const SizedBox(height: 12),
-
-                // YouTube
-                _buildServiceTile(
-                  context,
-                  "YouTube",
-                  FontAwesomeIcons.youtube,
-                  const Color(0xFFFF0000),
-                  provider.currentYoutubeUrl,
-                ),
-
-                const SizedBox(height: 12),
-
-                // Apple Music (Search Fallback)
-                _buildServiceTile(
-                  context,
-                  "Apple Music",
-                  FontAwesomeIcons.apple,
-                  Colors.white,
-                  "https://music.apple.com/search?term=${Uri.encodeComponent("${provider.currentTrack} ${provider.currentArtist}")}",
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildServiceTile(
-    BuildContext context,
-    String name,
-    IconData icon,
-    Color color,
-    String? url,
-  ) {
-    final bool isEnabled = url != null && url.isNotEmpty;
-    return Opacity(
-      opacity: isEnabled ? 1.0 : 0.5,
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: isEnabled
-              ? () async {
-                  try {
-                    final uri = Uri.parse(url);
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    if (context.mounted) Navigator.pop(context);
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Could not launch $name: $e")),
-                      );
-                    }
-                  }
-                }
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Row(
-              children: [
-                FaIcon(icon, color: color, size: 28),
-                const SizedBox(width: 16),
-                Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                const Spacer(),
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: Colors.white24,
-                  size: 16,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildImage(
     String url, {
     BoxFit? fit,
@@ -592,66 +404,6 @@ class PlayerBar extends StatelessWidget {
         fadeInDuration: const Duration(milliseconds: 300), // Smooth transition
       );
     }
-  }
-
-  void _showSavedSnackBar(BuildContext context, String playlistName) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF1a4d2e), // Dark Green
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 4),
-        dismissDirection: DismissDirection.horizontal,
-        elevation: 12,
-        content: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.greenAccent.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check_rounded,
-                color: Colors.greenAccent,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "SAVED",
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                      color: Colors.greenAccent,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    playlistName.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildYoutubeProgressBar(
@@ -848,15 +600,17 @@ class PlayerBar extends StatelessWidget {
         if (provider.currentPlayingPlaylistId == null &&
             provider.currentTrack.isNotEmpty &&
             provider.currentTrack != "Live Broadcast" &&
-            provider.currentTrack != "Unknown Title") ...[
+            provider.currentTrack != "Unknown Title" &&
+            provider.currentAlbumArt != provider.currentStation?.logo) ...[
           IconButton(
             icon: Icon(
               provider.currentSongIsSaved
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
+                  ? Icons.check_circle
+                  : Icons.add_circle_outline,
             ),
-            // Always Red (RedAccent matches other UI elements better than plain Red)
-            color: Colors.redAccent,
+            color: provider.currentSongIsSaved
+                ? Colors.greenAccent
+                : Colors.white54,
             iconSize: 20,
             tooltip: provider.currentSongIsSaved
                 ? "Already saved"

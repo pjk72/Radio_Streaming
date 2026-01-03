@@ -665,13 +665,17 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
       child: MouseRegion(
         cursor:
             provider.currentAlbum.isNotEmpty &&
-                provider.currentAlbum != "Live Radio"
+                provider.currentAlbum != "Live Radio" &&
+                (mainImage != null &&
+                    mainImage != provider.currentStation?.logo)
             ? SystemMouseCursors.click
             : SystemMouseCursors.basic,
         child: GestureDetector(
           onTap: () {
             if (provider.currentAlbum.isNotEmpty &&
-                provider.currentAlbum != "Live Radio") {
+                provider.currentAlbum != "Live Radio" &&
+                (mainImage != null &&
+                    mainImage != provider.currentStation?.logo)) {
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => AlbumDetailsScreen(
@@ -733,6 +737,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     String? bgImage, {
     bool isLandscape = false,
   }) {
+    // Check if album art is just station logo
+    bool isDefaultLogo =
+        (provider.currentAlbumArt ?? station.logo) == station.logo;
+
     return SingleChildScrollView(
       padding: EdgeInsets.only(
         bottom: isLandscape ? 8 : 16,
@@ -792,24 +800,28 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                   MouseRegion(
                     cursor:
                         (provider.currentTrack != "Live Broadcast" &&
-                            provider.currentArtist.isNotEmpty)
+                            provider.currentArtist.isNotEmpty &&
+                            !isDefaultLogo)
                         ? SystemMouseCursors.click
                         : SystemMouseCursors.basic,
                     child: GestureDetector(
-                      onTap: () {
-                        if (provider.currentTrack != "Live Broadcast" &&
-                            provider.currentArtist.isNotEmpty) {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => ArtistDetailsScreen(
-                                artistName: provider.currentArtist,
-                                artistImage: bgImage,
-                                genre: station.genre,
-                              ),
-                            ),
-                          );
-                        }
-                      },
+                      onTap:
+                          (provider.currentTrack != "Live Broadcast" &&
+                              provider.currentArtist.isNotEmpty &&
+                              !isDefaultLogo)
+                          ? () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => ArtistDetailsScreen(
+                                    artistName: provider.currentArtist,
+                                    artistImage: bgImage,
+                                    genre: station.genre,
+                                  ),
+                                ),
+                              );
+                            }
+                          : null,
+
                       child: Text(
                         provider.currentArtist.isNotEmpty
                             ? provider.currentArtist
@@ -822,7 +834,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                           fontSize: 18,
                           decoration:
                               (provider.currentTrack != "Live Broadcast" &&
-                                  provider.currentArtist.isNotEmpty)
+                                  provider.currentArtist.isNotEmpty &&
+                                  !isDefaultLogo)
                               ? TextDecoration.underline
                               : null,
                           decorationColor: Colors.white54,
