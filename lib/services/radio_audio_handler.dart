@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../data/station_data.dart' as static_data;
 import '../models/station.dart';
 import '../models/saved_song.dart';
@@ -1626,7 +1627,22 @@ class RadioAudioHandler extends BaseAudioHandler
         return;
       }
 
-      final currentPos = _currentPosition;
+      // 1. Check Connectivity FIRST
+      // If no internet, we are likely buffering/retrying naturally, so do not count as "stuck".
+      final connectivity = await Connectivity().checkConnectivity();
+      if (connectivity.contains(ConnectivityResult.none)) {
+        _stuckSecondsCount = 0;
+        return;
+      }
+
+      // 2. Active Polling for Real Position
+      // Background streams often throttle. We must ASK the player where it is.
+      final Duration? realPos = await _player.getCurrentPosition();
+      if (realPos == null) return;
+
+      final currentPos = realPos;
+      // Update cache to keep UI in sync if stream is lagging
+      _currentPosition = realPos;
 
       // If position hasn't moved significantly (< 100ms)
       if ((currentPos - _lastStuckCheckPosition).abs().inMilliseconds < 100) {
@@ -1636,13 +1652,19 @@ class RadioAudioHandler extends BaseAudioHandler
         _lastStuckCheckPosition = currentPos;
       }
 
+      debugPrint(_stuckSecondsCount.toString());
       if (_stuckSecondsCount >= 8) {
-        // Check internet
-        final connectivity = await Connectivity().checkConnectivity();
-        if (!connectivity.contains(ConnectivityResult.none)) {
-          LogService().log("Stuck playback detected (8s). Skipping to next.");
-          _stuckSecondsCount = 0; // Reset to avoid multiple triggers
+        LogService().log("Stuck playback detected (8s). Skipping to next.");
+        _stuckSecondsCount = 0; // Reset to avoid multiple triggers
+
+        // Ensure we hold the CPU awake while we trigger the skip
+        WakelockPlus.enable();
+        try {
           skipToNext();
+          // Allow 5 seconds for the async chain to start
+          await Future.delayed(const Duration(seconds: 5));
+        } finally {
+          WakelockPlus.disable();
         }
       }
     });
