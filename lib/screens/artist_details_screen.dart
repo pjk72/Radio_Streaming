@@ -3,7 +3,9 @@ import 'dart:ui';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/http.dart' as http;
 import 'album_details_screen.dart';
+import '../widgets/admob_banner_widget.dart';
 
 class ArtistDetailsScreen extends StatefulWidget {
   final String artistName;
@@ -267,653 +269,688 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
             ),
           ),
 
-          // 4. Draggable Panel
-          DraggableScrollableSheet(
-            initialChildSize: 0.55,
-            minChildSize: 0.3,
-            maxChildSize: 0.95,
-            snap: true,
-            snapSizes: const [0.3, 0.55, 0.95],
-            builder: (context, scrollController) {
-              return ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(32),
-                ),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    child: CustomScrollView(
-                      controller: scrollController,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      slivers: [
-                        // Handle
-                        SliverToBoxAdapter(
-                          child: Center(
-                            child: Container(
-                              margin: const EdgeInsets.only(top: 12, bottom: 8),
-                              width: 40,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: Colors.white30,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Artist Name
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 16,
-                            ),
-                            child: Text(
-                              widget.artistName,
-                              style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black54,
-                                    blurRadius: 10,
-                                    offset: Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-
-                        // Artist Info & Events Section
-                        SliverToBoxAdapter(
-                          child: FutureBuilder<List<dynamic>>(
-                            future: Future.wait([
-                              _artistInfoFuture,
-                              _discographyFuture,
-                            ]),
-                            builder: (context, snapshot) {
-                              if (!snapshot.hasData) {
-                                return const SizedBox(height: 100);
-                              }
-
-                              final artistInfo =
-                                  snapshot.data![0] as Map<String, dynamic>?;
-                              final discography =
-                                  snapshot.data![1]
-                                      as List<Map<String, dynamic>>?;
-
-                              // Data extraction (handle AudioDB vs iTunes keys)
-                              final bio =
-                                  artistInfo?['strBiographyEN'] as String?;
-                              final style = artistInfo?['strStyle'] as String?;
-                              final formed =
-                                  artistInfo?['intFormedYear'] as String? ??
-                                  artistInfo?['intBornYear'] as String?;
-                              final genre =
-                                  artistInfo?['strGenre'] ??
-                                  artistInfo?['primaryGenreName'] ??
-                                  widget.genre ??
-                                  "Music";
-
-                              // Find latest release logic (same as before)
-                              Map<String, dynamic>? latestRelease;
-                              if (discography != null &&
-                                  discography.isNotEmpty) {
-                                final sorted = List<Map<String, dynamic>>.from(
-                                  discography,
-                                );
-                                sorted.sort((a, b) {
-                                  final dateA =
-                                      a['releaseDate'] ?? "1900-01-01";
-                                  final dateB =
-                                      b['releaseDate'] ?? "1900-01-01";
-                                  return dateB.compareTo(dateA); // Descending
-                                });
-                                latestRelease = sorted.first;
-                              }
-
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
+          // 4. Draggable Panel (Lifted for Banner)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 50, // Raise to make room for banner
+            child: DraggableScrollableSheet(
+              initialChildSize: 0.55,
+              minChildSize: 0.3,
+              maxChildSize: 0.95,
+              snap: true,
+              snapSizes: const [0.3, 0.55, 0.95],
+              builder: (context, scrollController) {
+                return ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(32),
+                  ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      child: CustomScrollView(
+                        controller: scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          // Handle
+                          SliverToBoxAdapter(
+                            child: Center(
+                              child: Container(
+                                margin: const EdgeInsets.only(
+                                  top: 12,
+                                  bottom: 8,
                                 ),
-                                child: Column(
-                                  children: [
-                                    // 1. Facts Row (Style | Year | Genre)
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      alignment: WrapAlignment.center,
-                                      children: [
-                                        if (style != null) _buildBadge(style),
-                                        if (formed != null)
-                                          _buildBadge(
-                                            "Est. $formed",
-                                            icon: Icons.calendar_today,
-                                          ),
-                                        _buildBadge(
-                                          genre.toString().toUpperCase(),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 24),
+                                width: 40,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: Colors.white30,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ),
 
-                                    // 2. Biography (Text inside page!)
-                                    if (bio != null && bio.isNotEmpty) ...[
-                                      Container(
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.05),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              "Biography",
-                                              style: TextStyle(
-                                                color: Colors.white.withOpacity(
-                                                  0.9,
-                                                ),
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 18,
-                                              ),
+                          // Artist Name
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
+                              child: Text(
+                                widget.artistName,
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black54,
+                                      blurRadius: 10,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+
+                          // Artist Info & Events Section
+                          SliverToBoxAdapter(
+                            child: FutureBuilder<List<dynamic>>(
+                              future: Future.wait([
+                                _artistInfoFuture,
+                                _discographyFuture,
+                              ]),
+                              builder: (context, snapshot) {
+                                if (!snapshot.hasData) {
+                                  return const SizedBox(height: 100);
+                                }
+
+                                final artistInfo =
+                                    snapshot.data![0] as Map<String, dynamic>?;
+                                final discography =
+                                    snapshot.data![1]
+                                        as List<Map<String, dynamic>>?;
+
+                                // Data extraction (handle AudioDB vs iTunes keys)
+                                final bio =
+                                    artistInfo?['strBiographyEN'] as String?;
+                                final style =
+                                    artistInfo?['strStyle'] as String?;
+                                final formed =
+                                    artistInfo?['intFormedYear'] as String? ??
+                                    artistInfo?['intBornYear'] as String?;
+                                final genre =
+                                    artistInfo?['strGenre'] ??
+                                    artistInfo?['primaryGenreName'] ??
+                                    widget.genre ??
+                                    "Music";
+
+                                // Find latest release logic (same as before)
+                                Map<String, dynamic>? latestRelease;
+                                if (discography != null &&
+                                    discography.isNotEmpty) {
+                                  final sorted =
+                                      List<Map<String, dynamic>>.from(
+                                        discography,
+                                      );
+                                  sorted.sort((a, b) {
+                                    final dateA =
+                                        a['releaseDate'] ?? "1900-01-01";
+                                    final dateB =
+                                        b['releaseDate'] ?? "1900-01-01";
+                                    return dateB.compareTo(dateA); // Descending
+                                  });
+                                  latestRelease = sorted.first;
+                                }
+
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      // 1. Facts Row (Style | Year | Genre)
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        alignment: WrapAlignment.center,
+                                        children: [
+                                          if (style != null) _buildBadge(style),
+                                          if (formed != null)
+                                            _buildBadge(
+                                              "Est. $formed",
+                                              icon: Icons.calendar_today,
                                             ),
-                                            const SizedBox(height: 8),
-                                            ExternalBioText(bio: bio),
-                                          ],
-                                        ),
+                                          _buildBadge(
+                                            genre.toString().toUpperCase(),
+                                          ),
+                                        ],
                                       ),
                                       const SizedBox(height: 24),
-                                    ],
 
-                                    // 3. Upcoming Tour Dates (Native List)
-                                    FutureBuilder<List<dynamic>>(
-                                      future: _eventsFuture,
-                                      builder: (context, eventSnapshot) {
-                                        if (!eventSnapshot.hasData ||
-                                            eventSnapshot.data!.isEmpty) {
-                                          return const SizedBox.shrink(); // Hide if no events
-                                        }
+                                      // 2. Biography (Text inside page!)
+                                      if (bio != null && bio.isNotEmpty) ...[
+                                        Container(
+                                          padding: const EdgeInsets.all(16),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withOpacity(
+                                              0.05,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                "Biography",
+                                                style: TextStyle(
+                                                  color: Colors.white
+                                                      .withOpacity(0.9),
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 18,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              ExternalBioText(bio: bio),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 24),
+                                      ],
 
-                                        final events = eventSnapshot.data!;
-                                        return Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              "Upcoming Tour Dates",
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
+                                      // 3. Upcoming Tour Dates (Native List)
+                                      FutureBuilder<List<dynamic>>(
+                                        future: _eventsFuture,
+                                        builder: (context, eventSnapshot) {
+                                          if (!eventSnapshot.hasData ||
+                                              eventSnapshot.data!.isEmpty) {
+                                            return const SizedBox.shrink(); // Hide if no events
+                                          }
+
+                                          final events = eventSnapshot.data!;
+                                          return Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                "Upcoming Tour Dates",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              ListView.builder(
+                                                padding: EdgeInsets.zero,
+                                                shrinkWrap: true,
+                                                physics:
+                                                    const NeverScrollableScrollPhysics(),
+                                                itemCount: events.length > 5
+                                                    ? 5
+                                                    : events
+                                                          .length, // Show max 5
+                                                itemBuilder: (context, index) {
+                                                  final event = events[index];
+                                                  final venue =
+                                                      event['venue'] ?? {};
+                                                  final datetime =
+                                                      event['datetime']
+                                                          as String?;
+
+                                                  // Format Date (Simple parsing)
+                                                  String dateStr =
+                                                      datetime ?? "";
+                                                  try {
+                                                    if (datetime != null) {
+                                                      final dt = DateTime.parse(
+                                                        datetime,
+                                                      );
+                                                      dateStr =
+                                                          "${dt.day}/${dt.month}/${dt.year}";
+                                                    }
+                                                  } catch (_) {}
+
+                                                  return Container(
+                                                    margin:
+                                                        const EdgeInsets.only(
+                                                          bottom: 8,
+                                                        ),
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                          12,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white
+                                                          .withOpacity(0.05),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: Colors.white12,
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        // Date Box
+                                                        Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 12,
+                                                                vertical: 8,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors
+                                                                .blueAccent
+                                                                .withOpacity(
+                                                                  0.2,
+                                                                ),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  8,
+                                                                ),
+                                                          ),
+                                                          child: Text(
+                                                            dateStr,
+                                                            style:
+                                                                const TextStyle(
+                                                                  color: Colors
+                                                                      .blueAccent,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  fontSize: 12,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 16,
+                                                        ),
+                                                        // Info
+                                                        Expanded(
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              Text(
+                                                                venue['name'] ??
+                                                                    "Unknown Venue",
+                                                                style: const TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  fontSize: 14,
+                                                                ),
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                              Text(
+                                                                "${venue['city'] ?? ''}, ${venue['country'] ?? ''}",
+                                                                style: TextStyle(
+                                                                  color: Colors
+                                                                      .white
+                                                                      .withOpacity(
+                                                                        0.6,
+                                                                      ),
+                                                                  fontSize: 12,
+                                                                ),
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                              const SizedBox(height: 24),
+                                            ],
+                                          );
+                                        },
+                                      ),
+
+                                      // 4. Latest Release
+                                      if (latestRelease != null) ...[
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            "Latest Release",
+                                            style: TextStyle(
+                                              color: Colors.white.withOpacity(
+                                                0.7,
+                                              ),
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        GestureDetector(
+                                          onTap: () {
+                                            final artworkUrl =
+                                                latestRelease!['artworkUrl100']
+                                                    ?.replaceAll(
+                                                      '100x100bb',
+                                                      '400x400bb',
+                                                    ) ??
+                                                "";
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) =>
+                                                    AlbumDetailsScreen(
+                                                      albumName:
+                                                          latestRelease!['collectionName'] ??
+                                                          "",
+                                                      artistName:
+                                                          widget.artistName,
+                                                      artworkUrl: artworkUrl,
+                                                    ),
+                                              ),
+                                            );
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withOpacity(
+                                                0.05,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                              border: Border.all(
+                                                color: Colors.white10,
                                               ),
                                             ),
-                                            const SizedBox(height: 12),
-                                            ListView.builder(
-                                              padding: EdgeInsets.zero,
-                                              shrinkWrap: true,
-                                              physics:
-                                                  const NeverScrollableScrollPhysics(),
-                                              itemCount: events.length > 5
-                                                  ? 5
-                                                  : events.length, // Show max 5
-                                              itemBuilder: (context, index) {
-                                                final event = events[index];
-                                                final venue =
-                                                    event['venue'] ?? {};
-                                                final datetime =
-                                                    event['datetime']
-                                                        as String?;
-
-                                                // Format Date (Simple parsing)
-                                                String dateStr = datetime ?? "";
-                                                try {
-                                                  if (datetime != null) {
-                                                    final dt = DateTime.parse(
-                                                      datetime,
-                                                    );
-                                                    dateStr =
-                                                        "${dt.day}/${dt.month}/${dt.year}";
-                                                  }
-                                                } catch (_) {}
-
-                                                return Container(
-                                                  margin: const EdgeInsets.only(
-                                                    bottom: 8,
+                                            child: Row(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  child: Image.network(
+                                                    latestRelease['artworkUrl100'] ??
+                                                        "",
+                                                    width: 60,
+                                                    height: 60,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder:
+                                                        (_, __, ___) =>
+                                                            Container(
+                                                              width: 60,
+                                                              height: 60,
+                                                              color: Colors
+                                                                  .grey[800],
+                                                              child: const Icon(
+                                                                Icons.album,
+                                                              ),
+                                                            ),
                                                   ),
-                                                  padding: const EdgeInsets.all(
-                                                    12,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white
-                                                        .withOpacity(0.05),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                    border: Border.all(
-                                                      color: Colors.white12,
-                                                    ),
-                                                  ),
-                                                  child: Row(
+                                                ),
+                                                const SizedBox(width: 16),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
                                                     children: [
-                                                      // Date Box
-                                                      Container(
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 12,
-                                                              vertical: 8,
-                                                            ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors
-                                                              .blueAccent
-                                                              .withOpacity(0.2),
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                8,
-                                                              ),
+                                                      Text(
+                                                        latestRelease['collectionName'] ??
+                                                            "Unknown Album",
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 16,
                                                         ),
-                                                        child: Text(
-                                                          dateStr,
-                                                          style:
-                                                              const TextStyle(
-                                                                color: Colors
-                                                                    .blueAccent,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                                fontSize: 12,
-                                                              ),
-                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
-                                                      const SizedBox(width: 16),
-                                                      // Info
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Text(
-                                                              venue['name'] ??
-                                                                  "Unknown Venue",
-                                                              style: const TextStyle(
-                                                                color: Colors
-                                                                    .white,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                                fontSize: 14,
-                                                              ),
-                                                              maxLines: 1,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                            ),
-                                                            Text(
-                                                              "${venue['city'] ?? ''}, ${venue['country'] ?? ''}",
-                                                              style: TextStyle(
-                                                                color: Colors
-                                                                    .white
-                                                                    .withOpacity(
-                                                                      0.6,
-                                                                    ),
-                                                                fontSize: 12,
-                                                              ),
-                                                              maxLines: 1,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                            ),
-                                                          ],
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        (latestRelease['releaseDate']
+                                                                    as String?)
+                                                                ?.split('T')
+                                                                .first ??
+                                                            "-",
+                                                        style: TextStyle(
+                                                          color: Colors.white
+                                                              .withOpacity(0.5),
+                                                          fontSize: 12,
                                                         ),
                                                       ),
                                                     ],
                                                   ),
-                                                );
-                                              },
+                                                ),
+                                                const Icon(
+                                                  Icons
+                                                      .arrow_forward_ios_rounded,
+                                                  color: Colors.white54,
+                                                  size: 16,
+                                                ),
+                                              ],
                                             ),
-                                            const SizedBox(height: 24),
-                                          ],
-                                        );
-                                      },
-                                    ),
-
-                                    // 4. Latest Release
-                                    if (latestRelease != null) ...[
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          "Latest Release",
-                                          style: TextStyle(
-                                            color: Colors.white.withOpacity(
-                                              0.7,
-                                            ),
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
+                                        const SizedBox(height: 24),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24.0,
+                                vertical: 8.0,
+                              ),
+                              child: Text(
+                                "Important Discography",
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Discography Grid
+                          FutureBuilder<List<Map<String, dynamic>>>(
+                            future: _discographyFuture,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                return const SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32.0),
+                                    child: Center(
+                                      child: Text(
+                                        "No albums found.",
+                                        style: TextStyle(color: Colors.white54),
                                       ),
-                                      const SizedBox(height: 12),
-                                      GestureDetector(
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final allAlbums = snapshot.data!;
+
+                              // 1. Dedup by name & Filter Singles (trackCount < 4)
+                              final uniqueAlbums =
+                                  <String, Map<String, dynamic>>{};
+                              for (var album in allAlbums) {
+                                final name = album['collectionName'] as String?;
+                                final trackCount =
+                                    album['trackCount'] as int? ?? 0;
+                                final lowerName = name?.toLowerCase() ?? "";
+
+                                // STRICT FILTER:
+                                // 1. Exclude if fewer than 5 tracks (avoids Singles/EPs/Maxi-Singles)
+                                // 2. Exclude explicitly named "Single" or "EP"
+                                if (trackCount < 5) continue;
+                                if (lowerName.contains(' - single') ||
+                                    lowerName.contains(' (single)') ||
+                                    lowerName.contains(' - ep') ||
+                                    lowerName.contains(' (ep)')) {
+                                  continue;
+                                }
+
+                                if (name != null) {
+                                  // If we haven't seen this album name yet, add it.
+                                  if (!uniqueAlbums.containsKey(name)) {
+                                    uniqueAlbums[name] = album;
+                                  }
+                                }
+                              }
+
+                              // 2. Take top 12
+                              final albums = uniqueAlbums.values
+                                  .take(12)
+                                  .toList();
+
+                              return SliverPadding(
+                                padding: const EdgeInsets.all(16.0),
+                                sliver: SliverGrid(
+                                  gridDelegate:
+                                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                                        maxCrossAxisExtent: 200,
+                                        childAspectRatio: 0.75,
+                                        crossAxisSpacing: 16,
+                                        mainAxisSpacing: 16,
+                                      ),
+                                  delegate: SliverChildBuilderDelegate((
+                                    context,
+                                    index,
+                                  ) {
+                                    final album = albums[index];
+                                    final artworkUrl =
+                                        album['artworkUrl100']?.replaceAll(
+                                          '100x100bb',
+                                          '400x400bb',
+                                        ) ??
+                                        "";
+
+                                    return MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: GestureDetector(
                                         onTap: () {
-                                          final artworkUrl =
-                                              latestRelease!['artworkUrl100']
-                                                  ?.replaceAll(
-                                                    '100x100bb',
-                                                    '400x400bb',
-                                                  ) ??
-                                              "";
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(
                                               builder: (context) =>
                                                   AlbumDetailsScreen(
                                                     albumName:
-                                                        latestRelease!['collectionName'] ??
+                                                        album['collectionName'] ??
                                                         "",
                                                     artistName:
                                                         widget.artistName,
                                                     artworkUrl: artworkUrl,
+                                                    songName: null,
                                                   ),
                                             ),
                                           );
                                         },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(
-                                              0.05,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              16,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.white10,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              ClipRRect(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: ClipRRect(
                                                 borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: Image.network(
-                                                  latestRelease['artworkUrl100'] ??
-                                                      "",
-                                                  width: 60,
-                                                  height: 60,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (_, __, ___) =>
-                                                      Container(
-                                                        width: 60,
-                                                        height: 60,
-                                                        color: Colors.grey[800],
-                                                        child: const Icon(
+                                                    BorderRadius.circular(12),
+                                                child: Container(
+                                                  color: Colors.grey[800],
+                                                  width: double.infinity,
+                                                  child: Image.network(
+                                                    artworkUrl,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder:
+                                                        (
+                                                          context,
+                                                          error,
+                                                          stackTrace,
+                                                        ) => const Icon(
                                                           Icons.album,
+                                                          color: Colors.white24,
                                                         ),
-                                                      ),
+                                                  ),
                                                 ),
                                               ),
-                                              const SizedBox(width: 16),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      latestRelease['collectionName'] ??
-                                                          "Unknown Album",
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 16,
-                                                      ),
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      (latestRelease['releaseDate']
-                                                                  as String?)
-                                                              ?.split('T')
-                                                              .first ??
-                                                          "-",
-                                                      style: TextStyle(
-                                                        color: Colors.white
-                                                            .withOpacity(0.5),
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              album['collectionName'] ??
+                                                  "Unknown Album",
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
                                               ),
-                                              const Icon(
-                                                Icons.arrow_forward_ios_rounded,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              "${album['releaseDate']?.substring(0, 4) ?? '-'} • ${album['primaryGenreName'] ?? 'Music'}",
+                                              style: const TextStyle(
                                                 color: Colors.white54,
-                                                size: 16,
+                                                fontSize: 11,
                                               ),
-                                            ],
-                                          ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            Text(
+                                              "${album['trackCount'] ?? '?'} tracks",
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(
+                                                  0.3,
+                                                ),
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      const SizedBox(height: 24),
-                                    ],
-                                  ],
+                                    );
+                                  }, childCount: albums.length),
                                 ),
                               );
                             },
                           ),
-                        ),
 
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24.0,
-                              vertical: 8.0,
-                            ),
-                            child: Text(
-                              "Important Discography",
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          const SliverPadding(
+                            padding: EdgeInsets.only(bottom: 50),
                           ),
-                        ),
-
-                        // Discography Grid
-                        FutureBuilder<List<Map<String, dynamic>>>(
-                          future: _discographyFuture,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.all(32),
-                                  child: Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                ),
-                              );
-                            }
-
-                            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                              return const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.all(32.0),
-                                  child: Center(
-                                    child: Text(
-                                      "No albums found.",
-                                      style: TextStyle(color: Colors.white54),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }
-
-                            final allAlbums = snapshot.data!;
-
-                            // 1. Dedup by name & Filter Singles (trackCount < 4)
-                            final uniqueAlbums =
-                                <String, Map<String, dynamic>>{};
-                            for (var album in allAlbums) {
-                              final name = album['collectionName'] as String?;
-                              final trackCount =
-                                  album['trackCount'] as int? ?? 0;
-                              final lowerName = name?.toLowerCase() ?? "";
-
-                              // STRICT FILTER:
-                              // 1. Exclude if fewer than 5 tracks (avoids Singles/EPs/Maxi-Singles)
-                              // 2. Exclude explicitly named "Single" or "EP"
-                              if (trackCount < 5) continue;
-                              if (lowerName.contains(' - single') ||
-                                  lowerName.contains(' (single)') ||
-                                  lowerName.contains(' - ep') ||
-                                  lowerName.contains(' (ep)')) {
-                                continue;
-                              }
-
-                              if (name != null) {
-                                // If we haven't seen this album name yet, add it.
-                                if (!uniqueAlbums.containsKey(name)) {
-                                  uniqueAlbums[name] = album;
-                                }
-                              }
-                            }
-
-                            // 2. Take top 12
-                            final albums = uniqueAlbums.values
-                                .take(12)
-                                .toList();
-
-                            return SliverPadding(
-                              padding: const EdgeInsets.all(16.0),
-                              sliver: SliverGrid(
-                                gridDelegate:
-                                    const SliverGridDelegateWithMaxCrossAxisExtent(
-                                      maxCrossAxisExtent: 200,
-                                      childAspectRatio: 0.75,
-                                      crossAxisSpacing: 16,
-                                      mainAxisSpacing: 16,
-                                    ),
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final album = albums[index];
-                                  final artworkUrl =
-                                      album['artworkUrl100']?.replaceAll(
-                                        '100x100bb',
-                                        '400x400bb',
-                                      ) ??
-                                      "";
-
-                                  return MouseRegion(
-                                    cursor: SystemMouseCursors.click,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) =>
-                                                AlbumDetailsScreen(
-                                                  albumName:
-                                                      album['collectionName'] ??
-                                                      "",
-                                                  artistName: widget.artistName,
-                                                  artworkUrl: artworkUrl,
-                                                  songName: null,
-                                                ),
-                                          ),
-                                        );
-                                      },
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              child: Container(
-                                                color: Colors.grey[800],
-                                                width: double.infinity,
-                                                child: Image.network(
-                                                  artworkUrl,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) => const Icon(
-                                                        Icons.album,
-                                                        color: Colors.white24,
-                                                      ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            album['collectionName'] ??
-                                                "Unknown Album",
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            "${album['releaseDate']?.substring(0, 4) ?? '-'} • ${album['primaryGenreName'] ?? 'Music'}",
-                                            style: const TextStyle(
-                                              color: Colors.white54,
-                                              fontSize: 11,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          Text(
-                                            "${album['trackCount'] ?? '?'} tracks",
-                                            style: TextStyle(
-                                              color: Colors.white.withOpacity(
-                                                0.3,
-                                              ),
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }, childCount: albums.length),
-                              ),
-                            );
-                          },
-                        ),
-
-                        const SliverPadding(
-                          padding: EdgeInsets.only(bottom: 50),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
+          ), // End Positioned Wrapper
+          // 5. Botton Banner
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 50,
+            child: Container(
+              color: Colors.black,
+              child: const AdMobBannerWidget(),
+            ),
           ),
         ],
       ),

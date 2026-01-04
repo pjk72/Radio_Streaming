@@ -257,6 +257,14 @@ class _EditStationScreenState extends State<EditStationScreen> {
         title: Text(widget.station == null ? "Add Station" : "Edit Station"),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.check, color: Colors.greenAccent),
+            onPressed: () => _save(),
+            tooltip: 'Save Station',
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -284,7 +292,18 @@ class _EditStationScreenState extends State<EditStationScreen> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.search, color: Colors.white),
+                            : Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.greenAccent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.search,
+                                  color: Colors.black,
+                                  size: 20,
+                                ),
+                              ),
                         tooltip: "Auto-complete",
                         onPressed: _isSearching ? null : _autoCompleteStation,
                       ),
@@ -482,31 +501,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
               // Icon selector removed
               const SizedBox(height: 48),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 8,
-                    shadowColor: Theme.of(
-                      context,
-                    ).primaryColor.withValues(alpha: 0.5),
-                  ),
-                  onPressed: _save,
-                  child: const Text(
-                    "Save Station",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
+              // Save Button Removed (Moved to AppBar)
+              const SizedBox(height: 24),
               const SizedBox(height: 24),
             ],
           ),

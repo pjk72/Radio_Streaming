@@ -81,37 +81,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                 style: TextStyle(color: Colors.white),
               ),
         backgroundColor: Colors.transparent,
-        actions: [
-          Row(
-            children: [
-              Text(
-                provider.backupService.currentUser?.displayName
-                        ?.split(' ')
-                        .first ??
-                    "Guest",
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 12),
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: Colors.white24,
-                backgroundImage:
-                    provider.backupService.currentUser?.photoUrl != null
-                    ? NetworkImage(
-                        provider.backupService.currentUser!.photoUrl!,
-                      )
-                    : null,
-                child: provider.backupService.currentUser?.photoUrl == null
-                    ? const Icon(Icons.person, size: 16, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 16),
-            ],
-          ),
-        ],
+        actions: [],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Theme.of(context).primaryColor,

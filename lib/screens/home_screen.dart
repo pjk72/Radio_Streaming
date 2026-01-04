@@ -5,6 +5,7 @@ import '../providers/radio_provider.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/banner_ad_widget.dart';
+import '../widgets/admob_banner_widget.dart';
 
 import 'playlist_screen.dart';
 import 'settings_screen.dart';
@@ -119,6 +120,8 @@ class _HomeScreenState extends State<HomeScreen>
 
               // Banner Ad
               if (!isDesktop) const BannerAdWidget(),
+              // Second Banner (AdMob)
+              if (!isDesktop) const AdMobBannerWidget(),
             ],
           ),
         ),

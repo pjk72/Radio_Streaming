@@ -10,6 +10,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
+import '../widgets/admob_banner_widget.dart'; // Added Import
 
 import 'artist_details_screen.dart';
 import 'album_details_screen.dart';
@@ -234,8 +235,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           // 4. Lyrics "Tendina" (Draggable Pull-up Sheet)
           Positioned(
             left: 0,
-            bottom: 0,
-            top: 0, // Full height container so it can drag from bottom to top
+            bottom: 50, // Raise by banner height
+            top: 0,
             width: isLandscape
                 ? MediaQuery.of(context).size.width * 0.5
                 : MediaQuery.of(context).size.width,
@@ -244,6 +245,18 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               provider,
               visualizerColor,
               isLandscape: isLandscape,
+            ),
+          ),
+
+          // 5. Bottom Banner Ad
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 50,
+            child: Container(
+              color: Colors.black, // Match background
+              child: const AdMobBannerWidget(),
             ),
           ),
         ],

@@ -57,7 +57,6 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
         alignment: Alignment.bottomCenter,
         width: double.infinity,
         height: 50, // Standard Banner Height
-        color: Colors.black, // Background to see if space is allocated
         child: _ironSourceBannerAd != null
             ? _ironSourceBannerAd!
             : const SizedBox.shrink(),

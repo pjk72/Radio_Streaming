@@ -38,13 +38,14 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-<!--        <meta-data
+        <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"             
-            android:value="ca-app-pub-3351319116434923~7899031035"/>  //LIVE//
-    -->        
+            android:value="ca-app-pub-3351319116434923~7899031035"/>  <!--LIVE-->
+<!--    
             <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"             
-            android:value="ca-app-pub-3940256099942544~3347511713"/>  <!--TEST APPLICATION ID-->  
+            android:value="ca-app-pub-3940256099942544~3347511713"/>  TEST APPLICATION ID  
+-->  
 
         <meta-data android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc"/>
