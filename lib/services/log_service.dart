@@ -14,7 +14,7 @@ class LogService {
 
   void log(String message) {
     if (kDebugMode) {
-      print("[LogService] $message");
+      debugPrint("[LogService] $message");
     }
     final time = DateTime.now()
         .toIso8601String()

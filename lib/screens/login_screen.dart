@@ -193,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     // Text Branding
                     const Text(
-                      "Radio Stream",
+                      "MusicStream",
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 42,

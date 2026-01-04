@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
-        android:label="Radio Stream"
+        android:label="MusicStream"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
@@ -38,6 +38,14 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+<!--        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"             
+            android:value="ca-app-pub-3351319116434923~7899031035"/>  //LIVE//
+    -->        
+            <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"             
+            android:value="ca-app-pub-3940256099942544~3347511713"/>  <!--TEST APPLICATION ID-->  
+
         <meta-data android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc"/>
 
@@ -56,7 +64,23 @@
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
-        </receiver> 
+        </receiver>
+
+        <!-- IronSource Activities -->
+        <activity
+            android:name="com.ironsource.sdk.controller.ControllerActivity"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true" />
+        <activity
+            android:name="com.ironsource.sdk.controller.InterstitialActivity"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true"
+            android:theme="@android:style/Theme.Translucent" />
+        <activity
+            android:name="com.ironsource.sdk.controller.OpenUrlActivity"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true"
+            android:theme="@android:style/Theme.Translucent" /> 
 
     </application>
     <!-- Required to query activities that can process text, see:

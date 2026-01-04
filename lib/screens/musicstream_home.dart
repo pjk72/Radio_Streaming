@@ -7,8 +7,8 @@ import '../models/station.dart';
 import '../widgets/station_card.dart';
 import '../widgets/now_playing_header.dart';
 
-class RadioStreamHome extends StatelessWidget {
-  const RadioStreamHome({super.key});
+class MusicStreamHome extends StatelessWidget {
+  const MusicStreamHome({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +77,7 @@ class RadioStreamHome extends StatelessWidget {
           builder: (context) {
             return CustomScrollView(
               key: const PageStorageKey(
-                "RadioStreamScrollKey",
+                "MusicStreamScrollKey",
               ), // Add Key for state preservation
               physics: const BouncingScrollPhysics(),
               slivers: [

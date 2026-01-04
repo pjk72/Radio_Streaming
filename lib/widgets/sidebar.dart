@@ -39,7 +39,7 @@ class Sidebar extends StatelessWidget {
                         ),
                         const SizedBox(width: 12),
                         const Text(
-                          "Radio Stream",
+                          "MusicStream",
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -106,7 +106,7 @@ class Sidebar extends StatelessWidget {
 
                     const SizedBox(height: 48),
 
-                    _navItem(context, 0, Icons.radio, "Radio Stream"),
+                    _navItem(context, 0, Icons.radio, "MusicStream"),
                     _navItem(
                       context,
                       1,

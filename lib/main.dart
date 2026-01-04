@@ -7,9 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'providers/radio_provider.dart';
-
-import 'screens/login_screen.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'services/backup_service.dart';
+import 'services/log_service.dart';
+import 'screens/login_screen.dart';
+import 'package:flutter_ironsource_x/ironsource.dart';
 import 'package:audio_service/audio_service.dart';
 import 'services/radio_audio_handler.dart';
 import 'package:workmanager/workmanager.dart';
@@ -57,6 +59,26 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
       await Future.delayed(const Duration(milliseconds: 100));
 
       debugPrint("Initializing AudioService...");
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        MobileAds.instance.initialize();
+        // Initialize IronSource
+        try {
+          LogService().log("Initializing IronSource SDK...");
+          await IronSource.initialize(appKey: '24c9e07a5');
+          LogService().log("IronSource Initialized Successfully");
+          debugPrint("IronSource Initialized");
+
+          // Validate Integration
+          await IronSource.validateIntegration();
+          final advertiserId = await IronSource.getAdvertiserId();
+          LogService().log(
+            "IronSource Integration Validated. AdvertiserID: $advertiserId",
+          );
+        } catch (e) {
+          LogService().log("IronSource Init Error: $e");
+          debugPrint("IronSource Init Error: $e");
+        }
+      }
       audioHandler = await AudioService.init(
         builder: () => RadioAudioHandler(),
         config: AudioServiceConfig(
@@ -187,7 +209,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Radio Stream',
+      title: 'MusicStream',
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
         return Stack(

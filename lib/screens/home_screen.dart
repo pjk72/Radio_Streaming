@@ -4,10 +4,11 @@ import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/sidebar.dart';
+import '../widgets/banner_ad_widget.dart';
 
 import 'playlist_screen.dart';
 import 'settings_screen.dart';
-import 'radio_stream_home.dart';
+import 'musicstream_home.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -103,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen>
                       child: IndexedStack(
                         index: _navIndex,
                         children: [
-                          const RadioStreamHome(),
+                          const MusicStreamHome(),
                           const PlaylistScreen(),
                           const SettingsScreen(),
                         ],
@@ -115,6 +116,9 @@ class _HomeScreenState extends State<HomeScreen>
 
               // Player Bar
               const PlayerBar(),
+
+              // Banner Ad
+              if (!isDesktop) const BannerAdWidget(),
             ],
           ),
         ),
@@ -179,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 const Center(
                   child: Text(
-                    "Radio Stream",
+                    "MusicStream",
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,

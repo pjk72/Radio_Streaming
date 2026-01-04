@@ -1,4 +1,4 @@
-package com.fazio.radio_stream
+package com.fazio.musicstream
 
 import android.app.PictureInPictureParams
 import android.os.Build

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.fazio.radio_stream"
+    namespace = "com.fazio.musicstream"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.fazio.radio_stream"
+        applicationId = "com.fazio.musicstream"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -41,4 +41,11 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Fix for missing IronSource classes in GeneratedPluginRegistrant
+    implementation("com.ironsource.sdk:mediationsdk:7.4.0") 
+    implementation("com.google.android.gms:play-services-ads-identifier:18.0.1")
+    implementation("com.google.android.gms:play-services-basement:18.1.0")
 }

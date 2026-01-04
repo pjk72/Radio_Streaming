@@ -1,6 +1,6 @@
 {
-    "name": "radio_streaming_app",
-    "short_name": "radio_streaming_app",
+    "name": "musicstream",
+    "short_name": "musicstream",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

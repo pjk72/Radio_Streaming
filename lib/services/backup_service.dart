@@ -64,7 +64,7 @@ class BackupService extends ChangeNotifier {
   /// Uploads backup data (JSON string) to Google Drive App Data folder
   Future<void> uploadBackup(
     String jsonContent, {
-    String filename = "radio_stream_backup.json",
+    String filename = "musicstream_backup.json",
   }) async {
     if (_currentUser == null) throw Exception("Not signed in");
 
@@ -106,7 +106,7 @@ class BackupService extends ChangeNotifier {
 
   /// Downloads backup data from Google Drive
   Future<String?> downloadBackup({
-    String filename = "radio_stream_backup.json",
+    String filename = "musicstream_backup.json",
   }) async {
     if (_currentUser == null) throw Exception("Not signed in");
 
