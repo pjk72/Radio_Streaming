@@ -1479,18 +1479,23 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         foregroundDecoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           border: isPlaylistPlaying
-              ? Border.all(color: Colors.redAccent.withOpacity(0.8), width: 2)
+              ? Border.all(
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                  width: 2,
+                )
               : Border.all(color: Colors.white12),
         ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: bgImage == null
-              ? Colors.white.withOpacity(0.1)
+              ? Colors.white.withValues(alpha: 0.1)
               : null, // Fallback color
           boxShadow: isPlaylistPlaying
               ? [
                   BoxShadow(
-                    color: Colors.redAccent.withOpacity(0.4),
+                    color: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.4),
                     blurRadius: 12,
                     spreadRadius: 2,
                     offset: const Offset(0, 4),
@@ -3086,35 +3091,46 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
+          final theme = Theme.of(context);
           return AlertDialog(
-            backgroundColor: const Color(0xFF1a1a2e),
-            title: const Text(
+            backgroundColor: theme.cardColor,
+            title: Text(
               "Add Song",
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(
+                color: theme.textTheme.titleLarge?.color,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             content: SizedBox(
               width: double.maxFinite,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
+                  Text(
                     "Search by Song Name, Artist, or Album",
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(
+                      color: theme.textTheme.bodySmall?.color?.withOpacity(0.6),
+                      fontSize: 12,
+                    ),
                   ),
                   TextField(
                     controller: controller,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: theme.textTheme.bodyMedium?.color),
                     decoration: InputDecoration(
                       hintText: "Enter search term...",
-                      hintStyle: const TextStyle(color: Colors.white38),
+                      hintStyle: TextStyle(
+                        color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                          0.4,
+                        ),
+                      ),
                       suffixIcon: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (controller.text.isNotEmpty)
                             IconButton(
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.close,
-                                color: Colors.white70,
+                                color: theme.iconTheme.color?.withOpacity(0.7),
                                 size: 20,
                               ),
                               onPressed: () {
@@ -3125,9 +3141,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               },
                             ),
                           IconButton(
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.search,
-                              color: Colors.white70,
+                              color: theme.iconTheme.color?.withOpacity(0.7),
                             ),
                             onPressed: () async {
                               if (controller.text.isEmpty) return;
@@ -3147,11 +3163,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           ),
                         ],
                       ),
-                      enabledBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white24),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: theme.dividerColor.withOpacity(0.3),
+                        ),
                       ),
-                      focusedBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: theme.primaryColor),
                       ),
                     ),
                     onChanged: (val) {
@@ -3192,16 +3210,26 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   ),
                   const SizedBox(height: 16),
                   if (isLoading)
-                    const SizedBox(
+                    SizedBox(
                       height: 100,
-                      child: Center(child: CircularProgressIndicator()),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            theme.primaryColor,
+                          ),
+                        ),
+                      ),
                     )
                   else if (hasSearched && results.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
                       child: Text(
                         "No results found.",
-                        style: TextStyle(color: Colors.white54),
+                        style: TextStyle(
+                          color: theme.textTheme.bodySmall?.color?.withOpacity(
+                            0.5,
+                          ),
+                        ),
                       ),
                     )
                   else if (results.isNotEmpty)
@@ -3211,8 +3239,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: results.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(color: Colors.white12),
+                          separatorBuilder: (_, __) => Divider(
+                            color: theme.dividerColor.withOpacity(0.1),
+                          ),
                           itemBuilder: (context, index) {
                             final item = results[index];
                             final s = item.song;
@@ -3221,8 +3250,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
                               selected: isSelected,
-                              selectedTileColor: Colors.white.withValues(
-                                alpha: 0.1,
+                              selectedTileColor: theme.primaryColor.withOpacity(
+                                0.1,
                               ),
                               onTap: () {
                                 setState(() {
@@ -3259,28 +3288,33 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           errorWidget: (_, _, _) => Container(
                                             width: 50,
                                             height: 50,
-                                            color: Colors.white10,
-                                            child: const Icon(
+                                            color: theme.dividerColor
+                                                .withOpacity(0.1),
+                                            child: Icon(
                                               Icons.music_note,
-                                              color: Colors.white54,
+                                              color: theme.iconTheme.color
+                                                  ?.withOpacity(0.5),
                                             ),
                                           ),
                                         )
                                       : Container(
                                           width: 50,
                                           height: 50,
-                                          color: Colors.white10,
-                                          child: const Icon(
+                                          color: theme.dividerColor.withOpacity(
+                                            0.1,
+                                          ),
+                                          child: Icon(
                                             Icons.music_note,
-                                            color: Colors.white54,
+                                            color: theme.iconTheme.color
+                                                ?.withOpacity(0.5),
                                           ),
                                         ),
                                 ),
                               ),
                               title: Text(
                                 s.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: theme.textTheme.titleMedium?.color,
                                   fontWeight: FontWeight.bold,
                                 ),
                                 maxLines: 1,
@@ -3288,7 +3322,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               ),
                               subtitle: Text(
                                 "${s.artist}",
-                                style: const TextStyle(color: Colors.white70),
+                                style: TextStyle(
+                                  color: theme.textTheme.bodyMedium?.color
+                                      ?.withOpacity(0.7),
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -3303,9 +3340,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                     }
                                   });
                                 },
-                                activeColor: Colors.greenAccent,
-                                checkColor: Colors.black,
-                                side: const BorderSide(color: Colors.white54),
+                                activeColor: theme.primaryColor,
+                                checkColor: Colors.white,
+                                side: BorderSide(
+                                  color: theme.dividerColor.withOpacity(0.5),
+                                ),
                               ),
                             );
                           },
@@ -3335,13 +3374,14 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       ),
                     );
                   },
-                  icon: const Icon(Icons.add, color: Colors.black),
+                  icon: const Icon(Icons.add, color: Colors.white),
                   label: Text(
                     "Add (${selectedItems.length})",
-                    style: const TextStyle(color: Colors.black),
+                    style: const TextStyle(color: Colors.white),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.greenAccent,
+                    backgroundColor: theme.primaryColor,
+                    foregroundColor: Colors.white,
                   ),
                 ),
             ],
@@ -3942,7 +3982,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   borderRadius: BorderRadius.circular(16),
                   border: isPlaying
                       ? Border.all(
-                          color: Colors.redAccent.withOpacity(0.8),
+                          color: Theme.of(
+                            context,
+                          ).primaryColor.withValues(alpha: 0.8),
                           width: 2,
                         )
                       : Border.all(color: Colors.white12),
@@ -3953,7 +3995,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   boxShadow: isPlaying
                       ? [
                           BoxShadow(
-                            color: Colors.redAccent.withOpacity(0.4),
+                            color: Theme.of(
+                              context,
+                            ).primaryColor.withValues(alpha: 0.4),
                             blurRadius: 12,
                             spreadRadius: 2,
                             offset: const Offset(0, 4),
@@ -4102,18 +4146,18 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           ),
                           if (isPlaying) ...[
                             const SizedBox(height: 6),
-                            const Row(
+                            Row(
                               children: [
                                 Icon(
                                   Icons.equalizer,
-                                  color: Colors.redAccent,
+                                  color: Theme.of(context).primaryColor,
                                   size: 12,
                                 ),
-                                SizedBox(width: 4),
+                                const SizedBox(width: 4),
                                 Text(
                                   "PLAYING",
                                   style: TextStyle(
-                                    color: Colors.redAccent,
+                                    color: Theme.of(context).primaryColor,
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     letterSpacing: 1.0,
@@ -4238,12 +4282,12 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: isPlayingAlbum
-              ? Colors.redAccent.withValues(alpha: 0.05)
+              ? Theme.of(context).primaryColor.withValues(alpha: 0.05)
               : Theme.of(context).cardColor.withValues(alpha: 0.5),
           borderRadius: BorderRadius.zero,
           border: isPlayingAlbum
               ? Border.all(
-                  color: Colors.redAccent.withValues(alpha: 0.6),
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.6),
                   width: 1.5,
                 )
               : Border.all(color: Colors.white.withValues(alpha: 0.1)),
@@ -4461,7 +4505,10 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
         foregroundDecoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           border: widget.isPlaying
-              ? Border.all(color: Colors.redAccent.withOpacity(0.8), width: 2)
+              ? Border.all(
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                  width: 2,
+                )
               : Border.all(color: Colors.white12),
         ),
         decoration: BoxDecoration(
@@ -4470,7 +4517,9 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
           boxShadow: widget.isPlaying
               ? [
                   BoxShadow(
-                    color: Colors.redAccent.withOpacity(0.4),
+                    color: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.4),
                     blurRadius: 12,
                     spreadRadius: 2,
                     offset: const Offset(0, 4),
