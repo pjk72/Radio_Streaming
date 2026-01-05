@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 import '../services/backup_service.dart';
+import 'appearance_screen.dart';
 import 'manage_stations_screen.dart';
 import 'api_debug_screen.dart';
 import 'debug_log_screen.dart';
@@ -19,7 +20,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-
   Timer? _backupUnlockTimer;
 
   @override
@@ -45,21 +45,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _getLastBackupText(int timestamp, String type) {
     if (timestamp == 0) return "Never";
-
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final now = DateTime.now();
     final diff = now.difference(date);
     String typeStr = " (${type == 'auto' ? 'Auto' : 'Manual'})";
-
     if (diff.inDays >= 365) {
       final years = (diff.inDays / 365).floor();
       return "$years year${years > 1 ? 's' : ''} ago$typeStr";
     } else if (diff.inDays >= 30) {
       final months = (diff.inDays / 30).floor();
       final days = diff.inDays % 30;
-      if (days > 0) {
+      if (days > 0)
         return "$months month${months > 1 ? 's' : ''} and $days day${days > 1 ? 's' : ''} ago$typeStr";
-      }
       return "$months month${months > 1 ? 's' : ''} ago$typeStr";
     } else if (diff.inDays >= 1) {
       return "${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago$typeStr";
@@ -78,6 +75,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final radio = Provider.of<RadioProvider>(context);
 
     // Filter Logic
+    final bool showAppearance =
+        _searchQuery.isEmpty ||
+        _matches("Theme") ||
+        _matches("Color") ||
+        _matches("Dark") ||
+        _matches("Light") ||
+        _matches("Appearance");
+
     final bool showManageStations =
         _searchQuery.isEmpty ||
         _matches("Manage Stations") ||
@@ -110,8 +115,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.2), // Separate area
-            borderRadius: BorderRadius.circular(16),
+            color: Theme.of(context).cardColor,
+            border: Border.all(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+            ),
           ),
           clipBehavior: Clip.hardEdge,
           child: Column(
@@ -120,18 +127,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16.0),
-                color: Colors.white.withValues(alpha: 0.05),
+                color: Theme.of(context).canvasColor.withValues(alpha: 0.5),
                 child: Row(
                   children: [
-                    const Icon(Icons.settings_rounded, color: Colors.white),
+                    Icon(
+                      Icons.settings_rounded,
+                      color: Theme.of(context).iconTheme.color,
+                    ),
                     const SizedBox(width: 12),
                     Text(
                       "Settings",
                       style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
                     // Search Bar
@@ -139,28 +146,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: 160,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.2),
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.2),
+                        ),
                       ),
                       child: TextField(
                         controller: _searchController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                        ),
                         decoration: InputDecoration(
                           hintText: "Search...",
-                          hintStyle: const TextStyle(
-                            color: Colors.white38,
+                          hintStyle: TextStyle(
+                            color: Theme.of(context).textTheme.bodyMedium?.color
+                                ?.withValues(alpha: 0.5),
                             fontSize: 13,
                           ),
-                          prefixIcon: const Icon(
+                          prefixIcon: Icon(
                             Icons.search,
-                            color: Colors.white38,
+                            color: Theme.of(
+                              context,
+                            ).iconTheme.color?.withValues(alpha: 0.5),
                             size: 16,
                           ),
                           suffixIcon: _searchController.text.isNotEmpty
                               ? IconButton(
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.close,
-                                    color: Colors.white38,
+                                    color: Theme.of(
+                                      context,
+                                    ).iconTheme.color?.withValues(alpha: 0.5),
                                     size: 16,
                                   ),
                                   padding: EdgeInsets.zero,
@@ -187,6 +206,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
+                    if (showAppearance)
+                      _buildSettingsTile(
+                        context,
+                        icon: Icons.palette_rounded,
+                        title: "Appearance",
+                        subtitle: "Themes, colors, and layout",
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AppearanceScreen(),
+                            ),
+                          );
+                        },
+                      ),
+
                     if (showManageStations)
                       _buildSettingsTile(
                         context,
@@ -253,20 +288,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 32),
 
                     if (showBackup) ...[
-                      const Text(
+                      Text(
                         "Cloud Backup",
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: Theme.of(context).textTheme.titleLarge?.color,
                         ),
                       ),
                       const SizedBox(height: 16),
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(16),
+                          color: Theme.of(context).cardColor,
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha: 0.05),
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -280,11 +319,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           auth.currentUser!.photoUrl!,
                                         )
                                       : null,
-                                  backgroundColor: Colors.white10,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.1),
                                   child: auth.currentUser?.photoUrl == null
-                                      ? const Icon(
+                                      ? Icon(
                                           Icons.person,
-                                          color: Colors.white,
+                                          color: Theme.of(
+                                            context,
+                                          ).iconTheme.color,
                                         )
                                       : null,
                                 ),
@@ -301,16 +344,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                       .first ??
                                                   "User")
                                             : "Not Signed In",
-                                        style: const TextStyle(
-                                          color: Colors.white,
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).textTheme.bodyLarge?.color,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                       if (auth.isSignedIn)
                                         Text(
                                           auth.currentUser?.email ?? "",
-                                          style: const TextStyle(
-                                            color: Colors.white54,
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall?.color,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -347,18 +394,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text(
+                                  Text(
                                     "Last Backup",
-                                    style: TextStyle(color: Colors.white70),
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.color
+                                          ?.withValues(alpha: 0.7),
+                                    ),
                                   ),
                                   Text(
                                     _getLastBackupText(
                                       radio.lastBackupTs,
                                       radio.lastBackupType,
                                     ),
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
                                       fontWeight: FontWeight.bold,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodyLarge?.color,
                                     ),
                                   ),
                                 ],
@@ -370,15 +425,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text(
+                                  Text(
                                     "Backup Frequency",
-                                    style: TextStyle(color: Colors.white70),
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.color
+                                          ?.withValues(alpha: 0.7),
+                                    ),
                                   ),
                                   DropdownButton<String>(
                                     value: radio.backupFrequency,
-                                    dropdownColor: const Color(0xFF16213e),
+                                    dropdownColor: Theme.of(context).cardColor,
                                     underline: Container(), // Hide underline
-                                    style: const TextStyle(color: Colors.white),
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.color,
+                                    ),
                                     iconEnabledColor: Theme.of(
                                       context,
                                     ).primaryColor,
@@ -413,15 +478,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text(
+                                  Text(
                                     "Startup Playback",
-                                    style: TextStyle(color: Colors.white70),
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.color
+                                          ?.withValues(alpha: 0.7),
+                                    ),
                                   ),
                                   DropdownButton<String>(
                                     value: radio.startOption,
-                                    dropdownColor: const Color(0xFF16213e),
+                                    dropdownColor: Theme.of(context).cardColor,
                                     underline: Container(),
-                                    style: const TextStyle(color: Colors.white),
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.color,
+                                    ),
                                     iconEnabledColor: Theme.of(
                                       context,
                                     ).primaryColor,
@@ -1268,8 +1343,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.05),
+        ),
       ),
       child: ListTile(
         leading: Container(
@@ -1282,13 +1360,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: Theme.of(context).textTheme.titleMedium?.color,
             fontWeight: FontWeight.bold,
           ),
         ),
-        subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54)),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+          ),
+        ),
+        trailing: Icon(
+          Icons.chevron_right,
+          color: Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
+        ),
         onTap: onTap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
@@ -1306,8 +1394,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.05),
+        ),
       ),
       child: SwitchListTile(
         secondary: Container(
@@ -1320,12 +1411,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: Theme.of(context).textTheme.titleMedium?.color,
             fontWeight: FontWeight.bold,
           ),
         ),
-        subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54)),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+          ),
+        ),
         value: value,
         onChanged: onChanged,
         activeColor: Theme.of(context).primaryColor,

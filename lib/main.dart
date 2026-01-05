@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'providers/radio_provider.dart';
+import 'providers/theme_provider.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'services/backup_service.dart';
 import 'services/log_service.dart';
@@ -164,6 +165,7 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: _backupService),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
           create: (_) => RadioProvider(audioHandler, _backupService),
           lazy: false,
@@ -208,6 +210,8 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
     return MaterialApp(
       title: 'MusicStream',
       debugShowCheckedModeBanner: false,
@@ -220,20 +224,11 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
           ],
         );
       },
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0a0a0f),
-        primaryColor: const Color(0xFF6c5ce7),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF6c5ce7),
-          secondary: Color(0xFF00cec9),
-          surface: Color(0xFF13131f), // Panel color
-        ),
-        textTheme: GoogleFonts.interTextTheme(
-          Theme.of(context).textTheme,
-        ).apply(bodyColor: Colors.white, displayColor: Colors.white),
-        useMaterial3: true,
-      ),
+      theme: themeProvider.themeData,
+      darkTheme: themeProvider.themeData,
+      themeMode: themeProvider.themeData.brightness == Brightness.dark
+          ? ThemeMode.dark
+          : ThemeMode.light,
       home: const LoginScreen(),
     );
   }

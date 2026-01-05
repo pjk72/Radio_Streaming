@@ -232,8 +232,10 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.2),
-        border: Border.all(color: Colors.white12),
+        color: Theme.of(context).cardColor,
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+        ),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -247,19 +249,24 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
               ),
               leading: ReorderableDragStartListener(
                 index: widget.index,
-                child: const Icon(Icons.drag_indicator, color: Colors.white24),
+                child: Icon(
+                  Icons.drag_indicator,
+                  color: Theme.of(
+                    context,
+                  ).iconTheme.color?.withValues(alpha: 0.2),
+                ),
               ),
               title: Text(
                 widget.category,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: Theme.of(context).textTheme.headlineSmall?.color,
                   fontSize: widget.isDesktop ? 24 : 20,
                 ),
               ),
               trailing: Icon(
                 _isExpanded ? Icons.expand_less : Icons.expand_more,
-                color: Colors.white,
+                color: Theme.of(context).iconTheme.color,
               ),
               onTap: () {
                 setState(() {
@@ -340,13 +347,13 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
                               ),
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.2),
+                                  color: Theme.of(context).cardColor,
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.3,
-                                      ),
+                                      color: Theme.of(
+                                        context,
+                                      ).shadowColor.withValues(alpha: 0.2),
                                       blurRadius: 10,
                                       spreadRadius: 2,
                                     ),

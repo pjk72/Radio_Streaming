@@ -19,19 +19,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _bgController;
+class _HomeScreenState extends State<HomeScreen> {
   int _navIndex = 0; // Navigation state
 
   @override
   void initState() {
     super.initState();
-    _bgController = AnimationController(
-      duration: const Duration(seconds: 15),
-      vsync: this,
-    )..repeat();
-
     // Trigger startup playback ONLY when we reach Home Screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -49,85 +42,52 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 700;
 
-    return Stack(
-      children: [
-        // Animated Background
-        Positioned.fill(
-          child: AnimatedBuilder(
-            animation: _bgController,
-            builder: (context, child) {
-              return Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      const Color(0xFF0f0c29),
-                      const Color(0xFF302b63),
-                      const Color(0xFF24243e),
-                    ],
-                    stops: [
-                      0.0,
-                      0.5 + 0.2 * _bgController.value, // subtle shift
-                      1.0,
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Column(
+        children: [
+          // Unified Top Header (Title + Nav)
+          if (!isDesktop) _buildTopHeader(context),
+
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (isDesktop)
+                  SizedBox(
+                    width: 240,
+                    child: Sidebar(
+                      selectedIndex: _navIndex,
+                      onItemSelected: (index) =>
+                          setState(() => _navIndex = index),
+                    ),
+                  ),
+
+                // Main Content Area
+                Expanded(
+                  child: IndexedStack(
+                    index: _navIndex,
+                    children: [
+                      const MusicStreamHome(),
+                      const PlaylistScreen(),
+                      const SettingsScreen(),
                     ],
                   ),
                 ),
-              );
-            },
+              ],
+            ),
           ),
-        ),
 
-        // Main Content
-        Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: Colors.transparent,
-          body: Column(
-            children: [
-              // Unified Top Header (Title + Nav)
-              if (!isDesktop) _buildTopHeader(context),
+          // Player Bar
+          const PlayerBar(),
 
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (isDesktop)
-                      SizedBox(
-                        width: 240,
-                        child: Sidebar(
-                          selectedIndex: _navIndex,
-                          onItemSelected: (index) =>
-                              setState(() => _navIndex = index),
-                        ),
-                      ),
-
-                    // Main Content Area
-                    Expanded(
-                      child: IndexedStack(
-                        index: _navIndex,
-                        children: [
-                          const MusicStreamHome(),
-                          const PlaylistScreen(),
-                          const SettingsScreen(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Player Bar
-              const PlayerBar(),
-
-              // Banner Ad
-              if (Platform.isAndroid || Platform.isIOS) const BannerAdWidget(),
-              // Second Banner (AdMob)
-              if (Platform.isAndroid || Platform.isIOS)
-                const AdMobBannerWidget(),
-            ],
-          ),
-        ),
-      ],
+          // Banner Ad
+          if (Platform.isAndroid || Platform.isIOS) const BannerAdWidget(),
+          // Second Banner (AdMob)
+          if (Platform.isAndroid || Platform.isIOS) const AdMobBannerWidget(),
+        ],
+      ),
     );
   }
 
@@ -143,14 +103,11 @@ class _HomeScreenState extends State<HomeScreen>
         right: 16,
       ),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFF14141E).withValues(alpha: 0.95),
-            const Color(0xFF14141E).withValues(alpha: 0.0),
-          ],
-          stops: const [0.7, 1.0],
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+          ),
         ),
       ),
       child: Column(
@@ -177,22 +134,22 @@ class _HomeScreenState extends State<HomeScreen>
                           : null,
                       child:
                           provider.backupService.currentUser?.photoUrl == null
-                          ? const Icon(
+                          ? Icon(
                               Icons.person,
                               size: 14,
-                              color: Colors.white,
+                              color: Theme.of(context).iconTheme.color,
                             )
                           : null,
                     ),
                   ),
                 ),
-                const Center(
+                Center(
                   child: Text(
                     "MusicStream",
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(context).textTheme.titleLarge?.color,
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -200,15 +157,17 @@ class _HomeScreenState extends State<HomeScreen>
               ],
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 12),
           // Row 2: Navigation Menu (Pill Style)
           Container(
-            height: 24,
+            height: 40,
             decoration: BoxDecoration(
-              color: Colors.transparent,
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(20),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.all(4),
             child: Row(
               children: [
                 _buildTopNavItem(Icons.radio, "Radio", 0),
@@ -232,12 +191,14 @@ class _HomeScreenState extends State<HomeScreen>
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
             color: isSelected
-                ? Colors.white.withValues(alpha: 0.1)
+                ? Theme.of(context).primaryColor.withValues(alpha: 0.15)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(18),
             border: isSelected
                 ? Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.3),
                     width: 1,
                   )
                 : null,
@@ -248,14 +209,20 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Icon(
                 icon,
-                color: isSelected ? Colors.white : Colors.white60,
+                color: isSelected
+                    ? Theme.of(context).primaryColor
+                    : Theme.of(context).unselectedWidgetColor,
                 size: 14,
               ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.white60,
+                  color: isSelected
+                      ? Theme.of(context).primaryColor
+                      : Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                   fontSize: 13,
                   letterSpacing: 0.5,
@@ -270,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
-    _bgController.dispose();
+    // _bgController.dispose();
     super.dispose();
   }
 }

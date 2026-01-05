@@ -24,10 +24,13 @@ class PlayerBar extends StatelessWidget {
     return Container(
       height: 90,
       decoration: BoxDecoration(
-        color: const Color(
-          0xFF13131f,
-        ).withValues(alpha: 0.95), // Slightly more opaque
-        border: const Border(top: BorderSide(color: Colors.white12, width: 1)),
+        color: Theme.of(context).cardColor.withValues(alpha: 0.95),
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+            width: 1,
+          ),
+        ),
       ),
       padding: EdgeInsets
           .zero, // Remove padding from container to allow edge-to-edge progress bar
@@ -177,15 +180,18 @@ class PlayerBar extends StatelessWidget {
                                                       Flexible(
                                                         child: Text(
                                                           provider.currentTrack,
-                                                          style:
-                                                              const TextStyle(
-                                                                color: Colors
-                                                                    .white,
-                                                                fontSize: 16,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w700,
-                                                              ),
+                                                          style: TextStyle(
+                                                            color:
+                                                                Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .textTheme
+                                                                    .titleMedium
+                                                                    ?.color,
+                                                            fontSize: 16,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
                                                           maxLines: 1,
                                                           overflow: TextOverflow
                                                               .ellipsis,
@@ -220,7 +226,12 @@ class PlayerBar extends StatelessWidget {
                                                               ? Theme.of(
                                                                   context,
                                                                 ).primaryColor
-                                                              : Colors.white70,
+                                                              : Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .textTheme
+                                                                    .bodySmall
+                                                                    ?.color,
                                                           fontSize: 13,
                                                           fontWeight:
                                                               FontWeight.w600,
@@ -271,8 +282,11 @@ class PlayerBar extends StatelessWidget {
                                                     Text(
                                                       provider.currentAlbum,
                                                       style: TextStyle(
-                                                        color: Colors.white
-                                                            .withValues(
+                                                        color: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.color
+                                                            ?.withValues(
                                                               alpha: 0.5,
                                                             ),
                                                         fontSize: 11,
@@ -288,17 +302,25 @@ class PlayerBar extends StatelessWidget {
                                           ),
                                         ],
                                       )
-                                    : const Text(
+                                    : Text(
                                         "Select a station",
-                                        style: TextStyle(color: Colors.white70),
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium?.color,
+                                        ),
                                       ),
                               ),
                             ],
                           )
-                        : const Center(
+                        : Center(
                             child: Text(
                               "Select a station",
-                              style: TextStyle(color: Colors.white70),
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium?.color,
+                              ),
                             ),
                           ),
                   ),
@@ -326,10 +348,12 @@ class PlayerBar extends StatelessWidget {
                             width: 120,
                             child: Row(
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.volume_up_rounded,
                                   size: 20,
-                                  color: Colors.grey,
+                                  color: Theme.of(
+                                    context,
+                                  ).iconTheme.color?.withValues(alpha: 0.5),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
@@ -351,7 +375,9 @@ class PlayerBar extends StatelessWidget {
                                       activeColor: Theme.of(
                                         context,
                                       ).primaryColor,
-                                      inactiveColor: Colors.white12,
+                                      inactiveColor: Theme.of(
+                                        context,
+                                      ).dividerColor.withValues(alpha: 0.2),
                                     ),
                                   ),
                                 ),
@@ -427,8 +453,8 @@ class PlayerBar extends StatelessWidget {
             children: [
               Text(
                 _formatDuration(value.position),
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodySmall?.color,
                   fontSize: 11,
                   fontFeatures: [FontFeature.tabularFigures()],
                 ),
@@ -444,10 +470,14 @@ class PlayerBar extends StatelessWidget {
                     overlayShape: const RoundSliderOverlayShape(
                       overlayRadius: 14,
                     ),
-                    activeTrackColor: Colors.redAccent,
-                    inactiveTrackColor: Colors.white38, // Lighter
-                    thumbColor: Colors.redAccent,
-                    overlayColor: Colors.redAccent.withValues(alpha: 0.2),
+                    activeTrackColor: Theme.of(context).primaryColor,
+                    inactiveTrackColor: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.3), // Lighter
+                    thumbColor: Theme.of(context).primaryColor,
+                    overlayColor: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.2),
                   ),
                   child: Slider(
                     value: val,
@@ -461,8 +491,8 @@ class PlayerBar extends StatelessWidget {
               ),
               Text(
                 _formatDuration(value.metaData.duration),
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodySmall?.color,
                   fontSize: 11,
                   fontFeatures: [FontFeature.tabularFigures()],
                 ),
@@ -501,8 +531,8 @@ class PlayerBar extends StatelessWidget {
                 _formatDuration(
                   Duration(seconds: val.toInt()),
                 ), // Display clamped
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodySmall?.color,
                   fontSize: 11,
                   fontFeatures: [FontFeature.tabularFigures()],
                 ),
@@ -518,10 +548,14 @@ class PlayerBar extends StatelessWidget {
                     overlayShape: const RoundSliderOverlayShape(
                       overlayRadius: 14,
                     ),
-                    activeTrackColor: Colors.redAccent,
-                    inactiveTrackColor: Colors.white38,
-                    thumbColor: Colors.redAccent,
-                    overlayColor: Colors.redAccent.withValues(alpha: 0.2),
+                    activeTrackColor: Theme.of(context).primaryColor,
+                    inactiveTrackColor: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.3),
+                    thumbColor: Theme.of(context).primaryColor,
+                    overlayColor: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.2),
                   ),
                   child: Slider(
                     value: val,
@@ -535,8 +569,8 @@ class PlayerBar extends StatelessWidget {
               ),
               Text(
                 _formatDuration(totalDuration),
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodySmall?.color,
                   fontSize: 11,
                   fontFeatures: [FontFeature.tabularFigures()],
                 ),
@@ -588,7 +622,9 @@ class PlayerBar extends StatelessWidget {
               provider.isShuffleMode
                   ? Icons.shuffle_rounded
                   : Icons.repeat_rounded,
-              color: provider.isShuffleMode ? Colors.redAccent : Colors.grey,
+              color: provider.isShuffleMode
+                  ? Colors.redAccent
+                  : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
             ),
             iconSize: 20,
             tooltip: "Shuffle",
@@ -612,7 +648,7 @@ class PlayerBar extends StatelessWidget {
             ),
             color: provider.currentSongIsSaved
                 ? Colors.greenAccent
-                : Colors.white54,
+                : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
             iconSize: 20,
             tooltip: provider.currentSongIsSaved
                 ? "Already saved"
@@ -649,7 +685,7 @@ class PlayerBar extends StatelessWidget {
 
         IconButton(
           icon: const Icon(Icons.skip_previous_rounded),
-          color: Colors.white,
+          color: Theme.of(context).iconTheme.color,
           iconSize: isDesktop ? 32 : 28,
           onPressed: () => provider.playPrevious(),
         ),
@@ -690,7 +726,7 @@ class PlayerBar extends StatelessWidget {
         const SizedBox(width: 4),
         IconButton(
           icon: const Icon(Icons.skip_next_rounded),
-          color: Colors.white,
+          color: Theme.of(context).iconTheme.color,
           iconSize: isDesktop ? 32 : 28,
           onPressed: () => provider.playNext(),
         ),

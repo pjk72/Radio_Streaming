@@ -762,7 +762,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         Container(
           decoration: BoxDecoration(
             color: Colors.black.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(0),
           ),
           clipBehavior: Clip.hardEdge,
           child: Column(
@@ -770,7 +770,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               // Custom Header
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                color: Colors.white.withOpacity(0.05),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(0),
+                ),
                 child: Column(
                   children: [
                     Row(
@@ -1107,26 +1110,39 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               child: Container(
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.2),
+                                  color: Theme.of(context).cardColor,
                                   borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: Theme.of(
+                                      context,
+                                    ).dividerColor.withValues(alpha: 0.1),
+                                  ),
                                 ),
                                 child: TextField(
                                   controller: _searchController,
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium?.color,
                                     fontSize: 13,
                                   ),
                                   textAlignVertical: TextAlignVertical.center,
                                   decoration: InputDecoration(
                                     hintText: "Search...",
-                                    hintStyle: const TextStyle(
-                                      color: Colors.white38,
+                                    hintStyle: TextStyle(
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.color
+                                          ?.withValues(alpha: 0.5),
                                       fontSize: 12,
                                     ),
                                     isDense: true,
-                                    prefixIcon: const Icon(
+                                    prefixIcon: Icon(
                                       Icons.search,
-                                      color: Colors.white38,
+                                      color: Theme.of(
+                                        context,
+                                      ).iconTheme.color?.withValues(alpha: 0.5),
                                       size: 16,
                                     ),
                                     prefixIconConstraints: const BoxConstraints(
@@ -1136,9 +1152,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                     suffixIcon:
                                         _searchController.text.isNotEmpty
                                         ? IconButton(
-                                            icon: const Icon(
+                                            icon: Icon(
                                               Icons.close,
-                                              color: Colors.white38,
+                                              color: Theme.of(context)
+                                                  .iconTheme
+                                                  .color
+                                                  ?.withValues(alpha: 0.5),
                                               size: 16,
                                             ),
                                             padding: EdgeInsets.zero,
@@ -1146,6 +1165,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                               minWidth: 32,
                                               minHeight: 32,
                                             ),
+
                                             onPressed: () {
                                               _searchController.clear();
                                             },
@@ -2257,10 +2277,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               ? Colors.redAccent.withOpacity(0.25) // Stronger alpha
               : isGrouped
               ? Colors.transparent
-              : Colors.white.withOpacity(0.05),
-          borderRadius: isGrouped
-              ? BorderRadius.zero
-              : BorderRadius.circular(16),
+              : Theme.of(context).cardColor.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.zero,
           border:
               (provider.audioOnlySongId == song.id ||
                   (song.title.trim().toLowerCase() ==
@@ -3413,8 +3431,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(12),
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.zero,
                   border: Border.all(color: Colors.white12),
                 ),
                 child: ListTile(
@@ -3423,7 +3441,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     vertical: 4,
                   ),
                   leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.zero,
                     child: song.artUri != null
                         ? CachedNetworkImage(
                             imageUrl: song.artUri!,
@@ -3930,7 +3948,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       : Border.all(color: Colors.white12),
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: isPlaying
                       ? [
@@ -3952,9 +3970,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         children: [
                           Positioned.fill(
                             child: ClipRRect(
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(16),
-                              ),
+                              borderRadius: BorderRadius.circular(16),
                               child: displaySong.artUri != null
                                   ? CachedNetworkImage(
                                       imageUrl: displaySong.artUri!,
@@ -4052,8 +4068,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         children: [
                           Text(
                             displayAlbum,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).textTheme.titleMedium?.color,
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
                             ),
@@ -4063,8 +4081,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           const SizedBox(height: 2),
                           Text(
                             displaySong.artist,
-                            style: const TextStyle(
-                              color: Colors.white70,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodyMedium?.color,
                               fontSize: 12,
                             ),
                             maxLines: 1,
@@ -4073,8 +4093,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           const SizedBox(height: 2),
                           Text(
                             "$count ${count == 1 ? 'song' : 'songs'}",
-                            style: const TextStyle(
-                              color: Colors.white54,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color,
                               fontSize: 10,
                             ),
                           ),
@@ -4190,7 +4212,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.green,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
         ),
         padding: const EdgeInsets.only(left: 24),
         child: const Icon(Icons.drive_file_move_outline, color: Colors.white),
@@ -4200,7 +4222,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.red,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.zero,
         ),
         padding: const EdgeInsets.only(right: 24),
         child: const Icon(Icons.delete_outline, color: Colors.white),
@@ -4217,8 +4239,8 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
         decoration: BoxDecoration(
           color: isPlayingAlbum
               ? Colors.redAccent.withValues(alpha: 0.05)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
+              : Theme.of(context).cardColor.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.zero,
           border: isPlayingAlbum
               ? Border.all(
                   color: Colors.redAccent.withValues(alpha: 0.6),
@@ -4238,10 +4260,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                     _isExpanded = !_isExpanded;
                   });
                 },
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                  bottom: Radius.circular(0), // Rounded only top if expanded
-                ),
+                borderRadius: BorderRadius.zero,
                 child: Padding(
                   padding: const EdgeInsets.all(12.0),
                   child: Row(
@@ -4446,7 +4465,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
               : Border.all(color: Colors.white12),
         ),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Theme.of(context).cardColor.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(16),
           boxShadow: widget.isPlaying
               ? [
@@ -4467,9 +4486,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                 children: [
                   Positioned.fill(
                     child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(16),
-                      ),
+                      borderRadius: BorderRadius.circular(16),
                       child: _imageUrl != null
                           ? CachedNetworkImage(
                               imageUrl: _imageUrl!,
@@ -4559,8 +4576,8 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                     // Show full name (up to bullet) even if it contains , or &
                     widget.customDisplayName ??
                         widget.artist.split('•').first.trim(),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.titleMedium?.color,
                       fontWeight: FontWeight.bold,
                     ),
                     maxLines: 1,
@@ -4568,7 +4585,10 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                   ),
                   Text(
                     "${widget.songCount} Songs",
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),

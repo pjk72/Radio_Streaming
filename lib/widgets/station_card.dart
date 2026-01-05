@@ -50,7 +50,7 @@ class _StationCardState extends State<StationCard> {
               end: Alignment.bottomRight,
               colors: [
                 Color(int.parse(widget.station.color)).withValues(alpha: 0.15),
-                Colors.white.withValues(alpha: 0.05),
+                Theme.of(context).colorScheme.surface.withValues(alpha: 0.05),
               ],
             ),
             borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
@@ -59,7 +59,7 @@ class _StationCardState extends State<StationCard> {
                   ? Color(
                       int.parse(widget.station.color),
                     ).withValues(alpha: 0.8)
-                  : Colors.white.withValues(alpha: 0.1),
+                  : Theme.of(context).dividerColor.withValues(alpha: 0.1),
               width: _isHovering ? 1.5 : 1,
             ),
             boxShadow: _isHovering
@@ -142,8 +142,10 @@ class _StationCardState extends State<StationCard> {
                                 child: ShaderMask(
                                   shaderCallback: (bounds) => LinearGradient(
                                     colors: [
-                                      Colors.white.withValues(alpha: 0.6),
-                                      Colors.white.withValues(alpha: 0.1),
+                                      Theme.of(context).colorScheme.surface
+                                          .withValues(alpha: 0.6),
+                                      Theme.of(context).colorScheme.surface
+                                          .withValues(alpha: 0.1),
                                     ],
                                     begin: Alignment.bottomCenter,
                                     end: Alignment.topCenter,
@@ -179,13 +181,17 @@ class _StationCardState extends State<StationCard> {
                         height: isCompact ? 40 : 56,
                         padding: EdgeInsets.all(isCompact ? 6 : 10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
+                          color: Theme.of(
+                            context,
+                          ).canvasColor.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(
                             isCompact ? 10 : 14,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
+                              color: Theme.of(
+                                context,
+                              ).shadowColor.withValues(alpha: 0.2),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -207,7 +213,9 @@ class _StationCardState extends State<StationCard> {
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: isCompact ? 15 : 18,
-                                color: Colors.white,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.titleMedium?.color,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -216,7 +224,11 @@ class _StationCardState extends State<StationCard> {
                             Text(
                               widget.station.genre.toUpperCase(),
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withValues(alpha: 0.7),
                                 fontSize: isCompact ? 9 : 11,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 1.0,
@@ -322,7 +334,7 @@ class _LiveBadge extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(

@@ -55,19 +55,24 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
         );
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: _isSearching
             ? TextField(
                 controller: _searchController,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
                 decoration: InputDecoration(
                   hintText: "Search Stations...",
-                  hintStyle: const TextStyle(color: Colors.white54),
+                  hintStyle: TextStyle(color: Theme.of(context).hintColor),
                   border: InputBorder.none,
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
+                          icon: Icon(
+                            Icons.close,
+                            color: Theme.of(context).iconTheme.color,
+                          ),
                           onPressed: () {
                             _searchController.clear();
                           },
@@ -76,9 +81,11 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                 ),
                 autofocus: true,
               )
-            : const Text(
+            : Text(
                 "Manage Stations",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                ),
               ),
         backgroundColor: Colors.transparent,
         actions: [],
@@ -102,11 +109,11 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
         height: 60,
         margin: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF222831).withValues(alpha: 0.9),
+          color: Theme.of(context).cardColor.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(30),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
+              color: Theme.of(context).shadowColor.withValues(alpha: 0.2),
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
@@ -118,7 +125,9 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
             IconButton(
               icon: Icon(
                 _isSearching ? Icons.close : Icons.search,
-                color: _isSearching ? Colors.blueAccent : Colors.white,
+                color: _isSearching
+                    ? Colors.blueAccent
+                    : Theme.of(context).iconTheme.color,
               ),
               onPressed: () {
                 setState(() {
@@ -135,7 +144,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
             IconButton(
               icon: Icon(
                 provider.isManageGridView ? Icons.view_list : Icons.grid_view,
-                color: Colors.white,
+                color: Theme.of(context).iconTheme.color,
               ),
               onPressed: () =>
                   provider.setManageGridView(!provider.isManageGridView),
@@ -148,7 +157,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                     provider.manageGroupingMode !=
                         0 // 0 is GroupingMode.none
                     ? Colors.blueAccent
-                    : Colors.white,
+                    : Theme.of(context).iconTheme.color,
               ),
               onSelected: (mode) => provider.setManageGroupingMode(mode.index),
               tooltip: "Group by",
@@ -338,8 +347,14 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                 ),
         ),
       ),
-      title: Text(s.name, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(s.genre, style: const TextStyle(color: Colors.white54)),
+      title: Text(
+        s.name,
+        style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+      ),
+      subtitle: Text(
+        s.genre,
+        style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -371,7 +386,12 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
               }
             },
           ),
-          _buildPopupMenu(context, s, provider),
+          _buildPopupMenu(
+            context,
+            s,
+            provider,
+            iconColor: Theme.of(context).iconTheme.color,
+          ),
         ],
       ),
     );
@@ -380,10 +400,11 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
   Widget _buildPopupMenu(
     BuildContext context,
     dynamic s,
-    RadioProvider provider,
-  ) {
+    RadioProvider provider, {
+    Color? iconColor,
+  }) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: Colors.white54),
+      icon: Icon(Icons.more_vert, color: iconColor ?? Colors.white54),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       color: const Color(0xFF222831),
       onSelected: (value) async {
