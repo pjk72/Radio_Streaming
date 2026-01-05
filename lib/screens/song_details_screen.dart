@@ -812,16 +812,18 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                   const SizedBox(height: 4),
                   MouseRegion(
                     cursor:
-                        (provider.currentTrack != "Live Broadcast" &&
-                            provider.currentArtist.isNotEmpty &&
-                            !isDefaultLogo)
+                        (provider.currentArtist.isNotEmpty &&
+                            (provider.currentPlayingPlaylistId != null ||
+                                (provider.currentTrack != "Live Broadcast" &&
+                                    !isDefaultLogo)))
                         ? SystemMouseCursors.click
                         : SystemMouseCursors.basic,
                     child: GestureDetector(
                       onTap:
-                          (provider.currentTrack != "Live Broadcast" &&
-                              provider.currentArtist.isNotEmpty &&
-                              !isDefaultLogo)
+                          (provider.currentArtist.isNotEmpty &&
+                              (provider.currentPlayingPlaylistId != null ||
+                                  (provider.currentTrack != "Live Broadcast" &&
+                                      !isDefaultLogo)))
                           ? () {
                               Navigator.of(context).push(
                                 MaterialPageRoute(
@@ -846,9 +848,11 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                           color: Colors.white.withOpacity(0.8),
                           fontSize: 18,
                           decoration:
-                              (provider.currentTrack != "Live Broadcast" &&
-                                  provider.currentArtist.isNotEmpty &&
-                                  !isDefaultLogo)
+                              (provider.currentArtist.isNotEmpty &&
+                                  (provider.currentPlayingPlaylistId != null ||
+                                      (provider.currentTrack !=
+                                              "Live Broadcast" &&
+                                          !isDefaultLogo)))
                               ? TextDecoration.underline
                               : null,
                           decorationColor: Colors.white54,

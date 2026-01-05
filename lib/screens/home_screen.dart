@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -119,9 +120,10 @@ class _HomeScreenState extends State<HomeScreen>
               const PlayerBar(),
 
               // Banner Ad
-              if (!isDesktop) const BannerAdWidget(),
+              if (Platform.isAndroid || Platform.isIOS) const BannerAdWidget(),
               // Second Banner (AdMob)
-              if (!isDesktop) const AdMobBannerWidget(),
+              if (Platform.isAndroid || Platform.isIOS)
+                const AdMobBannerWidget(),
             ],
           ),
         ),
