@@ -1374,8 +1374,8 @@ class RadioProvider with ChangeNotifier {
 
       _audioOnlySongId = songId;
       _isPlaying = true;
-      _isLoading = false;
-      notifyListeners();
+      // _isLoading = false; // LET AUDIO HANDLER STATE CONTROL LOADING
+      // notifyListeners();
 
       // Clean up old controller if it exists
       if (_hiddenAudioController != null) {

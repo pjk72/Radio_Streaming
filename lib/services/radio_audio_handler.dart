@@ -500,6 +500,13 @@ class RadioAudioHandler extends BaseAudioHandler
     String playlistId, {
     Duration? startAt,
   }) async {
+    // Session Management to allow cancellation
+    final sessionId = DateTime.now().millisecondsSinceEpoch;
+    _currentSessionId = sessionId;
+
+    _expectingStop =
+        true; // Block "Ready" state from stop() to keep UI in Buffering/Loading mode
+
     // Always reset flags
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
@@ -541,8 +548,8 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     // SLOW PATH: Not cached.
-    // 1. Give Feedback
-    await _player.stop();
+
+    // 1. Immediate UI Feedback (Before Stop)
     final String stableId = song.youtubeUrl ?? 'song_${song.id}';
     final placeholderItem = MediaItem(
       id: stableId,
@@ -568,12 +575,32 @@ class RadioAudioHandler extends BaseAudioHandler
       ),
     );
 
+    // 2. Stop previous playback (Async)
+    try {
+      await _player.stop();
+    } catch (_) {}
+
     try {
       var yt = YoutubeExplode();
+
+      // OPTIMIZATION: Check if session changed before network call
+      if (_currentSessionId != sessionId) {
+        yt.close();
+        return;
+      }
+
       var video = await yt.videos.get(videoId);
+
+      if (_currentSessionId != sessionId) {
+        yt.close();
+        return;
+      }
+
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
       var streamInfo = manifest.muxed.withHighestBitrate();
       yt.close();
+
+      if (_currentSessionId != sessionId) return;
 
       final streamUrl = streamInfo.url.toString();
 
@@ -594,9 +621,14 @@ class RadioAudioHandler extends BaseAudioHandler
         'startAt': startAt,
       };
 
-      await playFromUri(Uri.parse(streamUrl), extras);
-      playbackState.add(playbackState.value.copyWith(errorMessage: null));
+      if (_currentSessionId == sessionId) {
+        await playFromUri(Uri.parse(streamUrl), extras);
+        playbackState.add(playbackState.value.copyWith(errorMessage: null));
+      }
     } catch (e) {
+      // If we switched sessions, simply ignore the error
+      if (_currentSessionId != sessionId) return;
+
       playbackState.add(
         playbackState.value.copyWith(
           processingState: AudioProcessingState.error,
@@ -611,7 +643,7 @@ class RadioAudioHandler extends BaseAudioHandler
         await _playlistService.markSongAsInvalid(playlistId, song.id);
 
         Future.delayed(const Duration(seconds: 5), () {
-          skipToNext();
+          if (_currentSessionId == sessionId) skipToNext();
         });
       } else {
         // No internet: Just show error and don't skip/invalidate
