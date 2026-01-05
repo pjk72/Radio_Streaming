@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/http.dart' as http;
 import 'album_details_screen.dart';
 import '../widgets/admob_banner_widget.dart';
 

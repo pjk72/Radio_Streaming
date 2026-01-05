@@ -70,14 +70,14 @@ class RadioAudioHandler extends BaseAudioHandler
   int _stuckSecondsCount = 0;
 
   static const _addToPlaylistControl = MediaControl(
-    androidIcon: 'drawable/ic_favorite_border',
+    androidIcon: 'drawable/ic_add',
     label: 'Like',
     action: MediaAction.custom,
     customAction: CustomMediaAction(name: 'add_to_playlist'),
   );
 
   static const _addedControl = MediaControl(
-    androidIcon: 'drawable/ic_favorite',
+    androidIcon: 'drawable/ic_check_circle',
     label: 'Liked',
     action: MediaAction.custom,
     customAction: CustomMediaAction(name: 'noop'),
@@ -1756,9 +1756,28 @@ class RadioAudioHandler extends BaseAudioHandler
       );
     } else {
       // Radio: Show Like/Liked button
-      standardControls.add(
-        _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
-      );
+      // Only show if we have recognized metadata (not just station info)
+      bool showLikeControls = false;
+      final item = mediaItem.value;
+      if (item != null) {
+        try {
+          // Find current station
+          final station = _stations.firstWhere(
+            (s) => s.url == (item.extras?['url'] ?? item.id),
+          );
+
+          // If the title is NOT the station name, it's likely a song
+          if (item.title != station.name) {
+            showLikeControls = true;
+          }
+        } catch (_) {}
+      }
+
+      if (showLikeControls) {
+        standardControls.add(
+          _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
+        );
+      }
     }
 
     // System Actions
@@ -1899,6 +1918,22 @@ class RadioAudioHandler extends BaseAudioHandler
           );
         }).toList();
 
+        // Add Play All Item at the top
+        if (songItems.isNotEmpty) {
+          songItems.insert(
+            0,
+            MediaItem(
+              id: 'play_all_${playlist.id}',
+              title: 'Play All',
+              playable: true,
+              artUri: Uri.parse(
+                "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+              ),
+              extras: {'style': 'list_item'},
+            ),
+          );
+        }
+
         return songItems;
       } catch (_) {}
     }
@@ -1943,7 +1978,11 @@ class RadioAudioHandler extends BaseAudioHandler
         if (playlist.songs.isEmpty) return;
 
         // Populate Internal Queue
-        _isShuffleMode = isShuffle;
+        if (isShuffle) {
+          _isShuffleMode = true; // Force shuffle if explicitly requested
+        }
+        // If play_all, we respect the current _isShuffleMode state
+
         _playlistQueue = playlist.songs.map((s) {
           final String mId = s.youtubeUrl ?? 'song_${s.id}';
           return MediaItem(
