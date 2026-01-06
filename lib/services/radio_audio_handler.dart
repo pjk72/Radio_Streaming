@@ -1,4 +1,3 @@
-import 'dart:ui';
 // import 'dart:developer' as developer;
 import 'package:http/http.dart' as http; // Added import
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -10,7 +9,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import '../data/station_data.dart' as static_data;
+
 import '../models/station.dart';
 import '../models/saved_song.dart';
 import '../services/playlist_service.dart';
@@ -260,7 +259,7 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _startupLock = true;
 
   RadioAudioHandler() {
-    _stations = List.from(static_data.stations);
+    _stations = [];
     // Don't wait for future in constructor, but start it
     _initializePlayer();
 
@@ -326,37 +325,69 @@ class RadioAudioHandler extends BaseAudioHandler
 
       if (loaded.isEmpty) return;
 
-      // 2. Load Favorites Filter (Explicit)
-      // If user has a specific "Favorites" subset separate from "Saved" (or if Saved IS Favorites but we want to be sure)
-      final List<String>? favIds = prefs.getStringList('favorite_station_ids');
-      if (favIds != null && favIds.isNotEmpty) {
-        loaded = loaded.where((s) => favIds.contains(s.id.toString())).toList();
-      }
-
-      // 3. Load Order & Sort
-      final bool useCustomOrder = prefs.getBool('use_custom_order') ?? false;
+      // 2. Load Order
+      // We ALWAYS respect custom order within categories now
       final List<String>? orderStr = prefs.getStringList('station_order');
-
-      if (useCustomOrder && orderStr != null) {
-        final order = orderStr
+      List<int> order = [];
+      if (orderStr != null) {
+        order = orderStr
             .map((e) => int.tryParse(e) ?? -1)
             .where((e) => e != -1)
             .toList();
-        final Map<int, Station> map = {for (var s in loaded) s.id: s};
-        final List<Station> sorted = [];
+      }
 
-        for (var id in order) {
-          if (map.containsKey(id)) {
-            sorted.add(map[id]!);
-            map.remove(id);
+      // 3. Determine Category Ranks based on Custom Order
+      // The category order should follow the order of stations in the Favorites list.
+      // i.e. if the first station is "Pop", then "Pop" is the first category.
+      final Map<String, int> categoryRank = {};
+      int currentRank = 0;
+
+      // Map station IDs to Station objects for O(1) lookup
+      final Map<int, Station> stationMap = {for (var s in loaded) s.id: s};
+
+      // Walk through the custom order to establish category priority
+      for (var id in order) {
+        final station = stationMap[id];
+        if (station != null) {
+          final cat = station.category;
+          if (!categoryRank.containsKey(cat)) {
+            categoryRank[cat] = currentRank++;
           }
         }
-        // Append remaining sorted-by-default
-        sorted.addAll(map.values);
-        _stations = sorted;
-      } else {
-        _stations = loaded;
       }
+
+      // 4. Multi-Level Sort: Category Rank -> Custom Order
+      loaded.sort((a, b) {
+        String catA = a.category;
+        String catB = b.category;
+
+        // Primary: Category Rank
+        // If a category is not in the rank map (e.g. station not in custom order), append at end sorted alphabetically
+        int rankA = categoryRank[catA] ?? 9999;
+        int rankB = categoryRank[catB] ?? 9999;
+
+        if (rankA != rankB) {
+          return rankA.compareTo(rankB);
+        }
+
+        // Fallback for unranked categories: Sort Alphabetically
+        if (rankA == 9999) {
+          int alpha = catA.compareTo(catB);
+          if (alpha != 0) return alpha;
+        }
+
+        // Secondary: Custom Order within Category
+        int idxA = order.indexOf(a.id);
+        int idxB = order.indexOf(b.id);
+
+        // Handle missing from order list (append at end)
+        if (idxA == -1) idxA = 9999;
+        if (idxB == -1) idxB = 9999;
+
+        return idxA.compareTo(idxB);
+      });
+
+      _stations = loaded;
     } catch (e) {
       // Fallback
     }
@@ -793,7 +824,13 @@ class RadioAudioHandler extends BaseAudioHandler
         } else {
           int index = _stations.indexWhere((s) => s.url == current.id);
           int nextIndex = (index + 1) % _stations.length;
-          await playFromUri(Uri.parse(_stations[nextIndex].url));
+          final s = _stations[nextIndex];
+          await playFromUri(Uri.parse(s.url), {
+            'title': s.name,
+            'artUri': s.logo,
+            'type': 'station',
+            'user_initiated': true,
+          });
         }
       }
     }
@@ -860,7 +897,13 @@ class RadioAudioHandler extends BaseAudioHandler
           int index = _stations.indexWhere((s) => s.url == current.id);
           int prevIndex = index - 1;
           if (prevIndex < 0) prevIndex = _stations.length - 1;
-          await playFromUri(Uri.parse(_stations[prevIndex].url));
+          final s = _stations[prevIndex];
+          await playFromUri(Uri.parse(s.url), {
+            'title': s.name,
+            'artUri': s.logo,
+            'type': 'station',
+            'user_initiated': true,
+          });
         }
       }
     }
@@ -1304,6 +1347,28 @@ class RadioAudioHandler extends BaseAudioHandler
       playable: true,
       extras: extras ?? {'url': url},
     );
+
+    // Sanitize Art URI for Android Auto (Must be HTTPS or Content URI)
+    if (newItem.artUri != null) {
+      String artString = newItem.artUri.toString();
+      bool changed = false;
+      if (artString.startsWith('assets/') || !artString.startsWith('http')) {
+        // Local asset often fails on AA. Generate a valid URL.
+        final seed = station?.genre ?? title;
+        final newArt = GenreMapper.getGenreImage(seed);
+        if (newArt != null) {
+          artString = newArt;
+          changed = true;
+        }
+      } else if (artString.startsWith('http:')) {
+        artString = artString.replaceFirst('http:', 'https:');
+        changed = true;
+      }
+
+      if (changed) {
+        newItem = newItem.copyWith(artUri: Uri.parse(artString));
+      }
+    }
 
     mediaItem.add(newItem);
     _isCurrentSongSaved = await _playlistService.isSongInFavorites(
@@ -1792,17 +1857,11 @@ class RadioAudioHandler extends BaseAudioHandler
       bool showLikeControls = false;
       final item = mediaItem.value;
       if (item != null) {
-        try {
-          // Find current station
-          final station = _stations.firstWhere(
-            (s) => s.url == (item.extras?['url'] ?? item.id),
-          );
-
-          // If the title is NOT the station name, it's likely a song
-          if (item.title != station.name) {
-            showLikeControls = true;
-          }
-        } catch (_) {}
+        // Strict Check: Only show Like button if ARTIST is present.
+        // This ensures we don't show it when only the Station Name (Title) is visible.
+        if (item.artist != null && item.artist!.isNotEmpty) {
+          showLikeControls = true;
+        }
       }
 
       if (showLikeControls) {
@@ -1993,6 +2052,7 @@ class RadioAudioHandler extends BaseAudioHandler
       await playFromUri(Uri.parse(s.url), {
         'type': 'station',
         'title': s.name,
+        'artUri': s.logo,
         'user_initiated': true,
       });
       return;
@@ -2009,11 +2069,14 @@ class RadioAudioHandler extends BaseAudioHandler
         final playlist = playlists.firstWhere((p) => p.id == playlistId);
         if (playlist.songs.isEmpty) return;
 
+        // SET Current Playlist ID so toggleShuffle works later
+        _currentPlayingPlaylistId = playlist.id;
+
         // Populate Internal Queue
-        if (isShuffle) {
-          _isShuffleMode = true; // Force shuffle if explicitly requested
+        if (isShuffle || mediaId.startsWith('play_all_')) {
+          _isShuffleMode =
+              true; // Force shuffle for both 'Shuffle' and 'Play All' actions
         }
-        // If play_all, we respect the current _isShuffleMode state
 
         _playlistQueue = playlist.songs.map((s) {
           final String mId = s.youtubeUrl ?? 'song_${s.id}';
@@ -2095,8 +2158,8 @@ class RadioAudioHandler extends BaseAudioHandler
               final bool queueIsReady = extras?['queue_ready'] == true;
               if (!queueIsReady && _currentPlayingPlaylistId != p.id) {
                 _currentPlayingPlaylistId = p.id;
-                // Respect existing Shuffle Mode
-                // _isShuffleMode = false; // REMOVED
+                // Force Shuffle Mode by default on Android Auto context switch
+                _isShuffleMode = true;
 
                 _playlistQueue = p.songs.map((ps) {
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';

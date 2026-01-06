@@ -69,17 +69,21 @@ class _DuplicateResolutionDialogState
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: Colors.black.withValues(alpha: 0.85),
-      title: const Text(
+      backgroundColor: Theme.of(context).cardColor,
+      title: Text(
         "Duplicate Songs Found",
-        style: TextStyle(color: Colors.white),
+        style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
       ),
       content: SizedBox(
         width: double.maxFinite,
         child: widget.duplicates.isEmpty
-            ? const Text(
+            ? Text(
                 "No duplicates remaining.",
-                style: TextStyle(color: Colors.white70),
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                ),
               )
             : ListView.builder(
                 shrinkWrap: true,
@@ -93,7 +97,7 @@ class _DuplicateResolutionDialogState
                   final artist = firstSong.artist;
 
                   return Card(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: Theme.of(context).canvasColor.withValues(alpha: 0.3),
                     margin: const EdgeInsets.symmetric(vertical: 8),
                     child: Padding(
                       padding: const EdgeInsets.all(8.0),
@@ -102,9 +106,11 @@ class _DuplicateResolutionDialogState
                         children: [
                           Text(
                             "$title - $artist",
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: Theme.of(
+                                context,
+                              ).textTheme.titleMedium?.color,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -126,7 +132,9 @@ class _DuplicateResolutionDialogState
                                           : Icons.play_arrow_rounded,
                                       color: isPlayingThis
                                           ? Colors.redAccent
-                                          : Colors.white70,
+                                          : Theme.of(
+                                              context,
+                                            ).textTheme.bodyLarge?.color,
                                       size: 32,
                                     ),
                                     onPressed: () {
@@ -142,17 +150,21 @@ class _DuplicateResolutionDialogState
                                   ),
                                   title: Text(
                                     "Duration: ${song.duration?.toString().split('.').first ?? '--:--'}",
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.white70,
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.color
+                                          ?.withValues(alpha: 0.7),
                                     ),
                                   ),
                                   trailing: Checkbox(
                                     value: isMarked,
                                     checkColor: Colors.black,
-                                    activeColor: Colors.white,
-                                    side: const BorderSide(
-                                      color: Colors.white54,
+                                    activeColor: Theme.of(context).primaryColor,
+                                    side: BorderSide(
+                                      color: Theme.of(context).dividerColor,
                                     ),
                                     onChanged: (val) {
                                       setState(() {
@@ -178,7 +190,12 @@ class _DuplicateResolutionDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text("Cancel", style: TextStyle(color: Colors.white54)),
+          child: Text(
+            "Cancel",
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
+          ),
         ),
         TextButton(
           onPressed: _songsToRemove.isEmpty

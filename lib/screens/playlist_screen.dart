@@ -1718,8 +1718,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     ),
                   Text(
                     playlist.name.replaceAll('Spotify: ', ''),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                       letterSpacing: 1.0,
@@ -1731,7 +1731,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   Text(
                     "${playlist.songs.length} songs",
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                       fontSize: 12,
                     ),
                   ),
@@ -1755,11 +1757,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1e1e24),
-        title: const Text(
-          "Rename Playlist",
-          style: TextStyle(color: Colors.white),
-        ),
+        backgroundColor: Theme.of(context).cardColor,
+        title: Text("Rename Playlist", style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
@@ -2326,8 +2325,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     alignment: Alignment.center,
                     child: Text(
                       "${groupIndex ?? ''}",
-                      style: const TextStyle(
-                        color: Colors.white54,
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.color?.withValues(alpha: 0.5),
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
@@ -2367,9 +2368,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   width: 48,
                                   height: 48,
                                   color: Colors.grey[900],
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.music_note,
-                                    color: Colors.white24,
+                                    color: Theme.of(
+                                      context,
+                                    ).iconTheme.color?.withValues(alpha: 0.24),
                                   ),
                                 ),
                               )
@@ -2377,9 +2380,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 width: 48,
                                 height: 48,
                                 color: Colors.grey[900],
-                                child: const Icon(
+                                child: Icon(
                                   Icons.music_note,
-                                  color: Colors.white24,
+                                  color: Theme.of(
+                                    context,
+                                  ).iconTheme.color?.withValues(alpha: 0.24),
                                 ),
                               ),
                       ),
@@ -2403,7 +2408,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           .trim()
                                           .toLowerCase()))
                           ? Colors.redAccent
-                          : (isInvalid ? Colors.white54 : Colors.white),
+                          : (isInvalid
+                                ? Theme.of(context).textTheme.bodyLarge?.color
+                                      ?.withValues(alpha: 0.5)
+                                : Theme.of(context).textTheme.bodyLarge?.color),
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
@@ -2570,7 +2578,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           provider.isPlaying)
                                       ? Icons.pause_rounded
                                       : Icons.play_arrow_rounded,
-                                  color: Colors.white,
+                                  color: Theme.of(
+                                    context,
+                                  ).textTheme.bodyLarge?.color,
                                   size: 28,
                                 ),
                         ),
@@ -2585,7 +2595,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     child: Text(
                       song.releaseDate!.split('-').first,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
+                        color: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.color?.withValues(alpha: 0.5),
                         fontWeight: FontWeight.normal,
                         fontSize: 14,
                       ),
@@ -2609,7 +2621,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               Text(
                                 song.artist,
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.9),
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.color
+                                      ?.withValues(alpha: 0.9),
                                   fontWeight: FontWeight.w500,
                                 ),
                                 maxLines: 1,
@@ -2678,7 +2694,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         : Icons.favorite_border,
                                     color: isFavorite
                                         ? Colors.pinkAccent
-                                        : Colors.white54,
+                                        : Theme.of(context).iconTheme.color
+                                              ?.withValues(alpha: 0.54),
                                     size: 20,
                                   ),
                                 ),
@@ -2798,7 +2815,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                                 provider.isPlaying)
                                             ? Icons.pause_rounded
                                             : Icons.play_arrow_rounded,
-                                        color: Colors.white,
+                                        color: Theme.of(
+                                          context,
+                                        ).textTheme.bodyLarge?.color,
                                         size: 28,
                                       ),
                               ),
@@ -2847,7 +2866,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        backgroundColor: Theme.of(context).cardColor,
         title: const Text(
           "Delete Playlist",
           style: TextStyle(color: Colors.white),
@@ -2944,10 +2963,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 "Copy to...",
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Theme.of(context).textTheme.titleLarge?.color,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -3009,7 +3028,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
     final result = await showModalBottomSheet<bool>(
       context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: Theme.of(context).cardColor,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -3025,8 +3044,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             children: [
               Text(
                 "Copy ${groupSongs.first.album} to...",
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.titleLarge?.color,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -3557,9 +3576,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     ],
                   ),
                   trailing: IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.play_circle_fill,
-                      color: Colors.white,
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
                     ),
                     onPressed: () {
                       provider.playPlaylistSong(song, playlist.id);
@@ -4359,8 +4378,10 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                           children: [
                             Text(
                               albumName,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.titleMedium?.color,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
                               ),
@@ -4369,8 +4390,12 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                             ),
                             Text(
                               artistName,
-                              style: const TextStyle(
-                                color: Colors.white70,
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.color
+                                    ?.withValues(alpha: 0.7),
                                 fontSize: 14,
                               ),
                               maxLines: 1,
@@ -4379,7 +4404,11 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                             Text(
                               "${widget.groupSongs.length} songs${(firstSong.releaseDate != null && firstSong.releaseDate!.isNotEmpty) ? " • ${firstSong.releaseDate!.split('-').first}" : ""}",
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withValues(alpha: 0.5),
                                 fontSize: 12,
                               ),
                             ),
@@ -4405,7 +4434,9 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                         _isExpanded
                             ? Icons.keyboard_arrow_up_rounded
                             : Icons.keyboard_arrow_down_rounded,
-                        color: Colors.white54,
+                        color: Theme.of(
+                          context,
+                        ).iconTheme.color?.withValues(alpha: 0.54),
                       ),
                     ],
                   ),
@@ -4752,7 +4783,9 @@ class _DuplicateResolutionDialogState
                         isPlaying
                             ? Icons.stop_rounded
                             : Icons.play_arrow_rounded,
-                        color: isPlaying ? Colors.redAccent : Colors.white,
+                        color: isPlaying
+                            ? Colors.redAccent
+                            : Theme.of(context).textTheme.bodyLarge?.color,
                       ),
                       onPressed: () {
                         if (isPlaying) {

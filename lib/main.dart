@@ -211,25 +211,39 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDark = themeProvider.themeData.brightness == Brightness.dark;
 
-    return MaterialApp(
-      title: 'MusicStream',
-      debugShowCheckedModeBanner: false,
-      builder: (context, child) {
-        return Stack(
-          children: [
-            child!,
-            const GlobalHiddenPlayer(), // Persists across navigation
-            const ConnectivityBanner(), // Shows "No Internet" when offline
-          ],
-        );
-      },
-      theme: themeProvider.themeData,
-      darkTheme: themeProvider.themeData,
-      themeMode: themeProvider.themeData.brightness == Brightness.dark
-          ? ThemeMode.dark
-          : ThemeMode.light,
-      home: const LoginScreen(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+        systemNavigationBarColor:
+            themeProvider.themeData.scaffoldBackgroundColor,
+        systemNavigationBarIconBrightness: isDark
+            ? Brightness.light
+            : Brightness.dark,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+      child: MaterialApp(
+        title: 'MusicStream',
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) {
+          return Stack(
+            children: [
+              child!,
+              const GlobalHiddenPlayer(), // Persists across navigation
+              const ConnectivityBanner(), // Shows "No Internet" when offline
+            ],
+          );
+        },
+        theme: themeProvider.themeData,
+        darkTheme: themeProvider.themeData,
+        themeMode: themeProvider.themeData.brightness == Brightness.dark
+            ? ThemeMode.dark
+            : ThemeMode.light,
+        home: const LoginScreen(),
+      ),
     );
   }
 }

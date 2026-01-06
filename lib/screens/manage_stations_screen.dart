@@ -376,7 +376,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                   : Icons.play_circle_outline,
               color: provider.isPlaying && provider.currentStation?.id == s.id
                   ? Colors.redAccent
-                  : Colors.greenAccent,
+                  : Theme.of(context).textTheme.bodyLarge?.color,
             ),
             onPressed: () {
               if (provider.isPlaying && provider.currentStation?.id == s.id) {
@@ -404,9 +404,12 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
     Color? iconColor,
   }) {
     return PopupMenuButton<String>(
-      icon: Icon(Icons.more_vert, color: iconColor ?? Colors.white54),
+      icon: Icon(
+        Icons.more_vert,
+        color: iconColor ?? Theme.of(context).iconTheme.color,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: const Color(0xFF222831),
+      color: Theme.of(context).cardColor,
       onSelected: (value) async {
         if (value == 'edit') {
           Navigator.push(
@@ -417,14 +420,18 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
           final confirm = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
-              backgroundColor: const Color(0xFF16213e),
-              title: const Text(
+              backgroundColor: Theme.of(context).cardColor,
+              title: Text(
                 "Delete Station?",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                ),
               ),
               content: Text(
                 "Are you sure you want to delete '${s.name}'?",
-                style: const TextStyle(color: Colors.white70),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                ),
               ),
               actions: [
                 TextButton(
@@ -448,23 +455,33 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
         }
       },
       itemBuilder: (BuildContext context) => [
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'edit',
           child: Row(
             children: [
-              Icon(Icons.edit, color: Colors.blueAccent),
+              Icon(Icons.edit, color: Theme.of(context).primaryColor),
               SizedBox(width: 12),
-              Text("Edit", style: TextStyle(color: Colors.white)),
+              Text(
+                "Edit",
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
+              ),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'delete',
           child: Row(
             children: [
-              Icon(Icons.delete_outline, color: Colors.redAccent),
-              SizedBox(width: 12),
-              Text("Delete", style: TextStyle(color: Colors.white)),
+              const Icon(Icons.delete_outline, color: Colors.redAccent),
+              const SizedBox(width: 12),
+              Text(
+                "Delete",
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
+              ),
             ],
           ),
         ),
@@ -559,7 +576,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                               provider.isPlaying &&
                                   provider.currentStation?.id == s.id
                               ? Colors.redAccent
-                              : Colors.white,
+                              : Theme.of(context).textTheme.bodyLarge?.color,
                           size: 24,
                         ),
                       ),

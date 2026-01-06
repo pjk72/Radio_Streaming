@@ -96,25 +96,33 @@ class MusicStreamHome extends StatelessWidget {
                             child: Center(
                               child: Column(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.favorite_border,
                                     size: 48,
-                                    color: Colors.white24,
+                                    color: Theme.of(
+                                      context,
+                                    ).iconTheme.color?.withValues(alpha: 0.24),
                                   ),
                                   const SizedBox(height: 16),
-                                  const Text(
+                                  Text(
                                     "No favorites yet",
                                     style: TextStyle(
-                                      color: Colors.white,
+                                      color: Theme.of(
+                                        context,
+                                      ).textTheme.headlineSmall?.color,
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  const Text(
+                                  Text(
                                     "Search for stations to add them to your favorites",
                                     style: TextStyle(
-                                      color: Colors.white54,
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.color
+                                          ?.withValues(alpha: 0.6),
                                       fontSize: 14,
                                     ),
                                   ),
@@ -238,178 +246,209 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
         ),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        children: [
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              leading: ReorderableDragStartListener(
-                index: widget.index,
-                child: Icon(
-                  Icons.drag_indicator,
-                  color: Theme.of(
-                    context,
-                  ).iconTheme.color?.withValues(alpha: 0.2),
-                ),
-              ),
-              title: Text(
-                widget.category,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).textTheme.headlineSmall?.color,
-                  fontSize: widget.isDesktop ? 24 : 20,
-                ),
-              ),
-              trailing: Icon(
-                _isExpanded ? Icons.expand_less : Icons.expand_more,
-                color: Theme.of(context).iconTheme.color,
-              ),
-              onTap: () {
-                setState(() {
-                  _isExpanded = !_isExpanded;
-                });
-              },
+      child: Builder(
+        builder: (ctx) {
+          // Calculate contrast color for the card
+          final cardColor = Theme.of(ctx).cardColor;
+          final contrastColor = cardColor.computeLuminance() > 0.5
+              ? Colors.black
+              : Colors.white;
+
+          // Create a local theme override for content inside this card
+          final localTheme = Theme.of(ctx).copyWith(
+            iconTheme: Theme.of(ctx).iconTheme.copyWith(color: contrastColor),
+            textTheme: Theme.of(ctx).textTheme.apply(
+              bodyColor: contrastColor,
+              displayColor: contrastColor,
             ),
-          ),
-          AnimatedCrossFade(
-            firstChild: Container(),
-            secondChild: Column(
+          );
+
+          return Theme(
+            data: localTheme,
+            child: Column(
               children: [
-                widget.isCompactView
-                    ? ReorderableGridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 220,
-                              mainAxisExtent: 80,
-                              crossAxisSpacing: 8,
-                              mainAxisSpacing: 8,
-                            ),
-                        itemCount: widget.stations.length,
-                        onReorder: (oldIndex, newIndex) {
-                          final stationList = widget.stations;
-                          if (oldIndex < 0 || oldIndex >= stationList.length) {
-                            return;
-                          }
-
-                          final station = stationList[oldIndex];
-                          final temp = List.of(stationList)..removeAt(oldIndex);
-
-                          int? afterId;
-                          int? beforeId;
-
-                          if (newIndex >= 0 && newIndex < temp.length) {
-                            beforeId = temp[newIndex].id;
-                          }
-                          if (newIndex > 0 && newIndex - 1 < temp.length) {
-                            afterId = temp[newIndex - 1].id;
-                          }
-
-                          widget.provider.moveStation(
-                            station.id,
-                            afterId,
-                            beforeId,
-                          );
-                        },
-                        itemBuilder: (context, index) {
-                          final station = widget.stations[index];
-                          return Container(
-                            key: ValueKey(station.id),
-                            child: StationCard(station: station),
-                          );
-                        },
-                      )
-                    : ReorderableListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        proxyDecorator: (child, index, animation) {
-                          return Material(
-                            color: Colors.transparent,
-                            child: ScaleTransition(
-                              scale: animation.drive(
-                                Tween<double>(
-                                  begin: 1.0,
-                                  end: 1.02,
-                                ).chain(CurveTween(curve: Curves.easeOut)),
-                              ),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).cardColor,
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Theme.of(
-                                        context,
-                                      ).shadowColor.withValues(alpha: 0.2),
-                                      blurRadius: 10,
-                                      spreadRadius: 2,
-                                    ),
-                                  ],
-                                ),
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                        onReorder: (oldIndex, newIndex) {
-                          if (oldIndex < newIndex) {
-                            newIndex -= 1;
-                          }
-
-                          final stationList = widget.stations;
-                          final station = stationList[oldIndex];
-                          final temp = List.of(stationList)..removeAt(oldIndex);
-
-                          int? afterId;
-                          int? beforeId;
-
-                          if (newIndex < temp.length) {
-                            beforeId = temp[newIndex].id;
-                          }
-                          if (newIndex > 0) {
-                            afterId = temp[newIndex - 1].id;
-                          }
-
-                          widget.provider.moveStation(
-                            station.id,
-                            afterId,
-                            beforeId,
-                          );
-                        },
-                        itemCount: widget.stations.length,
-                        itemBuilder: (context, index) {
-                          final station = widget.stations[index];
-                          return Container(
-                            key: ValueKey(station.id),
-                            margin: EdgeInsets.only(
-                              bottom: widget.isCompactView ? 8 : 12,
-                            ),
-                            child: StationCard(station: station),
-                          );
-                        },
+                Theme(
+                  // We already applied the localTheme, but we keep the transparent divider logic
+                  data: localTheme.copyWith(dividerColor: Colors.transparent),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    leading: ReorderableDragStartListener(
+                      index: widget.index,
+                      child: Icon(
+                        Icons.drag_indicator,
+                        color: Theme.of(
+                          context,
+                        ).iconTheme.color?.withValues(alpha: 0.2),
                       ),
-                const SizedBox(height: 16),
+                    ),
+                    title: Text(
+                      widget.category,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(
+                              context,
+                            ).textTheme.headlineSmall?.color,
+                            fontSize: widget.isDesktop ? 24 : 20,
+                          ),
+                    ),
+                    trailing: Icon(
+                      _isExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: Theme.of(context).iconTheme.color,
+                    ),
+                    onTap: () {
+                      setState(() {
+                        _isExpanded = !_isExpanded;
+                      });
+                    },
+                  ),
+                ),
+                AnimatedCrossFade(
+                  firstChild: Container(),
+                  secondChild: Column(
+                    children: [
+                      widget.isCompactView
+                          ? ReorderableGridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              gridDelegate:
+                                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 220,
+                                    mainAxisExtent: 80,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
+                                  ),
+                              itemCount: widget.stations.length,
+                              onReorder: (oldIndex, newIndex) {
+                                final stationList = widget.stations;
+                                if (oldIndex < 0 ||
+                                    oldIndex >= stationList.length) {
+                                  return;
+                                }
+
+                                final station = stationList[oldIndex];
+                                final temp = List.of(stationList)
+                                  ..removeAt(oldIndex);
+
+                                int? afterId;
+                                int? beforeId;
+
+                                if (newIndex >= 0 && newIndex < temp.length) {
+                                  beforeId = temp[newIndex].id;
+                                }
+                                if (newIndex > 0 &&
+                                    newIndex - 1 < temp.length) {
+                                  afterId = temp[newIndex - 1].id;
+                                }
+
+                                widget.provider.moveStation(
+                                  station.id,
+                                  afterId,
+                                  beforeId,
+                                );
+                              },
+                              itemBuilder: (context, index) {
+                                final station = widget.stations[index];
+                                return Container(
+                                  key: ValueKey(station.id),
+                                  child: StationCard(station: station),
+                                );
+                              },
+                            )
+                          : ReorderableListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              proxyDecorator: (child, index, animation) {
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: ScaleTransition(
+                                    scale: animation.drive(
+                                      Tween<double>(
+                                        begin: 1.0,
+                                        end: 1.02,
+                                      ).chain(
+                                        CurveTween(curve: Curves.easeOut),
+                                      ),
+                                    ),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).cardColor,
+                                        borderRadius: BorderRadius.circular(12),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Theme.of(context).shadowColor
+                                                .withValues(alpha: 0.2),
+                                            blurRadius: 10,
+                                            spreadRadius: 2,
+                                          ),
+                                        ],
+                                      ),
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              },
+                              onReorder: (oldIndex, newIndex) {
+                                if (oldIndex < newIndex) {
+                                  newIndex -= 1;
+                                }
+
+                                final stationList = widget.stations;
+                                final station = stationList[oldIndex];
+                                final temp = List.of(stationList)
+                                  ..removeAt(oldIndex);
+
+                                int? afterId;
+                                int? beforeId;
+
+                                if (newIndex < temp.length) {
+                                  beforeId = temp[newIndex].id;
+                                }
+                                if (newIndex > 0) {
+                                  afterId = temp[newIndex - 1].id;
+                                }
+
+                                widget.provider.moveStation(
+                                  station.id,
+                                  afterId,
+                                  beforeId,
+                                );
+                              },
+                              itemCount: widget.stations.length,
+                              itemBuilder: (context, index) {
+                                final station = widget.stations[index];
+                                return Container(
+                                  key: ValueKey(station.id),
+                                  margin: EdgeInsets.only(
+                                    bottom: widget.isCompactView ? 8 : 12,
+                                  ),
+                                  child: StationCard(station: station),
+                                );
+                              },
+                            ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                  crossFadeState: _isExpanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  duration: const Duration(milliseconds: 300),
+                ),
               ],
             ),
-            crossFadeState: _isExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 300),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

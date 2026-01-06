@@ -180,13 +180,85 @@ class ThemeProvider with ChangeNotifier {
     _darkOled,
     _darkMidnight,
     _darkSunset,
+    _darkCharcoal,
+    _darkNavy,
+    _darkRoyal,
     _lightDefault,
     _lightSky,
     _lightMint,
     _lightSunset,
     _lightRose,
     _lightLavender,
+    _lightCream,
+    _lightPeach,
+    _lightIce,
   ];
+
+  static const ThemePreset _darkCharcoal = ThemePreset(
+    id: 'dark_charcoal',
+    name: 'Charcoal',
+    brightness: Brightness.dark,
+    primaryColor: Color(0xFFfbc531),
+    secondaryColor: Color(0xFFe1b12c),
+    backgroundColor: Color(0xFF2f3640),
+    surfaceColor: Color(0xFF353b48),
+    cardColor: Color(0xFF3f4654),
+  );
+
+  static const ThemePreset _darkNavy = ThemePreset(
+    id: 'dark_navy',
+    name: 'Deep Navy',
+    brightness: Brightness.dark,
+    primaryColor: Color(0xFF4a69bd),
+    secondaryColor: Color(0xFF1e3799),
+    backgroundColor: Color(0xFF000000),
+    surfaceColor: Color(0xFF0c2461),
+    cardColor: Color(0xFF192a56),
+  );
+
+  static const ThemePreset _darkRoyal = ThemePreset(
+    id: 'dark_royal',
+    name: 'Royal Violet',
+    brightness: Brightness.dark,
+    primaryColor: Color(0xFF9c88ff),
+    secondaryColor: Color(0xFF8c7ae6),
+    backgroundColor: Color(0xFF130f40),
+    surfaceColor: Color(0xFF221b5e),
+    cardColor: Color(0xFF30336b),
+  );
+
+  static const ThemePreset _lightCream = ThemePreset(
+    id: 'light_cream',
+    name: 'Soft Cream',
+    brightness: Brightness.light,
+    primaryColor: Color(0xFFe58e26),
+    secondaryColor: Color(0xFFf3a683),
+    backgroundColor: Color(0xFFf7f1e3),
+    surfaceColor: Color(0xFFffffff),
+    cardColor: Color(0xFFfefefe),
+  );
+
+  static const ThemePreset _lightPeach = ThemePreset(
+    id: 'light_peach',
+    name: 'Peach Puff',
+    brightness: Brightness.light,
+    primaryColor: Color(0xFFe67e22),
+    secondaryColor: Color(0xFFd35400),
+    backgroundColor: Color(0xFFfff0db),
+    surfaceColor: Color(0xFFffffff),
+    cardColor: Color(0xFFfffbf5),
+  );
+
+  static const ThemePreset _lightIce = ThemePreset(
+    id: 'light_ice',
+    name: 'Ice Blue',
+    brightness: Brightness.light,
+    primaryColor: Color(0xFF3498db),
+    secondaryColor: Color(0xFF2980b9),
+    backgroundColor: Color(0xFFebf5fb),
+    surfaceColor: Color(0xFFffffff),
+    cardColor: Color(0xFFf4faff),
+  );
 
   ThemePreset _currentPreset = _darkDefault;
 
@@ -323,47 +395,50 @@ class ThemeProvider with ChangeNotifier {
     final effectiveSurface = activeSurfaceColor;
     final effectiveCard = activeCardColor;
 
+    // Determine brightness based on background luminance
+    final Brightness effectiveBrightness = effectiveBg.computeLuminance() > 0.5
+        ? Brightness.light
+        : Brightness.dark;
+
+    // Helper to determine text color based on background
+    Color getContrastColor(Color bg) {
+      return bg.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+    }
+
+    final Color onPrimary = getContrastColor(effectivePrimary);
+    final Color onBg = getContrastColor(effectiveBg);
+    final Color onSurface = getContrastColor(effectiveSurface);
+    // Note: onCard is not a standard Theme property, usually falls back to onSurface.
+    // However, we ensure the global text theme matches the background.
+
     return ThemeData(
-      brightness: _currentPreset.brightness,
+      brightness: effectiveBrightness,
       scaffoldBackgroundColor: effectiveBg,
       primaryColor: effectivePrimary,
       canvasColor: effectiveSurface, // Sidebar/Drawer color
       cardColor: effectiveCard,
 
       colorScheme: ColorScheme(
-        brightness: _currentPreset.brightness,
+        brightness: effectiveBrightness,
         primary: effectivePrimary,
-        onPrimary: _currentPreset.brightness == Brightness.dark
-            ? Colors.black
-            : Colors.white,
-        secondary: _currentPreset
-            .secondaryColor, // Secondary might clash if primary changes, but acceptable for now
-        onSecondary: Colors.black,
+        onPrimary: onPrimary,
+        secondary: _currentPreset.secondaryColor,
+        onSecondary: getContrastColor(_currentPreset.secondaryColor),
         error: Colors.redAccent,
         onError: Colors.white,
         surface: effectiveSurface,
-        onSurface: _currentPreset.brightness == Brightness.dark
-            ? Colors.white
-            : Colors.black87,
+        onSurface: onSurface,
+        background: effectiveBg,
+        onBackground: onBg,
       ),
 
-      textTheme:
-          GoogleFonts.interTextTheme(
-            ThemeData(brightness: _currentPreset.brightness).textTheme,
-          ).apply(
-            bodyColor: _currentPreset.brightness == Brightness.dark
-                ? Colors.white
-                : Colors.black87,
-            displayColor: _currentPreset.brightness == Brightness.dark
-                ? Colors.white
-                : Colors.black87,
-          ),
+      textTheme: GoogleFonts.interTextTheme(
+        ThemeData(brightness: effectiveBrightness).textTheme,
+      ).apply(bodyColor: onBg, displayColor: onBg),
 
       appBarTheme: AppBarTheme(
         backgroundColor: effectiveSurface,
-        foregroundColor: _currentPreset.brightness == Brightness.dark
-            ? Colors.white
-            : Colors.black87,
+        foregroundColor: onSurface,
         elevation: 0,
       ),
 
@@ -374,6 +449,8 @@ class ThemeProvider with ChangeNotifier {
           borderRadius: BorderRadius.all(Radius.circular(16)),
         ),
       ),
+
+      iconTheme: IconThemeData(color: onBg),
 
       useMaterial3: true,
     );

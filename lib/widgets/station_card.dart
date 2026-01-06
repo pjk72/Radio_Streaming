@@ -249,7 +249,10 @@ class _StationCardState extends State<StationCard> {
                             if (isPlaying) ...[
                               const SizedBox(height: 4),
                               _LiveBadge(
-                                color: Colors.white70,
+                                color:
+                                    Theme.of(context).textTheme.bodySmall?.color
+                                        ?.withValues(alpha: 0.7) ??
+                                    Colors.white70,
                                 isRecognizing: provider.isRecognizing,
                                 isCompact: isCompact,
                               ),

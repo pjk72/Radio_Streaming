@@ -159,7 +159,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     // When t=0 (Collapsed): padding is standard + safeArea (16.0 + topPadding).
     // Adding extra buffer to be safe.
     final double dynamicTopPadding =
-        (16.0 * t) + ((widget.topPadding + 30.0) * (1.0 - t));
+        (16.0 * t) + ((widget.topPadding + 10.0) * (1.0 - t));
 
     return Stack(
       children: [
@@ -290,10 +290,16 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                     ? Color(
                                         int.parse(station.color),
                                       ).withValues(alpha: 0.4)
-                                    : const Color(0xFF6c5ce7).withValues(
+                                    : Theme.of(context).primaryColor.withValues(
                                         alpha: 0.2,
-                                      ), // Default purplish tint
-                                Colors.black.withValues(alpha: 0.3),
+                                      ), // Use theme primary for default tint
+                                Colors.black.withValues(
+                                  alpha:
+                                      Theme.of(context).brightness ==
+                                          Brightness.light
+                                      ? 0.7
+                                      : 0.3,
+                                ),
                               ],
                             ),
                           ),
@@ -331,17 +337,19 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                       Row(
                                         children: [
                                           Container(
-                                            padding: const EdgeInsets.all(20),
+                                            padding: const EdgeInsets.all(16),
                                             decoration: BoxDecoration(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.1,
-                                              ),
+                                              color: Theme.of(context)
+                                                  .primaryColor
+                                                  .withValues(alpha: 0.2),
                                               shape: BoxShape.circle,
                                             ),
-                                            child: const Icon(
+                                            child: Icon(
                                               Icons.radio,
-                                              color: Colors.white,
-                                              size: 24,
+                                              color: Theme.of(
+                                                context,
+                                              ).primaryColor,
+                                              size: 32,
                                             ),
                                           ),
                                           const SizedBox(width: 16),
@@ -352,7 +360,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                                 .headlineSmall
                                                 ?.copyWith(
                                                   fontWeight: FontWeight.bold,
-                                                  color: Colors.white,
+                                                  color: Theme.of(context)
+                                                      .textTheme
+                                                      .headlineSmall
+                                                      ?.color,
                                                 ),
                                           ),
                                         ],

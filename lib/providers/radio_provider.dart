@@ -10,7 +10,6 @@ import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../models/station.dart';
-import '../data/station_data.dart' as default_data;
 
 import '../models/saved_song.dart';
 import '../models/playlist.dart';
@@ -123,14 +122,65 @@ class RadioProvider with ChangeNotifier {
         notifyListeners();
       } catch (e) {
         // Fallback if parse error
-        stations = List.from(default_data.stations);
+        stations = [];
         _saveStations(); // Reset corrupt data
       }
     } else {
       // First run: use default
-      stations = List.from(default_data.stations);
+      stations = [];
       _saveStations();
     }
+
+    // --- APPLY SORTING LOGIC (Match RadioAudioHandler) ---
+    // 1. Load Order locally to ensure synchronous sort
+    final List<String>? orderStr = prefs.getStringList('station_order');
+    List<int> order = [];
+    if (orderStr != null) {
+      order = orderStr
+          .map((e) => int.tryParse(e) ?? -1)
+          .where((e) => e != -1)
+          .toList();
+    }
+
+    // 2. Determine Category Ranks
+    final Map<String, int> categoryRank = {};
+    int currentRank = 0;
+    final Map<int, Station> stationMap = {for (var s in stations) s.id: s};
+
+    for (var id in order) {
+      final station = stationMap[id];
+      if (station != null) {
+        final cat = station.category;
+        if (!categoryRank.containsKey(cat)) {
+          categoryRank[cat] = currentRank++;
+        }
+      }
+    }
+
+    // 3. Multi-Level Sort
+    stations.sort((a, b) {
+      String catA = a.category;
+      String catB = b.category;
+
+      int rankA = categoryRank[catA] ?? 9999;
+      int rankB = categoryRank[catB] ?? 9999;
+
+      if (rankA != rankB) return rankA.compareTo(rankB);
+
+      if (rankA == 9999) {
+        int alpha = catA.compareTo(catB);
+        if (alpha != 0) return alpha;
+      }
+
+      int idxA = order.indexOf(a.id);
+      int idxB = order.indexOf(b.id);
+      if (idxA == -1) idxA = 9999;
+      if (idxB == -1) idxB = 9999;
+
+      return idxA.compareTo(idxB);
+    });
+    // --- END SORTING ---
+
     _updateAudioHandler();
     _setupAudioHandlerCallbacks(); // Ensure callbacks are set
     notifyListeners();

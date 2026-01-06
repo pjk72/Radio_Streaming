@@ -21,10 +21,24 @@ class PlayerBar extends StatelessWidget {
     final station = provider.currentStation;
     final bool isDesktop = MediaQuery.of(context).size.width > 600;
 
+    // Calculate contrast for the player bar background (cardColor)
+    final cardColor = Theme.of(context).cardColor;
+    final contrastColor = cardColor.computeLuminance() > 0.5
+        ? Colors.black
+        : Colors.white;
+
+    // Local theme for content inside PlayerBar
+    final playerTheme = Theme.of(context).copyWith(
+      iconTheme: Theme.of(context).iconTheme.copyWith(color: contrastColor),
+      textTheme: Theme.of(
+        context,
+      ).textTheme.apply(bodyColor: contrastColor, displayColor: contrastColor),
+    );
+
     return Container(
       height: 90,
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor.withValues(alpha: 0.95),
+        color: cardColor.withValues(alpha: 0.95),
         border: Border(
           top: BorderSide(
             color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
@@ -32,375 +46,379 @@ class PlayerBar extends StatelessWidget {
           ),
         ),
       ),
-      padding: EdgeInsets
-          .zero, // Remove padding from container to allow edge-to-edge progress bar
-      child: Column(
-        children: [
-          // Top Section: Info + Controls + Volume
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16),
-              child: Row(
-                children: [
-                  // Track Info - Flexible width
-                  Expanded(
-                    flex: isDesktop ? 3 : 1,
-                    child: station != null
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min, // shrink wrap
-                            children: [
-                              MouseRegion(
-                                cursor: SystemMouseCursors.click,
-                                child: GestureDetector(
-                                  onTap: () {
-                                    Navigator.of(context).push(
-                                      PageRouteBuilder(
-                                        pageBuilder:
-                                            (
-                                              context,
-                                              animation,
-                                              secondaryAnimation,
-                                            ) => const SongDetailsScreen(),
-                                        transitionsBuilder:
-                                            (
-                                              context,
-                                              animation,
-                                              secondaryAnimation,
-                                              child,
-                                            ) {
-                                              const begin = Offset(0.0, 1.0);
-                                              const end = Offset.zero;
-                                              const curve = Curves.easeOutQuart;
-                                              var tween = Tween(
-                                                begin: begin,
-                                                end: end,
-                                              ).chain(CurveTween(curve: curve));
-                                              return SlideTransition(
-                                                position: animation.drive(
-                                                  tween,
-                                                ),
-                                                child: child,
-                                              );
-                                            },
-                                      ),
-                                    );
-                                  },
-                                  child: Hero(
-                                    tag: 'player_image',
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Container(
-                                        width: isDesktop ? 50 : 42,
-                                        height: isDesktop ? 50 : 42,
-                                        color: Colors.black,
-                                        alignment: Alignment.center,
-                                        child:
-                                            (provider.currentAlbumArt ??
-                                                    station.logo) !=
-                                                null
-                                            ? _buildImage(
-                                                provider.currentAlbumArt ??
-                                                    station.logo!,
-                                                fit: BoxFit.cover,
-                                                errorBuilder:
-                                                    (
-                                                      context,
-                                                      error,
-                                                      stackTrace,
-                                                    ) {
-                                                      return FaIcon(
-                                                        IconLibrary.getIcon(
-                                                          station.icon,
-                                                        ),
-                                                        color: Color(
-                                                          int.parse(
-                                                            station.color,
+      padding: EdgeInsets.zero,
+      child: Theme(
+        data: playerTheme,
+        child: Column(
+          children: [
+            // Top Section: Info + Controls + Volume
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16),
+                child: Row(
+                  children: [
+                    // Track Info - Flexible width
+                    Expanded(
+                      flex: isDesktop ? 3 : 1,
+                      child: station != null
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min, // shrink wrap
+                              children: [
+                                MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      Navigator.of(context).push(
+                                        PageRouteBuilder(
+                                          pageBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                              ) => const SongDetailsScreen(),
+                                          transitionsBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                                child,
+                                              ) {
+                                                const begin = Offset(0.0, 1.0);
+                                                const end = Offset.zero;
+                                                const curve =
+                                                    Curves.easeOutQuart;
+                                                var tween =
+                                                    Tween(
+                                                      begin: begin,
+                                                      end: end,
+                                                    ).chain(
+                                                      CurveTween(curve: curve),
+                                                    );
+                                                return SlideTransition(
+                                                  position: animation.drive(
+                                                    tween,
+                                                  ),
+                                                  child: child,
+                                                );
+                                              },
+                                        ),
+                                      );
+                                    },
+                                    child: Hero(
+                                      tag: 'player_image',
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Container(
+                                          width: isDesktop ? 50 : 42,
+                                          height: isDesktop ? 50 : 42,
+                                          color: Colors.black,
+                                          alignment: Alignment.center,
+                                          child:
+                                              (provider.currentAlbumArt ??
+                                                      station.logo) !=
+                                                  null
+                                              ? _buildImage(
+                                                  provider.currentAlbumArt ??
+                                                      station.logo!,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) {
+                                                        return FaIcon(
+                                                          IconLibrary.getIcon(
+                                                            station.icon,
                                                           ),
-                                                        ),
-                                                        size: 24,
-                                                      );
-                                                    },
-                                              )
-                                            : FaIcon(
-                                                IconLibrary.getIcon(
-                                                  station.icon,
+                                                          color: Color(
+                                                            int.parse(
+                                                              station.color,
+                                                            ),
+                                                          ),
+                                                          size: 24,
+                                                        );
+                                                      },
+                                                )
+                                              : FaIcon(
+                                                  IconLibrary.getIcon(
+                                                    station.icon,
+                                                  ),
+                                                  color: Color(
+                                                    int.parse(station.color),
+                                                  ),
+                                                  size: 24,
                                                 ),
-                                                color: Color(
-                                                  int.parse(station.color),
-                                                ),
-                                                size: 24,
-                                              ),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: provider.errorMessage != null
-                                    ? Row(
-                                        children: [
-                                          Icon(
-                                            Icons.signal_wifi_bad_rounded,
-                                            color: Colors.redAccent,
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              provider.errorMessage!,
-                                              style: const TextStyle(
-                                                color: Colors.redAccent,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: provider.errorMessage != null
+                                      ? Row(
+                                          children: [
+                                            Icon(
+                                              Icons.signal_wifi_bad_rounded,
+                                              color: Colors.redAccent,
+                                              size: 20,
                                             ),
-                                          ),
-                                        ],
-                                      )
-                                    : provider.currentTrack !=
-                                              "Live Broadcast" &&
-                                          provider.currentTrack.isNotEmpty
-                                    ? Row(
-                                        children: [
-                                          Expanded(
-                                            child: GestureDetector(
-                                              behavior:
-                                                  HitTestBehavior.translucent,
-                                              child: Column(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Flexible(
-                                                        child: Text(
-                                                          provider.currentTrack,
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                provider.errorMessage!,
+                                                style: const TextStyle(
+                                                  color: Colors.redAccent,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : provider.currentTrack !=
+                                                "Live Broadcast" &&
+                                            provider.currentTrack.isNotEmpty
+                                      ? Row(
+                                          children: [
+                                            Expanded(
+                                              child: GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.translucent,
+                                                child: Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        Flexible(
+                                                          child: Text(
+                                                            provider
+                                                                .currentTrack,
+                                                            style: TextStyle(
+                                                              color: playerTheme
+                                                                  .textTheme
+                                                                  .titleMedium
+                                                                  ?.color,
+                                                              fontSize: 16,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Builder(
+                                                      builder: (context) {
+                                                        final bool
+                                                        isLinkEnabled =
+                                                            provider
+                                                                .currentArtist
+                                                                .isNotEmpty &&
+                                                            provider.currentAlbumArt !=
+                                                                null &&
+                                                            provider.currentAlbumArt !=
+                                                                provider
+                                                                    .currentStation
+                                                                    ?.logo;
+
+                                                        final Widget
+                                                        artistText = Text(
+                                                          provider
+                                                                  .currentArtist
+                                                                  .isNotEmpty
+                                                              ? provider
+                                                                    .currentArtist
+                                                              : "Unknown Artist",
                                                           style: TextStyle(
-                                                            color:
-                                                                Theme.of(
-                                                                      context,
-                                                                    )
-                                                                    .textTheme
-                                                                    .titleMedium
-                                                                    ?.color,
-                                                            fontSize: 16,
+                                                            color: isLinkEnabled
+                                                                ? Theme.of(
+                                                                    context,
+                                                                  ).primaryColor
+                                                                : playerTheme
+                                                                      .textTheme
+                                                                      .bodySmall
+                                                                      ?.color,
+                                                            fontSize: 13,
                                                             fontWeight:
-                                                                FontWeight.w700,
+                                                                FontWeight.w600,
                                                           ),
                                                           maxLines: 1,
                                                           overflow: TextOverflow
                                                               .ellipsis,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Builder(
-                                                    builder: (context) {
-                                                      final bool isLinkEnabled =
-                                                          provider
-                                                              .currentArtist
-                                                              .isNotEmpty &&
-                                                          provider.currentAlbumArt !=
-                                                              null &&
-                                                          provider.currentAlbumArt !=
-                                                              provider
-                                                                  .currentStation
-                                                                  ?.logo;
+                                                        );
 
-                                                      final Widget
-                                                      artistText = Text(
-                                                        provider
-                                                                .currentArtist
-                                                                .isNotEmpty
-                                                            ? provider
-                                                                  .currentArtist
-                                                            : "Unknown Artist",
-                                                        style: TextStyle(
-                                                          color: isLinkEnabled
-                                                              ? Theme.of(
+                                                        if (isLinkEnabled) {
+                                                          return MouseRegion(
+                                                            cursor:
+                                                                SystemMouseCursors
+                                                                    .click,
+                                                            child: GestureDetector(
+                                                              onTap: () {
+                                                                Navigator.of(
                                                                   context,
-                                                                ).primaryColor
-                                                              : Theme.of(
-                                                                      context,
-                                                                    )
-                                                                    .textTheme
-                                                                    .bodySmall
-                                                                    ?.color,
-                                                          fontSize: 13,
-                                                          fontWeight:
-                                                              FontWeight.w600,
+                                                                ).push(
+                                                                  MaterialPageRoute(
+                                                                    builder: (context) => ArtistDetailsScreen(
+                                                                      artistName:
+                                                                          provider
+                                                                              .currentArtist,
+                                                                      artistImage:
+                                                                          provider
+                                                                              .currentArtistImage,
+                                                                      genre: station
+                                                                          .genre,
+                                                                    ),
+                                                                  ),
+                                                                );
+                                                              },
+                                                              child: artistText,
+                                                            ),
+                                                          );
+                                                        } else {
+                                                          return artistText;
+                                                        }
+                                                      },
+                                                    ),
+                                                    if (provider
+                                                            .currentAlbum
+                                                            .isNotEmpty &&
+                                                        provider.currentAlbum !=
+                                                            "Playlist") ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        provider.currentAlbum,
+                                                        style: TextStyle(
+                                                          color: playerTheme
+                                                              .textTheme
+                                                              .bodySmall
+                                                              ?.color
+                                                              ?.withValues(
+                                                                alpha: 0.5,
+                                                              ),
+                                                          fontSize: 11,
                                                         ),
                                                         maxLines: 1,
                                                         overflow: TextOverflow
                                                             .ellipsis,
-                                                      );
-
-                                                      if (isLinkEnabled) {
-                                                        return MouseRegion(
-                                                          cursor:
-                                                              SystemMouseCursors
-                                                                  .click,
-                                                          child: GestureDetector(
-                                                            onTap: () {
-                                                              Navigator.of(
-                                                                context,
-                                                              ).push(
-                                                                MaterialPageRoute(
-                                                                  builder: (context) => ArtistDetailsScreen(
-                                                                    artistName:
-                                                                        provider
-                                                                            .currentArtist,
-                                                                    artistImage:
-                                                                        provider
-                                                                            .currentArtistImage,
-                                                                    genre: station
-                                                                        .genre,
-                                                                  ),
-                                                                ),
-                                                              );
-                                                            },
-                                                            child: artistText,
-                                                          ),
-                                                        );
-                                                      } else {
-                                                        return artistText;
-                                                      }
-                                                    },
-                                                  ),
-                                                  if (provider
-                                                          .currentAlbum
-                                                          .isNotEmpty &&
-                                                      provider.currentAlbum !=
-                                                          "Playlist") ...[
-                                                    const SizedBox(height: 2),
-                                                    Text(
-                                                      provider.currentAlbum,
-                                                      style: TextStyle(
-                                                        color: Theme.of(context)
-                                                            .textTheme
-                                                            .bodySmall
-                                                            ?.color
-                                                            ?.withValues(
-                                                              alpha: 0.5,
-                                                            ),
-                                                        fontSize: 11,
                                                       ),
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
+                                                    ],
                                                   ],
-                                                ],
+                                                ),
                                               ),
                                             ),
+                                          ],
+                                        )
+                                      : Text(
+                                          "Select a station",
+                                          style: TextStyle(
+                                            color: playerTheme
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.color,
                                           ),
-                                        ],
-                                      )
-                                    : Text(
-                                        "Select a station",
-                                        style: TextStyle(
-                                          color: Theme.of(
-                                            context,
-                                          ).textTheme.bodyMedium?.color,
                                         ),
-                                      ),
-                              ),
-                            ],
-                          )
-                        : Center(
-                            child: Text(
-                              "Select a station",
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodyMedium?.color,
-                              ),
-                            ),
-                          ),
-                  ),
-
-                  // Spacer to ensure separation if needed, or rely on MainAxisAlignment.spaceBetween
-                  if (!isDesktop) const SizedBox(width: 8),
-
-                  // Center Controls (Play, Prev, Next, Shuffle) - Fixed size on Mobile
-                  isDesktop
-                      ? Expanded(
-                          flex: 2,
-                          child: _buildControls(context, provider, isDesktop),
-                        )
-                      : _buildControls(context, provider, isDesktop),
-
-                  // Volume (Right Side) - Only show on Desktop
-                  if (isDesktop)
-                    Expanded(
-                      flex: 2,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          const SizedBox(width: 32),
-                          SizedBox(
-                            width: 120,
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.volume_up_rounded,
-                                  size: 20,
-                                  color: Theme.of(
-                                    context,
-                                  ).iconTheme.color?.withValues(alpha: 0.5),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 0,
-                                      ),
-                                      overlayShape:
-                                          const RoundSliderOverlayShape(
-                                            overlayRadius: 10,
-                                          ),
-                                      trackHeight: 2,
-                                    ),
-                                    child: Slider(
-                                      value: provider.volume,
-                                      onChanged: (val) =>
-                                          provider.setVolume(val),
-                                      activeColor: Theme.of(
-                                        context,
-                                      ).primaryColor,
-                                      inactiveColor: Theme.of(
-                                        context,
-                                      ).dividerColor.withValues(alpha: 0.2),
-                                    ),
-                                  ),
                                 ),
                               ],
+                            )
+                          : Center(
+                              child: Text(
+                                "Select a station",
+                                style: TextStyle(
+                                  color:
+                                      playerTheme.textTheme.bodyMedium?.color,
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
                     ),
-                ],
+
+                    // Spacer to ensure separation if needed, or rely on MainAxisAlignment.spaceBetween
+                    if (!isDesktop) const SizedBox(width: 8),
+
+                    // Center Controls (Play, Prev, Next, Shuffle) - Fixed size on Mobile
+                    isDesktop
+                        ? Expanded(
+                            flex: 2,
+                            child: _buildControls(context, provider, isDesktop),
+                          )
+                        : _buildControls(context, provider, isDesktop),
+
+                    // Volume (Right Side) - Only show on Desktop
+                    if (isDesktop)
+                      Expanded(
+                        flex: 2,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            const SizedBox(width: 32),
+                            SizedBox(
+                              width: 120,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.volume_up_rounded,
+                                    size: 20,
+                                    color: playerTheme.iconTheme.color
+                                        ?.withValues(alpha: 0.5),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 0,
+                                        ),
+                                        overlayShape:
+                                            const RoundSliderOverlayShape(
+                                              overlayRadius: 10,
+                                            ),
+                                        trackHeight: 2,
+                                      ),
+                                      child: Slider(
+                                        value: provider.volume,
+                                        onChanged: (val) =>
+                                            provider.setVolume(val),
+                                        activeColor: Theme.of(
+                                          context,
+                                        ).primaryColor,
+                                        inactiveColor: Theme.of(
+                                          context,
+                                        ).dividerColor.withValues(alpha: 0.2),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          // Bottom Progress Bar (Full Width)
-          if (provider.hiddenAudioController != null)
-            _buildYoutubeProgressBar(context, provider.hiddenAudioController!)
-          else if (provider.isRecognizing &&
-              provider.currentPlayingPlaylistId == null)
-            _buildRadioProgressBar(context, provider)
-          else if (provider.currentPlayingPlaylistId != null)
-            _buildNativeProgressBar(context, provider),
-        ],
+            // Bottom Progress Bar (Full Width)
+            if (provider.hiddenAudioController != null)
+              _buildYoutubeProgressBar(context, provider.hiddenAudioController!)
+            else if (provider.isRecognizing &&
+                provider.currentPlayingPlaylistId == null)
+              _buildRadioProgressBar(context, provider)
+            else if (provider.currentPlayingPlaylistId != null)
+              _buildNativeProgressBar(context, provider),
+          ],
+        ),
       ),
     );
   }
@@ -705,11 +723,11 @@ class PlayerBar extends StatelessWidget {
           ),
           child: IconButton(
             icon: provider.isLoading
-                ? const SizedBox(
+                ? SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onPrimary,
                       strokeWidth: 2.5,
                     ),
                   )
@@ -718,7 +736,7 @@ class PlayerBar extends StatelessWidget {
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
                   ),
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.onPrimary,
             iconSize: isDesktop ? 32 : 28,
             onPressed: () => provider.togglePlay(),
           ),
