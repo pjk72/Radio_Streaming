@@ -31,6 +31,21 @@ Future<void> main() async {
     Workmanager().initialize(callbackDispatcher, isInDebugMode: !kReleaseMode);
   }
 
+  debugPrint("Initializing AudioService in main()...");
+  audioHandler = await AudioService.init(
+    builder: () => RadioAudioHandler(),
+    config: AudioServiceConfig(
+      androidNotificationChannelId: 'com.antigravity.radio.channel.audio.v2',
+      androidNotificationChannelName: 'Radio Playback',
+      androidNotificationOngoing: false,
+      androidStopForegroundOnPause: false,
+      androidNotificationClickStartsActivity: true,
+      androidResumeOnClick: true,
+      androidShowNotificationBadge: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+    ),
+  );
+
   runApp(const AppBootstrapper());
 }
 
@@ -59,7 +74,6 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
       // Simulate small delay to ensure UI renders first frame
       await Future.delayed(const Duration(milliseconds: 100));
 
-      debugPrint("Initializing AudioService...");
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
         MobileAds.instance.initialize();
         // Initialize IronSource
@@ -80,22 +94,6 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
           debugPrint("IronSource Init Error: $e");
         }
       }
-      audioHandler = await AudioService.init(
-        builder: () => RadioAudioHandler(),
-        config: AudioServiceConfig(
-          androidNotificationChannelId:
-              'com.antigravity.radio.channel.audio.v2',
-          androidNotificationChannelName: 'Radio Playback',
-          androidNotificationOngoing:
-              false, // Must be false if androidStopForegroundOnPause is false
-          androidStopForegroundOnPause: false,
-          androidNotificationClickStartsActivity: true,
-          androidResumeOnClick: true,
-          androidShowNotificationBadge: true,
-          androidNotificationIcon: 'mipmap/ic_launcher',
-        ),
-      );
-      debugPrint("AudioService Initialized");
 
       if (mounted) {
         setState(() {
@@ -202,8 +200,8 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
     // and we are not currently playing (streaming).
     if (state == AppLifecycleState.detached) {
       if (audioHandler.playbackState.value.playing == false) {
-        audioHandler.stop();
-        exit(0); // Force kill process to ensure fresh start next time
+        // audioHandler.stop(); // Don't stop here, let the system manage the service lifecycle
+        // exit(0); // REMOVED: exit(0) kills the background service too, breaking Android Auto
       }
     }
   }

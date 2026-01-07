@@ -58,10 +58,14 @@ class RadioAudioHandler extends BaseAudioHandler
   Map<String, dynamic>? _cachedNextSongExtras;
 
   // Recognition
+  bool _isACRCloudEnabled = true;
   final ACRCloudService _acrCloudService = ACRCloudService();
   final SongLinkService _songLinkService = SongLinkService();
   Timer? _recognitionTimer;
-  bool _isACRCloudEnabled = true;
+
+  // Skip context
+  String _radioSkipContext = 'all'; // 'all' or 'favorites'
+  Set<int> _favoriteStationIds = {};
 
   // Stuck Playback Monitoring
   Timer? _stuckCheckTimer;
@@ -92,6 +96,8 @@ class RadioAudioHandler extends BaseAudioHandler
 
   // Ensure we don't have multiple initializations happening at once
   bool _isInitializing = false;
+  final Completer<void> _initCompleter = Completer<void>();
+  Future<void> get _initializationComplete => _initCompleter.future;
 
   Future<void> _initializePlayer() async {
     if (_isInitializing) return;
@@ -263,8 +269,8 @@ class RadioAudioHandler extends BaseAudioHandler
     // Don't wait for future in constructor, but start it
     _initializePlayer();
 
-    // Release lock after 3 seconds (enough for app to settle)
-    Future.delayed(const Duration(seconds: 3), () {
+    // Release lock after 1 second (reduced from 3s for better AA responsiveness)
+    Future.delayed(const Duration(seconds: 1), () {
       _startupLock = false;
     });
 
@@ -302,8 +308,53 @@ class RadioAudioHandler extends BaseAudioHandler
     });
 
     // Load persisted stations independent of UI
-    _loadStationsFromPrefs().then((_) => _loadQueue());
-    _loadSettings();
+    _initializeBackgroundState();
+  }
+
+  Future<void> _initializeBackgroundState() async {
+    LogService().log("RadioAudioHandler: Starting background state load...");
+    try {
+      await _loadSettings();
+      await _quickRestore();
+      await _loadStationsFromPrefs();
+      await _loadQueue();
+      LogService().log("RadioAudioHandler: Background state load complete.");
+    } catch (e) {
+      LogService().log("RadioAudioHandler: Error loading background state: $e");
+    } finally {
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.complete();
+      }
+    }
+  }
+
+  Future<void> _quickRestore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastId = prefs.getString('last_media_id');
+      final lastTitle = prefs.getString('last_media_title');
+      final lastArt = prefs.getString('last_media_art');
+      final lastType = prefs.getString('last_media_type') ?? 'station';
+
+      if (lastId != null && lastTitle != null && mediaItem.value == null) {
+        final lastStationId = prefs.getInt('last_station_id');
+        final item = MediaItem(
+          id: lastId,
+          title: lastTitle,
+          artUri: (lastArt != null && lastArt.isNotEmpty)
+              ? Uri.tryParse(lastArt)
+              : null,
+          extras: {
+            'url': lastId,
+            'type': lastType,
+            if (lastStationId != null) 'stationId': lastStationId,
+          },
+        );
+        mediaItem.add(item);
+        // Broadcast stopped state with this item to satisfy AA immediately
+        _broadcastState(PlayerState.stopped);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadSettings() async {
@@ -314,7 +365,6 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _loadStationsFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
       // 1. Load Stations
       final String? jsonStr = prefs.getString('saved_stations');
       List<Station> loaded = [];
@@ -335,7 +385,6 @@ class RadioAudioHandler extends BaseAudioHandler
             .where((e) => e != -1)
             .toList();
       }
-
       // 3. Determine Category Ranks based on Custom Order
       // The category order should follow the order of stations in the Favorites list.
       // i.e. if the first station is "Pop", then "Pop" is the first category.
@@ -344,7 +393,6 @@ class RadioAudioHandler extends BaseAudioHandler
 
       // Map station IDs to Station objects for O(1) lookup
       final Map<int, Station> stationMap = {for (var s in loaded) s.id: s};
-
       // Walk through the custom order to establish category priority
       for (var id in order) {
         final station = stationMap[id];
@@ -386,8 +434,16 @@ class RadioAudioHandler extends BaseAudioHandler
 
         return idxA.compareTo(idxB);
       });
-
       _stations = loaded;
+
+      // Load Favorites for Skip Logic
+      final List<String>? favStr = prefs.getStringList('favorites');
+      if (favStr != null) {
+        _favoriteStationIds = favStr
+            .map((e) => int.tryParse(e) ?? -1)
+            .where((e) => e != -1)
+            .toSet();
+      }
     } catch (e) {
       // Fallback
     }
@@ -397,7 +453,6 @@ class RadioAudioHandler extends BaseAudioHandler
     // START: Filter logic for Android Auto (Matches Home Screen Favorites)
     final targetStations = _stations; // Use loaded sorted stations
     // END: Filter logic
-
     final queueItems = targetStations
         .map(
           (s) => MediaItem(
@@ -407,21 +462,20 @@ class RadioAudioHandler extends BaseAudioHandler
             artist: '',
             artUri: s.logo != null ? Uri.parse(s.logo!) : null,
             playable: true,
-            extras: {'url': s.url},
+            extras: {'url': s.url, 'type': 'station', 'stationId': s.id},
           ),
         )
         .toList();
     queue.add(queueItems);
-
     // Ensure Android Auto sees the app as "Ready" immediately with valid content
-    if (queueItems.isNotEmpty && mediaItem.value == null) {
+    // We run this even if mediaItem is not null to refine quick-restored metadata
+    if (queueItems.isNotEmpty) {
       MediaItem? startupItem;
 
       try {
         final prefs = await SharedPreferences.getInstance();
         final lastId = prefs.getString('last_media_id');
         final lastType = prefs.getString('last_media_type');
-
         if (lastId != null) {
           if (lastType == 'station' || lastType == null) {
             // Restore Station
@@ -482,9 +536,13 @@ class RadioAudioHandler extends BaseAudioHandler
       } catch (_) {}
 
       // Fallback to first station if restoration failed
-      startupItem ??= queueItems.first;
+      if (startupItem == null && queueItems.isNotEmpty) {
+        startupItem = queueItems.first;
+      }
 
-      mediaItem.add(startupItem);
+      if (startupItem != null) {
+        mediaItem.add(startupItem);
+      }
     }
 
     // Broadcast "Ready" state so AA shows controls immediately
@@ -753,6 +811,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> play() async {
+    await _initializationComplete;
     _startupLock = false; // User Action unlocks
     // If paused, just resume without reloading
     if (_player.state == PlayerState.paused) {
@@ -803,20 +862,57 @@ class RadioAudioHandler extends BaseAudioHandler
       return;
     }
 
-    // 2. Fallback to Provider / Radio
-    if (onSkipNext != null) {
-      // Determine if we are strictly in "Playlist Mode" but queue is desynced
-      // If so, we should prefer simple next track logic over potentially switching context
-      if (_currentPlayingPlaylistId != null &&
-          mediaItem.value?.extras?['type'] == 'playlist_song') {
-        // We are likely in a playlist but queue is empty/desynced.
-        // Let Provider handle it (it knows the full playlist)
-        onSkipNext!();
-      } else {
-        // Standard Radio/Provider logic
-        onSkipNext!();
+    // 2. Radio Skipping logic (prioritize internal list for consistency with AA display)
+    if (_stations.isNotEmpty &&
+        mediaItem.value?.extras?['type'] != 'playlist_song') {
+      final current = mediaItem.value;
+      if (current != null) {
+        // Determine the list to skip through
+        List<Station> skipList = _stations;
+        if (_radioSkipContext == 'favorites' &&
+            _favoriteStationIds.isNotEmpty) {
+          skipList = _stations
+              .where((s) => _favoriteStationIds.contains(s.id))
+              .toList();
+          // Fallback if current station is not in favorites but context is favorites
+        }
+
+        // Try to find index by Station ID (most reliable), then URL
+        int index = -1;
+        final currentStationId = current.extras?['stationId'];
+        if (currentStationId != null) {
+          index = skipList.indexWhere((s) => s.id == currentStationId);
+        }
+
+        if (index == -1) {
+          index = skipList.indexWhere((s) => s.url == current.id);
+        }
+
+        if (index == -1 && current.extras?['url'] != null) {
+          index = skipList.indexWhere((s) => s.url == current.extras!['url']);
+        }
+
+        if (index != -1) {
+          int nextIndex = (index + 1) % skipList.length;
+          final s = skipList[nextIndex];
+          await playFromUri(Uri.parse(s.url), {
+            'title': s.name,
+            'artUri': s.logo,
+            'type': 'station',
+            'url': s.url,
+            'stationId': s.id,
+            'user_initiated': true,
+          });
+          return;
+        }
       }
+    }
+
+    // 3. Fallback to Provider (Playlists / Other)
+    if (onSkipNext != null) {
+      onSkipNext!();
     } else {
+      // Final fallback if everything else fails
       if (_stations.isNotEmpty) {
         final current = mediaItem.value;
         if (current == null) {
@@ -887,7 +983,52 @@ class RadioAudioHandler extends BaseAudioHandler
       return;
     }
 
-    // 2. Fallback
+    // 2. Radio Skipping logic
+    if (_stations.isNotEmpty &&
+        mediaItem.value?.extras?['type'] != 'playlist_song') {
+      final current = mediaItem.value;
+      if (current != null) {
+        // Determine the list to skip through
+        List<Station> skipList = _stations;
+        if (_radioSkipContext == 'favorites' &&
+            _favoriteStationIds.isNotEmpty) {
+          skipList = _stations
+              .where((s) => _favoriteStationIds.contains(s.id))
+              .toList();
+        }
+
+        int index = -1;
+        final currentStationId = current.extras?['stationId'];
+        if (currentStationId != null) {
+          index = skipList.indexWhere((s) => s.id == currentStationId);
+        }
+
+        if (index == -1) {
+          index = skipList.indexWhere((s) => s.url == current.id);
+        }
+
+        if (index == -1 && current.extras?['url'] != null) {
+          index = skipList.indexWhere((s) => s.url == current.extras!['url']);
+        }
+
+        if (index != -1) {
+          int prevIndex = index - 1;
+          if (prevIndex < 0) prevIndex = skipList.length - 1;
+          final s = skipList[prevIndex];
+          await playFromUri(Uri.parse(s.url), {
+            'title': s.name,
+            'artUri': s.logo,
+            'type': 'station',
+            'url': s.url,
+            'stationId': s.id,
+            'user_initiated': true,
+          });
+          return;
+        }
+      }
+    }
+
+    // 3. Fallback
     if (onSkipPrevious != null) {
       onSkipPrevious!();
     } else {
@@ -1335,17 +1476,27 @@ class RadioAudioHandler extends BaseAudioHandler
     final String album = extras?['album'] ?? "";
     final String? artUri = extras?['artUri'] ?? station?.logo;
 
+    // Merge station info into extras to ensure stationId and url are always present
+    final Map<String, dynamic> finalExtras = Map<String, dynamic>.from(
+      extras ?? {},
+    );
+    finalExtras['url'] ??= url;
+    if (station != null) {
+      finalExtras['stationId'] ??= station.id;
+      finalExtras['type'] ??= 'station';
+    }
+
     MediaItem newItem = MediaItem(
       id: url,
       album: album,
       title: title,
       artist: artist,
-      duration: extras?['duration'] != null
-          ? Duration(seconds: extras!['duration'])
+      duration: finalExtras['duration'] != null
+          ? Duration(seconds: finalExtras['duration'])
           : null,
       artUri: artUri != null ? Uri.parse(artUri) : null,
       playable: true,
-      extras: extras ?? {'url': url},
+      extras: finalExtras,
     );
 
     // Sanitize Art URI for Android Auto (Must be HTTPS or Content URI)
@@ -1389,6 +1540,8 @@ class RadioAudioHandler extends BaseAudioHandler
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('last_media_id', url);
+      await prefs.setString('last_media_title', title);
+      await prefs.setString('last_media_art', artUri ?? '');
 
       final String type = extras?['type'] ?? 'station';
       await prefs.setString('last_media_type', type);
@@ -1529,6 +1682,24 @@ class RadioAudioHandler extends BaseAudioHandler
       mediaItem.artist ?? '',
     );
     _broadcastState(_player.state);
+
+    // Persist metadata updates for quick restore
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_media_id', mediaItem.id);
+      await prefs.setString('last_media_title', mediaItem.title);
+      await prefs.setString(
+        'last_media_art',
+        mediaItem.artUri?.toString() ?? '',
+      );
+      await prefs.setString(
+        'last_media_type',
+        mediaItem.extras?['type'] ?? 'station',
+      );
+      if (mediaItem.extras?['stationId'] != null) {
+        await prefs.setInt('last_station_id', mediaItem.extras!['stationId']);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -1908,12 +2079,15 @@ class RadioAudioHandler extends BaseAudioHandler
     String parentMediaId, [
     Map<String, dynamic>? options,
   ]) async {
+    // Wait for initial data load to ensure favorites/queue are ready before AA asks
+    await _initializationComplete;
+
     // 1. Root Level
     if (parentMediaId == 'root') {
       // Auto-start logic for Android Auto (First Run only)
       if (!_hasTriggeredEarlyStart &&
           !playbackState.value.playing &&
-          _stations.isNotEmpty) {
+          (_stations.isNotEmpty || mediaItem.value != null)) {
         _hasTriggeredEarlyStart = true; // Re-using flag or create new if needed
         // Defer play to avoid blocking getChildren
         Future.delayed(const Duration(milliseconds: 500), () {
@@ -1925,8 +2099,14 @@ class RadioAudioHandler extends BaseAudioHandler
 
       return [
         const MediaItem(
+          id: 'favorites_radio',
+          title: '❤️ Favorites',
+          playable: false,
+          extras: {'style': 'list_item'},
+        ),
+        const MediaItem(
           id: 'live_radio',
-          title: 'Live Radio',
+          title: 'All Stations',
           playable: false,
           extras: {'style': 'list_item'},
         ),
@@ -1938,16 +2118,34 @@ class RadioAudioHandler extends BaseAudioHandler
       ];
     }
 
+    // 2. Favorites Radio List
+    if (parentMediaId == 'favorites_radio') {
+      await _loadStationsFromPrefs();
+      final prefs = await SharedPreferences.getInstance();
+      final favStr = prefs.getStringList('favorites') ?? [];
+      final favIds = favStr
+          .map((e) => int.tryParse(e) ?? -1)
+          .where((e) => e != -1)
+          .toSet();
+
+      return _stations.where((s) => favIds.contains(s.id)).map((s) {
+        final item = _stationToMediaItem(s);
+        return item.copyWith(extras: {...?item.extras, 'origin': 'favorites'});
+      }).toList();
+    }
+
     // 2. Stations List
     if (parentMediaId == 'live_radio') {
       await _loadStationsFromPrefs(); // Force refresh to get latest order/favorites
-      return _stations.map(_stationToMediaItem).toList();
+      return _stations.map((s) {
+        final item = _stationToMediaItem(s);
+        return item.copyWith(extras: {...?item.extras, 'origin': 'all'});
+      }).toList();
     }
 
     // 3. Playlists Folder
     if (parentMediaId == 'playlists_root') {
       final playlists = await _playlistService.loadPlaylists();
-
       final futures = playlists.map((p) async {
         String? baseImage = (p.id == 'favorites')
             ? GenreMapper.getGenreImage("Favorites")
@@ -2046,14 +2244,24 @@ class RadioAudioHandler extends BaseAudioHandler
     String mediaId, [
     Map<String, dynamic>? extras,
   ]) async {
+    await _initializationComplete;
     // 1. Check Stations
     try {
       final s = _stations.firstWhere((s) => s.url == mediaId);
+
+      // Update skip context based on where it was played from
+      if (extras?['origin'] == 'favorites') {
+        _radioSkipContext = 'favorites';
+      } else if (extras?['origin'] == 'all') {
+        _radioSkipContext = 'all';
+      }
+
       await playFromUri(Uri.parse(s.url), {
         'type': 'station',
         'title': s.name,
         'artUri': s.logo,
         'user_initiated': true,
+        'stationId': s.id,
       });
       return;
     } catch (_) {}
@@ -2332,7 +2540,7 @@ class RadioAudioHandler extends BaseAudioHandler
       artist: s.genre,
       artUri: s.logo != null ? Uri.parse(s.logo!) : null,
       playable: true,
-      extras: {'url': s.url, 'type': 'station'},
+      extras: {'url': s.url, 'type': 'station', 'stationId': s.id},
     );
   }
 
@@ -2375,12 +2583,23 @@ class RadioAudioHandler extends BaseAudioHandler
 
         LogService().log("ACRCloud: Match found: $title - $artists");
 
+        // Lookup station to preserve radio identity on Android Auto
+        Station? station;
+        try {
+          station = _stations.firstWhere((s) => s.url == streamUrl);
+        } catch (_) {}
+        final stationName = station?.name ?? "Radio";
+
         // Update MediaItem immediately with basic info
         final newMediaItem = currentItem.copyWith(
           title: title,
           artist: artists ?? "Unknown Artist",
-          album: album ?? "",
-          artUri: null, // Reset art temporarily
+          // Include station name in album field for context (Android Auto reference)
+          album: (album != null && album.isNotEmpty)
+              ? "$stationName • $album"
+              : stationName,
+          // Use station logo as temporary placeholder instead of null to prevent "logo disappearing"
+          artUri: station?.logo != null ? Uri.parse(station!.logo!) : null,
         );
         mediaItem.add(newMediaItem);
         _isCurrentSongSaved = await _playlistService.isSongInFavorites(
@@ -2438,7 +2657,7 @@ class RadioAudioHandler extends BaseAudioHandler
       final newItem = mediaItem.value?.copyWith(
         title: station.name,
         artist: station.genre,
-        album: "Live Radio",
+        album: station.name,
         artUri: station.logo != null ? Uri.parse(station.logo!) : null,
       );
       if (newItem != null) mediaItem.add(newItem);

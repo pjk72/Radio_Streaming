@@ -2904,7 +2904,7 @@ class RadioProvider with ChangeNotifier {
     // Reset images to prevent showing previous song's art
     // respecting the flag
     if (!keepExistingArtwork) {
-      _currentAlbumArt = null;
+      _currentAlbumArt = _currentStation?.logo;
     }
     _currentArtistImage =
         null; // Always reset artist image for now? Or keep? stick to album art for now.
@@ -2994,6 +2994,8 @@ class RadioProvider with ChangeNotifier {
                     : null),
           extras: {
             'url': _currentStation!.url,
+            'stationId': _currentStation!.id,
+            'type': 'station',
             'spotifyUrl': _currentSpotifyUrl,
             'youtubeUrl': _currentYoutubeUrl,
             'appleMusicUrl': _currentAppleMusicUrl,
@@ -3623,9 +3625,13 @@ class RadioProvider with ChangeNotifier {
         if (title != _currentTrack || artists != _currentArtist) {
           LogService().log("ACRCloud: Match found: $title - $artists");
 
+          final stationName = _currentStation?.name ?? "Radio";
           _currentTrack = title;
           _currentArtist = artists ?? "Unknown Artist";
-          _currentAlbum = album ?? "";
+          // Include station name in album field for context
+          _currentAlbum = (album != null && album.isNotEmpty)
+              ? "$stationName • $album"
+              : stationName;
           _currentReleaseDate = releaseDate;
 
           // Extract Genre
@@ -3638,7 +3644,8 @@ class RadioProvider with ChangeNotifier {
           _currentGenre = genre;
 
           // Reset artwork/state
-          _currentAlbumArt = null;
+          // Preserve station logo as placeholder instead of null
+          _currentAlbumArt = _currentStation?.logo;
           _currentArtistImage = null;
 
           // Reset External Links
@@ -3752,10 +3759,15 @@ class RadioProvider with ChangeNotifier {
               id: _currentStation!.url,
               title: _currentTrack,
               artist: _currentArtist,
-              album: "Live Radio",
+              album: _currentStation!.name,
               artUri: _currentStation!.logo != null
                   ? Uri.parse(_currentStation!.logo!)
                   : null,
+              extras: {
+                'url': _currentStation!.url,
+                'stationId': _currentStation!.id,
+                'type': 'station',
+              },
             ),
           );
         }
@@ -3779,10 +3791,15 @@ class RadioProvider with ChangeNotifier {
             id: _currentStation!.url,
             title: _currentTrack,
             artist: _currentArtist,
-            album: "Live Radio",
+            album: _currentStation!.name,
             artUri: _currentStation!.logo != null
                 ? Uri.parse(_currentStation!.logo!)
                 : null,
+            extras: {
+              'url': _currentStation!.url,
+              'stationId': _currentStation!.id,
+              'type': 'station',
+            },
           ),
         );
       }
