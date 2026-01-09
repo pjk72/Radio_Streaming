@@ -189,6 +189,22 @@ class PlaylistService {
     return newPlaylist;
   }
 
+  Future<void> addPlaylist(Playlist playlist) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    // Avoid duplicates by ID
+    final index = playlists.indexWhere((p) => p.id == playlist.id);
+    if (index != -1) {
+      playlists[index] = playlist; // Update if exists
+    } else {
+      playlists.add(playlist);
+    }
+
+    await _savePlaylists(prefs, playlists);
+    _notifyListeners();
+  }
+
   Future<void> deletePlaylist(String id) async {
     final prefs = await SharedPreferences.getInstance();
     var playlists = await loadPlaylists();

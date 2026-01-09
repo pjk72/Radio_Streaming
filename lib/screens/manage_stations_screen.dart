@@ -87,12 +87,12 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                   color: Theme.of(context).textTheme.titleLarge?.color,
                 ),
               ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         actions: [],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.add, color: Colors.white),
+        child: Icon(Icons.add, color: Theme.of(context).colorScheme.onPrimary),
         onPressed: () {
           Navigator.push(
             context,

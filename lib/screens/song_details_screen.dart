@@ -647,9 +647,11 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                 trackHeight: 2,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                activeTrackColor: Colors.white54,
+                activeTrackColor: Theme.of(
+                  context,
+                ).primaryColor.withValues(alpha: 0.8),
                 inactiveTrackColor: Colors.white10,
-                thumbColor: Colors.white70,
+                thumbColor: Theme.of(context).primaryColor,
               ),
               child: Slider(
                 value: _currentVolume.clamp(0.0, 1.0),
@@ -986,7 +988,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                   ? Icons.shuffle_rounded
                                   : Icons.repeat_rounded,
                               color: provider.isShuffleMode
-                                  ? const Color(0xFFE91E63)
+                                  ? Theme.of(context).primaryColor
                                   : Colors.white24,
                               size: 24,
                             ),
@@ -1052,6 +1054,47 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       ],
                     ),
                   ),
+
+                  // Right Side Controls (Local Device Indicator)
+                  if (provider.currentStation?.genre == "Local Device" ||
+                      provider.currentStation?.icon == "smartphone")
+                    Positioned(
+                      right: 20,
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.smartphone_rounded,
+                          color: Colors.white54,
+                          size: 24,
+                        ),
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: Colors.black87,
+                              content: const Row(
+                                children: [
+                                  Icon(
+                                    Icons.smartphone_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text(
+                                    "Song is on your device",
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                ],
+                              ),
+                              duration: const Duration(seconds: 3),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              margin: const EdgeInsets.all(20),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1122,10 +1165,12 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         overlayShape: const RoundSliderOverlayShape(
                           overlayRadius: 14,
                         ),
-                        activeTrackColor: Colors.redAccent,
+                        activeTrackColor: Theme.of(context).primaryColor,
                         inactiveTrackColor: Colors.white24,
-                        thumbColor: Colors.redAccent,
-                        overlayColor: Colors.redAccent.withOpacity(0.12),
+                        thumbColor: Theme.of(context).primaryColor,
+                        overlayColor: Theme.of(
+                          context,
+                        ).primaryColor.withValues(alpha: 0.12),
                       ),
                       child: Slider(
                         value: val,
@@ -1181,9 +1226,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         overlayShape: const RoundSliderOverlayShape(
                           overlayRadius: 14,
                         ),
-                        activeTrackColor: Colors.white,
+                        activeTrackColor: Theme.of(context).primaryColor,
                         inactiveTrackColor: Colors.white24,
-                        thumbColor: Colors.white,
+                        thumbColor: Theme.of(context).primaryColor,
                       ),
                       child: Slider(
                         value: position.clamp(

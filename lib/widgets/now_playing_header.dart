@@ -396,9 +396,13 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                             fontSize: titleSize,
                                             fontWeight: FontWeight.w900,
                                             letterSpacing: -1.0,
-                                            color: Color(
-                                              int.parse(station.color),
-                                            ),
+                                            color: (station.id > 0)
+                                                ? Color(
+                                                    int.parse(station.color),
+                                                  )
+                                                : Theme.of(
+                                                    context,
+                                                  ).primaryColor,
                                             height: 1.0,
                                             shadows: const [
                                               Shadow(
@@ -542,7 +546,13 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                             fontSize: stationSize,
                                             fontWeight: FontWeight.w800,
                                             letterSpacing: -1.0,
-                                            color: Colors.white,
+                                            color: (station.id > 0)
+                                                ? Color(
+                                                    int.parse(station.color),
+                                                  )
+                                                : Theme.of(
+                                                    context,
+                                                  ).primaryColor,
                                             height: 1.0,
                                           ),
                                           maxLines: 1,

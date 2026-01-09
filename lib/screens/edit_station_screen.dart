@@ -260,7 +260,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
             color: Theme.of(context).textTheme.titleLarge?.color,
           ),
         ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
         actions: [
           IconButton(

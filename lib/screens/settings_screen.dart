@@ -9,6 +9,7 @@ import 'api_debug_screen.dart';
 import 'debug_log_screen.dart';
 import 'spotify_login_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'local_library_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -111,11 +112,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _matches("Playlist") ||
         _matches("Import");
 
+    final bool showLocalMedia =
+        _searchQuery.isEmpty ||
+        _matches("Local") ||
+        _matches("Media") ||
+        _matches("File") ||
+        _matches("Device");
+
     return Stack(
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
+            color: Theme.of(context).scaffoldBackgroundColor,
             border: Border.all(
               color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
             ),
@@ -126,19 +134,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(16.0),
-                color: Theme.of(context).canvasColor.withValues(alpha: 0.5),
+                padding: const EdgeInsets.all(8.0),
+                color: Theme.of(context).canvasColor.withValues(alpha: 1),
                 child: Row(
                   children: [
                     Icon(
                       Icons.settings_rounded,
-                      color: Theme.of(context).iconTheme.color,
+                      color: Theme.of(context).appBarTheme.foregroundColor,
                     ),
                     const SizedBox(width: 12),
                     Text(
                       "Settings",
                       style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(
+                              context,
+                            ).appBarTheme.foregroundColor,
+                          ),
                     ),
                     const Spacer(),
                     // Search Bar
@@ -146,7 +159,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: 160,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
+                        color: Theme.of(
+                          context,
+                        ).scaffoldBackgroundColor.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(18),
                         border: Border.all(
                           color: Theme.of(
@@ -233,6 +248,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const ManageStationsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+
+                    if (showLocalMedia)
+                      _buildSettingsTile(
+                        context,
+                        icon: Icons.folder,
+                        title: "Local Music Library",
+                        subtitle: "Manage local folders and playlists",
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LocalLibraryScreen(),
                             ),
                           );
                         },
@@ -1340,13 +1371,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
+    final cardColor = Theme.of(context).cardColor;
+    final contrastColor = cardColor.computeLuminance() > 0.5
+        ? Colors.black
+        : Colors.white;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
+        //color: contrastColor.withValues(alpha: 0.20),
+        color: Theme.of(context).cardColor.withValues(alpha: 0.2),
         border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.05),
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
         ),
       ),
       child: ListTile(
@@ -1391,13 +1428,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
+    final cardColor = Theme.of(context).cardColor;
+    final contrastColor = cardColor.computeLuminance() > 0.5
+        ? Colors.black
+        : Colors.white;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: Theme.of(context).cardColor.withValues(alpha: 0.20),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.05),
+          //color: Theme.of(contecxt).dividerColor.withValues(alpha: 0.05),
+          color: contrastColor.withValues(alpha: 0.20),
         ),
       ),
       child: SwitchListTile(

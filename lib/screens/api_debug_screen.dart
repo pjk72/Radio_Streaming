@@ -32,7 +32,7 @@ class ApiDebugScreen extends StatelessWidget {
         appBar: AppBar(
           title: const Text("API Debug", style: TextStyle(color: Colors.white)),
           iconTheme: const IconThemeData(color: Colors.white),
-          backgroundColor: Colors.transparent,
+          backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
           bottom: const TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.grey,

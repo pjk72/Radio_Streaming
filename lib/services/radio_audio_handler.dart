@@ -282,7 +282,8 @@ class RadioAudioHandler extends BaseAudioHandler
 
       if (!hasConnection) {
         // Internet Lost: Stop player to prevent buffering stale data
-        if (playbackState.value.playing) {
+        final bool isLocal = mediaItem.value?.extras?['isLocal'] == true;
+        if (playbackState.value.playing && !isLocal) {
           // If playlist song, pause to preserve position logic more naturally
           if (mediaItem.value?.extras?['type'] == 'playlist_song') {
             _player.pause();
@@ -600,6 +601,27 @@ class RadioAudioHandler extends BaseAudioHandler
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
 
+    // LOCAL FILE CHECK
+    if (song.localPath != null) {
+      final extras = {
+        'title': song.title,
+        'artist': song.artist,
+        'album': song.album,
+        'artUri': song.artUri,
+        'localPath': song.localPath,
+        'playlistId': playlistId,
+        'songId': song.id,
+        'type': 'playlist_song',
+        'isLocal': true,
+        'is_resolved': true,
+        'user_initiated': true,
+        'stableId': song.id,
+        'startAt': startAt,
+      };
+      await _playYoutubeSong(song.localPath!, extras);
+      return;
+    }
+
     // Check for preloaded stream FIRST
     if (_cachedNextSongExtras?['uniqueId'] == "${song.id}-$videoId" &&
         _cachedNextSongUrl != null) {
@@ -753,8 +775,9 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     // Check connectivity first
+    final bool isLocal = mediaItem.value?.extras?['isLocal'] == true;
     final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
+    if (connectivityResult.contains(ConnectivityResult.none) && !isLocal) {
       playbackState.add(
         playbackState.value.copyWith(
           errorMessage: "No Internet Connection",
@@ -1348,6 +1371,8 @@ class RadioAudioHandler extends BaseAudioHandler
       if (_currentSessionId != sessionId) return;
 
       try {
+        final bool isLocal = extras['isLocal'] == true;
+
         // OPTIMIZATION: Reuse player if healthy
         if (_player.state == PlayerState.disposed) {
           _player = AudioPlayer();
@@ -1367,10 +1392,6 @@ class RadioAudioHandler extends BaseAudioHandler
               iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
             ),
           );
-        } else {
-          // If playing, just stop to clear buffers or directly set source?
-          // setSourceUrl usually handles it.
-          // await _player.stop(); // GAPLESS ATTEMPT: Don't explicit stop
         }
 
         // 4. Load Source & Play
@@ -1379,12 +1400,21 @@ class RadioAudioHandler extends BaseAudioHandler
           await _player.setReleaseMode(ReleaseMode.release);
         }
 
-        await _player.setSource(UrlSource(url));
+        if (isLocal) {
+          // Stop any existing playback first to ensure clean state
+          await _player.stop();
+          // Ensure Release Mode is correct before setting source
+          await _player.setSource(DeviceFileSource(url));
+        } else {
+          await _player.setSource(UrlSource(url));
+        }
+
         if (extras['startAt'] != null && extras['startAt'] is Duration) {
           try {
             await _player.seek(extras['startAt']);
           } catch (_) {}
         }
+
         await _player.resume();
 
         if (_currentSessionId == sessionId) {
@@ -1393,7 +1423,7 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       } catch (e) {
         if (_currentSessionId == sessionId) {
-          LogService().log("Error playing YouTube song in handler: $e");
+          LogService().log("Error playing YouTube/Local song in handler: $e");
           Future.delayed(const Duration(seconds: 1), skipToNext);
         }
       }
@@ -1428,7 +1458,11 @@ class RadioAudioHandler extends BaseAudioHandler
           album: extras['album'] ?? '',
           artUri: extras['artUri'],
           dateAdded: DateTime.now(),
-          youtubeUrl: uri.toString(), // Using URI as ID container
+          // Use URI as youtubeUrl normally, or localPath if local
+          youtubeUrl: extras['isLocal'] == true ? null : uri.toString(),
+          localPath: extras['isLocal'] == true
+              ? (extras['videoId'] ?? uri.toString())
+              : null,
         );
         // Delegate to _playYoutubeVideo which handles caching and resolution
         await _playYoutubeVideo(

@@ -70,6 +70,7 @@ class RadioProvider with ChangeNotifier {
   static const String _keyPlaylistCreatorFilter = 'playlist_creator_filter';
   static const String _keyFollowedArtists = 'followed_artists';
   static const String _keyFollowedAlbums = 'followed_albums';
+  static const String _keyArtistImagesCache = 'artist_images_cache';
 
   final Set<String> _followedArtists = {};
   final Set<String> _followedAlbums = {};
@@ -80,7 +81,7 @@ class RadioProvider with ChangeNotifier {
   bool _isImportingSpotify = false;
   double _spotifyImportProgress = 0;
   String? _spotifyImportName;
-  bool _isRecognizing = false; // Add recognition state flag
+  bool _isRecognizing = false;
 
   bool get isImportingSpotify => _isImportingSpotify;
   double get spotifyImportProgress => _spotifyImportProgress;
@@ -393,6 +394,7 @@ class RadioProvider with ChangeNotifier {
   final ACRCloudService _acrCloudService = ACRCloudService();
 
   List<Playlist> _playlists = [];
+
   List<Playlist> get playlists => _playlists;
 
   List<SavedSong> _allUniqueSongs = [];
@@ -437,8 +439,9 @@ class RadioProvider with ChangeNotifier {
 
   // Filtered Playlists Getter
   List<Playlist> get filteredPlaylists {
-    if (_playlistCreatorFilter.isEmpty) return _playlists;
-    return _playlists.where((p) {
+    final List<Playlist> baseList = playlists;
+    if (_playlistCreatorFilter.isEmpty) return baseList;
+    return baseList.where((p) {
       if (_playlistCreatorFilter.contains('all')) return true;
 
       // Determine creator type
@@ -715,7 +718,29 @@ class RadioProvider with ChangeNotifier {
     _loadYouTubeSettings();
     _loadManageSettings();
     _loadPlaylistCreatorFilter();
+    _loadArtistImagesCache();
+
     _loadStations();
+  }
+
+  Future<void> _loadArtistImagesCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? jsonStr = prefs.getString(_keyArtistImagesCache);
+    if (jsonStr != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(jsonStr);
+        decoded.forEach((key, value) {
+          _artistImageCache[key] = value as String?;
+        });
+      } catch (e) {
+        LogService().log("Error loading artist image cache: $e");
+      }
+    }
+  }
+
+  Future<void> _saveArtistImagesCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyArtistImagesCache, jsonEncode(_artistImageCache));
   }
 
   Future<void> _loadPlaylistCreatorFilter() async {
@@ -840,6 +865,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> deletePlaylist(String id) async {
+    if (id.startsWith('local_')) return;
     await _playlistService.deletePlaylist(id);
     await _loadPlaylists();
   }
@@ -888,6 +914,7 @@ class RadioProvider with ChangeNotifier {
     }
 
     // 2. Explicit Target Logic (e.g. Move to Favorites)
+    if (playlistId.startsWith('local_')) return null;
     await _playlistService.addSongToPlaylist(playlistId, song);
     await _loadPlaylists();
 
@@ -900,6 +927,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> renamePlaylist(String id, String newName) async {
+    if (id.startsWith('local_')) return;
     await _playlistService.renamePlaylist(id, newName);
     await _loadPlaylists();
   }
@@ -910,6 +938,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> removeFromPlaylist(String playlistId, String songId) async {
+    if (playlistId.startsWith('local_')) return;
     await _playlistService.removeSongFromPlaylist(playlistId, songId);
     await _loadPlaylists();
 
@@ -936,6 +965,8 @@ class RadioProvider with ChangeNotifier {
     String fromPayloadId,
     String toPayloadId,
   ) async {
+    if (fromPayloadId.startsWith('local_') || toPayloadId.startsWith('local_'))
+      return;
     await _playlistService.copySong(songId, fromPayloadId, toPayloadId);
     await _loadPlaylists();
   }
@@ -945,6 +976,8 @@ class RadioProvider with ChangeNotifier {
     String fromPayloadId,
     String toPayloadId,
   ) async {
+    if (fromPayloadId.startsWith('local_') || toPayloadId.startsWith('local_'))
+      return;
     await _playlistService.copySongs(songIds, fromPayloadId, toPayloadId);
     await _loadPlaylists();
   }
@@ -1004,6 +1037,70 @@ class RadioProvider with ChangeNotifier {
 
     await _playlistService.addToGenrePlaylist(genre, result.song);
     await _loadPlaylists();
+  }
+
+  Future<void> enrichPlaylistMetadata(String playlistId) async {
+    final playlist = _playlists.firstWhere(
+      (p) => p.id == playlistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+    if (playlist.id.isEmpty) return;
+
+    List<SavedSong> songsToProcess = playlist.songs
+        .where((s) => s.artUri == null || s.artUri!.isEmpty)
+        .toList();
+    if (songsToProcess.isEmpty) return;
+
+    bool anyChanged = false;
+    List<SavedSong> updatedSongs = List.from(playlist.songs);
+
+    // Process in small batches or with delays to avoid API throttling
+    for (var song in songsToProcess) {
+      try {
+        // Clean query: remove file extensions or path info if present
+        String cleanTitle = song.title
+            .replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$'), '')
+            .trim();
+        final results = await searchMusic("$cleanTitle ${song.artist}");
+
+        if (results.isNotEmpty) {
+          // Find best match (simple check: title similarity)
+          final match = results.first.song;
+          int idx = updatedSongs.indexWhere((s) => s.id == song.id);
+          if (idx != -1) {
+            updatedSongs[idx] = updatedSongs[idx].copyWith(
+              artUri: match.artUri,
+              album:
+                  (updatedSongs[idx].album == 'Unknown Album' ||
+                      updatedSongs[idx].album.isEmpty)
+                  ? match.album
+                  : updatedSongs[idx].album,
+              releaseDate:
+                  (updatedSongs[idx].releaseDate == null ||
+                      updatedSongs[idx].releaseDate!.isEmpty)
+                  ? match.releaseDate
+                  : updatedSongs[idx].releaseDate,
+            );
+            anyChanged = true;
+          }
+        }
+        await Future.delayed(const Duration(milliseconds: 300));
+      } catch (e) {
+        LogService().log("Metadata Enrichment Error for ${song.title}: $e");
+      }
+    }
+
+    if (anyChanged) {
+      await _playlistService.saveAll(
+        _playlists
+            .map(
+              (p) => p.id == playlistId ? p.copyWith(songs: updatedSongs) : p,
+            )
+            .toList(),
+      );
+      await _loadPlaylists();
+    }
   }
 
   // ... rest of class
@@ -1306,6 +1403,7 @@ class RadioProvider with ChangeNotifier {
     String? overrideArtist,
     String? overrideAlbum,
     String? overrideArtUri,
+    bool isLocal = false,
   }) async {
     _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
     _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
@@ -1380,10 +1478,10 @@ class RadioProvider with ChangeNotifier {
     _currentStation = Station(
       id: -999, // Dummy ID for external playback
       name: playlistName,
-      genre: "My Playlist",
-      url: "youtube://$videoId",
-      icon: "youtube",
-      color: "0xFFFF0000",
+      genre: isLocal ? "Local Device" : "My Playlist",
+      url: isLocal ? videoId : "youtube://$videoId",
+      icon: isLocal ? "smartphone" : "youtube",
+      color: isLocal ? "0xFF4CAF50" : "0xFFFF0000",
       logo: artwork,
       category: "Playlist",
     );
@@ -1410,16 +1508,24 @@ class RadioProvider with ChangeNotifier {
 
       // Bypass blocking resolution in Provider - Let AudioHandler handle it (and use cache)
       // We pass the VideoId as the URI.
-      await _audioHandler.playFromUri(Uri.parse(videoId), {
+      Uri uri;
+      if (isLocal) {
+        uri = Uri.file(videoId);
+      } else {
+        uri = Uri.parse(videoId);
+      }
+
+      await _audioHandler.playFromUri(uri, {
         'title': title,
         'artist': artist,
         'artUri': artwork,
-        'album': album ?? "Playlist",
+        'album': album ?? (isLocal ? "Local Device" : "Playlist"),
         'duration': null, // Will be updated by player
         'type': 'playlist_song',
         'playlistId': playlistId,
         'songId': songId,
         'videoId': videoId,
+        'isLocal': isLocal,
       });
 
       _audioOnlySongId = songId;
@@ -2590,6 +2696,20 @@ class RadioProvider with ChangeNotifier {
 
     try {
       String? videoId;
+
+      if (song.localPath != null) {
+        await playYoutubeAudio(
+          song.localPath!,
+          song.id,
+          playlistId: playlistId,
+          overrideTitle: song.title,
+          overrideArtist: song.artist,
+          overrideAlbum: song.album,
+          overrideArtUri: song.artUri,
+          isLocal: true,
+        );
+        return;
+      }
 
       if (song.youtubeUrl != null) {
         videoId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
@@ -3897,13 +4017,49 @@ class RadioProvider with ChangeNotifier {
     // 6. Cache & Return
     if (result != null && result != "NOT_FOUND") {
       _artistImageCache[rawKey] = result;
+      _saveArtistImagesCache(); // Persist
       return result;
     } else if (result == "NOT_FOUND") {
       _artistImageCache[rawKey] = null;
+      _saveArtistImagesCache(); // Persist even if not found to avoid repeated searches
       return null;
     } else {
       // Error case: Do not cache, allow retry
       return null;
+    }
+  }
+
+  Future<void> enrichAllArtists() async {
+    // Get all unique artists from all playlists
+    final Set<String> artists = {};
+    for (var playlist in _playlists) {
+      for (var song in playlist.songs) {
+        if (song.artist.isNotEmpty) {
+          artists.add(song.artist);
+        }
+      }
+    }
+
+    if (artists.isEmpty) return;
+
+    // Filter out those already professionally cached or explicitly marked NOT_FOUND
+    final List<String> toFetch = artists.where((a) {
+      final key = a.trim().toLowerCase();
+      // We only fetch if NOT in cache. If it's in cache (even as null), we already tried.
+      return !_artistImageCache.containsKey(key);
+    }).toList();
+
+    if (toFetch.isEmpty) return;
+
+    // Process in batches with delays to avoid Deezer rate limits
+    for (var artist in toFetch) {
+      try {
+        await fetchArtistImage(artist);
+        // Small delay to be polite to the API
+        await Future.delayed(const Duration(milliseconds: 250));
+      } catch (e) {
+        LogService().log("Error in bulk artist enrichment for $artist: $e");
+      }
     }
   }
 

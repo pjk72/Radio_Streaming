@@ -269,7 +269,12 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
               children: [
                 Theme(
                   // We already applied the localTheme, but we keep the transparent divider logic
-                  data: localTheme.copyWith(dividerColor: Colors.transparent),
+                  data: localTheme.copyWith(
+                    appBarTheme: localTheme.appBarTheme.copyWith(
+                      backgroundColor: Colors.white54,
+                    ),
+                    dividerColor: Colors.transparent,
+                  ),
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -279,25 +284,22 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
                       index: widget.index,
                       child: Icon(
                         Icons.drag_indicator,
-                        color: Theme.of(
-                          context,
-                        ).iconTheme.color?.withValues(alpha: 0.2),
+                        color: localTheme.iconTheme.color?.withValues(
+                          alpha: 0.2,
+                        ),
                       ),
                     ),
                     title: Text(
                       widget.category,
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(
-                              context,
-                            ).textTheme.headlineSmall?.color,
-                            fontSize: widget.isDesktop ? 24 : 20,
-                          ),
+                      style: localTheme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: localTheme.textTheme.headlineSmall?.color,
+                        fontSize: widget.isDesktop ? 24 : 20,
+                      ),
                     ),
                     trailing: Icon(
                       _isExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: Theme.of(context).iconTheme.color,
+                      color: localTheme.iconTheme.color,
                     ),
                     onTap: () {
                       setState(() {

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'album_details_screen.dart';
 import '../widgets/admob_banner_widget.dart';
+import '../providers/radio_provider.dart';
+import 'package:provider/provider.dart';
 
 class ArtistDetailsScreen extends StatefulWidget {
   final String artistName;
@@ -138,25 +140,15 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
   }
 
   Future<void> _fetchArtistImage() async {
+    if (!mounted) return;
     try {
-      final uri = Uri.parse(
-        "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(widget.artistName)}&limit=1",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        if (json['data'] != null && (json['data'] as List).isNotEmpty) {
-          String? picture =
-              json['data'][0]['picture_xl'] ??
-              json['data'][0]['picture_big'] ??
-              json['data'][0]['picture_medium'];
+      final provider = Provider.of<RadioProvider>(context, listen: false);
+      final picture = await provider.fetchArtistImage(widget.artistName);
 
-          if (picture != null && mounted) {
-            setState(() {
-              _fetchedArtistImage = picture;
-            });
-          }
-        }
+      if (picture != null && mounted) {
+        setState(() {
+          _fetchedArtistImage = picture;
+        });
       }
     } catch (e) {
       developer.log("Error fetching artist image: $e");

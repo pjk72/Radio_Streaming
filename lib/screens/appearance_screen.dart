@@ -12,7 +12,7 @@ class AppearanceScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         title: const Text("Appearance"),
         centerTitle: true,
         leading: IconButton(
@@ -597,24 +597,44 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                     "Edit Theme Colors",
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  TextButton(onPressed: _saveAll, child: const Text("Save")),
+                  ElevatedButton(
+                    onPressed: _saveAll,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor:
+                          Theme.of(context).primaryColor.computeLuminance() >
+                              0.5
+                          ? Colors.black
+                          : Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 0,
+                      ),
+                    ),
+                    child: const Text(
+                      "Save",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
               ),
             ),
             // Tabs
-            SizedBox(
-              height: 50,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
                 children: [
-                  _buildTab("Primary", "primary"),
-                  const SizedBox(width: 10),
-                  _buildTab("Background", "background"),
-                  const SizedBox(width: 10),
-                  _buildTab("Card", "card"),
-                  const SizedBox(width: 10),
-                  _buildTab("Surface", "surface"),
+                  Expanded(child: _buildTab("Primary", "primary")),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildTab("BG", "background")),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildTab("Card", "card")),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildTab("Surface", "surface")),
                 ],
               ),
             ),
@@ -629,6 +649,40 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                 children: [
                   // Preview
                   _buildPreview(),
+
+                  const SizedBox(height: 16),
+
+                  // 4. Hex Input
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextField(
+                          controller: _hexController,
+                          onSubmitted: _onHexSubmitted,
+                          decoration: InputDecoration(
+                            labelText: "Hex Code",
+                            prefixText: "#",
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          style: const TextStyle(fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
 
                   // 1. Saturation / Value Box
                   AspectRatio(
@@ -844,7 +898,8 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
+
                   const Text(
                     "RGB Channels",
                     style: TextStyle(fontWeight: FontWeight.bold),
@@ -868,37 +923,6 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                     );
                   }),
 
-                  const SizedBox(height: 24),
-
-                  // 4. Hex Input
-                  Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextField(
-                          controller: _hexController,
-                          onSubmitted: _onHexSubmitted,
-                          decoration: InputDecoration(
-                            labelText: "Hex Code",
-                            prefixText: "#",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          style: const TextStyle(fontFamily: 'monospace'),
-                        ),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -916,8 +940,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
     return GestureDetector(
       onTap: () => _switchKey(key),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         decoration: BoxDecoration(
           color: isActive ? Theme.of(context).primaryColor : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
@@ -926,24 +949,30 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
           ),
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 12,
-              height: 12,
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
                 color: color,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
+                border: Border.all(color: Colors.white, width: 1),
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: isActive
-                    ? Colors.white
-                    : Theme.of(context).textTheme.bodyMedium?.color,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: isActive
+                      ? Colors.white
+                      : Theme.of(context).textTheme.bodyMedium?.color,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 11,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

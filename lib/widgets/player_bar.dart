@@ -38,7 +38,7 @@ class PlayerBar extends StatelessWidget {
     return Container(
       height: 90,
       decoration: BoxDecoration(
-        color: cardColor.withValues(alpha: 0.95),
+        color: cardColor.withValues(alpha: 0.50),
         border: Border(
           top: BorderSide(
             color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
@@ -106,50 +106,81 @@ class PlayerBar extends StatelessWidget {
                                     },
                                     child: Hero(
                                       tag: 'player_image',
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Container(
-                                          width: isDesktop ? 50 : 42,
-                                          height: isDesktop ? 50 : 42,
-                                          color: Colors.black,
-                                          alignment: Alignment.center,
-                                          child:
-                                              (provider.currentAlbumArt ??
-                                                      station.logo) !=
-                                                  null
-                                              ? _buildImage(
-                                                  provider.currentAlbumArt ??
-                                                      station.logo!,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) {
-                                                        return FaIcon(
-                                                          IconLibrary.getIcon(
-                                                            station.icon,
-                                                          ),
-                                                          color: Color(
-                                                            int.parse(
-                                                              station.color,
-                                                            ),
-                                                          ),
-                                                          size: 24,
-                                                        );
-                                                      },
-                                                )
-                                              : FaIcon(
-                                                  IconLibrary.getIcon(
-                                                    station.icon,
-                                                  ),
-                                                  color: Color(
-                                                    int.parse(station.color),
-                                                  ),
-                                                  size: 24,
+                                      child: Stack(
+                                        children: [
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: Container(
+                                              width: isDesktop ? 50 : 42,
+                                              height: isDesktop ? 50 : 42,
+                                              color: Colors.black,
+                                              alignment: Alignment.center,
+                                              child:
+                                                  (provider.currentAlbumArt ??
+                                                          station.logo) !=
+                                                      null
+                                                  ? _buildImage(
+                                                      provider.currentAlbumArt ??
+                                                          station.logo!,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (
+                                                            context,
+                                                            error,
+                                                            stackTrace,
+                                                          ) {
+                                                            return FaIcon(
+                                                              IconLibrary.getIcon(
+                                                                station.icon,
+                                                              ),
+                                                              color: Color(
+                                                                int.parse(
+                                                                  station.color,
+                                                                ),
+                                                              ),
+                                                              size: 24,
+                                                            );
+                                                          },
+                                                    )
+                                                  : FaIcon(
+                                                      IconLibrary.getIcon(
+                                                        station.icon,
+                                                      ),
+                                                      color: Color(
+                                                        int.parse(
+                                                          station.color,
+                                                        ),
+                                                      ),
+                                                      size: 24,
+                                                    ),
+                                            ),
+                                          ),
+                                          if (provider.currentStation?.genre ==
+                                                  "Local Device" ||
+                                              provider.currentStation?.icon ==
+                                                  "smartphone")
+                                            Positioned(
+                                              bottom: 2,
+                                              right: 2,
+                                              child: Container(
+                                                padding: const EdgeInsets.all(
+                                                  2,
                                                 ),
-                                        ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.6),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.smartphone_rounded,
+                                                  size: 10,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -641,7 +672,7 @@ class PlayerBar extends StatelessWidget {
                   ? Icons.shuffle_rounded
                   : Icons.repeat_rounded,
               color: provider.isShuffleMode
-                  ? Colors.redAccent
+                  ? Theme.of(context).primaryColor
                   : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
             ),
             iconSize: 20,
