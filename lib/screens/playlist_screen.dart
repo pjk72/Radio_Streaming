@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widget_previews.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -11,8 +12,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/radio_provider.dart';
+import '../services/radio_audio_handler.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
+
 import '../services/backup_service.dart';
 import 'album_details_screen.dart';
 import 'artist_details_screen.dart';
@@ -47,7 +50,196 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   MetadataViewMode _viewMode = MetadataViewMode.playlists;
   PlaylistSortMode _sortMode = PlaylistSortMode.custom;
   bool _isBulkChecking = false;
+  bool _hasShownUpgradeDialog = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFilterState();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.toLowerCase();
+      });
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Check for Upgrade Proposals
+    final provider = Provider.of<RadioProvider>(context, listen: true);
+    if (provider.upgradeProposals.isNotEmpty && !_hasShownUpgradeDialog) {
+      _hasShownUpgradeDialog = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showUpgradeDialog(context, provider);
+      });
+    }
+  }
+
+  void _showUpgradeDialog(BuildContext context, RadioProvider provider) {
+    // Creating a local set to track selected proposals.
+    // We initiate it with all proposals selected by default.
+    final Set<String> selectedProposalIds = provider.upgradeProposals
+        .map((p) => "${p.playlistId}_${p.songId}")
+        .toSet();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final proposals = provider.upgradeProposals;
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1a1a2e),
+              title: const Text(
+                "Local Files Found",
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Container(
+                constraints: const BoxConstraints(maxHeight: 400),
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Found ${proposals.length} songs that are available on your device. Select the ones you want to switch to offline versions for better performance.",
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    // "Select All" / "Deselect All" convenience
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              if (selectedProposalIds.length ==
+                                  proposals.length) {
+                                selectedProposalIds.clear();
+                              } else {
+                                selectedProposalIds.addAll(
+                                  proposals.map(
+                                    (p) => "${p.playlistId}_${p.songId}",
+                                  ),
+                                );
+                              }
+                            });
+                          },
+                          child: Text(
+                            selectedProposalIds.length == proposals.length
+                                ? "Deselect All"
+                                : "Select All",
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white12),
+                    Expanded(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: proposals.length,
+                        separatorBuilder: (_, __) =>
+                            const Divider(color: Colors.white12, height: 1),
+                        itemBuilder: (context, index) {
+                          final p = proposals[index];
+                          final uniqueId = "${p.playlistId}_${p.songId}";
+                          final isSelected = selectedProposalIds.contains(
+                            uniqueId,
+                          );
+
+                          return CheckboxListTile(
+                            value: isSelected,
+                            activeColor: Theme.of(context).primaryColor,
+                            checkColor: Colors.white,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true) {
+                                  selectedProposalIds.add(uniqueId);
+                                } else {
+                                  selectedProposalIds.remove(uniqueId);
+                                }
+                              });
+                            },
+                            title: Text(
+                              p.songTitle,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              p.songArtist,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            secondary: const Icon(
+                              Icons.smartphone_rounded,
+                              color: Colors.greenAccent,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    // Clear proposals so we don't ask again this session
+                    provider.upgradeProposals.clear();
+                  },
+                  child: const Text("Cancel"),
+                ),
+                ElevatedButton(
+                  onPressed: selectedProposalIds.isEmpty
+                      ? null
+                      : () {
+                          final toApply = proposals.where((p) {
+                            return selectedProposalIds.contains(
+                              "${p.playlistId}_${p.songId}",
+                            );
+                          }).toList();
+
+                          provider.applyUpgrades(toApply);
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                "Updated ${toApply.length} songs to use local files.",
+                              ),
+                            ),
+                          );
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor,
+                    disabledBackgroundColor: Colors.grey.withValues(alpha: 0.3),
+                  ),
+                  child: Text(
+                    "Update Selected (${selectedProposalIds.length})",
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   bool _showOnlyInvalid = false;
+  bool _showOnlyLocal = false;
   bool _showFollowedArtistsOnly = false;
   bool _showFollowedAlbumsOnly = false;
   final TextEditingController _searchController = TextEditingController();
@@ -179,33 +371,28 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
     if (playlist == null) return null;
 
-    if (applyFilter && _showOnlyInvalid) {
-      final filteredSongs = playlist.songs
-          .where((s) => !s.isValid || provider.invalidSongIds.contains(s.id))
-          .toList();
-      return Playlist(
-        id: playlist.id,
-        name: playlist.name,
-        songs: filteredSongs,
-        createdAt: playlist.createdAt,
-      );
+    if (applyFilter) {
+      var filteredSongs = playlist.songs;
+
+      if (_showOnlyInvalid) {
+        filteredSongs = filteredSongs
+            .where((s) => !s.isValid || provider.invalidSongIds.contains(s.id))
+            .toList();
+      }
+
+      if (_showOnlyLocal) {
+        filteredSongs = filteredSongs
+            .where((s) => s.localPath != null || s.id.startsWith('local_'))
+            .toList();
+      }
+
+      return playlist.copyWith(songs: filteredSongs);
     }
 
     return playlist;
   }
 
   List<SavedSong> get currentSongList => effectivePlaylist?.songs ?? [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFilterState();
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.toLowerCase();
-      });
-    });
-  }
 
   Future<void> _loadFilterState() async {
     final prefs = await SharedPreferences.getInstance();
@@ -276,8 +463,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       final p = provider.playlists.firstWhere(
         (element) => element.id == playlistId,
       );
-      isLocalPlaylist = p.creator == 'local';
+      isLocalPlaylist = (p.creator == 'local');
     } catch (_) {}
+
+    final bool isLocalSong =
+        song.localPath != null || song.id.startsWith('local_');
+    final bool hideOnline = isLocalPlaylist || isLocalSong;
 
     showModalBottomSheet(
       context: context,
@@ -289,7 +480,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!isLocalPlaylist)
+            if (!hideOnline)
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -320,7 +511,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   ],
                 ),
               ),
-            if (!isLocalPlaylist) const Divider(color: Colors.white10),
+            if (!hideOnline) const Divider(color: Colors.white10),
             ListTile(
               leading: const Icon(Icons.refresh_rounded, color: Colors.green),
               title: const Text(
@@ -332,7 +523,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 _testAndUnlockTrack(provider, song, playlistId);
               },
             ),
-            if (!isLocalPlaylist)
+            if (!hideOnline)
               ListTile(
                 leading: const Icon(
                   FontAwesomeIcons.youtube,
@@ -359,7 +550,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 _showSongDetailsDialog(context, song);
               },
             ),
-            if (!isLocalPlaylist)
+            if (!hideOnline)
               ListTile(
                 leading: const Icon(
                   Icons.delete_outline,
@@ -498,7 +689,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     ).showSnackBar(const SnackBar(content: Text("Testing track...")));
 
     try {
-      final verifySuccess = await _verifyTrack(provider, song);
+      bool isLocalPlaylist = false;
+      try {
+        final p = provider.playlists.firstWhere((p) => p.id == playlistId);
+        isLocalPlaylist = p.creator == 'local';
+      } catch (_) {}
+
+      final verifySuccess = await _verifyTrack(
+        provider,
+        song,
+        forceLocalOnly: isLocalPlaylist,
+      );
 
       if (verifySuccess) {
         await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
@@ -532,11 +733,20 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     }
   }
 
-  Future<bool> _verifyTrack(RadioProvider provider, SavedSong song) async {
+  Future<bool> _verifyTrack(
+    RadioProvider provider,
+    SavedSong song, {
+    bool forceLocalOnly = false,
+  }) async {
     // 1. Local File Check
     if (song.localPath != null && song.localPath!.isNotEmpty) {
       final file = File(song.localPath!);
       return file.exists();
+    }
+
+    // If it's a local song or we're in a local playlist, don't fall back to online check
+    if (forceLocalOnly || song.id.startsWith('local_')) {
+      return false;
     }
 
     // 2. Online Link Check
@@ -591,9 +801,21 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
 
     int unlockedCount = 0;
+    bool isLocalPlaylist = false;
+    if (playlistId != null) {
+      try {
+        final p = provider.playlists.firstWhere((p) => p.id == playlistId);
+        isLocalPlaylist = p.creator == 'local';
+      } catch (_) {}
+    }
+
     for (var song in invalidSongs) {
       if (!mounted) break;
-      final success = await _verifyTrack(provider, song);
+      final success = await _verifyTrack(
+        provider,
+        song,
+        forceLocalOnly: isLocalPlaylist,
+      );
       if (success) {
         await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
         unlockedCount++;
@@ -715,6 +937,14 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           (s) => !s.isValid || provider.invalidSongIds.contains(s.id),
         ) ??
         false;
+
+    final bool isLocalPlaylist = rawPlaylist?.creator == 'local';
+    final hasLocalSongs =
+        isLocalPlaylist ||
+        (rawPlaylist?.songs.any(
+              (s) => s.localPath != null || s.id.startsWith('local_'),
+            ) ??
+            false);
 
     final currentSongs = currentSongList;
 
@@ -863,6 +1093,38 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (hasLocalSongs || _showOnlyLocal)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
+                            child: Tooltip(
+                              message: _showOnlyLocal
+                                  ? "Show All Songs"
+                                  : "Show Local Only",
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.smartphone_rounded,
+                                  color: _showOnlyLocal
+                                      ? Theme.of(context).primaryColor
+                                      : headerContrastColor,
+                                  size: 20,
+                                ),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: _showOnlyLocal
+                                      ? Theme.of(
+                                          context,
+                                        ).primaryColor.withValues(alpha: 0.15)
+                                      : null,
+                                  padding: const EdgeInsets.all(8),
+                                  minimumSize: const Size(36, 36),
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _showOnlyLocal = !_showOnlyLocal;
+                                  });
+                                },
+                              ),
+                            ),
+                          ),
                         if (hasInvalidSongs || _showOnlyInvalid)
                           if (!_isBulkChecking)
                             Padding(
@@ -1254,6 +1516,15 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         onRefresh: () async {
                           if (_selectedPlaylistId != null) {
                             await provider.reloadPlaylists();
+                            // Also search for missing artworks when refreshing a specific playlist
+                            await provider.findMissingArtworks(
+                              playlistId: _selectedPlaylistId,
+                            );
+                          } else {
+                            // If artist or album selection, still refresh all?
+                            // Or maybe just reload. For now, let's call it without ID.
+                            await provider.reloadPlaylists();
+                            await provider.findMissingArtworks();
                           }
                         },
                         child: _buildSongList(
@@ -1322,22 +1593,40 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
                     switch (_viewMode) {
                       case MetadataViewMode.playlists:
-                        return ListView(
-                          controller: _playlistsScrollController,
-                          key: const PageStorageKey('playlists_list'),
-                          padding: const EdgeInsets.only(bottom: 80),
-                          children: [
-                            _buildPlaylistsGrid(
-                              context,
-                              provider,
-                              displayPlaylists,
-                            ),
-                          ],
+                        return RefreshIndicator(
+                          onRefresh: () async {
+                            await provider.reloadPlaylists();
+                            await provider.findMissingArtworks();
+                          },
+                          child: ListView(
+                            controller: _playlistsScrollController,
+                            key: const PageStorageKey('playlists_list'),
+                            padding: const EdgeInsets.only(bottom: 80),
+                            children: [
+                              _buildPlaylistsGrid(
+                                context,
+                                provider,
+                                displayPlaylists,
+                              ),
+                            ],
+                          ),
                         );
                       case MetadataViewMode.artists:
-                        return _buildArtistsGrid(context, provider, allSongs);
+                        return RefreshIndicator(
+                          onRefresh: () async {
+                            await provider.reloadPlaylists();
+                            await provider.findMissingArtworks();
+                          },
+                          child: _buildArtistsGrid(context, provider, allSongs),
+                        );
                       case MetadataViewMode.albums:
-                        return _buildAlbumsGrid(context, provider, allSongs);
+                        return RefreshIndicator(
+                          onRefresh: () async {
+                            await provider.reloadPlaylists();
+                            await provider.findMissingArtworks();
+                          },
+                          child: _buildAlbumsGrid(context, provider, allSongs),
+                        );
                     }
                   },
                 ),
@@ -2224,6 +2513,14 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     Playlist playlist,
     List<SavedSong> groupSongs,
   ) {
+    // Helper to filter songs
+    List<SavedSong> groupSongsServiceFilter(
+      List<SavedSong> songs,
+      bool Function(SavedSong) predicate,
+    ) {
+      return songs.where((s) => !predicate(s)).toList();
+    }
+
     return _AlbumGroupWidget(
       showFavoritesButton: playlist.id != 'favorites',
       groupSongs: groupSongs,
@@ -2246,6 +2543,90 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         if (playlist.id == 'favorites') return false;
         return result;
       },
+      isFavoriteOverride: playlist.creator == 'local'
+          ? groupSongs.every((s) {
+              final favPlaylist = provider.playlists.firstWhere(
+                (p) => p.id == 'favorites',
+                orElse: () => Playlist(
+                  id: 'favorites',
+                  name: 'Favorites',
+                  songs: [],
+                  createdAt: DateTime.now(),
+                ),
+              );
+              return favPlaylist.songs.any(
+                (fav) =>
+                    fav.id == s.id ||
+                    (fav.title == s.title && fav.artist == s.artist),
+              );
+            })
+          : null,
+      onFavoriteToggle: playlist.creator == 'local'
+          ? () async {
+              final favPlaylist = provider.playlists.firstWhere(
+                (p) => p.id == 'favorites',
+                orElse: () => Playlist(
+                  id: 'favorites',
+                  name: 'Favorites',
+                  songs: [],
+                  createdAt: DateTime.now(),
+                ),
+              );
+              final favIds = favPlaylist.songs.map((s) => s.id).toSet();
+              // Also consider title/artist match for robustness
+              bool isAlreadyFav(SavedSong s) {
+                return favIds.contains(s.id) ||
+                    favPlaylist.songs.any(
+                      (fav) => fav.title == s.title && fav.artist == s.artist,
+                    );
+              }
+
+              final allFav = groupSongs.every(isAlreadyFav);
+
+              if (allFav) {
+                // Remove all
+                for (var s in groupSongs) {
+                  // Find the ID in favorites (might handle duplicate titles)
+                  final favSong = favPlaylist.songs.firstWhere(
+                    (fav) =>
+                        fav.id == s.id ||
+                        (fav.title == s.title && fav.artist == s.artist),
+                    orElse: () => s,
+                  );
+                  if (favIds.contains(favSong.id)) {
+                    // We must await locally or just fire and forget?
+                    // removeSongFromPlaylist is async.
+                    // To avoid UI freeze, we can do it.
+                    provider.removeFromPlaylist('favorites', favSong.id);
+                  }
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Removed album from Favorites")),
+                );
+              } else {
+                // Add missing
+                // Identify songs not in fav
+                final toAdd = groupSongsServiceFilter(groupSongs, isAlreadyFav);
+                if (toAdd.isNotEmpty) {
+                  // Use copySongs if possible, or copySong loop
+                  if (playlist.creator == 'local') {
+                    await provider.addSongsToPlaylist('favorites', toAdd);
+                  } else {
+                    await provider.copySongs(
+                      toAdd.map((s) => s.id).toList(),
+                      playlist.id,
+                      'favorites',
+                    );
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Added album to Favorites")),
+                    );
+                  }
+                }
+              }
+            }
+          : null,
       onRemove: () async {
         final confirmed = await showDialog<bool>(
           context: context,
@@ -2333,6 +2714,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       songBuilder: (ctx, song, index) {
         // Ensure we use the latest provider state for invalid check
         final freshProvider = Provider.of<RadioProvider>(ctx);
+        final isFirst = index == 1;
+        final isLast = index == groupSongs.length;
         return _buildSongItem(
           ctx,
           freshProvider,
@@ -2340,6 +2723,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           song,
           isGrouped: true,
           groupIndex: index,
+          isFirstInGroup: isFirst,
+          isLastInGroup: isLast,
         );
       },
     );
@@ -2352,6 +2737,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     SavedSong song, {
     bool isGrouped = false,
     int? groupIndex,
+    bool isFirstInGroup = false,
+    bool isLastInGroup = false,
   }) {
     final cardColor = Theme.of(context).cardColor;
     final contrastColor = cardColor.computeLuminance() > 0.5
@@ -2368,7 +2755,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         createdAt: DateTime.now(),
       ),
     );
-    final isFavorite = favPlaylist.songs.any(
+    bool isFavorite = favPlaylist.songs.any(
       (s) =>
           s.id == song.id || (s.title == song.title && s.artist == song.artist),
     );
@@ -2443,6 +2830,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           }
         }
       },
+
       child: Container(
         margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
@@ -2540,33 +2928,57 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       },
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: song.artUri != null
-                            ? CachedNetworkImage(
-                                imageUrl: song.artUri!,
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.cover,
-                                errorWidget: (_, _, _) => Container(
-                                  width: 48,
-                                  height: 48,
-                                  color: Colors.grey[900],
-                                  child: Icon(
-                                    Icons.music_note,
-                                    color: contrastColor.withValues(
-                                      alpha: 0.24,
+                        child: Stack(
+                          children: [
+                            song.artUri != null
+                                ? CachedNetworkImage(
+                                    imageUrl: song.artUri!,
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, _, _) => Container(
+                                      width: 48,
+                                      height: 48,
+                                      color: Colors.grey[900],
+                                      child: Icon(
+                                        Icons.music_note,
+                                        color: contrastColor.withValues(
+                                          alpha: 0.24,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: Colors.grey[900],
+                                    child: Icon(
+                                      Icons.music_note,
+                                      color: contrastColor.withValues(
+                                        alpha: 0.24,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              )
-                            : Container(
-                                width: 48,
-                                height: 48,
-                                color: Colors.grey[900],
-                                child: Icon(
-                                  Icons.music_note,
-                                  color: contrastColor.withValues(alpha: 0.24),
+                            if (song.localPath != null ||
+                                song.id.startsWith('local_'))
+                              Positioned(
+                                bottom: 2,
+                                right: 2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.smartphone_rounded,
+                                    size: 10,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -2602,8 +3014,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (playlist.id != 'favorites' &&
-                          playlist.creator != 'local') ...[
+                      if (playlist.id != 'favorites') ...[
                         GestureDetector(
                           onTap: () async {
                             if (isFavorite) {
@@ -2621,11 +3032,19 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 );
                               }
                             } else {
-                              await provider.copySong(
-                                song.id,
-                                playlist.id,
-                                'favorites',
-                              );
+                              if (playlist.creator == 'local') {
+                                isFavorite = true; // Optimistic update
+                                await provider.addSongToPlaylist(
+                                  'favorites',
+                                  song,
+                                );
+                              } else {
+                                await provider.copySong(
+                                  song.id,
+                                  playlist.id,
+                                  'favorites',
+                                );
+                              }
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).clearSnackBars();
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -3068,6 +3487,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     if (p.id.startsWith('spotify_')) {
       return const FaIcon(FontAwesomeIcons.spotify, color: Color(0xFF1DB954));
     }
+    if (p.creator == 'local') {
+      return Icon(
+        Icons.smartphone_rounded,
+        color: Theme.of(context).primaryColor,
+        size: 20,
+      );
+    }
     if (p.creator == 'app' || p.id == 'favorites') {
       return ClipOval(
         child: Image.asset(
@@ -3107,12 +3533,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     String songId,
   ) async {
     final others = provider.playlists
-        .where(
-          (p) =>
-              p.id != currentPlaylist.id &&
-              p.id != 'favorites' &&
-              p.creator != 'local',
-        )
+        .where((p) => p.id != currentPlaylist.id && p.id != 'favorites')
         .toList();
     if (others.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3191,12 +3612,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     List<SavedSong> groupSongs,
   ) async {
     final others = provider.playlists
-        .where(
-          (p) =>
-              p.id != currentPlaylist.id &&
-              p.id != 'favorites' &&
-              p.creator != 'local',
-        )
+        .where((p) => p.id != currentPlaylist.id && p.id != 'favorites')
         .toList();
     if (others.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4420,6 +4836,8 @@ class _AlbumGroupWidget extends StatefulWidget {
   final Future<bool> Function() onRemove;
   final DismissDirection? dismissDirection;
   final bool showFavoritesButton;
+  final bool? isFavoriteOverride;
+  final VoidCallback? onFavoriteToggle;
 
   const _AlbumGroupWidget({
     required this.groupSongs,
@@ -4428,6 +4846,8 @@ class _AlbumGroupWidget extends StatefulWidget {
     required this.onRemove,
     this.dismissDirection,
     this.showFavoritesButton = true,
+    this.isFavoriteOverride,
+    this.onFavoriteToggle,
   });
 
   @override
@@ -4453,7 +4873,9 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
         .split('[')
         .first
         .trim();
-    final bool isFollowed = provider.isAlbumFollowed(normalizedAlbumName);
+    final bool isFollowed =
+        widget.isFavoriteOverride ??
+        provider.isAlbumFollowed(normalizedAlbumName);
 
     final isPlayingAlbum =
         !_isExpanded &&
@@ -4546,35 +4968,63 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                             ),
                           );
                         },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: artUri != null
-                              ? CachedNetworkImage(
-                                  imageUrl: artUri,
-                                  width: 60,
-                                  height: 60,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => Container(
-                                    width: 60,
-                                    height: 60,
-                                    color: contrastColor.withValues(alpha: 0.1),
-                                    child: Icon(
-                                      Icons.album,
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: artUri != null
+                                  ? CachedNetworkImage(
+                                      imageUrl: artUri,
+                                      width: 60,
+                                      height: 60,
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) => Container(
+                                        width: 60,
+                                        height: 60,
+                                        color: contrastColor.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        child: Icon(
+                                          Icons.album,
+                                          color: contrastColor.withValues(
+                                            alpha: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 60,
+                                      height: 60,
                                       color: contrastColor.withValues(
-                                        alpha: 0.5,
+                                        alpha: 0.1,
+                                      ),
+                                      child: Icon(
+                                        Icons.album,
+                                        color: contrastColor.withValues(
+                                          alpha: 0.5,
+                                        ),
                                       ),
                                     ),
+                            ),
+                            if (widget.groupSongs.first.localPath != null ||
+                                widget.groupSongs.first.id.startsWith('local_'))
+                              Positioned(
+                                bottom: 2,
+                                right: 2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    shape: BoxShape.circle,
                                   ),
-                                )
-                              : Container(
-                                  width: 60,
-                                  height: 60,
-                                  color: contrastColor.withValues(alpha: 0.1),
-                                  child: Icon(
-                                    Icons.album,
-                                    color: contrastColor.withValues(alpha: 0.5),
+                                  child: const Icon(
+                                    Icons.smartphone_rounded,
+                                    size: 10,
+                                    color: Colors.white,
                                   ),
                                 ),
+                              ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -4614,7 +5064,11 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                       if (widget.showFavoritesButton) ...[
                         GestureDetector(
                           onTap: () async {
-                            provider.toggleFollowAlbum(normalizedAlbumName);
+                            if (widget.onFavoriteToggle != null) {
+                              widget.onFavoriteToggle!();
+                            } else {
+                              provider.toggleFollowAlbum(normalizedAlbumName);
+                            }
                           },
                           child: Icon(
                             isFollowed ? Icons.favorite : Icons.favorite_border,
@@ -5139,4 +5593,26 @@ class _DuplicateResolutionDialogState
       ],
     );
   }
+}
+
+@Preview()
+Widget invalidSongIndicatorPreview() {
+  return MaterialApp(
+    theme: ThemeData.dark(),
+    home: Scaffold(
+      body: Center(
+        child: ChangeNotifierProvider(
+          create: (_) => RadioProvider(RadioAudioHandler(), BackupService()),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _InvalidSongIndicator(songId: 'test_1', isStaticInvalid: true),
+              SizedBox(width: 16),
+              Text("Invalid Song Indicator !!!"),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }

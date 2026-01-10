@@ -246,6 +246,37 @@ class PlaylistService {
     }
   }
 
+  Future<void> addSongsToPlaylist(
+    String playlistId,
+    List<SavedSong> songs,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      bool changed = false;
+      // Pre-fetch safe set
+      final existing = playlists[index].songs;
+
+      for (var song in songs) {
+        if (!existing.any(
+          (s) =>
+              s.id == song.id ||
+              (s.title == song.title && s.artist == song.artist),
+        )) {
+          playlists[index].songs.insert(0, song);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await _savePlaylists(prefs, playlists);
+        _notifyListeners();
+      }
+    }
+  }
+
   Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();
@@ -456,8 +487,10 @@ class PlaylistService {
 
   Future<void> markSongAsInvalid(String playlistId, String songId) async {
     // 1. Connectivity Check (Safety Guard)
+    // We allow marking as invalid without connectivity if the song is local (starts with 'local_')
     final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
+    if (connectivityResult.contains(ConnectivityResult.none) &&
+        !songId.startsWith('local_')) {
       LogService().log(
         "Service: markSongAsInvalid blocked - No Internet connection.",
       );
@@ -485,8 +518,10 @@ class PlaylistService {
     LogService().log("Service: markSongAsInvalidGlobally for $songId");
 
     // 1. Connectivity Check (Safety Guard)
+    // We allow marking as invalid without connectivity if the song is local (starts with 'local_')
     final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
+    if (connectivityResult.contains(ConnectivityResult.none) &&
+        !songId.startsWith('local_')) {
       LogService().log(
         "Service: markSongAsInvalidGlobally blocked - No Internet connection.",
       );

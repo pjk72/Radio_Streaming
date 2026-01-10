@@ -747,9 +747,11 @@ class RadioAudioHandler extends BaseAudioHandler
         ),
       );
 
-      // Verify Internet before marking invalid
+      // Verify Internet before marking invalid (unless it's a local file)
+      final bool isLocal =
+          song.localPath != null || song.id.startsWith('local_');
       final connectivityResult = await Connectivity().checkConnectivity();
-      if (!connectivityResult.contains(ConnectivityResult.none)) {
+      if (!connectivityResult.contains(ConnectivityResult.none) || isLocal) {
         // Only mark if we have some connection
         await _playlistService.markSongAsInvalid(playlistId, song.id);
 
@@ -1424,6 +1426,12 @@ class RadioAudioHandler extends BaseAudioHandler
       } catch (e) {
         if (_currentSessionId == sessionId) {
           LogService().log("Error playing YouTube/Local song in handler: $e");
+          if (extras['playlistId'] != null && extras['songId'] != null) {
+            _playlistService.markSongAsInvalid(
+              extras['playlistId'],
+              extras['songId'],
+            );
+          }
           Future.delayed(const Duration(seconds: 1), skipToNext);
         }
       }

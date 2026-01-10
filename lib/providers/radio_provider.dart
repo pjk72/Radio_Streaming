@@ -31,6 +31,9 @@ import '../services/spotify_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:on_audio_query/on_audio_query.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../models/upgrade_proposal.dart';
 
 // ...
 
@@ -711,16 +714,158 @@ class RadioProvider with ChangeNotifier {
     // Initialize Spotify
     _spotifyService.init().then((_) => notifyListeners());
 
-    // Load persisted playlist
-    _loadPlaylists();
+    // Load persisted data
     _loadStationOrder();
-    _loadStartupSettings(); // Load this before stations
+    _loadStartupSettings();
     _loadYouTubeSettings();
     _loadManageSettings();
     _loadPlaylistCreatorFilter();
     _loadArtistImagesCache();
-
     _loadStations();
+
+    _loadPlaylists().then((_) {
+      // Start background scan for local duplicates after data is ready
+      Future.delayed(const Duration(seconds: 3), _scanForLocalUpgrades);
+    });
+  }
+
+  // --- Upgrade Proposals (Duplicate Detection) ---
+  List<UpgradeProposal> _upgradeProposals = [];
+  List<UpgradeProposal> get upgradeProposals => _upgradeProposals;
+
+  final OnAudioQuery _audioQuery = OnAudioQuery();
+
+  Future<void> _scanForLocalUpgrades() async {
+    LogService().log("Starting Scan for Local Upgrades...");
+    if (kIsWeb) return;
+
+    // Check permissions silently first
+    if (Platform.isAndroid) {
+      if (await Permission.audio.isGranted ||
+          await Permission.storage.isGranted) {
+        // Permission granted, proceed
+      } else {
+        // Just return, don't nag user on startup if they haven't granted yet.
+        // Or strictly, we could try to request if we want to be aggressive,
+        // but "background check" implies non-intrusive.
+        // However, if the user *wants* this, they probably gave permission.
+        // Let's check status.
+        final status = await Permission.audio.status;
+        if (!status.isGranted) return;
+      }
+    }
+
+    try {
+      final localSongs = await _audioQuery.querySongs(
+        sortType: null,
+        orderType: OrderType.ASC_OR_SMALLER,
+        uriType: UriType.EXTERNAL,
+        ignoreCase: true,
+      );
+
+      if (localSongs.isEmpty) return;
+
+      // Normalize helper
+      String normalize(String s) {
+        return s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '').trim();
+      }
+
+      final List<UpgradeProposal> newProposals = [];
+      final uniqueProposalIds =
+          <String>{}; // prevent duplicates in proposal list
+
+      for (var playlist in _playlists) {
+        for (var song in playlist.songs) {
+          // Skip if already local
+          if (song.localPath != null || song.id.startsWith('local_')) continue;
+
+          // Simple match
+          final sTitle = normalize(song.title);
+          final sArtist = normalize(song.artist);
+
+          if (sTitle.isEmpty) continue;
+
+          for (var local in localSongs) {
+            final lTitle = normalize(local.title);
+            final lArtist = normalize(local.artist ?? '');
+
+            // Heuristic: Exact match of simplified strings
+            // Check title match AND (artist match OR artist is unknown/empty in one side)
+            // Stricter: Require artist match if artist exists
+            bool artistMatch = false;
+            if (sArtist.isNotEmpty && lArtist.isNotEmpty) {
+              artistMatch =
+                  sArtist.contains(lArtist) || lArtist.contains(sArtist);
+            } else {
+              // Permissive matching: If one side is missing artist info,
+              // we allow a match based on title alone if it's an exact match.
+              artistMatch = true;
+            }
+
+            if (artistMatch && (lTitle == sTitle || lTitle.contains(sTitle))) {
+              if (uniqueProposalIds.add("${playlist.id}_${song.id}")) {
+                newProposals.add(
+                  UpgradeProposal(
+                    playlistId: playlist.id,
+                    songId: song.id,
+                    songTitle: song.title,
+                    songArtist: song.artist,
+                    songAlbum: song.album,
+                    localPath: local.data,
+                    localId: local.id,
+                  ),
+                );
+              }
+              break; // Found a match for this song, move to next song
+            }
+          }
+        }
+      }
+
+      if (newProposals.isNotEmpty) {
+        _upgradeProposals = newProposals;
+        notifyListeners();
+        LogService().log(
+          "Found ${newProposals.length} local upgrades available.",
+        );
+      }
+    } catch (e) {
+      LogService().log("Error scanning for local upgrades: $e");
+    }
+  }
+
+  Future<void> applyUpgrades(List<UpgradeProposal> toApply) async {
+    if (toApply.isEmpty) return;
+
+    for (var proposal in toApply) {
+      // Get playlist
+      final index = _playlists.indexWhere((p) => p.id == proposal.playlistId);
+      if (index == -1) continue;
+
+      final songIndex = _playlists[index].songs.indexWhere(
+        (s) => s.id == proposal.songId,
+      );
+      if (songIndex == -1) continue;
+
+      // Update Song
+      final original = _playlists[index].songs[songIndex];
+      final updated = original.copyWith(
+        localPath: proposal.localPath,
+        // We keep the original metadata (Title/Artist) as source of truth if user liked it,
+        // OR we could update it to match file.
+        // User said "sostituendo la canzone online con quello offline".
+        // keeping metadata is usually safer for UI consistency, but valid local path enables offline play.
+        // We definitely set localPath.
+        // We might want to set isValid=true if it was invalid.
+        isValid: true,
+      );
+
+      _playlists[index].songs[songIndex] = updated;
+    }
+
+    await _playlistService.saveAll(_playlists);
+    _upgradeProposals.clear();
+    notifyListeners();
   }
 
   Future<void> _loadArtistImagesCache() async {
@@ -926,6 +1071,21 @@ class RadioProvider with ChangeNotifier {
     return p.name;
   }
 
+  Future<void> addSongToPlaylist(String playlistId, SavedSong song) async {
+    if (playlistId.startsWith('local_')) return;
+    await _playlistService.addSongToPlaylist(playlistId, song);
+    await _loadPlaylists();
+  }
+
+  Future<void> addSongsToPlaylist(
+    String playlistId,
+    List<SavedSong> songs,
+  ) async {
+    if (playlistId.startsWith('local_')) return;
+    await _playlistService.addSongsToPlaylist(playlistId, songs);
+    await _loadPlaylists();
+  }
+
   Future<void> renamePlaylist(String id, String newName) async {
     if (id.startsWith('local_')) return;
     await _playlistService.renamePlaylist(id, newName);
@@ -965,8 +1125,6 @@ class RadioProvider with ChangeNotifier {
     String fromPayloadId,
     String toPayloadId,
   ) async {
-    if (fromPayloadId.startsWith('local_') || toPayloadId.startsWith('local_'))
-      return;
     await _playlistService.copySong(songId, fromPayloadId, toPayloadId);
     await _loadPlaylists();
   }
@@ -976,8 +1134,6 @@ class RadioProvider with ChangeNotifier {
     String fromPayloadId,
     String toPayloadId,
   ) async {
-    if (fromPayloadId.startsWith('local_') || toPayloadId.startsWith('local_'))
-      return;
     await _playlistService.copySongs(songIds, fromPayloadId, toPayloadId);
     await _loadPlaylists();
   }
@@ -2698,17 +2854,29 @@ class RadioProvider with ChangeNotifier {
       String? videoId;
 
       if (song.localPath != null) {
-        await playYoutubeAudio(
-          song.localPath!,
-          song.id,
-          playlistId: playlistId,
-          overrideTitle: song.title,
-          overrideArtist: song.artist,
-          overrideAlbum: song.album,
-          overrideArtUri: song.artUri,
-          isLocal: true,
-        );
-        return;
+        final file = File(song.localPath!);
+        if (await file.exists()) {
+          await playYoutubeAudio(
+            song.localPath!,
+            song.id,
+            playlistId: playlistId,
+            overrideTitle: song.title,
+            overrideArtist: song.artist,
+            overrideAlbum: song.album,
+            overrideArtUri: song.artUri,
+            isLocal: true,
+          );
+          return;
+        } else {
+          LogService().log(
+            "Local file not found: ${song.localPath}. Marking invalid.",
+          );
+          _audioOnlySongId = song
+              .id; // required for _markCurrentSongAsInvalid to work correctly
+          _markCurrentSongAsInvalid();
+          _playNextInPlaylist();
+          return;
+        }
       }
 
       if (song.youtubeUrl != null) {
@@ -3506,9 +3674,22 @@ class RadioProvider with ChangeNotifier {
   }
 
   void _markCurrentSongAsInvalid() async {
-    // Connectivity Check: Do NOT mark invalid if internet is down
+    bool isLocal = false;
+    if (_audioOnlySongId != null) {
+      for (var p in _playlists) {
+        try {
+          final s = p.songs.firstWhere((s) => s.id == _audioOnlySongId);
+          if (s.localPath != null || s.id.startsWith('local_')) {
+            isLocal = true;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Connectivity Check: Do NOT mark invalid if internet is down (unless it is a local file)
     final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
+    if (connectivityResult.contains(ConnectivityResult.none) && !isLocal) {
       LogService().log("Blocking 'Mark Invalid' - No Internet Connection");
       return;
     }
@@ -4026,6 +4207,120 @@ class RadioProvider with ChangeNotifier {
     } else {
       // Error case: Do not cache, allow retry
       return null;
+    }
+  }
+
+  Future<void> findMissingArtworks({String? playlistId}) async {
+    final List<SavedSong> toProcess = [];
+    if (playlistId != null) {
+      try {
+        final p = _playlists.firstWhere((p) => p.id == playlistId);
+        for (var s in p.songs) {
+          if (s.artUri == null ||
+              s.artUri!.isEmpty ||
+              s.artUri!.contains('placeholder') ||
+              s.album == 'Unknown Album' ||
+              s.album.isEmpty) {
+            toProcess.add(s);
+          }
+        }
+      } catch (_) {
+        // If it's a temp playlist (artist/album view), we can't find it by ID in _playlists.
+        // In this case, we'll just process all songs in the library that match the missing criteria.
+        // This is safer than trying to pass a song list through multiple layers.
+        for (var s in _allUniqueSongs) {
+          if (s.artUri == null ||
+              s.artUri!.isEmpty ||
+              s.artUri!.contains('placeholder') ||
+              s.album == 'Unknown Album' ||
+              s.album.isEmpty) {
+            toProcess.add(s);
+          }
+        }
+      }
+    } else {
+      // Process all unique songs that are missing art
+      for (var s in _allUniqueSongs) {
+        if (s.artUri == null ||
+            s.artUri!.isEmpty ||
+            s.artUri!.contains('placeholder') ||
+            s.album == 'Unknown Album' ||
+            s.album.isEmpty) {
+          toProcess.add(s);
+        }
+      }
+    }
+
+    if (toProcess.isEmpty) return;
+
+    bool anyChanged = false;
+    // Use a set to avoid processing same song twice
+    final processIds = toProcess.map((s) => s.id).toSet();
+
+    for (var songId in processIds) {
+      final song = _allUniqueSongs.firstWhere(
+        (s) => s.id == songId,
+        orElse: () => toProcess.firstWhere((tp) => tp.id == songId),
+      );
+
+      try {
+        final results = await _musicMetadataService.searchSongs(
+          query: "${song.title} ${song.artist}",
+          limit: 1,
+        );
+
+        if (results.isNotEmpty) {
+          final match = results.first.song;
+          if (match.artUri != null && match.artUri!.isNotEmpty) {
+            // Update metadata in all playlists
+            bool songChanged = false;
+            for (int i = 0; i < _playlists.length; i++) {
+              final playlist = _playlists[i];
+              final songIndex = playlist.songs.indexWhere(
+                (s) => s.id == songId,
+              );
+              if (songIndex != -1) {
+                final updatedSongs = List<SavedSong>.from(playlist.songs);
+                updatedSongs[songIndex] = updatedSongs[songIndex].copyWith(
+                  artUri: match.artUri,
+                  album:
+                      (updatedSongs[songIndex].album == 'Unknown Album' ||
+                          updatedSongs[songIndex].album.isEmpty)
+                      ? match.album
+                      : updatedSongs[songIndex].album,
+                );
+                _playlists[i] = playlist.copyWith(songs: updatedSongs);
+                songChanged = true;
+                anyChanged = true;
+              }
+            }
+            if (songChanged) {
+              // Update allUniqueSongs too
+              final idx = _allUniqueSongs.indexWhere((s) => s.id == songId);
+              if (idx != -1) {
+                _allUniqueSongs[idx] = _allUniqueSongs[idx].copyWith(
+                  artUri: match.artUri,
+                  album:
+                      (_allUniqueSongs[idx].album == 'Unknown Album' ||
+                          _allUniqueSongs[idx].album.isEmpty)
+                      ? match.album
+                      : _allUniqueSongs[idx].album,
+                );
+              }
+            }
+          }
+        }
+      } catch (e) {
+        LogService().log("Error finding artwork for ${song.title}: $e");
+      }
+
+      // Small delay to avoid rate limits
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    if (anyChanged) {
+      await _playlistService.saveAll(_playlists);
+      notifyListeners();
     }
   }
 
