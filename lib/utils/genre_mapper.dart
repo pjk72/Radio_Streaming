@@ -29,8 +29,11 @@ class GenreMapper {
     // This creates an image pertinent to the genre name on the fly.
     // Improve prompt specifically for "Mix" or generic terms to ensure vibrant style
     String promptTerm = genre;
-    if (lower == 'mix' || lower == 'favorites') {
+    if (lower == 'mix') {
       promptTerm = 'colorful abstract musical variety';
+    }
+    if (lower == 'favorites') {
+      promptTerm = 'colorful abstract favorites music';
     }
 
     final safeGenre = Uri.encodeComponent(promptTerm);
@@ -39,6 +42,7 @@ class GenreMapper {
     final seed = lower.hashCode;
 
     // Using Pollinations.ai for free generation
-    return "https://image.pollinations.ai/prompt/abstract%20music%20genre%20$safeGenre%20wallpaper%20aesthetic%20vibrant%20minimalist?width=800&height=800&nologo=true&seed=$seed";
+    //return "https://image.pollinations.ai/prompt/abstract%20music%20genre%20$safeGenre%20wallpaper%20aesthetic%20vibrant%20minimalist?width=800&height=800&nologo=true&seed=$seed";
+    return "https://image.pollinations.ai/prompt/music%20genre%20$safeGenre%20wallpaper%20aesthetic%20vibrant%20minimalist?width=800&height=800&nologo=true&seed=$seed";
   }
 }
