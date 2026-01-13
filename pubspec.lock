@@ -374,14 +374,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.6.0"
-  flutter_ironsource_x:
-    dependency: "direct main"
-    description:
-      name: flutter_ironsource_x
-      sha256: c10be2f12de9572e34995c5a3befd247b076abc41bd6bb68fb6e39e12f67da2d
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.7.4"
   flutter_keyboard_visibility:
     dependency: transitive
     description:

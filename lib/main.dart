@@ -10,15 +10,16 @@ import 'providers/radio_provider.dart';
 import 'providers/theme_provider.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'services/backup_service.dart';
-import 'services/log_service.dart';
 import 'screens/login_screen.dart';
-import 'package:flutter_ironsource_x/ironsource.dart';
+
 import 'package:audio_service/audio_service.dart';
+
 import 'services/radio_audio_handler.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/background_tasks.dart';
 import 'widgets/global_hidden_player.dart';
 import 'widgets/connectivity_banner.dart';
+import 'widgets/admob_banner_widget.dart';
 
 late AudioHandler audioHandler;
 
@@ -76,23 +77,6 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
 
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
         MobileAds.instance.initialize();
-        // Initialize IronSource
-        try {
-          LogService().log("Initializing IronSource SDK...");
-          await IronSource.initialize(appKey: '24c9e07a5');
-          LogService().log("IronSource Initialized Successfully");
-          debugPrint("IronSource Initialized");
-
-          // Validate Integration
-          await IronSource.validateIntegration();
-          final advertiserId = await IronSource.getAdvertiserId();
-          LogService().log(
-            "IronSource Integration Validated. AdvertiserID: $advertiserId",
-          );
-        } catch (e) {
-          LogService().log("IronSource Init Error: $e");
-          debugPrint("IronSource Init Error: $e");
-        }
       }
 
       if (mounted) {
@@ -140,8 +124,9 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         home: Scaffold(
-          backgroundColor:
-              Colors.blue, // DEBUG: Blue background to verify rendering
+          backgroundColor: const Color(
+            0xFF0a0a0f,
+          ), // Set a consistent background color
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -227,11 +212,27 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         title: 'MusicStream',
         debugShowCheckedModeBanner: false,
         builder: (context, child) {
-          return Stack(
+          final provider = Provider.of<RadioProvider>(context);
+          final isLoggedIn = provider.backupService.currentUser != null;
+          final isSupportedPlatform =
+              !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+          return Column(
             children: [
-              child!,
-              const GlobalHiddenPlayer(), // Persists across navigation
-              const ConnectivityBanner(), // Shows "No Internet" when offline
+              Expanded(
+                child: Stack(
+                  children: [
+                    child!,
+                    const GlobalHiddenPlayer(), // Persists across navigation
+                    const ConnectivityBanner(), // Shows "No Internet" when offline
+                  ],
+                ),
+              ),
+              if (isLoggedIn && isSupportedPlatform)
+                Container(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: const SafeArea(top: false, child: AdMobBannerWidget()),
+                ),
             ],
           );
         },

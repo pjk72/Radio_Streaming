@@ -10,7 +10,6 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
-import '../widgets/admob_banner_widget.dart'; // Added Import
 
 import 'artist_details_screen.dart';
 import 'album_details_screen.dart';
@@ -203,7 +202,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           // 2. Blur / Dark Overlay
           BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(color: Colors.black.withOpacity(0.6)),
+            child: Container(color: Colors.black.withValues(alpha: 0.6)),
           ),
 
           // 3. Content
@@ -235,7 +234,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           // 4. Lyrics "Tendina" (Draggable Pull-up Sheet)
           Positioned(
             left: 0,
-            bottom: 50, // Raise by banner height
+            bottom: 0, // Raise by banner height
             top: 0,
             width: isLandscape
                 ? MediaQuery.of(context).size.width * 0.5
@@ -245,18 +244,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               provider,
               visualizerColor,
               isLandscape: isLandscape,
-            ),
-          ),
-
-          // 5. Bottom Banner Ad
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 50,
-            child: Container(
-              color: Colors.black, // Match background
-              child: const AdMobBannerWidget(),
             ),
           ),
         ],
@@ -296,7 +283,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
             child: Container(
-              color: Colors.black.withOpacity(0.7),
+              color: Colors.black.withValues(alpha: 0.7),
               child: Stack(
                 children: [
                   // Scrolling Lyrics Content
@@ -379,7 +366,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.black,
-                              Colors.black.withOpacity(0.85),
+                              Colors.black.withValues(alpha: 0.85),
                               Colors.transparent,
                             ],
                             stops: const [0.0, 0.7, 1.0],
@@ -413,7 +400,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                 children: [
                                   Icon(
                                     Icons.lyrics_rounded,
-                                    color: accentColor.withOpacity(0.7),
+                                    color: accentColor.withValues(alpha: 0.7),
                                     size: 20,
                                   ),
                                   const SizedBox(width: 10),
@@ -512,14 +499,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
           //const SizedBox(height: 60), // More top space
           SizedBox(
-            height: 300,
+            height: 250,
             child:
                 provider.currentPlayingPlaylistId != null &&
                     provider.activeQueue.isNotEmpty
-                ? _buildCarousel(context, provider, height: 320)
-                : _buildAlbumArt(context, provider, mainImage, 320),
+                ? _buildCarousel(context, provider, height: 270)
+                : _buildAlbumArt(context, provider, mainImage, 270),
           ),
-          const SizedBox(height: 24), // Space between art and info
+          const SizedBox(height: 12), // Reduced space between art and info
           // Bottom Section: Info + Controls + Visualizer
           _buildBottomSection(
             context,
@@ -542,7 +529,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     String? bgImage,
   ) {
     final double screenHeight = MediaQuery.of(context).size.height;
-    final double artSize = (screenHeight * 0.45).clamp(140.0, 200.0);
+    final double artSize = (screenHeight * 0.4).clamp(120.0, 180.0);
 
     return Column(
       children: [
@@ -710,7 +697,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
                 ),
@@ -726,7 +713,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         child: Icon(
                           Icons.music_note_rounded,
                           size: 80,
-                          color: Colors.white.withOpacity(0.5),
+                          color: Colors.white.withValues(alpha: 0.5),
                         ),
                       );
                     },
@@ -735,7 +722,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     child: Icon(
                       Icons.music_note_rounded,
                       size: 80,
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withValues(alpha: 0.5),
                     ),
                   ),
           ),
@@ -847,7 +834,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.8),
+                          color: Colors.white.withValues(alpha: 0.8),
                           fontSize: 18,
                           decoration:
                               (provider.currentArtist.isNotEmpty &&
@@ -870,7 +857,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
+                        color: Colors.white.withValues(alpha: 0.6),
                         fontSize: 14,
                       ),
                     ),
@@ -919,7 +906,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.white.withOpacity(0.2),
+                              color: Colors.white.withValues(alpha: 0.2),
                               blurRadius: 20,
                               offset: const Offset(0, 5),
                             ),
@@ -1100,12 +1087,12 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
             ),
           ),
 
-          SizedBox(height: isLandscape ? 95 : 10),
+          SizedBox(height: isLandscape ? 95 : 30),
           // Visualizer (Bottom)
           AnimatedContainer(
             duration: const Duration(milliseconds: 600),
             curve: Curves.fastOutSlowIn,
-            height: isLandscape ? 40 : 130, // Shorter in landscape
+            height: isLandscape ? 40 : 100, // Reduced height to raise layout
             child: provider.isPlaying
                 ? Opacity(
                     opacity:
@@ -1412,7 +1399,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withValues(alpha: 0.5),
                       blurRadius: 20,
                       offset: const Offset(0, 20),
                     ),

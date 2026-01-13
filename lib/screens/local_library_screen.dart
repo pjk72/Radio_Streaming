@@ -43,9 +43,6 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
 
       for (var existing in localPlaylists) {
         final path = _extractPathFromId(existing.id);
-        final nameOnDevice = path != null
-            ? path.split(Platform.pathSeparator).last
-            : null;
 
         // Use a flag to track if we found this playlist on device
         bool foundOnDevice = path != null && folders.containsKey(path);
@@ -53,7 +50,6 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         if (foundOnDevice) {
           // Folder exists at same path. Check for name or content change.
           final deviceSongs = folders[path]!;
-          final currentName = path.split(Platform.pathSeparator).last;
 
           final savedSongs = deviceSongs
               .map((s) => _mapToSavedSong(s))
@@ -69,12 +65,10 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
             }
           }
 
-          // SYNC NAME & CONTENT: If path is same but name or content differs
-          if (contentChanged || existing.name != currentName) {
-            final updatedPlaylist = existing.copyWith(
-              name: currentName,
-              songs: savedSongs,
-            );
+          // SYNC CONTENT: If path is same, we only update if content changed.
+          // We don't overwrite the name because it might have been renamed in-app.
+          if (contentChanged) {
+            final updatedPlaylist = existing.copyWith(songs: savedSongs);
             await _playlistService.addPlaylist(updatedPlaylist);
             // Enrich metadata in background
             radio.enrichPlaylistMetadata(existing.id);
@@ -308,11 +302,16 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
                 itemBuilder: (ctx, index) {
                   final path = sortedKeys[index];
                   final songs = _folders[path]!;
-                  final name = path.split(Platform.pathSeparator).last;
                   final id = _generatePlaylistId(path);
 
-                  // Check if exists in RadioProvider playlists
-                  final isAdded = radio.playlists.any((p) => p.id == id);
+                  // Check if exists in RadioProvider playlists (to get potentially renamed name)
+                  final existingP = radio.playlists
+                      .where((p) => p.id == id)
+                      .toList();
+                  final isAdded = existingP.isNotEmpty;
+                  final name = isAdded
+                      ? existingP.first.name
+                      : path.split(Platform.pathSeparator).last;
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),

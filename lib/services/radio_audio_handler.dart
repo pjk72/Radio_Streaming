@@ -72,22 +72,6 @@ class RadioAudioHandler extends BaseAudioHandler
   Duration _lastStuckCheckPosition = Duration.zero;
   int _stuckSecondsCount = 0;
 
-  static const _addToPlaylistControl = MediaControl(
-    androidIcon: 'drawable/ic_add',
-    label: 'Like',
-    action: MediaAction.custom,
-    customAction: CustomMediaAction(name: 'add_to_playlist'),
-  );
-
-  static const _addedControl = MediaControl(
-    androidIcon: 'drawable/ic_check_circle',
-    label: 'Liked',
-    action: MediaAction.custom,
-    customAction: CustomMediaAction(name: 'noop'),
-  );
-
-  bool _isCurrentSongSaved = false;
-
   // StreamSubscriptions to manage listeners when replacing player
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _playerCompleteSubscription;
@@ -204,7 +188,13 @@ class RadioAudioHandler extends BaseAudioHandler
         if (playbackState.value.playing &&
             mediaItem.value?.extras?['type'] != 'playlist_song') {
           if (_recognitionTimer == null || !_recognitionTimer!.isActive) {
-            _attemptRecognition();
+            // Delay recognition by 5 seconds to match Application Rules
+            Timer(const Duration(seconds: 5), () {
+              if (playbackState.value.playing &&
+                  mediaItem.value?.extras?['type'] != 'playlist_song') {
+                _attemptRecognition();
+              }
+            });
           }
         }
       } else {
@@ -444,15 +434,75 @@ class RadioAudioHandler extends BaseAudioHandler
             .map((e) => int.tryParse(e) ?? -1)
             .where((e) => e != -1)
             .toSet();
+
+        // Default to favorites context if favorites exist
+        if (_favoriteStationIds.isNotEmpty) {
+          _radioSkipContext = 'favorites';
+        }
       }
+
+      // Ensure images are loaded (Application Rule)
+      _ensureStationImages();
     } catch (e) {
       // Fallback
     }
   }
 
+  void _ensureStationImages() {
+    bool changed = false;
+    for (int i = 0; i < _stations.length; i++) {
+      final s = _stations[i];
+      if (s.logo == null || s.logo!.isEmpty) {
+        final split = s.genre.split(RegExp(r'[|/,]'));
+        if (split.isNotEmpty) {
+          final firstGenre = split.first.trim();
+          if (firstGenre.isNotEmpty) {
+            final img = GenreMapper.getGenreImage(firstGenre);
+            if (img != null) {
+              _stations[i] = Station(
+                id: s.id,
+                name: s.name,
+                genre: s.genre,
+                url: s.url,
+                icon: s.icon,
+                logo: img,
+                color: s.color,
+                category: s.category,
+              );
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      _saveStations();
+    }
+  }
+
+  Future<void> _saveStations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String encoded = jsonEncode(
+        _stations.map((s) => s.toJson()).toList(),
+      );
+      await prefs.setString('saved_stations', encoded);
+    } catch (_) {}
+  }
+
   Future<void> _loadQueue() async {
     // START: Filter logic for Android Auto (Matches Home Screen Favorites)
-    final targetStations = _stations; // Use loaded sorted stations
+    var targetStations = _stations;
+    if (_favoriteStationIds.isNotEmpty) {
+      targetStations = _stations
+          .where((s) => _favoriteStationIds.contains(s.id))
+          .toList();
+    }
+    // Fallback if filtering resulted in empty list (paranoid check)
+    if (targetStations.isEmpty) {
+      targetStations = _stations;
+    }
     // END: Filter logic
     final queueItems = targetStations
         .map(
@@ -1198,35 +1248,6 @@ class RadioAudioHandler extends BaseAudioHandler
           await _player.setVolume(vol);
         } catch (_) {}
       }
-    } else if (name == 'add_to_playlist') {
-      final item = mediaItem.value;
-      if (item != null) {
-        final song = SavedSong(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          title: item.title,
-          artist: item.artist ?? 'Unknown',
-          album: item.album ?? 'Unknown',
-          artUri: item.artUri.toString(),
-          dateAdded: DateTime.now(),
-          youtubeUrl: item.extras?['url'],
-        );
-
-        // Lookup station genre
-        String genre = "Mix";
-        final url = item.extras?['url'];
-        if (url != null) {
-          try {
-            final station = _stations.firstWhere((s) => s.url == url);
-            genre = station.genre.split('|').first.trim();
-            genre = genre.split('/').first.trim();
-          } catch (_) {}
-        }
-
-        await _playlistService.addToGenrePlaylist(genre, song);
-        _isCurrentSongSaved = true;
-        _broadcastState(_player.state);
-        // Show Toast or notification? AudioHandler can't show toast easily.
-      }
     } else if (name == 'toggle_shuffle') {
       final newMode = _isShuffleMode
           ? AudioServiceShuffleMode.none
@@ -1353,10 +1374,6 @@ class RadioAudioHandler extends BaseAudioHandler
       extras: extras,
     );
     mediaItem.add(newItem);
-    _isCurrentSongSaved = await _playlistService.isSongInFavorites(
-      title,
-      artist,
-    );
 
     /* GAPLESS: Don't force buffering state initially
     playbackState.add(
@@ -1490,7 +1507,7 @@ class RadioAudioHandler extends BaseAudioHandler
     if (!_internalRetry) {
       _retryCount = 0;
     }
-    _isCurrentSongSaved = false;
+
     _isInitialBuffering = true; // Flag that we are starting new
 
     // RESET PLAYLIST STATE: Ensure we are in "Radio Mode"
@@ -1564,10 +1581,6 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     mediaItem.add(newItem);
-    _isCurrentSongSaved = await _playlistService.isSongInFavorites(
-      title,
-      artist,
-    );
 
     // Force Buffering/Playing state so Service stays alive
     playbackState.add(
@@ -1719,10 +1732,6 @@ class RadioAudioHandler extends BaseAudioHandler
   @override
   Future<void> updateMediaItem(MediaItem mediaItem) async {
     this.mediaItem.add(mediaItem);
-    _isCurrentSongSaved = await _playlistService.isSongInFavorites(
-      mediaItem.title,
-      mediaItem.artist ?? '',
-    );
     _broadcastState(_player.state);
 
     // Persist metadata updates for quick restore
@@ -2064,24 +2073,6 @@ class RadioAudioHandler extends BaseAudioHandler
       standardControls.add(
         _isShuffleMode ? _shuffleControl : _sequentialControl,
       );
-    } else {
-      // Radio: Show Like/Liked button
-      // Only show if we have recognized metadata (not just station info)
-      bool showLikeControls = false;
-      final item = mediaItem.value;
-      if (item != null) {
-        // Strict Check: Only show Like button if ARTIST is present.
-        // This ensures we don't show it when only the Station Name (Title) is visible.
-        if (item.artist != null && item.artist!.isNotEmpty) {
-          showLikeControls = true;
-        }
-      }
-
-      if (showLikeControls) {
-        standardControls.add(
-          _isCurrentSongSaved ? _addedControl : _addToPlaylistControl,
-        );
-      }
     }
 
     // System Actions
@@ -2644,10 +2635,6 @@ class RadioAudioHandler extends BaseAudioHandler
           artUri: station?.logo != null ? Uri.parse(station!.logo!) : null,
         );
         mediaItem.add(newMediaItem);
-        _isCurrentSongSaved = await _playlistService.isSongInFavorites(
-          title,
-          artists ?? "",
-        );
 
         // Try to find artwork from ACRCloud
         String? acrArtwork;

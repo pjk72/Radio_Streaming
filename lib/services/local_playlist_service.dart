@@ -82,4 +82,51 @@ class LocalPlaylistService {
       isValid: true,
     );
   }
+
+  Future<String?> findSongOnDevice(
+    String title,
+    String artist, {
+    String? filename,
+  }) async {
+    try {
+      bool hasPermission = await _audioQuery.checkAndRequest();
+      if (!hasPermission) return null;
+
+      // Query songs with title match
+      List<SongModel> songs = await _audioQuery.querySongs(
+        sortType: null,
+        orderType: OrderType.ASC_OR_SMALLER,
+        uriType: UriType.EXTERNAL,
+        ignoreCase: true,
+      );
+
+      final normalizedTitle = title.trim().toLowerCase();
+      final normalizedArtist = artist.trim().toLowerCase();
+      final normalizedFilename = filename?.trim().toLowerCase();
+
+      for (var song in songs) {
+        // 1. Check by filename (highest confidence if provided)
+        if (normalizedFilename != null) {
+          final songFilename = song.data
+              .split(Platform.pathSeparator)
+              .last
+              .toLowerCase();
+          if (songFilename == normalizedFilename) {
+            return song.data;
+          }
+        }
+
+        // 2. Fallback to Title + Artist
+        if (song.title.trim().toLowerCase() == normalizedTitle) {
+          if (normalizedArtist == 'unknown artist' ||
+              song.artist?.trim().toLowerCase() == normalizedArtist) {
+            return song.data; // Found path
+          }
+        }
+      }
+    } catch (e) {
+      LogService().log("LocalPlaylistService findSongOnDevice Error: $e");
+    }
+    return null;
+  }
 }

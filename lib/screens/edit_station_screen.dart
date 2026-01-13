@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io'; // Added for Platform.localeName
 import 'package:audioplayers/audioplayers.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
 import '../utils/genre_mapper.dart';
@@ -159,7 +161,12 @@ class _EditStationScreenState extends State<EditStationScreen> {
     _logoController = TextEditingController(text: widget.station?.logo ?? '');
 
     // Listen to updates for preview
-    _logoController.addListener(() => setState(() {}));
+    _logoController.addListener(() {
+      setState(() {});
+      // Debounce color extraction
+      _debounceColorExtraction();
+    });
+    _nameController.addListener(() => setState(() {}));
 
     // Color Init
     String initialColor =
@@ -205,13 +212,69 @@ class _EditStationScreenState extends State<EditStationScreen> {
     }
   }
 
+  Timer? _debounceTimer;
+
+  void _debounceColorExtraction() {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (_logoController.text.trim().isNotEmpty) {
+        _extractColorFromLogo();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _nameController.dispose();
     _urlController.dispose();
     _logoController.dispose();
     _colorController.dispose();
     super.dispose();
+  }
+
+  Future<void> _extractColorFromLogo() async {
+    final url = _logoController.text.trim();
+    if (url.isEmpty) return;
+
+    try {
+      ImageProvider imageProvider;
+      if (url.startsWith('http')) {
+        imageProvider = NetworkImage(url);
+      } else {
+        // Assume asset
+        imageProvider = AssetImage(url);
+      }
+
+      // Check if PaletteGenerator is available (it should be imported at top)
+      final palette = await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 20,
+      );
+
+      Color? extracted = palette.dominantColor?.color;
+      extracted ??= palette.vibrantColor?.color;
+      extracted ??= palette.lightVibrantColor?.color;
+      extracted ??= palette.darkVibrantColor?.color;
+
+      if (extracted != null && mounted) {
+        // Convert to Hex
+        final hex =
+            '#${extracted.value.toRadixString(16).substring(2).toUpperCase()}';
+        _colorController.text = hex;
+        setState(() {}); // Refresh UI
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Color updated from logo!"),
+            backgroundColor: extracted,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error extracting color: $e");
+    }
   }
 
   String _formatColor(String color) {
@@ -227,9 +290,11 @@ class _EditStationScreenState extends State<EditStationScreen> {
     if (hexColor.length == 6) {
       hexColor = "FF$hexColor";
     }
-    if (hexColor.length == 8) {
-      return Color(int.tryParse("0x$hexColor") ?? 0xFFFFFFFF);
-    }
+    try {
+      if (hexColor.length == 8) {
+        return Color(int.parse("0x$hexColor"));
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -248,8 +313,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
       s.category.split('|').forEach((c) => allCategories.add(c.trim()));
     }
     // Add defaults if missing
-    allCategories.addAll(["International", "Italian", "News", "Sports"]);
-    allGenres.addAll(["Pop", "Rock", "News", "Jazz", "Classical"]);
+    allCategories.addAll([]);
+    allGenres.addAll([]);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -400,22 +465,44 @@ class _EditStationScreenState extends State<EditStationScreen> {
                 "Stream URL",
                 _urlController,
                 Icons.link,
-                suffix: IconButton(
-                  icon: _isTestingLink
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                        )
-                      : Icon(
-                          Icons.play_circle_fill,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                  tooltip: "Test Link",
-                  onPressed: _isTestingLink ? null : _testStreamUrl,
+                suffix: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        Icons.image_search,
+                        color: _nameController.text.trim().isNotEmpty
+                            ? Theme.of(context).primaryColor
+                            : Theme.of(context).disabledColor,
+                      ),
+                      tooltip: "Search Default Logo",
+                      onPressed:
+                          _nameController.text.trim().isNotEmpty &&
+                              !_isSearching
+                          ? () => _searchAndShowLogos(
+                              context,
+                              _nameController.text.trim(),
+                            )
+                          : null,
+                    ),
+                    IconButton(
+                      icon: _isTestingLink
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            )
+                          : Icon(
+                              Icons.play_circle_fill,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                      tooltip: "Test Link",
+                      onPressed: _isTestingLink ? null : _testStreamUrl,
+                    ),
+                  ],
                 ),
               ),
 
@@ -1213,6 +1300,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
       if (selected != null && mounted) {
         setState(() => _logoController.text = selected);
+        // Automatic Color Extraction
+        _extractColorFromLogo();
       }
     } catch (e) {
       if (mounted) {

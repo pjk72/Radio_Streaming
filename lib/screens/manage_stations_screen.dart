@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 
 import '../utils/icon_library.dart';
+import '../widgets/tutorial_create_radio_wizard.dart';
 import 'edit_station_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -88,7 +89,23 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                 ),
               ),
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        actions: [],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_fix_high),
+            tooltip: 'Station Wizard',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => Scaffold(
+                    appBar: AppBar(title: const Text('Add Station Wizard')),
+                    body: const TutorialCreateRadioWizard(),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Theme.of(context).primaryColor,

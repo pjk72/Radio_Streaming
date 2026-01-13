@@ -34,6 +34,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/upgrade_proposal.dart';
+import '../services/local_playlist_service.dart';
 
 // ...
 
@@ -395,6 +396,7 @@ class RadioProvider with ChangeNotifier {
   final SpotifyService _spotifyService = SpotifyService();
   SpotifyService get spotifyService => _spotifyService;
   final ACRCloudService _acrCloudService = ACRCloudService();
+  final LocalPlaylistService _localPlaylistService = LocalPlaylistService();
 
   List<Playlist> _playlists = [];
 
@@ -1010,7 +1012,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> deletePlaylist(String id) async {
-    if (id.startsWith('local_')) return;
+    // Allow deleting local playlists (unchecks them in Local Library)
     await _playlistService.deletePlaylist(id);
     await _loadPlaylists();
   }
@@ -1087,9 +1089,146 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> renamePlaylist(String id, String newName) async {
-    if (id.startsWith('local_')) return;
+    final index = _playlists.indexWhere((p) => p.id == id);
+    if (index != -1 && _playlists[index].creator == 'local') return;
+
     await _playlistService.renamePlaylist(id, newName);
     await _loadPlaylists();
+  }
+
+  Future<void> copyPlaylist(String sourceId, String targetId) async {
+    try {
+      final source = _playlists.firstWhere((p) => p.id == sourceId);
+      if (source.songs.isEmpty) return;
+
+      await _playlistService.addSongsToPlaylist(targetId, source.songs);
+      await _loadPlaylists();
+    } catch (e) {
+      debugPrint("Error copying playlist: $e");
+    }
+  }
+
+  Future<void> updateSongPath(
+    String playlistId,
+    String songId,
+    String newPath,
+  ) async {
+    try {
+      final p = _playlists.firstWhere((p) => p.id == playlistId);
+      final index = p.songs.indexWhere((s) => s.id == songId);
+      if (index != -1) {
+        final s = p.songs[index].copyWith(localPath: newPath);
+        final updatedSongs = List<SavedSong>.from(p.songs);
+        updatedSongs[index] = s;
+        final updatedPlaylist = p.copyWith(songs: updatedSongs);
+
+        await _playlistService.addPlaylist(updatedPlaylist);
+        await _loadPlaylists();
+      }
+    } catch (e) {
+      debugPrint("Error updating song path: $e");
+    }
+  }
+
+  Future<String?> findSongOnDevice(
+    String title,
+    String artist, {
+    String? filename,
+  }) async {
+    return await _localPlaylistService.findSongOnDevice(
+      title,
+      artist,
+      filename: filename,
+    );
+  }
+
+  Future<bool> tryFixLocalSongPath(String playlistId, SavedSong song) async {
+    String? filename;
+    if (song.localPath != null) {
+      filename = song.localPath!.split(Platform.pathSeparator).last;
+    }
+
+    final newPath = await findSongOnDevice(
+      song.title,
+      song.artist,
+      filename: filename,
+    );
+    if (newPath != null) {
+      await updateSongPath(playlistId, song.id, newPath);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> markSongAsInvalid(String playlistId, String songId) async {
+    await _playlistService.markSongAsInvalid(playlistId, songId);
+    if (!_invalidSongIds.contains(songId)) {
+      _invalidSongIds.add(songId);
+    }
+    await _loadPlaylists();
+  }
+
+  Future<void> validateLocalSongsInPlaylist(String playlistId) async {
+    try {
+      final p = _playlists.firstWhere((p) => p.id == playlistId);
+      bool anyChanged = false;
+
+      for (var song in p.songs) {
+        // Only process local songs
+        final isLocal =
+            song.id.startsWith('local_') ||
+            song.localPath != null ||
+            p.creator == 'local';
+        if (!isLocal) continue;
+
+        bool needsCheck = false;
+        if (song.isValid) {
+          if (song.localPath != null) {
+            final f = File(song.localPath!);
+            if (!await f.exists()) {
+              needsCheck = true; // File disappeared
+            }
+          } else {
+            needsCheck = true; // Valid but no path? Should check.
+          }
+        } else {
+          // It's already invalid. Let's see if we can revive it!
+          needsCheck = true;
+        }
+
+        if (needsCheck) {
+          final newPath = await _localPlaylistService.findSongOnDevice(
+            song.title,
+            song.artist,
+          );
+
+          if (newPath != null) {
+            debugPrint("Found/Fixed local song: ${song.title} at $newPath");
+            // 1. Update Path
+            await updateSongPath(playlistId, song.id, newPath);
+
+            // 2. Unmark if it was invalid
+            if (!song.isValid) {
+              await unmarkSongAsInvalid(song.id, playlistId: playlistId);
+            }
+            anyChanged = true;
+          } else if (song.isValid) {
+            // Still not found and was valid -> Mark as invalid
+            debugPrint(
+              "Song ${song.title} not found on device, marking invalid.",
+            );
+            await markSongAsInvalid(playlistId, song.id);
+            anyChanged = true;
+          }
+        }
+      }
+
+      if (anyChanged) {
+        await _loadPlaylists();
+      }
+    } catch (e) {
+      debugPrint("Error validating/reviving local songs: $e");
+    }
   }
 
   Future<void> reorderPlaylists(int oldIndex, int newIndex) async {
@@ -2027,8 +2166,9 @@ class RadioProvider with ChangeNotifier {
       LogService().log(
         "YouTube Player Error: ${value.errorCode}. Marking song invalid.",
       );
-      _markCurrentSongAsInvalid();
+      final idToInvalidate = _audioOnlySongId;
       playNext(false);
+      _markCurrentSongAsInvalid(songId: idToInvalidate);
       return;
     }
 
@@ -2055,8 +2195,9 @@ class RadioProvider with ChangeNotifier {
           LogService().log(
             "Playback Processing Timeout (>5s in $state). Marking invalid.",
           );
-          _markCurrentSongAsInvalid();
+          final idToInvalidate = _audioOnlySongId;
           playNext(false);
+          _markCurrentSongAsInvalid(songId: idToInvalidate);
           _lastProcessingTime = null;
           return;
         }
@@ -2102,8 +2243,9 @@ class RadioProvider with ChangeNotifier {
                   debugPrint(
                     "Song has had Zero Duration for >5s in Playing State. Marking invalid.",
                   );
-                  _markCurrentSongAsInvalid();
+                  final idToInvalidate = _audioOnlySongId;
                   playNext(false);
+                  _markCurrentSongAsInvalid(songId: idToInvalidate);
                   _zeroDurationStartTime = null;
                 }
               }
@@ -2871,10 +3013,10 @@ class RadioProvider with ChangeNotifier {
           LogService().log(
             "Local file not found: ${song.localPath}. Marking invalid.",
           );
-          _audioOnlySongId = song
-              .id; // required for _markCurrentSongAsInvalid to work correctly
-          _markCurrentSongAsInvalid();
+          // Invalidate FIRST, then go next to ensure consistent state
+          final idToInvalidate = song.id;
           _playNextInPlaylist();
+          _markCurrentSongAsInvalid(songId: idToInvalidate);
           return;
         }
       }
@@ -3673,12 +3815,14 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void _markCurrentSongAsInvalid() async {
+  void _markCurrentSongAsInvalid({String? songId}) async {
+    final targetId = songId ?? _audioOnlySongId;
     bool isLocal = false;
-    if (_audioOnlySongId != null) {
+
+    if (targetId != null) {
       for (var p in _playlists) {
         try {
-          final s = p.songs.firstWhere((s) => s.id == _audioOnlySongId);
+          final s = p.songs.firstWhere((s) => s.id == targetId);
           if (s.localPath != null || s.id.startsWith('local_')) {
             isLocal = true;
             break;
@@ -3694,10 +3838,10 @@ class RadioProvider with ChangeNotifier {
       return;
     }
 
-    if (_audioOnlySongId != null) {
-      LogService().log("Marking Current Song Invalid: $_audioOnlySongId");
-      if (!_invalidSongIds.contains(_audioOnlySongId!)) {
-        _invalidSongIds.add(_audioOnlySongId!);
+    if (targetId != null) {
+      LogService().log("Marking Song Invalid: $targetId");
+      if (!_invalidSongIds.contains(targetId)) {
+        _invalidSongIds.add(targetId);
         LogService().log(
           "Added to invalidSongIds. Count: ${_invalidSongIds.length}",
         );
@@ -3706,14 +3850,9 @@ class RadioProvider with ChangeNotifier {
         bool memoryUpdated = false;
         for (var i = 0; i < _playlists.length; i++) {
           final p = _playlists[i];
-          final index = p.songs.indexWhere((s) => s.id == _audioOnlySongId);
+          final index = p.songs.indexWhere((s) => s.id == targetId);
           if (index != -1) {
             final updatedSong = p.songs[index].copyWith(isValid: false);
-            // We need to update the playlist in the list.
-            // Since Playlist.songs is a List<SavedSong>, we can modify it if mutable,
-            // or replace the Playlist object if immutable.
-            // Assuming Playlist is immutable-ish but songs list is mutable?
-            // Safer to replace the song in the list.
             p.songs[index] = updatedSong;
             memoryUpdated = true;
           }
@@ -3726,20 +3865,18 @@ class RadioProvider with ChangeNotifier {
         notifyListeners();
 
         // 3. Persist ID list
-        SharedPreferences.getInstance().then((prefs) {
-          prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
-          LogService().log("Persisted invalidSongIds to Prefs");
-        });
+        final prefs = await SharedPreferences.getInstance();
+        prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+        LogService().log("Persisted invalidSongIds to Prefs");
 
         // 4. Mark globally in DB (Async)
-        _playlistService.markSongAsInvalidGlobally(_audioOnlySongId!).then((_) {
-          LogService().log("Marked invalid globally via Service");
-        });
+        await _playlistService.markSongAsInvalidGlobally(targetId);
+        LogService().log("Marked invalid globally via Service");
 
         // 5. Update Temp Playlist
         if (_tempPlaylist != null) {
           final index = _tempPlaylist!.songs.indexWhere(
-            (s) => s.id == _audioOnlySongId,
+            (s) => s.id == targetId,
           );
           if (index != -1) {
             _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index].copyWith(
@@ -3751,10 +3888,10 @@ class RadioProvider with ChangeNotifier {
           }
         }
       } else {
-        LogService().log("Song ID $_audioOnlySongId already in invalidSongIds");
+        LogService().log("Song ID $targetId already in invalidSongIds");
       }
     } else {
-      LogService().log("Cannot mark invalid: _audioOnlySongId is null");
+      LogService().log("Cannot mark invalid: targetId is null");
     }
   }
 

@@ -12,6 +12,7 @@ import 'realistic_visualizer.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http; // Add http import
 import 'package:cached_network_image/cached_network_image.dart';
+import 'tutorial_create_radio_wizard.dart';
 
 class NowPlayingHeader extends StatefulWidget {
   final double height;
@@ -663,9 +664,37 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           ),
         ),
 
-        // Upper Status Bar Gradient (Already exists, preserving it)
-
-        // Bottom Gradient (Fade to Background) using the extra space
+        // Add Station Button (Top Right)
+        if (t > 0.6)
+          Positioned(
+            top: dynamicTopPadding,
+            right: 24.0,
+            child: Material(
+              color: Colors.transparent,
+              child: IconButton(
+                icon: const Icon(
+                  Icons.add_circle_outline,
+                  color: Colors.white70,
+                ),
+                tooltip: "Add New Station",
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (ctx) => Scaffold(
+                        appBar: AppBar(
+                          title: const Text("Add Stations"),
+                          backgroundColor: Theme.of(
+                            ctx,
+                          ).scaffoldBackgroundColor,
+                        ),
+                        body: const TutorialCreateRadioWizard(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
       ],
     );
   }

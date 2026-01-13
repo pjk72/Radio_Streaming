@@ -4,7 +4,6 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'album_details_screen.dart';
-import '../widgets/admob_banner_widget.dart';
 import '../providers/radio_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -238,9 +237,9 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.3),
+                  Colors.black.withValues(alpha: 0.3),
                   Colors.transparent,
-                  Colors.black.withOpacity(0.8),
+                  Colors.black.withValues(alpha: 0.8),
                 ],
               ),
             ),
@@ -265,7 +264,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
             left: 0,
             right: 0,
             top: 0,
-            bottom: 50, // Raise to make room for banner
+            bottom: 0,
             child: DraggableScrollableSheet(
               initialChildSize: 0.55,
               minChildSize: 0.3,
@@ -409,8 +408,8 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                         Container(
                                           padding: const EdgeInsets.all(16),
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(
-                                              0.05,
+                                            color: Colors.white.withValues(
+                                              alpha: 0.05,
                                             ),
                                             borderRadius: BorderRadius.circular(
                                               12,
@@ -424,7 +423,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                                 "Biography",
                                                 style: TextStyle(
                                                   color: Colors.white
-                                                      .withOpacity(0.9),
+                                                      .withValues(alpha: 0.9),
                                                   fontWeight: FontWeight.bold,
                                                   fontSize: 18,
                                                 ),
@@ -501,7 +500,9 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                                         ),
                                                     decoration: BoxDecoration(
                                                       color: Colors.white
-                                                          .withOpacity(0.05),
+                                                          .withValues(
+                                                            alpha: 0.05,
+                                                          ),
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                             8,
@@ -522,8 +523,8 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                                           decoration: BoxDecoration(
                                                             color: Colors
                                                                 .blueAccent
-                                                                .withOpacity(
-                                                                  0.2,
+                                                                .withValues(
+                                                                  alpha: 0.2,
                                                                 ),
                                                             borderRadius:
                                                                 BorderRadius.circular(
@@ -574,8 +575,9 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                                                 style: TextStyle(
                                                                   color: Colors
                                                                       .white
-                                                                      .withOpacity(
-                                                                        0.6,
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.6,
                                                                       ),
                                                                   fontSize: 12,
                                                                 ),
@@ -605,8 +607,8 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                           child: Text(
                                             "Latest Release",
                                             style: TextStyle(
-                                              color: Colors.white.withOpacity(
-                                                0.7,
+                                              color: Colors.white.withValues(
+                                                alpha: 0.7,
                                               ),
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
@@ -641,8 +643,8 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                           child: Container(
                                             padding: const EdgeInsets.all(12),
                                             decoration: BoxDecoration(
-                                              color: Colors.white.withOpacity(
-                                                0.05,
+                                              color: Colors.white.withValues(
+                                                alpha: 0.05,
                                               ),
                                               borderRadius:
                                                   BorderRadius.circular(16),
@@ -703,7 +705,9 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                                             "-",
                                                         style: TextStyle(
                                                           color: Colors.white
-                                                              .withOpacity(0.5),
+                                                              .withValues(
+                                                                alpha: 0.5,
+                                                              ),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -905,8 +909,8 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                             Text(
                                               "${album['trackCount'] ?? '?'} tracks",
                                               style: TextStyle(
-                                                color: Colors.white.withOpacity(
-                                                  0.3,
+                                                color: Colors.white.withValues(
+                                                  alpha: 0.3,
                                                 ),
                                                 fontSize: 10,
                                               ),
@@ -920,10 +924,6 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                               );
                             },
                           ),
-
-                          const SliverPadding(
-                            padding: EdgeInsets.only(bottom: 50),
-                          ),
                         ],
                       ),
                     ),
@@ -932,17 +932,6 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
               },
             ),
           ), // End Positioned Wrapper
-          // 5. Botton Banner
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 50,
-            child: Container(
-              color: Colors.black,
-              child: const AdMobBannerWidget(),
-            ),
-          ),
         ],
       ),
     );
@@ -952,7 +941,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white24),
       ),

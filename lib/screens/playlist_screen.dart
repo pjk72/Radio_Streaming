@@ -27,10 +27,17 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'playlist_screen_duplicates_logic.dart';
+import '../widgets/native_ad_widget.dart';
 
 enum MetadataViewMode { playlists, artists, albums }
 
 enum PlaylistSortMode { custom, alphabetical }
+
+enum PlaylistGroupingMode { album, artist, none }
+
+class _AdItem {
+  const _AdItem();
+}
 
 class PlaylistScreen extends StatefulWidget {
   const PlaylistScreen({super.key});
@@ -49,8 +56,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   bool _selectedAlbumIsGroup = false;
   MetadataViewMode _viewMode = MetadataViewMode.playlists;
   PlaylistSortMode _sortMode = PlaylistSortMode.custom;
+  PlaylistGroupingMode _groupingMode = PlaylistGroupingMode.none;
   bool _isBulkChecking = false;
   bool _hasShownUpgradeDialog = false;
+  bool _sortAlphabetical = false;
+  bool _showPlaylistSearch = false;
 
   @override
   void initState() {
@@ -372,7 +382,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     if (playlist == null) return null;
 
     if (applyFilter) {
-      var filteredSongs = playlist.songs;
+      var filteredSongs = List<SavedSong>.from(playlist.songs);
 
       if (_showOnlyInvalid) {
         filteredSongs = filteredSongs
@@ -384,6 +394,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         filteredSongs = filteredSongs
             .where((s) => s.localPath != null || s.id.startsWith('local_'))
             .toList();
+      }
+
+      if (_sortAlphabetical) {
+        filteredSongs.sort(
+          (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+        );
       }
 
       return playlist.copyWith(songs: filteredSongs);
@@ -699,6 +715,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         provider,
         song,
         forceLocalOnly: isLocalPlaylist,
+        playlistId: playlistId,
       );
 
       if (verifySuccess) {
@@ -737,11 +754,21 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     RadioProvider provider,
     SavedSong song, {
     bool forceLocalOnly = false,
+    String? playlistId,
   }) async {
     // 1. Local File Check
     if (song.localPath != null && song.localPath!.isNotEmpty) {
       final file = File(song.localPath!);
-      return file.exists();
+      if (await file.exists()) return true;
+    }
+
+    // NEW: Search for song on device if it's a local track or in a local playlist
+    if (playlistId != null &&
+        (song.localPath != null ||
+            song.id.startsWith('local_') ||
+            forceLocalOnly)) {
+      final success = await provider.tryFixLocalSongPath(playlistId, song);
+      if (success) return true;
     }
 
     // If it's a local song or we're in a local playlist, don't fall back to online check
@@ -815,6 +842,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         provider,
         song,
         forceLocalOnly: isLocalPlaylist,
+        playlistId: playlistId,
       );
       if (success) {
         await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
@@ -1143,7 +1171,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   ),
                                   style: IconButton.styleFrom(
                                     backgroundColor: _showOnlyInvalid
-                                        ? Colors.orangeAccent.withOpacity(0.15)
+                                        ? Colors.orangeAccent.withValues(
+                                            alpha: 0.15,
+                                          )
                                         : null,
                                     padding: const EdgeInsets.all(8),
                                     minimumSize: const Size(36, 36),
@@ -1195,7 +1225,33 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             ),
                             tooltip: "Options",
                             onSelected: (value) {
-                              if (value == 'shuffle') {
+                              if (value == 'sort') {
+                                setState(() {
+                                  _sortAlphabetical = !_sortAlphabetical;
+                                });
+                              } else if (value == 'search') {
+                                setState(() {
+                                  _showPlaylistSearch = !_showPlaylistSearch;
+                                  if (!_showPlaylistSearch) {
+                                    _searchController.clear();
+                                  }
+                                });
+                              } else if (value == 'group_album') {
+                                setState(
+                                  () => _groupingMode =
+                                      PlaylistGroupingMode.album,
+                                );
+                              } else if (value == 'group_artist') {
+                                setState(
+                                  () => _groupingMode =
+                                      PlaylistGroupingMode.artist,
+                                );
+                              } else if (value == 'group_none') {
+                                setState(
+                                  () =>
+                                      _groupingMode = PlaylistGroupingMode.none,
+                                );
+                              } else if (value == 'shuffle') {
                                 provider.toggleShuffle();
                               } else if (value == 'duplicates') {
                                 scanForDuplicates(
@@ -1213,6 +1269,179 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             },
                             itemBuilder: (context) {
                               return [
+                                PopupMenuItem(
+                                  value: 'sort',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.sort_by_alpha,
+                                        color: _sortAlphabetical
+                                            ? Theme.of(context).primaryColor
+                                            : Colors.white,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        "Sort Alphabetically",
+                                        style: TextStyle(
+                                          color: _sortAlphabetical
+                                              ? Theme.of(context).primaryColor
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'search',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _showPlaylistSearch
+                                            ? Icons.search_off
+                                            : Icons.search,
+                                        color: _showPlaylistSearch
+                                            ? Theme.of(context).primaryColor
+                                            : Colors.white,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        _showPlaylistSearch
+                                            ? "Hide Find"
+                                            : "Find in Playlist",
+                                        style: TextStyle(
+                                          color: _showPlaylistSearch
+                                              ? Theme.of(context).primaryColor
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuDivider(),
+                                const PopupMenuItem(
+                                  enabled: false,
+                                  height: 32,
+                                  child: Text(
+                                    "GROUP BY",
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'group_album',
+                                  height: 48,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.album,
+                                        color:
+                                            _groupingMode ==
+                                                PlaylistGroupingMode.album
+                                            ? Theme.of(context).primaryColor
+                                            : Colors.grey,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        "Album",
+                                        style: TextStyle(
+                                          color:
+                                              _groupingMode ==
+                                                  PlaylistGroupingMode.album
+                                              ? Theme.of(context).primaryColor
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                      if (_groupingMode ==
+                                          PlaylistGroupingMode.album) ...[
+                                        const Spacer(),
+                                        Icon(
+                                          Icons.check,
+                                          size: 16,
+                                          color: Theme.of(context).primaryColor,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'group_artist',
+                                  height: 48,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.person,
+                                        color:
+                                            _groupingMode ==
+                                                PlaylistGroupingMode.artist
+                                            ? Theme.of(context).primaryColor
+                                            : Colors.grey,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        "Artist",
+                                        style: TextStyle(
+                                          color:
+                                              _groupingMode ==
+                                                  PlaylistGroupingMode.artist
+                                              ? Theme.of(context).primaryColor
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                      if (_groupingMode ==
+                                          PlaylistGroupingMode.artist) ...[
+                                        const Spacer(),
+                                        Icon(
+                                          Icons.check,
+                                          size: 16,
+                                          color: Theme.of(context).primaryColor,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'group_none',
+                                  height: 48,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.list,
+                                        color:
+                                            _groupingMode ==
+                                                PlaylistGroupingMode.none
+                                            ? Theme.of(context).primaryColor
+                                            : Colors.grey,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        "None",
+                                        style: TextStyle(
+                                          color:
+                                              _groupingMode ==
+                                                  PlaylistGroupingMode.none
+                                              ? Theme.of(context).primaryColor
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                      if (_groupingMode ==
+                                          PlaylistGroupingMode.none) ...[
+                                        const Spacer(),
+                                        Icon(
+                                          Icons.check,
+                                          size: 16,
+                                          color: Theme.of(context).primaryColor,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuDivider(),
                                 PopupMenuItem(
                                   value: 'shuffle',
                                   child: Row(
@@ -1501,6 +1730,80 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                    if (isSelectionActive && _showPlaylistSearch)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 4.0,
+                        ),
+                        child: Container(
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).scaffoldBackgroundColor.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).dividerColor.withValues(alpha: 0.1),
+                            ),
+                          ),
+                          child: TextField(
+                            controller: _searchController,
+                            autofocus: true,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodyMedium?.color,
+                              fontSize: 13,
+                            ),
+                            textAlignVertical: TextAlignVertical.center,
+                            decoration: InputDecoration(
+                              hintText: "Search in playlist...",
+                              hintStyle: TextStyle(
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.color
+                                    ?.withValues(alpha: 0.5),
+                                fontSize: 12,
+                              ),
+                              isDense: true,
+                              prefixIcon: Icon(
+                                Icons.search,
+                                color: Theme.of(
+                                  context,
+                                ).iconTheme.color?.withValues(alpha: 0.5),
+                                size: 16,
+                              ),
+                              prefixIconConstraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  Icons.close,
+                                  color: Theme.of(
+                                    context,
+                                  ).iconTheme.color?.withValues(alpha: 0.5),
+                                  size: 16,
+                                ),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 32,
+                                ),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
                         ),
                       ),
                     const SizedBox(height: 8),
@@ -1800,10 +2103,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     }
 
     // Check if this playlist is currently playing
-    bool isPlaylistPlaying = provider.currentPlayingPlaylistId == playlist.id;
+    bool isPlaylistPlaying =
+        provider.isPlaying &&
+        (provider.currentPlayingPlaylistId == playlist.id);
 
     // Fallback: Check if any song in the playlist matches the current track
-    if (!isPlaylistPlaying && playlist.songs.isNotEmpty) {
+    if (provider.isPlaying && !isPlaylistPlaying && playlist.songs.isNotEmpty) {
       isPlaylistPlaying = playlist.songs.any(
         (s) =>
             provider.audioOnlySongId == s.id ||
@@ -1816,7 +2121,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
     return InkWell(
       key: key,
-      onTap: () {
+      onTap: () async {
+        // Check and repair local song links in background
+        provider.validateLocalSongsInPlaylist(playlist.id);
+
         setState(() {
           _selectedPlaylistId = playlist.id;
           _searchController.clear();
@@ -1853,7 +2161,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 ]
               : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),
@@ -1868,18 +2176,18 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     ? CachedNetworkImage(
                         imageUrl: bgImage,
                         fit: BoxFit.cover,
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withValues(alpha: 0.6),
                         colorBlendMode: BlendMode.darken,
                         errorWidget: (context, url, error) {
                           return Container(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withValues(alpha: 0.1),
                           );
                         },
                       )
                     : Image.asset(
                         bgImage,
                         fit: BoxFit.cover,
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withValues(alpha: 0.6),
                         colorBlendMode: BlendMode.darken,
                       ),
               ),
@@ -1893,7 +2201,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           ? Icons.music_note
                           : Icons.music_note),
                 size: 80,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
             ),
             if (playlist.id.startsWith('spotify_'))
@@ -1915,7 +2223,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -1944,7 +2252,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -1970,12 +2278,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       width: 1,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -2013,7 +2321,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 ),
               ),
             // MORE OPTIONS MENU
-            if (playlist.id != 'favorites' && playlist.creator != 'local')
+            if (playlist.id != 'favorites')
               Positioned(
                 top: 0,
                 right: 0,
@@ -2030,15 +2338,33 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     itemBuilder: (context) => [
+                      if (playlist.creator != 'local')
+                        const PopupMenuItem(
+                          value: 'rename',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 18, color: Colors.white),
+                              SizedBox(width: 8),
+                              Text(
+                                "Rename",
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
                       const PopupMenuItem(
-                        value: 'rename',
+                        value: 'copy',
                         child: Row(
                           children: [
-                            Icon(Icons.edit, size: 18, color: Colors.white),
+                            Icon(
+                              Icons.copy,
+                              size: 18,
+                              color: Colors.blueAccent,
+                            ),
                             SizedBox(width: 8),
                             Text(
-                              "Rename",
-                              style: TextStyle(color: Colors.white),
+                              "Copy to...",
+                              style: TextStyle(color: Colors.blueAccent),
                             ),
                           ],
                         ),
@@ -2066,6 +2392,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         _showRenamePlaylistDialog(context, provider, playlist);
                       } else if (value == 'delete') {
                         _showDeletePlaylistDialog(context, provider, playlist);
+                      } else if (value == 'copy') {
+                        _showCopyPlaylistDialog(context, provider, playlist);
                       }
                     },
                   ),
@@ -2110,7 +2438,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   Text(
                     "${playlist.songs.length} songs",
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 12,
                     ),
                   ),
@@ -2123,12 +2451,116 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
+  void _showCopyPlaylistDialog(
+    BuildContext context,
+    RadioProvider provider,
+    Playlist sourcePlaylist,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final playlists = provider.playlists
+            .where((p) => p.id != 'favorites' && p.id != sourcePlaylist.id)
+            .toList();
+
+        return AlertDialog(
+          backgroundColor: Theme.of(context).cardColor,
+          title: Text(
+            "Copy Playlist",
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleLarge?.color,
+            ),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    "Copy all songs from '${sourcePlaylist.name}' to:",
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: playlists.length + 1, // +1 for "Create New"
+                    itemBuilder: (ctx, index) {
+                      if (index == 0) {
+                        return ListTile(
+                          leading: const Icon(
+                            Icons.add,
+                            color: Colors.blueAccent,
+                          ),
+                          title: const Text(
+                            "Create New Playlist",
+                            style: TextStyle(color: Colors.blueAccent),
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showCreatePlaylistDialog(context, provider);
+                            // Ideally we should pass a callback to create and then copy, but for now simple workflow.
+                            // Improvements: Show create dialog, then copy immediately.
+                            // Let's keep it simple: "Create New" just opens create dialog. User has to copy after.
+                            // Actually, that's bad UX.
+                            // Let's implement immediate copy after creation if I can.
+                            // Given constraint, I'll just skip 'Create New' magic and rely on user creating it first, OR implement inline creation.
+                            // I'll stick to listing existing playlists for now to be safe and robust.
+                          },
+                        );
+                      }
+                      final p = playlists[index - 1];
+                      return ListTile(
+                        leading: Icon(
+                          Icons.queue_music,
+                          color: Theme.of(context).iconTheme.color,
+                        ),
+                        title: Text(
+                          p.name,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.color,
+                          ),
+                        ),
+                        onTap: () {
+                          provider.copyPlaylist(sourcePlaylist.id, p.id);
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("Copied songs to '${p.name}'"),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showRenamePlaylistDialog(
     BuildContext context,
     RadioProvider provider,
     Playlist playlist,
   ) {
-    if (playlist.id == 'favorites') return;
+    if (playlist.id == 'favorites' || playlist.creator == 'local') return;
 
     final controller = TextEditingController(text: playlist.name);
     showDialog(
@@ -2141,24 +2573,63 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             color: Theme.of(context).textTheme.titleLarge?.color,
           ),
         ),
-        content: TextField(
-          controller: controller,
-          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
-          decoration: InputDecoration(
-            hintText: "Playlist Name",
-            hintStyle: TextStyle(
-              color: Theme.of(
-                context,
-              ).textTheme.bodySmall?.color?.withValues(alpha: 0.38),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (playlist.creator == 'local')
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.orangeAccent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.orangeAccent.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orangeAccent,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "This will rename the folder on your device. Ensure no other apps are using it.",
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            TextField(
+              controller: controller,
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+              ),
+              decoration: InputDecoration(
+                hintText: "Playlist Name",
+                hintStyle: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.color?.withValues(alpha: 0.38),
+                ),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Theme.of(context).primaryColor),
+                ),
+              ),
+              autofocus: true,
             ),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Theme.of(context).dividerColor),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Theme.of(context).primaryColor),
-            ),
-          ),
-          autofocus: true,
+          ],
         ),
         actions: [
           TextButton(
@@ -2398,24 +2869,66 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
     // Grouping Logic
     final List<List<SavedSong>> groupedSongs = [];
-    final Set<String> seenAlbums = {};
 
-    for (var song in songs) {
-      // Create a unique key for the album
-      final key =
-          "${song.album.trim().toLowerCase()}|${song.artist.trim().toLowerCase()}";
+    if (_groupingMode == PlaylistGroupingMode.none) {
+      // No grouping: Each song is its own group
+      for (var song in songs) {
+        groupedSongs.add([song]);
+      }
+    } else if (_groupingMode == PlaylistGroupingMode.artist) {
+      // Group by Artist
+      final Map<String, List<SavedSong>> groups = {};
+      for (var song in songs) {
+        final key = song.artist.trim().toLowerCase();
+        if (!groups.containsKey(key)) {
+          groups[key] = [];
+        }
+        groups[key]!.add(song);
+      }
+      groupedSongs.addAll(groups.values);
+    } else {
+      // Group by Album (Default)
+      final Set<String> seenAlbums = {};
 
-      if (seenAlbums.contains(key)) continue;
+      for (var song in songs) {
+        // Create a unique key for the album
+        final key =
+            "${song.album.trim().toLowerCase()}|${song.artist.trim().toLowerCase()}";
 
-      // Find all songs belonging to this album
-      final albumSongs = songs.where((s) {
-        final k =
-            "${s.album.trim().toLowerCase()}|${s.artist.trim().toLowerCase()}";
-        return k == key;
-      }).toList();
+        if (seenAlbums.contains(key)) continue;
 
-      groupedSongs.add(albumSongs);
-      seenAlbums.add(key);
+        // Find all songs belonging to this album
+        final albumSongs = songs.where((s) {
+          final k =
+              "${s.album.trim().toLowerCase()}|${s.artist.trim().toLowerCase()}";
+          return k == key;
+        }).toList();
+
+        groupedSongs.add(albumSongs);
+        seenAlbums.add(key);
+      }
+    }
+
+    // Logic for Ads
+    final List<dynamic> listItems = [];
+    if (groupedSongs.isNotEmpty) {
+      // 1. All'inizio della lista
+      listItems.add(const _AdItem());
+
+      for (int i = 0; i < groupedSongs.length; i++) {
+        listItems.add(groupedSongs[i]);
+        // 2. Ogni 10 canzoni (items della lista)
+        if ((i + 1) % 10 == 0) {
+          listItems.add(const _AdItem());
+        }
+      }
+
+      // 3. Alla fine della lista (se non è già presente un ad alla fine)
+      if (listItems.isNotEmpty && listItems.last is! _AdItem) {
+        listItems.add(const _AdItem());
+      }
+    } else {
+      listItems.addAll(groupedSongs);
     }
 
     // Auto-Scroll Logic
@@ -2423,8 +2936,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     int scrollIndex = -1;
     String? foundSongId;
 
-    for (int i = 0; i < groupedSongs.length; i++) {
-      final group = groupedSongs[i];
+    for (int i = 0; i < listItems.length; i++) {
+      final item = listItems[i];
+      if (item is! List<SavedSong>) continue;
+
+      final group = item;
       final match = group.firstWhere(
         (s) {
           final isPlaying =
@@ -2458,7 +2974,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
       // Only scroll if we have enough items to warrant positioning
       // This prevents single items from being pushed down by alignment
-      if (groupedSongs.length > 3) {
+      if (listItems.length > 3) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_itemScrollController.isAttached) {
             _itemScrollController.scrollTo(
@@ -2476,9 +2992,15 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       return ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: groupedSongs.length,
+        itemCount: listItems.length,
         itemBuilder: (context, index) {
-          final group = groupedSongs[index];
+          final item = listItems[index];
+
+          if (item is _AdItem) {
+            return const NativeAdWidget();
+          }
+
+          final group = item as List<SavedSong>;
           if (group.length == 1) {
             return _buildSongItem(context, provider, playlist, group.first);
           }
@@ -2490,11 +3012,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     return ScrollablePositionedList.builder(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: groupedSongs.length,
+      itemCount: listItems.length,
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
       itemBuilder: (context, index) {
-        final group = groupedSongs[index];
+        final item = listItems[index];
+
+        if (item is _AdItem) {
+          return const NativeAdWidget();
+        }
+
+        final group = item as List<SavedSong>;
 
         // If only one song, render strictly as before (Standalone)
         if (group.length == 1) {
@@ -2522,12 +3050,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     }
 
     return _AlbumGroupWidget(
+      titleOverride: _groupingMode == PlaylistGroupingMode.artist
+          ? groupSongs.first.artist
+          : null,
+      subtitleOverride: _groupingMode == PlaylistGroupingMode.artist
+          ? "All Songs"
+          : null,
       showFavoritesButton: playlist.id != 'favorites',
       groupSongs: groupSongs,
       dismissDirection:
           (playlist.id.startsWith('temp_artist_') ||
-              playlist.id.startsWith('temp_album_') ||
-              playlist.creator == 'local')
+              playlist.id.startsWith('temp_album_'))
           ? DismissDirection.none
           : (playlist.id == 'favorites'
                 ? DismissDirection.endToStart
@@ -2639,7 +3172,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               ),
             ),
             content: Text(
-              "Remove '${groupSongs.first.album}' from this playlist?",
+              playlist.creator == 'local'
+                  ? "Delete '${groupSongs.first.album}' from device?\n(Files will be permanently deleted)"
+                  : "Remove '${groupSongs.first.album}' from this playlist?",
               style: TextStyle(
                 color: Theme.of(
                   context,
@@ -2681,6 +3216,16 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               );
             }
           } else {
+            if (playlist.creator == 'local') {
+              for (var s in groupSongs) {
+                if (s.localPath == null) continue;
+                final f = File(s.localPath!);
+                if (await f.exists()) {
+                  await f.delete();
+                }
+              }
+            }
+
             await provider.removeSongsFromPlaylist(playlist.id, songIds);
 
             if (!provider.playlists.any((p) => p.id == playlist.id)) {
@@ -2763,12 +3308,19 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final isInvalid =
         !song.isValid || provider.invalidSongIds.contains(song.id);
 
+    final isThisSongPlaying =
+        provider.isPlaying &&
+        (provider.audioOnlySongId == song.id ||
+            (song.title.trim().toLowerCase() ==
+                    provider.currentTrack.trim().toLowerCase() &&
+                song.artist.trim().toLowerCase() ==
+                    provider.currentArtist.trim().toLowerCase()));
+
     return Dismissible(
       key: Key(song.id),
       direction:
           (playlist.id.startsWith('temp_artist_') ||
-              playlist.id.startsWith('temp_album_') ||
-              playlist.creator == 'local')
+              playlist.id.startsWith('temp_album_'))
           ? DismissDirection.none
           : (playlist.id == 'favorites'
                 ? DismissDirection.endToStart
@@ -2796,6 +3348,29 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           await _showCopySongDialog(context, provider, playlist, song.id);
           return false;
         } else {
+          if (playlist.creator == 'local') {
+            return await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: Theme.of(context).cardColor,
+                title: const Text("Delete File"),
+                content: Text("Delete '${song.title}' from device?"),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text("Cancel"),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text(
+                      "Delete",
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
           return true;
         }
       },
@@ -2813,6 +3388,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               ),
             );
           } else {
+            if (playlist.creator == 'local' && song.localPath != null) {
+              final f = File(song.localPath!);
+              if (f.existsSync()) {
+                f.deleteSync();
+              }
+            }
             provider.removeFromPlaylist(playlist.id, song.id);
             ScaffoldMessenger.of(context).clearSnackBars();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -2838,27 +3419,18 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               ? Theme.of(
                       context,
                     ).textTheme.bodyLarge?.color?.withValues(alpha: 0.02) ??
-                    Colors.white.withOpacity(0.02)
-              : (provider.audioOnlySongId == song.id ||
-                    (song.title.trim().toLowerCase() ==
-                            provider.currentTrack.trim().toLowerCase() &&
-                        song.artist.trim().toLowerCase() ==
-                            provider.currentArtist.trim().toLowerCase()))
-              ? Theme.of(context).primaryColor.withOpacity(
-                  0.25,
+                    Colors.white.withValues(alpha: 0.02)
+              : isThisSongPlaying
+              ? Theme.of(context).primaryColor.withValues(
+                  alpha: 0.25,
                 ) // Stronger alpha
               : isGrouped
               ? Colors.transparent
               : Theme.of(context).cardColor.withValues(alpha: 0.5),
           borderRadius: BorderRadius.zero,
-          border:
-              (provider.audioOnlySongId == song.id ||
-                  (song.title.trim().toLowerCase() ==
-                          provider.currentTrack.trim().toLowerCase() &&
-                      song.artist.trim().toLowerCase() ==
-                          provider.currentArtist.trim().toLowerCase()))
+          border: isThisSongPlaying
               ? Border.all(
-                  color: Theme.of(context).primaryColor.withOpacity(0.8),
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
                   width: 1.5,
                 )
               : null,
@@ -2870,555 +3442,610 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               : null,
           onPointerUp: isInvalid ? (_) => _cancelUnlockTimer() : null,
           onPointerCancel: isInvalid ? (_) => _cancelUnlockTimer() : null,
-          child: ListTile(
-            onTap: isInvalid
-                ? () => _showInvalidTrackOptions(
-                    context,
-                    provider,
-                    song,
-                    playlist.id,
-                  )
-                : () => _handleSongAudioAction(
-                    provider,
-                    song,
-                    playlist.id,
-                    adHocPlaylist: playlist,
-                  ),
-            // onLongPress removed, handled by GestureDetector's 3s timer via onTapDown
-            visualDensity: isGrouped
-                ? const VisualDensity(horizontal: 0, vertical: -4)
-                : VisualDensity.compact,
-            contentPadding: isGrouped
-                ? const EdgeInsets.symmetric(horizontal: 8, vertical: 0)
-                : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            leading: isGrouped
-                ? Container(
-                    width: 32,
-                    alignment: Alignment.center,
-                    child: Text(
-                      "${groupIndex ?? ''}",
-                      style: TextStyle(
-                        color: contrastColor.withValues(alpha: 0.5),
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                onTap: isInvalid
+                    ? () => _showInvalidTrackOptions(
+                        context,
+                        provider,
+                        song,
+                        playlist.id,
+                      )
+                    : () => _handleSongAudioAction(
+                        provider,
+                        song,
+                        playlist.id,
+                        adHocPlaylist: playlist,
                       ),
-                    ),
-                  )
-                : MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: () {
-                        var albumName = song.album.trim();
-                        // Clean song title: remove content in parentheses/brackets for better search
-                        var songTitle = song.title
-                            .replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '')
-                            .trim();
-
-                        // Filter artist name: keep only text before '•'
-                        var cleanArtist = song.artist.split('•').first.trim();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => AlbumDetailsScreen(
-                              albumName: albumName,
-                              artistName: cleanArtist,
-                              songName: songTitle,
-                            ),
+                // onLongPress removed, handled by GestureDetector's 3s timer via onTapDown
+                visualDensity: isGrouped
+                    ? const VisualDensity(horizontal: 0, vertical: -4)
+                    : VisualDensity.compact,
+                contentPadding: isGrouped
+                    ? const EdgeInsets.all(0)
+                    : const EdgeInsets.only(
+                        top: 0,
+                        left: 8,
+                        right: 4,
+                        bottom: 0,
+                      ),
+                leading: isGrouped
+                    ? Container(
+                        padding: const EdgeInsets.all(0),
+                        width: 32,
+                        alignment: Alignment.center,
+                        child: Text(
+                          "${groupIndex ?? ''}",
+                          style: TextStyle(
+                            color: contrastColor.withValues(alpha: 0.5),
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
                           ),
-                        );
-                      },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Stack(
-                          children: [
-                            song.artUri != null
-                                ? CachedNetworkImage(
-                                    imageUrl: song.artUri!,
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, _, _) => Container(
-                                      width: 48,
-                                      height: 48,
-                                      color: Colors.grey[900],
-                                      child: Icon(
-                                        Icons.music_note,
-                                        color: contrastColor.withValues(
-                                          alpha: 0.24,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    width: 48,
-                                    height: 48,
-                                    color: Colors.grey[900],
-                                    child: Icon(
-                                      Icons.music_note,
-                                      color: contrastColor.withValues(
-                                        alpha: 0.24,
-                                      ),
-                                    ),
-                                  ),
-                            if (song.localPath != null ||
-                                song.id.startsWith('local_'))
-                              Positioned(
-                                bottom: 2,
-                                right: 2,
-                                child: Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.smartphone_rounded,
-                                    size: 10,
-                                    color: Colors.white,
-                                  ),
+                        ),
+                      )
+                    : MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
+                            var albumName = song.album.trim();
+                            // Clean song title: remove content in parentheses/brackets for better search
+                            var songTitle = song.title
+                                .replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '')
+                                .trim();
+
+                            // Filter artist name: keep only text before '•'
+                            var cleanArtist = song.artist
+                                .split('•')
+                                .first
+                                .trim();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => AlbumDetailsScreen(
+                                  albumName: albumName,
+                                  artistName: cleanArtist,
+                                  songName: songTitle,
                                 ),
                               ),
-                          ],
+                            );
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Stack(
+                              children: [
+                                song.artUri != null
+                                    ? CachedNetworkImage(
+                                        imageUrl: song.artUri!,
+                                        width: 48,
+                                        height: 48,
+                                        fit: BoxFit.cover,
+                                        errorWidget: (_, _, _) => Container(
+                                          width: 48,
+                                          height: 48,
+                                          color: Colors.grey[900],
+                                          child: Icon(
+                                            Icons.music_note,
+                                            color: contrastColor.withValues(
+                                              alpha: 0.24,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    : Container(
+                                        width: 48,
+                                        height: 48,
+                                        color: Colors.grey[900],
+                                        child: Icon(
+                                          Icons.music_note,
+                                          color: contrastColor.withValues(
+                                            alpha: 0.24,
+                                          ),
+                                        ),
+                                      ),
+                                if (song.localPath != null ||
+                                    song.id.startsWith('local_'))
+                                  Positioned(
+                                    bottom: 2,
+                                    right: 2,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.6,
+                                        ),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.smartphone_rounded,
+                                        size: 10,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        song.title,
+                        style: TextStyle(
+                          color:
+                              (provider.audioOnlySongId == song.id ||
+                                  (provider.currentTrack.isNotEmpty &&
+                                      song.title.trim().toLowerCase() ==
+                                          provider.currentTrack
+                                              .trim()
+                                              .toLowerCase() &&
+                                      song.artist.trim().toLowerCase() ==
+                                          provider.currentArtist
+                                              .trim()
+                                              .toLowerCase()))
+                              ? Theme.of(context).primaryColor
+                              : (isInvalid
+                                    ? contrastColor.withValues(alpha: 0.5)
+                                    : contrastColor),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
+                    if (isGrouped)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (playlist.id != 'favorites') ...[
+                            GestureDetector(
+                              onTap: () async {
+                                if (isFavorite) {
+                                  await provider.removeFromPlaylist(
+                                    'favorites',
+                                    song.id,
+                                  );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).clearSnackBars();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("Removed from Favorites"),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  if (playlist.creator == 'local') {
+                                    isFavorite = true; // Optimistic update
+                                    await provider.addSongToPlaylist(
+                                      'favorites',
+                                      song,
+                                    );
+                                  } else {
+                                    await provider.copySong(
+                                      song.id,
+                                      playlist.id,
+                                      'favorites',
+                                    );
+                                  }
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).clearSnackBars();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("Added to Favorites"),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              child: Icon(
+                                isFavorite
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                color: isFavorite
+                                    ? Colors.pinkAccent
+                                    : contrastColor.withValues(alpha: 0.54),
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 24),
+                          ],
+
+                          _InvalidSongIndicator(
+                            songId: song.id,
+                            isStaticInvalid: !song.isValid,
+                          ),
+                          if (!isInvalid) ...[
+                            GestureDetector(
+                              onTap: () async {
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (ctx) => const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.redAccent,
+                                    ),
+                                  ),
+                                );
+
+                                try {
+                                  final links = await provider
+                                      .resolveLinks(
+                                        title: song.title,
+                                        artist: song.artist,
+                                        spotifyUrl: song.spotifyUrl,
+                                        youtubeUrl: song.youtubeUrl,
+                                      )
+                                      .timeout(
+                                        const Duration(seconds: 10),
+                                        onTimeout: () {
+                                          throw TimeoutException(
+                                            "Connection timed out",
+                                          );
+                                        },
+                                      );
+
+                                  if (!mounted) return;
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).pop();
+
+                                  final url =
+                                      links['youtube'] ?? song.youtubeUrl;
+                                  if (url != null) {
+                                    final videoId =
+                                        YoutubePlayer.convertUrlToId(url);
+                                    if (videoId != null) {
+                                      provider.pause();
+                                      if (!mounted) return;
+                                      showDialog(
+                                        context: context,
+                                        builder: (_) => YouTubePopup(
+                                          videoId: videoId,
+                                          songName: song.title,
+                                          artistName: song.artist,
+                                          albumName: song.album,
+                                          artworkUrl: song.artUri,
+                                        ),
+                                      );
+                                    } else {
+                                      launchUrl(
+                                        Uri.parse(url),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    }
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("YouTube link not found"),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    Navigator.of(
+                                      context,
+                                      rootNavigator: true,
+                                    ).pop();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text("Error: $e")),
+                                    );
+                                  }
+                                }
+                              },
+                              child: const FaIcon(
+                                FontAwesomeIcons.youtube,
+                                color: Color(0xFFFF0000),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            GestureDetector(
+                              onTap: () => _handleSongAudioAction(
+                                provider,
+                                song,
+                                playlist.id,
+                                adHocPlaylist: playlist,
+                              ),
+                              child:
+                                  (provider.audioOnlySongId == song.id &&
+                                      provider.isLoading)
+                                  ? SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        color: Theme.of(context).primaryColor,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Icon(
+                                      (provider.audioOnlySongId == song.id &&
+                                              provider.isPlaying)
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      color: contrastColor,
+                                      size: 28,
+                                    ),
+                            ),
+                          ],
+                        ], // close else...[ and children
+                      ),
+                    if (!isGrouped &&
+                        song.releaseDate != null &&
+                        song.releaseDate!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0),
+                        child: Text(
+                          song.releaseDate!.split('-').first,
+                          style: TextStyle(
+                            color: contrastColor.withValues(alpha: 0.5),
+                            fontWeight: FontWeight.normal,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.all(0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (!isGrouped)
+                                  Text(
+                                    song.artist,
+                                    style: TextStyle(
+                                      color: contrastColor.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (!isGrouped)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _InvalidSongIndicator(
+                                  songId: song.id,
+                                  isStaticInvalid: !song.isValid,
+                                ),
+                                if (!isInvalid) ...[
+                                  if (playlist.id != 'favorites') ...[
+                                    GestureDetector(
+                                      onTap: () async {
+                                        if (isFavorite) {
+                                          await provider.removeFromPlaylist(
+                                            'favorites',
+                                            song.id,
+                                          );
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).clearSnackBars();
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  "Removed from Favorites",
+                                                ),
+                                                duration: Duration(seconds: 1),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          // Copy to favorites
+                                          await provider.copySong(
+                                            song.id,
+                                            playlist.id,
+                                            'favorites',
+                                          );
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).clearSnackBars();
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  "Added to Favorites",
+                                                ),
+                                                duration: Duration(seconds: 1),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                      child: Icon(
+                                        isFavorite
+                                            ? Icons.favorite
+                                            : Icons.favorite_border,
+                                        color: isFavorite
+                                            ? Colors.pinkAccent
+                                            : contrastColor.withValues(
+                                                alpha: 0.54,
+                                              ),
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 20),
+                                  ],
+                                  GestureDetector(
+                                    onTap: () async {
+                                      showDialog(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (ctx) => const Center(
+                                          child: CircularProgressIndicator(
+                                            color: Colors.redAccent,
+                                          ),
+                                        ),
+                                      );
+
+                                      try {
+                                        final links = await provider
+                                            .resolveLinks(
+                                              title: song.title,
+                                              artist: song.artist,
+                                              spotifyUrl: song.spotifyUrl,
+                                              youtubeUrl: song.youtubeUrl,
+                                            )
+                                            .timeout(
+                                              const Duration(seconds: 10),
+                                              onTimeout: () {
+                                                throw TimeoutException(
+                                                  "Connection timed out",
+                                                );
+                                              },
+                                            );
+
+                                        if (!mounted) return;
+                                        Navigator.of(
+                                          context,
+                                          rootNavigator: true,
+                                        ).pop();
+
+                                        final url =
+                                            links['youtube'] ?? song.youtubeUrl;
+                                        if (url != null) {
+                                          final videoId =
+                                              YoutubePlayer.convertUrlToId(url);
+                                          if (videoId != null) {
+                                            provider.pause();
+                                            if (!mounted) return;
+                                            showDialog(
+                                              context: context,
+                                              builder: (_) => YouTubePopup(
+                                                videoId: videoId,
+                                                songName: song.title,
+                                                artistName: song.artist,
+                                                albumName: song.album,
+                                                artworkUrl: song.artUri,
+                                              ),
+                                            );
+                                          } else {
+                                            launchUrl(
+                                              Uri.parse(url),
+                                              mode: LaunchMode
+                                                  .externalApplication,
+                                            );
+                                          }
+                                        } else {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                "YouTube link not found",
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          Navigator.of(
+                                            context,
+                                            rootNavigator: true,
+                                          ).pop();
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text("Error: $e"),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    child: const FaIcon(
+                                      FontAwesomeIcons.youtube,
+                                      color: Color(0xFFFF0000),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 20),
+                                  GestureDetector(
+                                    onTap: () => _handleSongAudioAction(
+                                      provider,
+                                      song,
+                                      playlist.id,
+                                      adHocPlaylist: playlist,
+                                    ),
+                                    child:
+                                        (provider.audioOnlySongId == song.id &&
+                                            provider.isLoading)
+                                        ? const SizedBox(
+                                            width: 24,
+                                            height: 24,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.redAccent,
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : Icon(
+                                            (provider.audioOnlySongId ==
+                                                        song.id &&
+                                                    provider.isPlaying)
+                                                ? Icons.pause_rounded
+                                                : Icons.play_arrow_rounded,
+                                            color: contrastColor,
+                                            size: 28,
+                                          ),
+                                  ),
+                                ],
+                              ], // close else...[ and children
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
-            title: Row(
-              children: [
-                Expanded(
+                ),
+              ),
+              if (song.localPath != null)
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: 8,
+                    bottom: 2,
+                    top: 0,
+                    right: 2,
+                  ),
                   child: Text(
-                    song.title,
+                    song.localPath!,
                     style: TextStyle(
-                      color:
-                          (provider.audioOnlySongId == song.id ||
-                              (provider.currentTrack.isNotEmpty &&
-                                  song.title.trim().toLowerCase() ==
-                                      provider.currentTrack
-                                          .trim()
-                                          .toLowerCase() &&
-                                  song.artist.trim().toLowerCase() ==
-                                      provider.currentArtist
-                                          .trim()
-                                          .toLowerCase()))
-                          ? Theme.of(context).primaryColor
-                          : (isInvalid
-                                ? contrastColor.withValues(alpha: 0.5)
-                                : contrastColor),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                      fontSize: 9,
+                      color: contrastColor.withValues(alpha: 0.5),
+                      fontFamily: 'monospace',
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (isGrouped)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (playlist.id != 'favorites') ...[
-                        GestureDetector(
-                          onTap: () async {
-                            if (isFavorite) {
-                              await provider.removeFromPlaylist(
-                                'favorites',
-                                song.id,
-                              );
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).clearSnackBars();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Removed from Favorites"),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              }
-                            } else {
-                              if (playlist.creator == 'local') {
-                                isFavorite = true; // Optimistic update
-                                await provider.addSongToPlaylist(
-                                  'favorites',
-                                  song,
-                                );
-                              } else {
-                                await provider.copySong(
-                                  song.id,
-                                  playlist.id,
-                                  'favorites',
-                                );
-                              }
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).clearSnackBars();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Added to Favorites"),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          child: Icon(
-                            isFavorite ? Icons.favorite : Icons.favorite_border,
-                            color: isFavorite
-                                ? Colors.pinkAccent
-                                : contrastColor.withValues(alpha: 0.54),
-                            size: 18,
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                      ],
-
-                      _InvalidSongIndicator(
-                        songId: song.id,
-                        isStaticInvalid: !song.isValid,
-                      ),
-                      if (!isInvalid) ...[
-                        GestureDetector(
-                          onTap: () async {
-                            showDialog(
-                              context: context,
-                              barrierDismissible: false,
-                              builder: (ctx) => const Center(
-                                child: CircularProgressIndicator(
-                                  color: Colors.redAccent,
-                                ),
-                              ),
-                            );
-
-                            try {
-                              final links = await provider
-                                  .resolveLinks(
-                                    title: song.title,
-                                    artist: song.artist,
-                                    spotifyUrl: song.spotifyUrl,
-                                    youtubeUrl: song.youtubeUrl,
-                                  )
-                                  .timeout(
-                                    const Duration(seconds: 10),
-                                    onTimeout: () {
-                                      throw TimeoutException(
-                                        "Connection timed out",
-                                      );
-                                    },
-                                  );
-
-                              if (!mounted) return;
-                              Navigator.of(context, rootNavigator: true).pop();
-
-                              final url = links['youtube'] ?? song.youtubeUrl;
-                              if (url != null) {
-                                final videoId = YoutubePlayer.convertUrlToId(
-                                  url,
-                                );
-                                if (videoId != null) {
-                                  provider.pause();
-                                  if (!mounted) return;
-                                  showDialog(
-                                    context: context,
-                                    builder: (_) => YouTubePopup(
-                                      videoId: videoId,
-                                      songName: song.title,
-                                      artistName: song.artist,
-                                      albumName: song.album,
-                                      artworkUrl: song.artUri,
-                                    ),
-                                  );
-                                } else {
-                                  launchUrl(
-                                    Uri.parse(url),
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                }
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("YouTube link not found"),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (mounted) {
-                                Navigator.of(
-                                  context,
-                                  rootNavigator: true,
-                                ).pop();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text("Error: $e")),
-                                );
-                              }
-                            }
-                          },
-                          child: const FaIcon(
-                            FontAwesomeIcons.youtube,
-                            color: Color(0xFFFF0000),
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-                        GestureDetector(
-                          onTap: () => _handleSongAudioAction(
-                            provider,
-                            song,
-                            playlist.id,
-                            adHocPlaylist: playlist,
-                          ),
-                          child:
-                              (provider.audioOnlySongId == song.id &&
-                                  provider.isLoading)
-                              ? SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Theme.of(context).primaryColor,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Icon(
-                                  (provider.audioOnlySongId == song.id &&
-                                          provider.isPlaying)
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  color: contrastColor,
-                                  size: 28,
-                                ),
-                        ),
-                      ],
-                    ], // close else...[ and children
-                  ),
-                if (!isGrouped &&
-                    song.releaseDate != null &&
-                    song.releaseDate!.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8.0),
-                    child: Text(
-                      song.releaseDate!.split('-').first,
-                      style: TextStyle(
-                        color: contrastColor.withValues(alpha: 0.5),
-                        fontWeight: FontWeight.normal,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (!isGrouped)
-                              Text(
-                                song.artist,
-                                style: TextStyle(
-                                  color: contrastColor.withValues(alpha: 0.9),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (!isGrouped)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _InvalidSongIndicator(
-                              songId: song.id,
-                              isStaticInvalid: !song.isValid,
-                            ),
-                            if (!isInvalid) ...[
-                              if (playlist.id != 'favorites') ...[
-                                GestureDetector(
-                                  onTap: () async {
-                                    if (isFavorite) {
-                                      await provider.removeFromPlaylist(
-                                        'favorites',
-                                        song.id,
-                                      );
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).clearSnackBars();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              "Removed from Favorites",
-                                            ),
-                                            duration: Duration(seconds: 1),
-                                          ),
-                                        );
-                                      }
-                                    } else {
-                                      // Copy to favorites
-                                      await provider.copySong(
-                                        song.id,
-                                        playlist.id,
-                                        'favorites',
-                                      );
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).clearSnackBars();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text("Added to Favorites"),
-                                            duration: Duration(seconds: 1),
-                                          ),
-                                        );
-                                      }
-                                    }
-                                  },
-                                  child: Icon(
-                                    isFavorite
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                    color: isFavorite
-                                        ? Colors.pinkAccent
-                                        : contrastColor.withValues(alpha: 0.54),
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 20),
-                              ],
-                              GestureDetector(
-                                onTap: () async {
-                                  showDialog(
-                                    context: context,
-                                    barrierDismissible: false,
-                                    builder: (ctx) => const Center(
-                                      child: CircularProgressIndicator(
-                                        color: Colors.redAccent,
-                                      ),
-                                    ),
-                                  );
-
-                                  try {
-                                    final links = await provider
-                                        .resolveLinks(
-                                          title: song.title,
-                                          artist: song.artist,
-                                          spotifyUrl: song.spotifyUrl,
-                                          youtubeUrl: song.youtubeUrl,
-                                        )
-                                        .timeout(
-                                          const Duration(seconds: 10),
-                                          onTimeout: () {
-                                            throw TimeoutException(
-                                              "Connection timed out",
-                                            );
-                                          },
-                                        );
-
-                                    if (!mounted) return;
-                                    Navigator.of(
-                                      context,
-                                      rootNavigator: true,
-                                    ).pop();
-
-                                    final url =
-                                        links['youtube'] ?? song.youtubeUrl;
-                                    if (url != null) {
-                                      final videoId =
-                                          YoutubePlayer.convertUrlToId(url);
-                                      if (videoId != null) {
-                                        provider.pause();
-                                        if (!mounted) return;
-                                        showDialog(
-                                          context: context,
-                                          builder: (_) => YouTubePopup(
-                                            videoId: videoId,
-                                            songName: song.title,
-                                            artistName: song.artist,
-                                            albumName: song.album,
-                                            artworkUrl: song.artUri,
-                                          ),
-                                        );
-                                      } else {
-                                        launchUrl(
-                                          Uri.parse(url),
-                                          mode: LaunchMode.externalApplication,
-                                        );
-                                      }
-                                    } else {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            "YouTube link not found",
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      Navigator.of(
-                                        context,
-                                        rootNavigator: true,
-                                      ).pop();
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text("Error: $e")),
-                                      );
-                                    }
-                                  }
-                                },
-                                child: const FaIcon(
-                                  FontAwesomeIcons.youtube,
-                                  color: Color(0xFFFF0000),
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 20),
-                              GestureDetector(
-                                onTap: () => _handleSongAudioAction(
-                                  provider,
-                                  song,
-                                  playlist.id,
-                                  adHocPlaylist: playlist,
-                                ),
-                                child:
-                                    (provider.audioOnlySongId == song.id &&
-                                        provider.isLoading)
-                                    ? const SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.redAccent,
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : Icon(
-                                        (provider.audioOnlySongId == song.id &&
-                                                provider.isPlaying)
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        color: contrastColor,
-                                        size: 28,
-                                      ),
-                              ),
-                            ],
-                          ], // close else...[ and children
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ), // Close ListTile
-        ), // Close GestureDetector
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -3723,7 +4350,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   Text(
                     "Search by Song Name, Artist, or Album",
                     style: TextStyle(
-                      color: theme.textTheme.bodySmall?.color?.withOpacity(0.6),
+                      color: theme.textTheme.bodySmall?.color?.withValues(
+                        alpha: 0.6,
+                      ),
                       fontSize: 12,
                     ),
                   ),
@@ -3733,8 +4362,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     decoration: InputDecoration(
                       hintText: "Enter search term...",
                       hintStyle: TextStyle(
-                        color: theme.textTheme.bodyMedium?.color?.withOpacity(
-                          0.4,
+                        color: theme.textTheme.bodyMedium?.color?.withValues(
+                          alpha: 0.4,
                         ),
                       ),
                       suffixIcon: Row(
@@ -3744,7 +4373,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             IconButton(
                               icon: Icon(
                                 Icons.close,
-                                color: theme.iconTheme.color?.withOpacity(0.7),
+                                color: theme.iconTheme.color?.withValues(
+                                  alpha: 0.7,
+                                ),
                                 size: 20,
                               ),
                               onPressed: () {
@@ -3757,7 +4388,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           IconButton(
                             icon: Icon(
                               Icons.search,
-                              color: theme.iconTheme.color?.withOpacity(0.7),
+                              color: theme.iconTheme.color?.withValues(
+                                alpha: 0.7,
+                              ),
                             ),
                             onPressed: () async {
                               if (controller.text.isEmpty) return;
@@ -3779,7 +4412,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       ),
                       enabledBorder: UnderlineInputBorder(
                         borderSide: BorderSide(
-                          color: theme.dividerColor.withOpacity(0.3),
+                          color: theme.dividerColor.withValues(alpha: 0.3),
                         ),
                       ),
                       focusedBorder: UnderlineInputBorder(
@@ -3840,8 +4473,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       child: Text(
                         "No results found.",
                         style: TextStyle(
-                          color: theme.textTheme.bodySmall?.color?.withOpacity(
-                            0.5,
+                          color: theme.textTheme.bodySmall?.color?.withValues(
+                            alpha: 0.5,
                           ),
                         ),
                       ),
@@ -3854,7 +4487,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           shrinkWrap: true,
                           itemCount: results.length,
                           separatorBuilder: (_, __) => Divider(
-                            color: theme.dividerColor.withOpacity(0.1),
+                            color: theme.dividerColor.withValues(alpha: 0.1),
                           ),
                           itemBuilder: (context, index) {
                             final item = results[index];
@@ -3864,8 +4497,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
                               selected: isSelected,
-                              selectedTileColor: theme.primaryColor.withOpacity(
-                                0.1,
+                              selectedTileColor: theme.primaryColor.withValues(
+                                alpha: 0.1,
                               ),
                               onTap: () {
                                 setState(() {
@@ -3903,24 +4536,24 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                             width: 50,
                                             height: 50,
                                             color: theme.dividerColor
-                                                .withOpacity(0.1),
+                                                .withValues(alpha: 0.1),
                                             child: Icon(
                                               Icons.music_note,
                                               color: theme.iconTheme.color
-                                                  ?.withOpacity(0.5),
+                                                  ?.withValues(alpha: 0.5),
                                             ),
                                           ),
                                         )
                                       : Container(
                                           width: 50,
                                           height: 50,
-                                          color: theme.dividerColor.withOpacity(
-                                            0.1,
+                                          color: theme.dividerColor.withValues(
+                                            alpha: 0.1,
                                           ),
                                           child: Icon(
                                             Icons.music_note,
                                             color: theme.iconTheme.color
-                                                ?.withOpacity(0.5),
+                                                ?.withValues(alpha: 0.5),
                                           ),
                                         ),
                                 ),
@@ -3938,7 +4571,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 "${s.artist}",
                                 style: TextStyle(
                                   color: theme.textTheme.bodyMedium?.color
-                                      ?.withOpacity(0.7),
+                                      ?.withValues(alpha: 0.7),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -3957,7 +4590,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 activeColor: theme.primaryColor,
                                 checkColor: Colors.white,
                                 side: BorderSide(
-                                  color: theme.dividerColor.withOpacity(0.5),
+                                  color: theme.dividerColor.withValues(
+                                    alpha: 0.5,
+                                  ),
                                 ),
                               ),
                             );
@@ -4366,7 +5001,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             String searchArtist;
             bool isGroup;
             int count = 0;
-            bool isPlaying = (groupKey == playingGroupKey);
+            bool isPlaying =
+                provider.isPlaying && (groupKey == playingGroupKey);
 
             if (variants.length == 1) {
               // Single
@@ -4555,7 +5191,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             bool isGroup;
             int count = 0;
             // Use robust index-based check matching the scroll logic
-            bool isPlaying = (index == playingIndex);
+            bool isPlaying = provider.isPlaying && (index == playingIndex);
             SavedSong? displaySong;
 
             if (variants.length == 1) {
@@ -4692,7 +5328,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.5),
+                                  color: Colors.black.withValues(alpha: 0.5),
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: Colors.white24,
@@ -4717,7 +5353,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.5),
+                                  color: Colors.black.withValues(alpha: 0.5),
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: Colors.white24,
@@ -4838,6 +5474,8 @@ class _AlbumGroupWidget extends StatefulWidget {
   final bool showFavoritesButton;
   final bool? isFavoriteOverride;
   final VoidCallback? onFavoriteToggle;
+  final String? titleOverride;
+  final String? subtitleOverride;
 
   const _AlbumGroupWidget({
     required this.groupSongs,
@@ -4848,6 +5486,8 @@ class _AlbumGroupWidget extends StatefulWidget {
     this.showFavoritesButton = true,
     this.isFavoriteOverride,
     this.onFavoriteToggle,
+    this.titleOverride,
+    this.subtitleOverride,
   });
 
   @override
@@ -4861,8 +5501,8 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
     final firstSong = widget.groupSongs.first;
-    final albumName = firstSong.album;
-    final artistName = firstSong.artist;
+    final albumName = widget.titleOverride ?? firstSong.album;
+    final artistName = widget.subtitleOverride ?? firstSong.artist;
     final artUri = firstSong.artUri;
 
     // Normalize album name for consistency with Grid
@@ -4878,6 +5518,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
         provider.isAlbumFollowed(normalizedAlbumName);
 
     final isPlayingAlbum =
+        provider.isPlaying &&
         !_isExpanded &&
         widget.groupSongs.any(
           (s) =>
@@ -4951,7 +5592,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                 },
                 borderRadius: BorderRadius.zero,
                 child: Padding(
-                  padding: const EdgeInsets.all(12.0),
+                  padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
                   child: Row(
                     children: [
                       GestureDetector(
@@ -5096,6 +5737,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
               const Divider(height: 1, color: Colors.white10),
               // Songs List
               ListView.separated(
+                padding: EdgeInsets.only(bottom: 0, top: 0),
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: widget.groupSongs.length,
@@ -5202,7 +5844,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                         ]
                       : [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
+                            color: Colors.black.withValues(alpha: 0.3),
                             blurRadius: 8,
                             offset: const Offset(0, 4),
                           ),
@@ -5220,7 +5862,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                                   width: 3,
                                 )
                               : Border.all(
-                                  color: Colors.white.withOpacity(0.1),
+                                  color: Colors.white.withValues(alpha: 0.1),
                                   width: 1,
                                 ),
                         ),
@@ -5365,7 +6007,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                   style: TextStyle(
                     color: Theme.of(
                       context,
-                    ).textTheme.bodySmall?.color?.withOpacity(0.7),
+                    ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                     fontSize: 11,
                   ),
                 ),

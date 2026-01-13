@@ -89,7 +89,7 @@ class AppearanceScreen extends StatelessWidget {
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.1),
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
         ),
       ),
       child: Column(
@@ -162,7 +162,7 @@ class AppearanceScreen extends StatelessWidget {
           border: Border.all(color: Colors.white24, width: 1.5),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -221,13 +221,13 @@ class AppearanceScreen extends StatelessWidget {
               border: Border.all(
                 color: isSelected
                     ? preset.primaryColor
-                    : Colors.grey.withOpacity(0.1),
+                    : Colors.grey.withValues(alpha: 0.1),
                 width: isSelected ? 2.5 : 1,
               ),
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: preset.primaryColor.withOpacity(0.3),
+                        color: preset.primaryColor.withValues(alpha: 0.3),
                         blurRadius: 8,
                         spreadRadius: 1,
                       ),
@@ -267,7 +267,7 @@ class AppearanceScreen extends StatelessWidget {
                           children: [
                             Container(
                               width: 24,
-                              color: preset.surfaceColor.withOpacity(0.5),
+                              color: preset.surfaceColor.withValues(alpha: 0.5),
                             ),
                             Expanded(
                               child: Center(
@@ -302,7 +302,7 @@ class AppearanceScreen extends StatelessWidget {
                     right: 0,
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 6),
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                       child: Text(
                         preset.name,
                         textAlign: TextAlign.center,
@@ -401,7 +401,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
   void _onColorChanged(HSVColor hsv) {
     setState(() {
       _hsv = hsv;
-      final newColor = hsv.toColor().withOpacity(_alpha);
+      final newColor = hsv.toColor().withValues(alpha: _alpha);
       _draftColors[_activeKey] = newColor;
 
       _hexController.text = newColor.value
@@ -414,7 +414,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
   void _onAlphaChanged(double val) {
     setState(() {
       _alpha = val;
-      _draftColors[_activeKey] = _hsv.toColor().withOpacity(_alpha);
+      _draftColors[_activeKey] = _hsv.toColor().withValues(alpha: _alpha);
     });
   }
 
@@ -462,7 +462,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
       decoration: BoxDecoration(
         color: effectiveBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
       ),
       child: Column(
@@ -503,7 +503,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                 Text(
                   "Content Area",
                   style: TextStyle(
-                    color: effectiveTextOnBg.withOpacity(0.7),
+                    color: effectiveTextOnBg.withValues(alpha: 0.7),
                     fontSize: 12,
                   ),
                 ),
@@ -521,7 +521,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                         width: 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          color: effectivePrimary.withOpacity(0.2),
+                          color: effectivePrimary.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(Icons.music_note, color: effectivePrimary),
@@ -542,7 +542,9 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                             Text(
                               "Artist Name",
                               style: TextStyle(
-                                color: effectiveTextOnCard.withOpacity(0.6),
+                                color: effectiveTextOnCard.withValues(
+                                  alpha: 0.6,
+                                ),
                                 fontSize: 12,
                               ),
                             ),
@@ -583,7 +585,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.3),
+                color: Colors.grey.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -868,8 +870,8 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                             borderRadius: BorderRadius.circular(10),
                             gradient: LinearGradient(
                               colors: [
-                                _hsv.toColor().withOpacity(0),
-                                _hsv.toColor().withOpacity(1),
+                                _hsv.toColor().withValues(alpha: 0),
+                                _hsv.toColor().withValues(alpha: 1),
                               ],
                             ),
                           ),
@@ -945,7 +947,9 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
           color: isActive ? Theme.of(context).primaryColor : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isActive ? Colors.transparent : Colors.grey.withOpacity(0.3),
+            color: isActive
+                ? Colors.transparent
+                : Colors.grey.withValues(alpha: 0.3),
           ),
         ),
         child: Row(

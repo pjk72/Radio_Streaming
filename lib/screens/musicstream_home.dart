@@ -6,6 +6,7 @@ import '../providers/radio_provider.dart';
 import '../models/station.dart';
 import '../widgets/station_card.dart';
 import '../widgets/now_playing_header.dart';
+import '../widgets/tutorial_create_radio_wizard.dart';
 
 class MusicStreamHome extends StatelessWidget {
   const MusicStreamHome({super.key});
@@ -89,49 +90,11 @@ class MusicStreamHome extends StatelessWidget {
                 // AppBar moved to headerSliverBuilder
                 SliverPadding(
                   padding: EdgeInsets.symmetric(horizontal: contentPadding),
-                  sliver: SliverToBoxAdapter(
-                    child: categories.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 48.0),
-                            child: Center(
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.favorite_border,
-                                    size: 48,
-                                    color: Theme.of(
-                                      context,
-                                    ).iconTheme.color?.withValues(alpha: 0.24),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    "No favorites yet",
-                                    style: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.headlineSmall?.color,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    "Search for stations to add them to your favorites",
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.color
-                                          ?.withValues(alpha: 0.6),
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+                  sliver: categories.isEmpty
+                      ? SliverFillRemaining(
+                          child: const TutorialCreateRadioWizard(),
+                        )
+                      : const SliverToBoxAdapter(child: SizedBox.shrink()),
                 ),
 
                 // Genres List with SliverReorderableList

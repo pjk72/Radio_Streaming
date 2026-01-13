@@ -6,25 +6,6 @@ class GenreMapper {
     // Only exact matches (or very close aliases) get the static local asset.
     // Everything else gets a unique generated image.
 
-    // switch (lower) {
-    //   case 'pop':
-    //     return '$_basePath/pop.png';
-    //   case 'rock':
-    //     return '$_basePath/rock.png';
-    //   case 'news':
-    //     return '$_basePath/news.png';
-    //   case 'italian':
-    //     return '$_basePath/italian.png';
-    //   case 'lofi':
-    //     return '$_basePath/lofi.png';
-    //   case 'jazz':
-    //     return '$_basePath/jazz.png';
-    //   case 'classical':
-    //     return '$_basePath/classical.png';
-    //   case 'electronic':
-    //     return '$_basePath/electronic.png';
-    // }
-
     // Fallback: Use Generative AI for new/unknown genres
     // This creates an image pertinent to the genre name on the fly.
     // Improve prompt specifically for "Mix" or generic terms to ensure vibrant style

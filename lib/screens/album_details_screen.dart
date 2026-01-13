@@ -11,7 +11,6 @@ import '../providers/radio_provider.dart';
 import '../widgets/youtube_popup.dart';
 import '../models/saved_song.dart';
 import '../services/music_metadata_service.dart';
-import '../widgets/admob_banner_widget.dart';
 
 class AlbumDetailsScreen extends StatefulWidget {
   final String albumName;
@@ -254,8 +253,8 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.6),
-                      Colors.black.withOpacity(0.9),
+                      Colors.black.withValues(alpha: 0.6),
+                      Colors.black.withValues(alpha: 0.9),
                       Colors.black,
                     ],
                   ),
@@ -265,7 +264,6 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
               // 4. Content
               // 4. Content (with bottom padding for banner)
               Positioned.fill(
-                bottom: 50, // Reserve space for banner
                 child: CustomScrollView(
                   physics: const BouncingScrollPhysics(),
                   slivers: [
@@ -287,7 +285,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                 borderRadius: BorderRadius.circular(12),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.5),
+                                    color: Colors.black.withValues(alpha: 0.5),
                                     blurRadius: 30,
                                     offset: const Offset(0, 15),
                                   ),
@@ -596,7 +594,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
 
                               return Container(
                                 color: isSelected
-                                    ? Colors.white.withOpacity(0.1)
+                                    ? Colors.white.withValues(alpha: 0.1)
                                     : Colors.transparent,
                                 child: ListTile(
                                   leading: Text(
@@ -853,7 +851,6 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                       ),
 
                     // Bottom Padding
-                    const SliverPadding(padding: EdgeInsets.only(bottom: 50)),
                   ],
                 ),
               ), // End Positioned.fill
@@ -865,21 +862,9 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                   icon: const Icon(Icons.arrow_back_ios_new_rounded),
                   color: Colors.white,
                   style: IconButton.styleFrom(
-                    backgroundColor: Colors.black.withOpacity(0.2),
+                    backgroundColor: Colors.black.withValues(alpha: 0.2),
                   ),
                   onPressed: () => Navigator.pop(context),
-                ),
-              ),
-
-              // 6. Bottom Banner
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 50,
-                child: Container(
-                  color: Colors.black,
-                  child: const AdMobBannerWidget(),
                 ),
               ),
             ],

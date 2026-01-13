@@ -1,12 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/radio_provider.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/sidebar.dart';
-import '../widgets/banner_ad_widget.dart';
-import '../widgets/admob_banner_widget.dart';
 
 import 'playlist_screen.dart';
 import 'settings_screen.dart';
@@ -81,11 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Player Bar
           const PlayerBar(),
-
-          // Banner Ad
-          if (Platform.isAndroid || Platform.isIOS) const BannerAdWidget(),
-          // Second Banner (AdMob)
-          if (Platform.isAndroid || Platform.isIOS) const AdMobBannerWidget(),
         ],
       ),
     );

@@ -44,8 +44,5 @@ flutter {
 }
 
 dependencies {
-    // Fix for missing IronSource classes in GeneratedPluginRegistrant
-    implementation("com.ironsource.sdk:mediationsdk:7.4.0") 
-    implementation("com.google.android.gms:play-services-ads-identifier:18.0.1")
-    implementation("com.google.android.gms:play-services-basement:18.1.0")
 }
+
