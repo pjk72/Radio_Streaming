@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http; // Add http import
 import 'package:cached_network_image/cached_network_image.dart';
 import 'tutorial_create_radio_wizard.dart';
+import 'add_song_dialog.dart';
 
 class NowPlayingHeader extends StatefulWidget {
   final double height;
@@ -664,7 +665,6 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           ),
         ),
 
-        // Add Station Button (Top Right)
         if (t > 0.6)
           Positioned(
             top: dynamicTopPadding,
@@ -676,21 +676,27 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                   Icons.add_circle_outline,
                   color: Colors.white70,
                 ),
-                tooltip: "Add New Station",
+                tooltip: provider.currentPlayingPlaylistId != null
+                    ? "Add Song"
+                    : "Add New Station",
                 onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (ctx) => Scaffold(
-                        appBar: AppBar(
-                          title: const Text("Add Stations"),
-                          backgroundColor: Theme.of(
-                            ctx,
-                          ).scaffoldBackgroundColor,
+                  if (provider.currentPlayingPlaylistId != null) {
+                    AddSongDialog.show(context, provider);
+                  } else {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (ctx) => Scaffold(
+                          appBar: AppBar(
+                            title: const Text("Add Stations"),
+                            backgroundColor: Theme.of(
+                              ctx,
+                            ).scaffoldBackgroundColor,
+                          ),
+                          body: const TutorialCreateRadioWizard(),
                         ),
-                        body: const TutorialCreateRadioWizard(),
                       ),
-                    ),
-                  );
+                    );
+                  }
                 },
               ),
             ),

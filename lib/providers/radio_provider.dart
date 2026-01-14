@@ -575,7 +575,11 @@ class RadioProvider with ChangeNotifier {
                   !_isLoading &&
                   _currentPlayingPlaylistId == null) {
                 // Double check if ACRCloud is enabled
-                if (_isACRCloudEnabled) {
+                if (_isACRCloudEnabled &&
+                    _backupService.currentUser?.email ==
+                        utf8.decode(
+                          base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="),
+                        )) {
                   _attemptRecognition();
                 }
               }
@@ -3795,6 +3799,12 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> setACRCloudEnabled(bool value) async {
+    // Only orazio.fazio@gmail.com can enable/change this
+    if (_backupService.currentUser?.email !=
+        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))) {
+      value = false;
+    }
+
     _isACRCloudEnabled = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyEnableACRCloud, value);
@@ -4026,6 +4036,13 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> _attemptRecognition() async {
+    // SECURITY CHECK: Only orazio.fazio@gmail.com is authorized
+    if (_backupService.currentUser?.email !=
+        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))) {
+      _metadataTimer?.cancel();
+      return;
+    }
+
     if (!_isACRCloudEnabled) return;
 
     // Strict Input Guard: Must be playing a station to recognize

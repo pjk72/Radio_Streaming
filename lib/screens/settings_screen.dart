@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
@@ -305,15 +306,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         value: radio.isCompactView,
                         onChanged: (val) => radio.setCompactView(val),
                       ),
-                    if (showGeneral)
-                      _buildSettingsSwitchTile(
-                        context,
-                        icon: Icons.music_note_rounded,
-                        title: "Enable Song Recognition",
-                        subtitle: "Identify songs using ACRCloud",
-                        value: radio.isACRCloudEnabled,
-                        onChanged: (val) => radio.setACRCloudEnabled(val),
-                      ),
+                    if (showGeneral) ...[
+                      if (radio.backupService.isSignedIn)
+                        _buildSettingsSwitchTile(
+                          context,
+                          icon: Icons.music_note_rounded,
+                          title: "Enable Song Recognition",
+                          subtitle: "Identify songs using ACRCloud",
+                          value:
+                              (radio.backupService.currentUser?.email ==
+                                  utf8.decode(
+                                    base64.decode(
+                                      "b3JhemlvLmZhemlvQGdtYWlsLmNvbQ==",
+                                    ),
+                                  ))
+                              ? radio.isACRCloudEnabled
+                              : false,
+                          enabled:
+                              radio.backupService.currentUser?.email ==
+                              utf8.decode(
+                                base64.decode(
+                                  "b3JhemlvLmZhemlvQGdtYWlsLmNvbQ==",
+                                ),
+                              ),
+                          onChanged: (val) => radio.setACRCloudEnabled(val),
+                        ),
+                    ],
 
                     if (showManageStations && showBackup)
                       const SizedBox(height: 32),
@@ -1422,7 +1440,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
-    required bool value,
+    bool value = false,
+    bool enabled = true,
     required ValueChanged<bool> onChanged,
   }) {
     final cardColor = Theme.of(context).cardColor;
@@ -1435,36 +1454,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor.withValues(alpha: 0.20),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: contrastColor.withValues(alpha: 0.20)),
+        border: Border.all(
+          color: contrastColor.withValues(alpha: enabled ? 0.20 : 0.05),
+        ),
       ),
-      child: SwitchListTile(
-        secondary: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-            shape: BoxShape.circle,
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.5,
+        child: SwitchListTile(
+          secondary: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Theme.of(context).primaryColor),
           ),
-          child: Icon(icon, color: Theme.of(context).primaryColor),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: Theme.of(context).textTheme.titleMedium?.color,
-            fontWeight: FontWeight.bold,
+          title: Text(
+            title,
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleMedium?.color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+            ),
+          ),
+          value: value,
+          onChanged: enabled ? onChanged : null,
+          activeColor: Theme.of(context).primaryColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            color: Theme.of(
-              context,
-            ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-          ),
-        ),
-        value: value,
-        onChanged: onChanged,
-        activeColor: Theme.of(context).primaryColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }
