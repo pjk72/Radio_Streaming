@@ -269,34 +269,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                    _buildSettingsTile(
-                      context,
-                      icon: Icons.code,
-                      title: "API Debug",
-                      subtitle: "View raw JSON responses",
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ApiDebugScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildSettingsTile(
-                      context,
-                      icon: Icons.bug_report,
-                      title: "Debug Logs",
-                      subtitle: "View application logs",
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const DebugLogScreen(),
-                          ),
-                        );
-                      },
-                    ),
+                    if (radio.backupService.currentUser?.email ==
+                        utf8.decode(
+                          base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="),
+                        )) ...[
+                      _buildSettingsTile(
+                        context,
+                        icon: Icons.code,
+                        title: "API Debug",
+                        subtitle: "View raw JSON responses",
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ApiDebugScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildSettingsTile(
+                        context,
+                        icon: Icons.bug_report,
+                        title: "Debug Logs",
+                        subtitle: "View application logs",
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const DebugLogScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                     if (showGeneral)
                       _buildSettingsSwitchTile(
                         context,
