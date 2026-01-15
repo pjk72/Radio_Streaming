@@ -5,8 +5,8 @@ import 'package:http/http.dart' as http;
 
 class ACRCloudService {
   final String _host = 'identify-eu-west-1.acrcloud.com';
-  final String _accessKey = '0863b6b16bc4939125276148a0ad0c1b';
-  final String _secretKey = 'DBpg5xECHwyTnZkP3d4b1Ef9tVR0YwrjH4iSsbUj';
+  final String _accessKey = 'e47be4f50a59873e2612ca7c4981538a';
+  final String _secretKey = '5PTB3klzHKOvjjmwERuJnkl08aEeIV5xE4GGBOqP';
 
   Future<Map<String, dynamic>?> identifyStream(String streamUrl) async {
     try {

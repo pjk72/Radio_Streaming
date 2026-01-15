@@ -25,10 +25,9 @@ class _HomeScreenState extends State<HomeScreen> {
     // Trigger startup playback ONLY when we reach Home Screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        Provider.of<RadioProvider>(
-          context,
-          listen: false,
-        ).handleStartupPlayback();
+        final radio = Provider.of<RadioProvider>(context, listen: false);
+        radio.setShowGlobalBanner(true);
+        radio.handleStartupPlayback();
       }
     });
   }
@@ -107,32 +106,49 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Row 1: Profile + Title
           SizedBox(
-            height: 32,
+            height: 42,
             child: Stack(
               children: [
                 Positioned(
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  child: Center(
-                    child: CircleAvatar(
-                      radius: 14,
-                      backgroundColor: Colors.white24,
-                      backgroundImage:
-                          provider.backupService.currentUser?.photoUrl != null
-                          ? NetworkImage(
-                              provider.backupService.currentUser!.photoUrl!,
-                            )
-                          : null,
-                      child:
-                          provider.backupService.currentUser?.photoUrl == null
-                          ? Icon(
-                              Icons.person,
-                              size: 14,
-                              color: Theme.of(context).iconTheme.color,
-                            )
-                          : null,
-                    ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundColor: Colors.white24,
+                        backgroundImage:
+                            provider.backupService.currentUser?.photoUrl != null
+                            ? NetworkImage(
+                                provider.backupService.currentUser!.photoUrl!,
+                              )
+                            : null,
+                        child:
+                            provider.backupService.currentUser?.photoUrl == null
+                            ? Icon(
+                                Icons.person,
+                                size: 14,
+                                color: Theme.of(context).iconTheme.color,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        provider.backupService.currentUser?.displayName
+                                ?.split(' ')
+                                .first ??
+                            "Guest",
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w500,
+                          color: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Center(

@@ -59,9 +59,28 @@ class RadioAudioHandler extends BaseAudioHandler
 
   // Recognition
   bool _isACRCloudEnabled = true;
+  bool _isDevUser = false; // Strict Guard
   final ACRCloudService _acrCloudService = ACRCloudService();
   final SongLinkService _songLinkService = SongLinkService();
   Timer? _recognitionTimer;
+
+  void setACRCloudEnabled(bool value) {
+    if (!_isDevUser && value == true) return;
+    _isACRCloudEnabled = value;
+    if (!_isACRCloudEnabled) {
+      _recognitionTimer?.cancel();
+    }
+  }
+
+  void setDevUser(bool value) {
+    _isDevUser = value;
+    if (!_isDevUser) {
+      _isACRCloudEnabled = false; // Force OFF
+      _recognitionTimer?.cancel();
+      // Clear any pre-existing song metadata if not authorized
+      _handleNoMatch();
+    }
+  }
 
   // Skip context
   String _radioSkipContext = 'all'; // 'all' or 'favorites'
@@ -191,7 +210,9 @@ class RadioAudioHandler extends BaseAudioHandler
             // Delay recognition by 5 seconds to match Application Rules
             Timer(const Duration(seconds: 5), () {
               if (playbackState.value.playing &&
+                  (_isDevUser || _isACRCloudEnabled) &&
                   mediaItem.value?.extras?['type'] != 'playlist_song') {
+                LogService().log("Attempting Recognition...5");
                 _attemptRecognition();
               }
             });
@@ -903,6 +924,7 @@ class RadioAudioHandler extends BaseAudioHandler
       // Restart Recognition Cycle if Radio Mode
       if (_isACRCloudEnabled &&
           mediaItem.value?.extras?['type'] != 'playlist_song') {
+        LogService().log("Attempting Recognition...6");
         _attemptRecognition();
       }
       return;
@@ -1264,6 +1286,7 @@ class RadioAudioHandler extends BaseAudioHandler
         } else {
           if (playbackState.value.playing &&
               mediaItem.value?.extras?['type'] != 'playlist_song') {
+            LogService().log("Attempting Recognition...7");
             _attemptRecognition();
           }
         }
@@ -2586,6 +2609,13 @@ class RadioAudioHandler extends BaseAudioHandler
   // --- RECOGNITION LOGIC ---
 
   Future<void> _attemptRecognition() async {
+    // Strict Guard: Only Dev User allowed
+    if (!_isDevUser) {
+      // Ensure timer is killed if it somehow got here
+      _recognitionTimer?.cancel();
+      return;
+    }
+
     if (!_isACRCloudEnabled) return;
 
     // Validations
@@ -2659,6 +2689,7 @@ class RadioAudioHandler extends BaseAudioHandler
           );
 
           _recognitionTimer?.cancel();
+          LogService().log("Attempting Recognition...8");
           _recognitionTimer = Timer(
             Duration(milliseconds: nextCheckDelay),
             _attemptRecognition,
@@ -2697,6 +2728,7 @@ class RadioAudioHandler extends BaseAudioHandler
   void _scheduleRetry(int seconds) {
     _recognitionTimer?.cancel();
     _recognitionTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
+    LogService().log("Attempting Recognition...9");
   }
 
   Future<void> _resolveAndApplyMetadata(

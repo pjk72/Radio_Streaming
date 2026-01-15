@@ -3880,11 +3880,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 content: const Text("Song removed from playlist"),
                 action: SnackBarAction(
                   label: 'Undo',
+                  textColor: Colors.black,
                   onPressed: () {
                     provider.restoreSongToPlaylist(playlist.id, deletedSong);
                   },
                 ),
-                duration: const Duration(seconds: 4),
+                duration: const Duration(seconds: 5),
               ),
             );
           }

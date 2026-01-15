@@ -194,6 +194,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final radioProvider = Provider.of<RadioProvider>(context);
     final isDark = themeProvider.themeData.brightness == Brightness.dark;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -212,8 +213,6 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         title: 'MusicStream',
         debugShowCheckedModeBanner: false,
         builder: (context, child) {
-          final provider = Provider.of<RadioProvider>(context);
-          final isLoggedIn = provider.backupService.currentUser != null;
           final isSupportedPlatform =
               !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
@@ -228,7 +227,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
                   ],
                 ),
               ),
-              if (isLoggedIn && isSupportedPlatform)
+              if (isSupportedPlatform && radioProvider.showGlobalBanner)
                 Container(
                   color: Theme.of(context).scaffoldBackgroundColor,
                   child: const SafeArea(top: false, child: AdMobBannerWidget()),

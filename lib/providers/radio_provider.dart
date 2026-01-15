@@ -1,4 +1,5 @@
 import 'dart:io';
+// TEST EDIT
 import 'dart:async';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
@@ -87,16 +88,47 @@ class RadioProvider with ChangeNotifier {
   String? _spotifyImportName;
   bool _isRecognizing = false;
 
+  bool _showGlobalBanner = true;
+
   bool get isImportingSpotify => _isImportingSpotify;
   double get spotifyImportProgress => _spotifyImportProgress;
   String? get spotifyImportName => _spotifyImportName;
   bool get isRecognizing => _isRecognizing;
+  bool get showGlobalBanner => _showGlobalBanner;
+
+  void setShowGlobalBanner(bool value) {
+    if (_showGlobalBanner != value) {
+      _showGlobalBanner = value;
+      notifyListeners();
+    }
+  }
 
   List<String> get followedArtists => _followedArtists.toList();
   List<String> get followedAlbums => _followedAlbums.toList();
 
   bool isArtistFollowed(String artist) => _followedArtists.contains(artist);
   bool isAlbumFollowed(String album) => _followedAlbums.contains(album);
+
+  void _onUserStatusChanged() {
+    final isDevUser =
+        _backupService.currentUser?.email ==
+        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
+
+    if (!isDevUser) {
+      _isACRCloudEnabled = false;
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setBool(_keyEnableACRCloud, false);
+      });
+    }
+
+    if (_audioHandler is RadioAudioHandler) {
+      _audioHandler.setDevUser(isDevUser);
+      if (!isDevUser) {
+        _audioHandler.setACRCloudEnabled(false);
+      }
+    }
+    notifyListeners();
+  }
 
   Future<void> _loadStations() async {
     final prefs = await SharedPreferences.getInstance();
@@ -501,7 +533,9 @@ class RadioProvider with ChangeNotifier {
       _isOffline = results.contains(ConnectivityResult.none);
     });
 
-    _backupService.addListener(notifyListeners);
+    _backupService.addListener(_onUserStatusChanged);
+    _onUserStatusChanged(); // Initial sync
+
     _playlistService.onPlaylistsUpdated.listen((_) => reloadPlaylists());
     _checkAutoBackup(); // Start check
     // Listen to playback state from AudioService
@@ -580,6 +614,7 @@ class RadioProvider with ChangeNotifier {
                         utf8.decode(
                           base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="),
                         )) {
+                  LogService().log("Attempting Recognition...1");
                   _attemptRecognition();
                 }
               }
@@ -3799,16 +3834,26 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> setACRCloudEnabled(bool value) async {
-    // Only orazio.fazio@gmail.com can enable/change this
-    if (_backupService.currentUser?.email !=
-        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))) {
-      value = false;
-    }
-
     _isACRCloudEnabled = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyEnableACRCloud, value);
     notifyListeners();
+
+    if (_isACRCloudEnabled) {
+      if (_isPlaying &&
+          _currentStation != null &&
+          _currentPlayingPlaylistId == null &&
+          _backupService.currentUser?.email ==
+              utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))) {
+        _metadataTimer?.cancel();
+        LogService().log("Attempting Recognition...2");
+        _attemptRecognition();
+      }
+    } else {
+      _metadataTimer?.cancel();
+      _isRecognizing = false;
+      notifyListeners();
+    }
   }
 
   Future<void> setManageGridView(bool value) async {
@@ -4036,10 +4081,13 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> _attemptRecognition() async {
-    // SECURITY CHECK: Only orazio.fazio@gmail.com is authorized
-    if (_backupService.currentUser?.email !=
-        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))) {
-      _metadataTimer?.cancel();
+    // Strict Guard: ONLY specific email allowed
+    final isDevUser =
+        _backupService.currentUser?.email ==
+        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
+
+    if (!isDevUser) {
+      _isRecognizing = false; // Ensure loading state is OFF
       return;
     }
 
@@ -4190,6 +4238,7 @@ class RadioProvider with ChangeNotifier {
           );
 
           _metadataTimer?.cancel();
+          LogService().log("Attempting Recognition...3");
           _metadataTimer = Timer(
             Duration(milliseconds: nextCheckDelay),
             _attemptRecognition,
@@ -4267,6 +4316,7 @@ class RadioProvider with ChangeNotifier {
   void _scheduleRetry(int seconds) {
     LogService().log("ACRCloud: Retrying in ${seconds}s");
     _metadataTimer?.cancel();
+    LogService().log("Attempting Recognition...4");
     _metadataTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
   }
 

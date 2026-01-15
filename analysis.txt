@@ -1,0 +1,10 @@
+﻿Analyzing backup_service.dart...                                
+
+warning - Unused import: 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart' - lib\services\backup_service.dart:6:8 - unused_import
+warning - The value of the field '_scopes' isn't used - lib\services\backup_service.dart:11:29 - unused_field
+  error - The getter 'onCurrentUserChanged' isn't defined for the type 'GoogleSignIn' - lib\services\backup_service.dart:25:21 - undefined_getter
+  error - The method 'signIn' isn't defined for the type 'GoogleSignIn' - lib\services\backup_service.dart:37:43 - undefined_method
+  error - The method 'signInSilently' isn't defined for the type 'GoogleSignIn' - lib\services\backup_service.dart:50:43 - undefined_method
+  error - The method 'authenticatedClient' isn't defined for the type 'GoogleSignIn' - lib\services\backup_service.dart:72:44 - undefined_method
+  error - The method 'authenticatedClient' isn't defined for the type 'GoogleSignIn' - lib\services\backup_service.dart:113:44 - undefined_method
+

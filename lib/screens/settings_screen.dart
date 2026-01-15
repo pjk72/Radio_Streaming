@@ -76,6 +76,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final auth = Provider.of<BackupService>(context);
     final radio = Provider.of<RadioProvider>(context);
 
+    final isDevUser =
+        auth.currentUser?.email ==
+        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
+
     // Filter Logic
     final bool showAppearance =
         _searchQuery.isEmpty ||
@@ -269,10 +273,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                    if (radio.backupService.currentUser?.email ==
-                        utf8.decode(
-                          base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="),
-                        )) ...[
+                    if (isDevUser) ...[
                       _buildSettingsTile(
                         context,
                         icon: Icons.code,
@@ -312,28 +313,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: (val) => radio.setCompactView(val),
                       ),
                     if (showGeneral) ...[
-                      if (radio.backupService.isSignedIn)
+                      if (isDevUser)
                         _buildSettingsSwitchTile(
                           context,
                           icon: Icons.music_note_rounded,
                           title: "Enable Song Recognition",
                           subtitle: "Identify songs using ACRCloud",
-                          value:
-                              (radio.backupService.currentUser?.email ==
-                                  utf8.decode(
-                                    base64.decode(
-                                      "b3JhemlvLmZhemlvQGdtYWlsLmNvbQ==",
-                                    ),
-                                  ))
-                              ? radio.isACRCloudEnabled
-                              : false,
-                          enabled:
-                              radio.backupService.currentUser?.email ==
-                              utf8.decode(
-                                base64.decode(
-                                  "b3JhemlvLmZhemlvQGdtYWlsLmNvbQ==",
-                                ),
-                              ),
+                          value: radio.isACRCloudEnabled,
                           onChanged: (val) => radio.setACRCloudEnabled(val),
                         ),
                     ],
