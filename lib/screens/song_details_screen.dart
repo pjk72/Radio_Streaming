@@ -818,7 +818,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                 MaterialPageRoute(
                                   builder: (context) => ArtistDetailsScreen(
                                     artistName: provider.currentArtist,
-                                    artistImage: bgImage,
+                                    artistImage: provider.currentArtistImage,
                                     genre: station.genre,
                                   ),
                                 ),

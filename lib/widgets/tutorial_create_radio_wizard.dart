@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:palette_generator/palette_generator.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async'; // Add Timer support
+import 'package:audioplayers/audioplayers.dart'; // Add AudioPlayer
 import '../providers/radio_provider.dart';
 import '../models/station.dart';
 import '../utils/genre_mapper.dart';
@@ -17,11 +19,25 @@ class TutorialCreateRadioWizard extends StatefulWidget {
 }
 
 class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
+  @override
+  void dispose() {
+    _previewPlayer.dispose();
+    _previewTimer?.cancel();
+    super.dispose();
+  }
+
   int _step = 0; // 0: Country Selection, 1: Search & Select
   String? _selectedCountryCode;
   String? _selectedCountryName;
   bool _isLoading = false;
   List<dynamic> _searchResults = [];
+  String _searchQuery = '';
+  bool _showSelectedOnly = false;
+
+  // Audio Preview
+  final AudioPlayer _previewPlayer = AudioPlayer();
+  String? _previewingUrl;
+  Timer? _previewTimer;
 
   // Selection State
   // Map of Station UUID (or index if no UUID) -> Data
@@ -97,7 +113,8 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           // Top Clicked by Country
           // limit increased to show ample options
           url = Uri.parse(
-            "https://$server/json/stations/search?countrycode=${_selectedCountryCode!.toLowerCase()}&limit=100&order=clickcount&reverse=true",
+            //"https://$server/json/stations/search?countrycode=${_selectedCountryCode!.toLowerCase()}&limit=500&order=clickcount&reverse=true",
+            "https://$server/json/stations/search?countrycode=${_selectedCountryCode!.toLowerCase()}&order=clickcount&reverse=true",
           );
         }
 
@@ -109,11 +126,21 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           if (response.statusCode == 200) {
             final List<dynamic> rawStations = json.decode(response.body);
             final seenUuids = <String>{};
+            final seenUrls = <String>{};
             stations = [];
             for (final s in rawStations) {
-              final uuid = s['stationuuid'];
-              if (uuid != null && !seenUuids.contains(uuid)) {
+              final uuid = s['stationuuid']?.toString();
+              final String url = (s['url_resolved'] ?? s['url'] ?? '')
+                  .toString();
+              final int bitrate = s['bitrate'] ?? 0;
+
+              if (uuid != null &&
+                  url.isNotEmpty &&
+                  !seenUuids.contains(uuid) &&
+                  !seenUrls.contains(url) &&
+                  bitrate > 0) {
                 seenUuids.add(uuid);
+                seenUrls.add(url);
                 stations.add(s);
               }
             }
@@ -131,27 +158,23 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         // Synchronize with existing stations
         final provider = Provider.of<RadioProvider>(context, listen: false);
         final existingStations = provider.stations;
-        final favorites = provider.favorites;
+        // final favorites = provider.favorites; // No longer needed if we exclude them
 
-        for (int i = 0; i < stations.length; i++) {
-          final s = stations[i];
+        // Remove stations that are already present in the provider
+        stations.removeWhere((s) {
           final sName = (s['name']?.toString() ?? '').toLowerCase();
+          return existingStations.any((e) => e.name.toLowerCase() == sName);
+        });
 
-          try {
-            final existing = existingStations.firstWhere(
-              (e) => e.name.toLowerCase() == sName,
-            );
+        // We no longer need to sync selection for existing ones because they are removed.
+        // We only show NEW stations.
 
-            // It exists locally
-            _selectedIndices[i] = true;
-            if (favorites.contains(existing.id)) {
-              _favoriteIndices[i] = true;
-            }
-            if (existing.logo != null && existing.logo!.isNotEmpty) {
-              _customLogos[i] = existing.logo!;
-            }
-          } catch (_) {}
+        /* 
+        // OLD LOGIC: Mark existing as selected
+        for (int i = 0; i < stations.length; i++) {
+           ...
         }
+        */
 
         setState(() {
           _searchResults = stations;
@@ -298,6 +321,57 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     } catch (e) {
       if (mounted && Navigator.canPop(context))
         Navigator.pop(context); // Pop loading if error
+    }
+  }
+
+  Future<void> _togglePreview(String url) async {
+    if (_previewingUrl == url) {
+      // Stop
+      await _previewPlayer.stop();
+      _previewTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _previewingUrl = null;
+        });
+      }
+    } else {
+      // Stop current
+      await _previewPlayer.stop();
+      _previewTimer?.cancel();
+
+      // Stop Main Radio
+      if (mounted) {
+        Provider.of<RadioProvider>(context, listen: false).stop();
+      }
+
+      if (mounted) {
+        setState(() {
+          _previewingUrl = url;
+        });
+      }
+
+      try {
+        await _previewPlayer.setSource(UrlSource(url));
+        await _previewPlayer.resume();
+
+        _previewTimer = Timer(const Duration(seconds: 3), () {
+          _previewPlayer.stop();
+          if (mounted) {
+            setState(() {
+              if (_previewingUrl == url) {
+                _previewingUrl = null;
+              }
+            });
+          }
+        });
+      } catch (e) {
+        if (mounted) {
+          setState(() => _previewingUrl = null);
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("Preview failed: $e")));
+        }
+      }
     }
   }
 
@@ -543,51 +617,121 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       );
     }
 
+    // Filter results preserving original indices
+    final filteredStations = _searchResults.asMap().entries.where((entry) {
+      final index = entry.key;
+      final matchesSearch = (entry.value['name']?.toString() ?? '')
+          .toLowerCase()
+          .contains(_searchQuery.toLowerCase());
+      final isSelected = _selectedIndices[index] ?? false;
+
+      if (_showSelectedOnly && !isSelected) return false;
+      return matchesSearch;
+    }).toList();
+
     return Column(
       children: [
         // Header
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, size: 20),
-                onPressed: () {
-                  setState(() {
-                    _step = 0;
-                    _searchResults = [];
-                    _selectedIndices.clear();
-                    _favoriteIndices.clear();
-                    _customLogos.clear();
-                  });
-                },
-                tooltip: "Back",
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, size: 20),
+                    onPressed: () {
+                      setState(() {
+                        _step = 0;
+                        _searchResults = [];
+                        _selectedIndices.clear();
+                        _favoriteIndices.clear();
+                        _customLogos.clear();
+                        _searchQuery = '';
+                      });
+                    },
+                    tooltip: "Back",
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Results for $_selectedCountryName",
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          "${filteredStations.length} stations found",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Results for $_selectedCountryName",
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+              const SizedBox(height: 8),
+              // Search Bar & Filter
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: "Search station...",
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(context).cardColor,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14),
+                      onChanged: (val) {
+                        setState(() {
+                          _searchQuery = val;
+                        });
+                      },
                     ),
-                    Text(
-                      "${_searchResults.length} stations found",
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                      ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(
+                      _showSelectedOnly
+                          ? Icons.check_circle
+                          : Icons.check_circle_outline,
+                      color: _showSelectedOnly
+                          ? Theme.of(context).primaryColor
+                          : Colors.white54,
                     ),
-                  ],
-                ),
+                    tooltip: "Show selected only",
+                    onPressed: () {
+                      setState(() {
+                        _showSelectedOnly = !_showSelectedOnly;
+                      });
+                    },
+                    style: IconButton.styleFrom(
+                      backgroundColor: Theme.of(context).cardColor,
+                      padding: const EdgeInsets.all(12),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -596,9 +740,11 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           child: ListView.builder(
             primary: false, // Prevent conflict
             padding: const EdgeInsets.only(bottom: 140),
-            itemCount: _searchResults.length,
-            itemBuilder: (context, index) {
-              final station = _searchResults[index];
+            itemCount: filteredStations.length,
+            itemBuilder: (context, i) {
+              final entry = filteredStations[i];
+              final index = entry.key; // Original Index
+              final station = entry.value;
               final isSelected = _selectedIndices[index] ?? false;
               final isFavorite = _favoriteIndices[index] ?? false;
               final customLogo = _customLogos[index];
@@ -614,88 +760,169 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                     horizontal: 16,
                     vertical: 4,
                   ),
-                  child: ListTile(
-                    leading: Checkbox(
-                      value: isSelected,
-                      onChanged: (v) {
-                        setState(() {
-                          _selectedIndices[index] = v ?? false;
-                          // Auto-favorite if selected (user convenience, optional)
-                          if (v == true) _favoriteIndices[index] = true;
-                        });
-                      },
-                    ),
-                    title: Text(
-                      station['name'] ?? "Unknown",
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.white70,
-                      ),
-                    ),
-                    subtitle: isSelected
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Logo Preview
-                              Container(
-                                width: 24,
-                                height: 24,
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.black,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child:
-                                    (customLogo != null ||
-                                        (apiLogo != null &&
-                                            apiLogo.toString().isNotEmpty))
-                                    ? Image.network(
-                                        customLogo ?? apiLogo,
-                                        errorBuilder: (_, __, ___) =>
-                                            const Icon(Icons.radio, size: 12),
-                                      )
-                                    : const Icon(Icons.radio, size: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        leading: Checkbox(
+                          value: isSelected,
+                          onChanged: (v) {
+                            setState(() {
+                              _selectedIndices[index] = v ?? false;
+                              // Auto-favorite if selected (user convenience, optional)
+                              if (v == true) _favoriteIndices[index] = true;
+                            });
+                          },
+                        ),
+                        title: Text(
+                          station['name'] ?? "Unknown",
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : Colors.white70,
+                          ),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "${station['bitrate'] ?? 0} Kbps",
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withValues(alpha: 0.7),
+                                fontSize: 11,
                               ),
-                              TextButton.icon(
-                                onPressed: () => _searchAndShowLogos(
-                                  index,
-                                  station['name'] ?? "",
-                                ),
-                                icon: const Icon(Icons.image_search, size: 16),
-                                label: const Text(
-                                  "Logo",
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(60, 30),
-                                ),
+                            ),
+                            if (isSelected) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Logo Preview
+                                  Container(
+                                    width: 24,
+                                    height: 24,
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child:
+                                        (customLogo != null ||
+                                            (apiLogo != null &&
+                                                apiLogo.toString().isNotEmpty))
+                                        ? Image.network(
+                                            customLogo ?? apiLogo,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Icon(
+                                                  Icons.radio,
+                                                  size: 12,
+                                                ),
+                                          )
+                                        : const Icon(Icons.radio, size: 12),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () => _searchAndShowLogos(
+                                      index,
+                                      station['name'] ?? "",
+                                    ),
+                                    icon: const Icon(
+                                      Icons.image_search,
+                                      size: 16,
+                                    ),
+                                    label: const Text(
+                                      "Logo",
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    style: TextButton.styleFrom(
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(60, 30),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
-                          )
-                        : null,
-                    trailing: isSelected
-                        ? IconButton(
-                            icon: Icon(
-                              isFavorite
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              color: isFavorite
-                                  ? Colors.redAccent
-                                  : Colors.white38,
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isSelected)
+                              IconButton(
+                                icon: Icon(
+                                  isFavorite
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isFavorite
+                                      ? Colors.redAccent
+                                      : Colors.white38,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _favoriteIndices[index] = !isFavorite;
+                                  });
+                                },
+                              ),
+                            // Preview Button
+                            IconButton(
+                              icon: Icon(
+                                _previewingUrl ==
+                                        (station['url_resolved'] ??
+                                            station['url'])
+                                    ? Icons.stop_circle
+                                    : Icons.play_circle_fill,
+                                color:
+                                    _previewingUrl ==
+                                        (station['url_resolved'] ??
+                                            station['url'])
+                                    ? Colors.redAccent
+                                    : Theme.of(context).primaryColor,
+                              ),
+                              onPressed: () {
+                                final url =
+                                    station['url_resolved'] ??
+                                    station['url'] ??
+                                    '';
+                                if (url.isNotEmpty) {
+                                  _togglePreview(url);
+                                }
+                              },
+                              tooltip: "Test station (3s)",
                             ),
-                            onPressed: () {
-                              setState(() {
-                                _favoriteIndices[index] = !isFavorite;
-                              });
-                            },
-                          )
-                        : null,
-                    onTap: () {
-                      setState(() {
-                        _selectedIndices[index] = !isSelected;
-                        if (!isSelected) _favoriteIndices[index] = true;
-                      });
-                    },
+                          ],
+                        ),
+                        onTap: () {
+                          setState(() {
+                            _selectedIndices[index] = !isSelected;
+                            if (!isSelected) _favoriteIndices[index] = true;
+                          });
+                        },
+                      ),
+                      if ((station['url_resolved'] ?? station['url']) != null)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: 16,
+                            right: 16,
+                            bottom: 8,
+                          ),
+                          child: Text(
+                            (station['url_resolved'] ?? station['url'])
+                                .toString(),
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.color
+                                  ?.withValues(alpha: 0.5),
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               );

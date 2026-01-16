@@ -2835,7 +2835,7 @@ class RadioProvider with ChangeNotifier {
     if (_hiddenAudioController != null || _currentPlayingPlaylistId != null) {
       _playNextInPlaylist(userInitiated: userInitiated);
     } else {
-      playNextFavorite();
+      playNextStationInFavorites();
     }
   }
 
@@ -2843,7 +2843,7 @@ class RadioProvider with ChangeNotifier {
     if (_hiddenAudioController != null || _currentPlayingPlaylistId != null) {
       _playPreviousInPlaylist();
     } else {
-      playPreviousFavorite();
+      playPreviousStationInFavorites();
     }
   }
 
@@ -4104,6 +4104,24 @@ class RadioProvider with ChangeNotifier {
     );
     _lastApiResponse = "Identifying...";
     _isRecognizing = true; // Start loading state
+
+    // Update AudioHandler to show identifying state on Android Auto
+    _audioHandler.updateMediaItem(
+      MediaItem(
+        id: _currentStation!.url,
+        title: "${_currentStation?.name ?? "Radio"} 🔍", // Add icon here
+        artist: "Identifying...",
+        album: _currentStation?.name ?? "Radio",
+        artUri: _currentStation?.logo != null
+            ? Uri.tryParse(_currentStation!.logo!)
+            : null,
+        extras: {
+          'url': _currentStation!.url,
+          'stationId': _currentStation?.id,
+          'type': 'station',
+        },
+      ),
+    );
     notifyListeners();
 
     final result = await _acrCloudService.identifyStream(_currentStation!.url);
@@ -4169,8 +4187,6 @@ class RadioProvider with ChangeNotifier {
           int durationMs = trackInfo['duration_ms'] ?? 0;
           int offsetMs = trackInfo['play_offset_ms'] ?? 0;
           if (durationMs > 0) {
-            _currentSongDuration = Duration(milliseconds: durationMs);
-            _initialSongOffset = Duration(milliseconds: offsetMs);
             _currentSongDuration = Duration(milliseconds: durationMs);
             _initialSongOffset = Duration(milliseconds: offsetMs);
             _songSyncTime = DateTime.now();
@@ -4249,68 +4265,51 @@ class RadioProvider with ChangeNotifier {
         }
       } else {
         _lastApiResponse = "No music found in stream sample.";
-
-        // Reset to default station images as requested
-        _currentAlbumArt = _currentStation?.logo;
-        _currentArtistImage = null; // Will fallback to station logo in UI
-        _currentTrack = _currentStation?.name ?? "Live Broadcast";
-        _currentArtist = _currentStation?.genre ?? "";
-        _currentLyrics = LyricsData.empty();
-
-        if (_currentStation != null) {
-          _audioHandler.updateMediaItem(
-            MediaItem(
-              id: _currentStation!.url,
-              title: _currentTrack,
-              artist: _currentArtist,
-              album: _currentStation!.name,
-              artUri: _currentStation!.logo != null
-                  ? Uri.parse(_currentStation!.logo!)
-                  : null,
-              extras: {
-                'url': _currentStation!.url,
-                'stationId': _currentStation!.id,
-                'type': 'station',
-              },
-            ),
-          );
-        }
-
-        notifyListeners();
+        _restoreDefaultRadioState();
         _scheduleRetry(45); // Retry sooner if just talk/ad
       }
     } else {
       _lastApiResponse = "Recognition failed or no match.";
-
-      // Reset to default station images as requested
-      _currentAlbumArt = _currentStation?.logo;
-      _currentArtistImage = null; // Will fallback to station logo in UI
-      _currentTrack = _currentStation?.name ?? "Live Broadcast";
-      _currentArtist = _currentStation?.genre ?? "";
-      _currentLyrics = LyricsData.empty();
-
-      if (_currentStation != null) {
-        _audioHandler.updateMediaItem(
-          MediaItem(
-            id: _currentStation!.url,
-            title: _currentTrack,
-            artist: _currentArtist,
-            album: _currentStation!.name,
-            artUri: _currentStation!.logo != null
-                ? Uri.parse(_currentStation!.logo!)
-                : null,
-            extras: {
-              'url': _currentStation!.url,
-              'stationId': _currentStation!.id,
-              'type': 'station',
-            },
-          ),
-        );
-      }
-
-      notifyListeners();
+      _restoreDefaultRadioState();
       _scheduleRetry(45); // Retry
     }
+  }
+
+  void _restoreDefaultRadioState() {
+    // Reset to default station images as requested
+    // "Force the default radio image"
+    _currentAlbumArt = _currentStation?.logo;
+    _currentArtistImage = null; // Will fallback to station logo in UI
+    _currentTrack = _currentStation?.name ?? "Live Broadcast";
+    _currentArtist = _currentStation?.genre ?? "";
+    _currentLyrics = LyricsData.empty();
+
+    // Also reset duration info as there is no specific song
+    _currentSongDuration = null;
+    _initialSongOffset = null;
+    _songSyncTime = null;
+
+    if (_currentStation != null) {
+      // Explicitly update AudioHandler (Android Auto) with the Station Logo
+      _audioHandler.updateMediaItem(
+        MediaItem(
+          id: _currentStation!.url,
+          title: _currentTrack,
+          artist: _currentArtist,
+          album: _currentStation!.name,
+          artUri: _currentStation!.logo != null
+              ? Uri.tryParse(_currentStation!.logo!)
+              : null,
+          extras: {
+            'url': _currentStation!.url,
+            'stationId': _currentStation!.id,
+            'type': 'station',
+          },
+        ),
+      );
+    }
+
+    notifyListeners();
   }
 
   void _scheduleRetry(int seconds) {

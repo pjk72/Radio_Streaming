@@ -322,29 +322,67 @@ class PlayerBar extends StatelessWidget {
                                                         }
                                                       },
                                                     ),
-                                                    if (provider
-                                                            .currentAlbum
-                                                            .isNotEmpty &&
-                                                        provider.currentAlbum !=
-                                                            "Playlist") ...[
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        provider.currentAlbum,
-                                                        style: TextStyle(
-                                                          color: playerTheme
-                                                              .textTheme
-                                                              .bodySmall
-                                                              ?.color
-                                                              ?.withValues(
-                                                                alpha: 0.5,
+                                                    Builder(
+                                                      builder: (context) {
+                                                        String albumText =
+                                                            provider
+                                                                .currentAlbum;
+                                                        final stationName =
+                                                            station.name;
+
+                                                        if (stationName
+                                                                .isNotEmpty &&
+                                                            albumText.contains(
+                                                              stationName,
+                                                            )) {
+                                                          albumText = albumText
+                                                              .replaceAll(
+                                                                stationName,
+                                                                "",
+                                                              )
+                                                              .replaceAll(
+                                                                "•",
+                                                                "",
+                                                              )
+                                                              .trim();
+                                                        }
+
+                                                        if (albumText
+                                                                .isNotEmpty &&
+                                                            albumText !=
+                                                                "Playlist") {
+                                                          return Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              const SizedBox(
+                                                                height: 2,
                                                               ),
-                                                          fontSize: 11,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ],
+                                                              Text(
+                                                                albumText,
+                                                                style: TextStyle(
+                                                                  color: playerTheme
+                                                                      .textTheme
+                                                                      .bodySmall
+                                                                      ?.color
+                                                                      ?.withValues(
+                                                                        alpha:
+                                                                            0.5,
+                                                                      ),
+                                                                  fontSize: 11,
+                                                                ),
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                            ],
+                                                          );
+                                                        }
+                                                        return const SizedBox.shrink();
+                                                      },
+                                                    ),
                                                   ],
                                                 ),
                                               ),
@@ -352,12 +390,14 @@ class PlayerBar extends StatelessWidget {
                                           ],
                                         )
                                       : Text(
-                                          "Select a station",
+                                          "Live Broadcast",
                                           style: TextStyle(
                                             color: playerTheme
                                                 .textTheme
                                                 .bodyMedium
                                                 ?.color,
+                                            fontSize: isDesktop ? 16 : 14,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                 ),

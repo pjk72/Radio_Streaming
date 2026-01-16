@@ -1270,6 +1270,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               }
                             },
                             itemBuilder: (context) {
+                              // Use onSurface for text to ensure visibility against the menu background
+                              final onSurfaceColor = Theme.of(
+                                context,
+                              ).colorScheme.onSurface;
+                              final iconColor =
+                                  Theme.of(context).iconTheme.color ??
+                                  onSurfaceColor.withOpacity(0.7);
+                              final primaryColor = Theme.of(
+                                context,
+                              ).primaryColor;
+
                               return [
                                 PopupMenuItem(
                                   value: 'sort',
@@ -1278,16 +1289,16 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                       Icon(
                                         Icons.sort_by_alpha,
                                         color: _sortAlphabetical
-                                            ? Theme.of(context).primaryColor
-                                            : Colors.white,
+                                            ? primaryColor
+                                            : iconColor,
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
                                         "Sort Alphabetically",
                                         style: TextStyle(
                                           color: _sortAlphabetical
-                                              ? Theme.of(context).primaryColor
-                                              : Colors.white,
+                                              ? primaryColor
+                                              : onSurfaceColor,
                                         ),
                                       ),
                                     ],
@@ -1302,8 +1313,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                             ? Icons.search_off
                                             : Icons.search,
                                         color: _showPlaylistSearch
-                                            ? Theme.of(context).primaryColor
-                                            : Colors.white,
+                                            ? primaryColor
+                                            : iconColor,
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
@@ -1312,15 +1323,15 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                             : "Find in Playlist",
                                         style: TextStyle(
                                           color: _showPlaylistSearch
-                                              ? Theme.of(context).primaryColor
-                                              : Colors.white,
+                                              ? primaryColor
+                                              : onSurfaceColor,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
                                 const PopupMenuDivider(),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   enabled: false,
                                   height: 32,
                                   child: Text(
@@ -1328,7 +1339,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.grey,
+                                      color: Theme.of(context).hintColor,
                                     ),
                                   ),
                                 ),
@@ -1342,8 +1353,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         color:
                                             _groupingMode ==
                                                 PlaylistGroupingMode.album
-                                            ? Theme.of(context).primaryColor
-                                            : Colors.grey,
+                                            ? primaryColor
+                                            : iconColor,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
@@ -1353,8 +1364,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           color:
                                               _groupingMode ==
                                                   PlaylistGroupingMode.album
-                                              ? Theme.of(context).primaryColor
-                                              : Colors.white,
+                                              ? primaryColor
+                                              : onSurfaceColor,
                                         ),
                                       ),
                                       if (_groupingMode ==
@@ -1363,7 +1374,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         Icon(
                                           Icons.check,
                                           size: 16,
-                                          color: Theme.of(context).primaryColor,
+                                          color: primaryColor,
                                         ),
                                       ],
                                     ],
@@ -1379,8 +1390,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         color:
                                             _groupingMode ==
                                                 PlaylistGroupingMode.artist
-                                            ? Theme.of(context).primaryColor
-                                            : Colors.grey,
+                                            ? primaryColor
+                                            : iconColor,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
@@ -1390,8 +1401,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           color:
                                               _groupingMode ==
                                                   PlaylistGroupingMode.artist
-                                              ? Theme.of(context).primaryColor
-                                              : Colors.white,
+                                              ? primaryColor
+                                              : onSurfaceColor,
                                         ),
                                       ),
                                       if (_groupingMode ==
@@ -1400,7 +1411,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         Icon(
                                           Icons.check,
                                           size: 16,
-                                          color: Theme.of(context).primaryColor,
+                                          color: primaryColor,
                                         ),
                                       ],
                                     ],
@@ -1416,8 +1427,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         color:
                                             _groupingMode ==
                                                 PlaylistGroupingMode.none
-                                            ? Theme.of(context).primaryColor
-                                            : Colors.grey,
+                                            ? primaryColor
+                                            : iconColor,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
@@ -1427,8 +1438,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           color:
                                               _groupingMode ==
                                                   PlaylistGroupingMode.none
-                                              ? Theme.of(context).primaryColor
-                                              : Colors.white,
+                                              ? primaryColor
+                                              : onSurfaceColor,
                                         ),
                                       ),
                                       if (_groupingMode ==
@@ -1437,7 +1448,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         Icon(
                                           Icons.check,
                                           size: 16,
-                                          color: Theme.of(context).primaryColor,
+                                          color: primaryColor,
                                         ),
                                       ],
                                     ],
@@ -1452,7 +1463,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         Icons.shuffle_rounded,
                                         color: provider.isShuffleMode
                                             ? Colors.redAccent
-                                            : Colors.grey,
+                                            : iconColor,
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
@@ -1460,25 +1471,27 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         style: TextStyle(
                                           color: provider.isShuffleMode
                                               ? Colors.redAccent
-                                              : Colors.white,
+                                              : onSurfaceColor,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
                                 if (_selectedPlaylistId != null)
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: 'duplicates',
                                     child: Row(
                                       children: [
                                         Icon(
                                           Icons.cleaning_services_rounded,
-                                          color: Colors.white,
+                                          color: iconColor,
                                         ),
-                                        SizedBox(width: 12),
+                                        const SizedBox(width: 12),
                                         Text(
                                           "Scan Duplicates",
-                                          style: TextStyle(color: Colors.white),
+                                          style: TextStyle(
+                                            color: onSurfaceColor,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -1509,8 +1522,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                             _isBulkChecking
                                                 ? "Processing..."
                                                 : "Try Again & Unlock All",
-                                            style: const TextStyle(
-                                              color: Colors.white,
+                                            style: TextStyle(
+                                              color: onSurfaceColor,
                                             ),
                                           ),
                                         ],
