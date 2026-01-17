@@ -1634,8 +1634,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                     ? Icons.bookmark
                                     : Icons.bookmark_border,
                                 color: _showFollowedAlbumsOnly
-                                    ? Colors.greenAccent
-                                    : Colors.white,
+                                    ? Theme.of(context).primaryColor
+                                    : Theme.of(context)
+                                          .appBarTheme
+                                          .foregroundColor
+                                          ?.withValues(alpha: 0.7),
                                 size: 24,
                               ),
                               tooltip: _showFollowedAlbumsOnly
@@ -5538,8 +5541,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                       ? Icons.bookmark
                                       : Icons.bookmark_border,
                                   color: isFollowed
-                                      ? Colors.greenAccent
-                                      : Colors.white,
+                                      ? Theme.of(context).primaryColor
+                                      : Colors.white70,
                                   size: 16,
                                 ),
                               ),

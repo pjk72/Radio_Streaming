@@ -432,6 +432,22 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
     } catch (_) {}
   }
 
+  void _onHexChanged(String val) {
+    if (val.startsWith('#')) val = val.substring(1);
+    if (val.length == 6) val = "FF$val";
+    if (val.length != 8) return; // Only update on valid Hex length
+
+    try {
+      final int v = int.parse(val, radix: 16);
+      setState(() {
+        final color = Color(v);
+        _hsv = HSVColor.fromColor(color);
+        _alpha = color.opacity;
+        _draftColors[_activeKey] = color;
+      });
+    } catch (_) {}
+  }
+
   void _saveAll() {
     widget.provider.setCustomPrimaryColor(_draftColors['primary']!);
     widget.provider.setCustomBackgroundColor(_draftColors['background']!);
@@ -671,6 +687,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                         child: TextField(
                           controller: _hexController,
                           onSubmitted: _onHexSubmitted,
+                          onChanged: _onHexChanged,
                           decoration: InputDecoration(
                             labelText: "Hex Code",
                             prefixText: "#",

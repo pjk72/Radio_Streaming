@@ -483,14 +483,26 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                     );
                                   }
                                 },
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.playlist_add,
-                                  color: Colors.black,
+                                  color:
+                                      Theme.of(
+                                            context,
+                                          ).primaryColor.computeLuminance() >
+                                          0.5
+                                      ? Colors.black
+                                      : Colors.white,
                                 ),
-                                label: const Text(
+                                label: Text(
                                   "Add All to Playlist",
                                   style: TextStyle(
-                                    color: Colors.black,
+                                    color:
+                                        Theme.of(
+                                              context,
+                                            ).primaryColor.computeLuminance() >
+                                            0.5
+                                        ? Colors.black
+                                        : Colors.white,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -639,7 +651,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                               ? Icons.check_circle
                                               : Icons.add_circle_outline,
                                           color: isSaved
-                                              ? Colors.greenAccent
+                                              ? Theme.of(context).primaryColor
                                               : Colors.white54,
                                           size: 24,
                                         ),
