@@ -9,6 +9,9 @@ class SavedSong {
   final String? appleMusicUrl;
   final DateTime dateAdded;
   final String? releaseDate;
+  final bool isValid;
+  final Duration? duration;
+  final String? localPath;
 
   SavedSong({
     required this.id,
@@ -21,6 +24,9 @@ class SavedSong {
     this.appleMusicUrl,
     required this.dateAdded,
     this.releaseDate,
+    this.isValid = true,
+    this.duration,
+    this.localPath,
   });
 
   Map<String, dynamic> toJson() {
@@ -35,6 +41,9 @@ class SavedSong {
       'appleMusicUrl': appleMusicUrl,
       'dateAdded': dateAdded.toIso8601String(),
       'releaseDate': releaseDate,
+      'isValid': isValid,
+      'duration': duration?.inMilliseconds,
+      'localPath': localPath,
     };
   }
 
@@ -50,6 +59,11 @@ class SavedSong {
       appleMusicUrl: json['appleMusicUrl'],
       dateAdded: DateTime.parse(json['dateAdded']),
       releaseDate: json['releaseDate'],
+      isValid: json['isValid'] ?? true,
+      duration: json['duration'] != null
+          ? Duration(milliseconds: json['duration'])
+          : null,
+      localPath: json['localPath'],
     );
   }
 
@@ -64,6 +78,9 @@ class SavedSong {
     String? appleMusicUrl,
     DateTime? dateAdded,
     String? releaseDate,
+    bool? isValid,
+    Duration? duration,
+    String? localPath,
   }) {
     return SavedSong(
       id: id ?? this.id,
@@ -76,6 +93,9 @@ class SavedSong {
       appleMusicUrl: appleMusicUrl ?? this.appleMusicUrl,
       dateAdded: dateAdded ?? this.dateAdded,
       releaseDate: releaseDate ?? this.releaseDate,
+      isValid: isValid ?? this.isValid,
+      duration: duration ?? this.duration,
+      localPath: localPath ?? this.localPath,
     );
   }
 }

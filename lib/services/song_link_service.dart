@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'log_service.dart';
 
 class SongLinkService {
   static const String _baseUrl = 'https://api.song.link/v1-alpha.1/links';
@@ -40,10 +41,48 @@ class SongLinkService {
 
       if (response.statusCode == 200) {
         _lastRawJson += response.body; // Append raw response
+        LogService().log(
+          "SongLink (Odesli) Response: ${response.body}",
+        ); // Log JSON
         final json = jsonDecode(response.body);
         final links = json['linksByPlatform'] as Map<String, dynamic>?;
 
         if (links != null) {
+          // Attempt to extract thumbnail
+          try {
+            // SongLink usually provides entitiesByUniqueId.
+            // We need to find a valid entity to get the thumbnail.
+            // Usually we can trust the 'spotify' or 'google' or 'appleMusic' entry in linksByPlatform
+            // to have an 'entityUniqueId'.
+            String? entityId;
+            if (links.containsKey('spotify')) {
+              entityId = links['spotify']['entityUniqueId'];
+            } else if (links.containsKey('appleMusic')) {
+              entityId = links['appleMusic']['entityUniqueId'];
+            } else if (links.containsKey('youtube')) {
+              entityId = links['youtube']['entityUniqueId'];
+            }
+
+            // Or use the top-level entityUniqueId if available (depends on API version/response type)
+            if (entityId == null && json.containsKey('entityUniqueId')) {
+              entityId = json['entityUniqueId'];
+            }
+
+            if (entityId != null) {
+              final entities = json['entitiesByUniqueId'];
+              if (entities != null && entities[entityId] != null) {
+                final entity = entities[entityId];
+                final thumb = entity['thumbnailUrl'];
+                if (thumb != null) {
+                  result['thumbnailUrl'] = thumb;
+                }
+                // Also try to get artist image? Odesli usually only gives album art.
+              }
+            }
+          } catch (e) {
+            print("Error extracting thumbnail: $e");
+          }
+
           // Spotify
           if (links.containsKey('spotify')) {
             final data = links['spotify'];

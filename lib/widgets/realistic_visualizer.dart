@@ -123,8 +123,8 @@ class _RealisticVisualizerState extends State<RealisticVisualizer>
                   height: height,
                   margin: EdgeInsets.symmetric(horizontal: spacing),
                   decoration: BoxDecoration(
-                    color: widget.color.withOpacity(
-                      widget.isBackground ? 0.8 : 1.0,
+                    color: widget.color.withValues(
+                      alpha: widget.isBackground ? 0.8 : 1.0,
                     ),
                     borderRadius: BorderRadius.circular(2),
                   ),

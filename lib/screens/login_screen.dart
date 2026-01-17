@@ -5,6 +5,8 @@ import 'home_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../providers/radio_provider.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -19,6 +21,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<RadioProvider>(
+          context,
+          listen: false,
+        ).setShowGlobalBanner(false);
+      }
+    });
     _checkAutoLogin();
   }
 
@@ -193,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     // Text Branding
                     const Text(
-                      "Radio Stream",
+                      "MusicStream",
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 42,

@@ -33,31 +33,26 @@ class _GlobalHiddenPlayerState extends State<GlobalHiddenPlayer>
 
     // Strict Sync: Ensure player matches provider state on any lifecycle change
     if (provider.isPlaying) {
-      // Should be playing
+      // Should be playing. On many devices, backgrounding (paused/inactive)
+      // triggers an auto-pause in the webview. We must fight this.
       if (state == AppLifecycleState.resumed ||
           state == AppLifecycleState.inactive ||
           state == AppLifecycleState.paused) {
-        // Force Resume steps
-        Future.delayed(
-          const Duration(milliseconds: 100),
-          () => controller.play(),
-        );
-        Future.delayed(
-          const Duration(milliseconds: 500),
-          () => controller.play(),
-        );
+        // Multiple attempts to resume as the OS might try to pause multiple times during transition
+        for (var delay in [100, 500, 1000, 2000]) {
+          Future.delayed(Duration(milliseconds: delay), () {
+            if (provider.isPlaying && provider.hiddenAudioController != null) {
+              provider.hiddenAudioController!.play();
+            }
+          });
+        }
       }
     } else {
       // Should be paused
       if (state == AppLifecycleState.resumed ||
           state == AppLifecycleState.inactive ||
           state == AppLifecycleState.paused) {
-        // Force Pause steps to prevent auto-play
         controller.pause();
-        Future.delayed(
-          const Duration(milliseconds: 100),
-          () => controller.pause(),
-        );
       }
     }
   }
@@ -75,15 +70,16 @@ class _GlobalHiddenPlayerState extends State<GlobalHiddenPlayer>
         // but the widget needs to be in the tree.
         return Align(
           alignment: Alignment.bottomRight,
-          child: SizedBox(
-            width: 1,
-            height: 1,
-            child: YoutubePlayer(
-              controller: provider.hiddenAudioController!,
-              showVideoProgressIndicator: false,
-              onEnded: (meta) {
-                provider.stopYoutubeAudio();
-              },
+          child: Opacity(
+            opacity: 0.01, // Nearly invisible but RENDERED
+            child: SizedBox(
+              width: 10,
+              height: 10,
+              child: YoutubePlayer(
+                key: ValueKey(provider.audioOnlySongId ?? 'youtube_player'),
+                controller: provider.hiddenAudioController!,
+                showVideoProgressIndicator: false,
+              ),
             ),
           ),
         );

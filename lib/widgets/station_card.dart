@@ -5,7 +5,7 @@ import '../models/station.dart';
 import '../providers/radio_provider.dart';
 
 import 'realistic_visualizer.dart';
-import 'pulsing_indicator.dart';
+
 import '../utils/icon_library.dart';
 
 class StationCard extends StatefulWidget {
@@ -26,7 +26,9 @@ class _StationCardState extends State<StationCard> {
     final isCompact = provider.isCompactView;
 
     final isPlaying =
-        provider.currentStation?.id == widget.station.id && provider.isPlaying;
+        provider.currentStation?.id == widget.station.id &&
+        provider.isPlaying &&
+        !provider.isLoading;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovering = true),
@@ -48,7 +50,7 @@ class _StationCardState extends State<StationCard> {
               end: Alignment.bottomRight,
               colors: [
                 Color(int.parse(widget.station.color)).withValues(alpha: 0.15),
-                Colors.white.withValues(alpha: 0.05),
+                Theme.of(context).colorScheme.surface.withValues(alpha: 0.05),
               ],
             ),
             borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
@@ -57,7 +59,7 @@ class _StationCardState extends State<StationCard> {
                   ? Color(
                       int.parse(widget.station.color),
                     ).withValues(alpha: 0.8)
-                  : Colors.white.withValues(alpha: 0.1),
+                  : Theme.of(context).dividerColor.withValues(alpha: 0.1),
               width: _isHovering ? 1.5 : 1,
             ),
             boxShadow: _isHovering
@@ -77,6 +79,38 @@ class _StationCardState extends State<StationCard> {
             borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
             child: Stack(
               children: [
+                // Background Artist Image if Playing
+                // Background Artist Image if Playing
+                if (isPlaying && provider.currentArtistImage != null)
+                  Positioned.fill(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: FractionallySizedBox(
+                        widthFactor: 0.65, // Occupy only 65% of width
+                        child: Opacity(
+                          opacity: 0.5, // More transparent
+                          child: ShaderMask(
+                            shaderCallback: (rect) {
+                              return const LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [Colors.transparent, Colors.white],
+                                stops: [0.0, 1.0], // Fade from left to right
+                              ).createShader(rect);
+                            },
+                            blendMode: BlendMode.dstIn,
+                            child: Image.network(
+                              provider.currentArtistImage!,
+                              fit: BoxFit.cover,
+                              alignment: Alignment.topCenter,
+                              errorBuilder: (_, __, ___) => const SizedBox(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
                 if (isCompact && isPlaying)
                   Positioned.fill(
                     child: Container(
@@ -99,45 +133,35 @@ class _StationCardState extends State<StationCard> {
                           mainAxisAlignment: MainAxisAlignment.end,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            if (provider.isRecognizing)
-                              Padding(
+                            Flexible(
+                              child: Padding(
                                 padding: const EdgeInsets.only(
-                                  right: 16,
-                                  bottom: 8,
+                                  right: 8,
+                                  bottom: 0,
                                 ),
-                                child: PulsingIndicator(
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  size: 40,
-                                ),
-                              )
-                            else
-                              Flexible(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: 8,
-                                    bottom: 0,
-                                  ),
-                                  child: ShaderMask(
-                                    shaderCallback: (bounds) => LinearGradient(
-                                      colors: [
-                                        Colors.white.withValues(alpha: 0.6),
-                                        Colors.white.withValues(alpha: 0.1),
-                                      ],
-                                      begin: Alignment.bottomCenter,
-                                      end: Alignment.topCenter,
-                                    ).createShader(bounds),
-                                    blendMode: BlendMode.dstIn,
-                                    child: RealisticVisualizer(
-                                      color: Color(
-                                        int.parse(widget.station.color),
-                                      ),
-                                      barCount: 20,
-                                      isBackground: true,
-                                      volume: provider.volume,
+                                child: ShaderMask(
+                                  shaderCallback: (bounds) => LinearGradient(
+                                    colors: [
+                                      Theme.of(context).colorScheme.surface
+                                          .withValues(alpha: 0.6),
+                                      Theme.of(context).colorScheme.surface
+                                          .withValues(alpha: 0.1),
+                                    ],
+                                    begin: Alignment.bottomCenter,
+                                    end: Alignment.topCenter,
+                                  ).createShader(bounds),
+                                  blendMode: BlendMode.dstIn,
+                                  child: RealisticVisualizer(
+                                    color: Color(
+                                      int.parse(widget.station.color),
                                     ),
+                                    barCount: 20,
+                                    isBackground: true,
+                                    volume: provider.volume,
                                   ),
                                 ),
                               ),
+                            ),
                           ],
                         ),
                       ),
@@ -157,13 +181,17 @@ class _StationCardState extends State<StationCard> {
                         height: isCompact ? 40 : 56,
                         padding: EdgeInsets.all(isCompact ? 6 : 10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
+                          color: Theme.of(
+                            context,
+                          ).canvasColor.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(
                             isCompact ? 10 : 14,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
+                              color: Theme.of(
+                                context,
+                              ).shadowColor.withValues(alpha: 0.2),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -185,7 +213,9 @@ class _StationCardState extends State<StationCard> {
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: isCompact ? 15 : 18,
-                                color: Colors.white,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.titleMedium?.color,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -194,7 +224,11 @@ class _StationCardState extends State<StationCard> {
                             Text(
                               widget.station.genre.toUpperCase(),
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withValues(alpha: 0.7),
                                 fontSize: isCompact ? 9 : 11,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 1.0,
@@ -215,7 +249,10 @@ class _StationCardState extends State<StationCard> {
                             if (isPlaying) ...[
                               const SizedBox(height: 4),
                               _LiveBadge(
-                                color: Colors.white70,
+                                color:
+                                    Theme.of(context).textTheme.bodySmall?.color
+                                        ?.withValues(alpha: 0.7) ??
+                                    Colors.white70,
                                 isRecognizing: provider.isRecognizing,
                                 isCompact: isCompact,
                               ),
@@ -300,25 +337,20 @@ class _LiveBadge extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          isRecognizing
-              ? const Padding(
-                  padding: EdgeInsets.only(right: 4),
-                  child: PulsingIndicator(color: Colors.white70, size: 10),
-                )
-              : Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: SizedBox(
-                    width: 20,
-                    height: 12,
-                    child: RealisticVisualizer(color: color),
-                  ),
-                ),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: SizedBox(
+              width: 20,
+              height: 12,
+              child: RealisticVisualizer(color: color),
+            ),
+          ),
           Text(
             "LIVE",
             style: TextStyle(

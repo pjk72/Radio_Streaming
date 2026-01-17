@@ -8,8 +8,6 @@ class StationGenre {
   static const String news = "News";
   static const String country = "Country";
   static const String hipHop = "Hip Hop";
-  static const String italian =
-      "Italian"; // For stations playing specifically Italian music
 
   static List<String> get all => [
     pop,
@@ -21,6 +19,5 @@ class StationGenre {
     news,
     country,
     hipHop,
-    italian,
   ];
 }

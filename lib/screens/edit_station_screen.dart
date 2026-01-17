@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io'; // Added for Platform.localeName
 import 'package:audioplayers/audioplayers.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
 import '../utils/genre_mapper.dart';
@@ -159,7 +161,12 @@ class _EditStationScreenState extends State<EditStationScreen> {
     _logoController = TextEditingController(text: widget.station?.logo ?? '');
 
     // Listen to updates for preview
-    _logoController.addListener(() => setState(() {}));
+    _logoController.addListener(() {
+      setState(() {});
+      // Debounce color extraction
+      _debounceColorExtraction();
+    });
+    _nameController.addListener(() => setState(() {}));
 
     // Color Init
     String initialColor =
@@ -205,13 +212,69 @@ class _EditStationScreenState extends State<EditStationScreen> {
     }
   }
 
+  Timer? _debounceTimer;
+
+  void _debounceColorExtraction() {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (_logoController.text.trim().isNotEmpty) {
+        _extractColorFromLogo();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _nameController.dispose();
     _urlController.dispose();
     _logoController.dispose();
     _colorController.dispose();
     super.dispose();
+  }
+
+  Future<void> _extractColorFromLogo() async {
+    final url = _logoController.text.trim();
+    if (url.isEmpty) return;
+
+    try {
+      ImageProvider imageProvider;
+      if (url.startsWith('http')) {
+        imageProvider = NetworkImage(url);
+      } else {
+        // Assume asset
+        imageProvider = AssetImage(url);
+      }
+
+      // Check if PaletteGenerator is available (it should be imported at top)
+      final palette = await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 20,
+      );
+
+      Color? extracted = palette.dominantColor?.color;
+      extracted ??= palette.vibrantColor?.color;
+      extracted ??= palette.lightVibrantColor?.color;
+      extracted ??= palette.darkVibrantColor?.color;
+
+      if (extracted != null && mounted) {
+        // Convert to Hex
+        final hex =
+            '#${extracted.value.toRadixString(16).substring(2).toUpperCase()}';
+        _colorController.text = hex;
+        setState(() {}); // Refresh UI
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Color updated from logo!"),
+            backgroundColor: extracted,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error extracting color: $e");
+    }
   }
 
   String _formatColor(String color) {
@@ -227,9 +290,11 @@ class _EditStationScreenState extends State<EditStationScreen> {
     if (hexColor.length == 6) {
       hexColor = "FF$hexColor";
     }
-    if (hexColor.length == 8) {
-      return Color(int.tryParse("0x$hexColor") ?? 0xFFFFFFFF);
-    }
+    try {
+      if (hexColor.length == 8) {
+        return Color(int.parse("0x$hexColor"));
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -248,15 +313,28 @@ class _EditStationScreenState extends State<EditStationScreen> {
       s.category.split('|').forEach((c) => allCategories.add(c.trim()));
     }
     // Add defaults if missing
-    allCategories.addAll(["International", "Italian", "News", "Sports"]);
-    allGenres.addAll(["Pop", "Rock", "News", "Jazz", "Classical"]);
+    allCategories.addAll([]);
+    allGenres.addAll([]);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(widget.station == null ? "Add Station" : "Edit Station"),
-        backgroundColor: Colors.transparent,
+        title: Text(
+          widget.station == null ? "Add Station" : "Edit Station",
+          style: TextStyle(
+            color: Theme.of(context).textTheme.titleLarge?.color,
+          ),
+        ),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.check, color: Theme.of(context).primaryColor),
+            onPressed: () => _save(),
+            tooltip: 'Save Station',
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -276,15 +354,28 @@ class _EditStationScreenState extends State<EditStationScreen> {
                       Icons.radio,
                       suffix: IconButton(
                         icon: _isSearching
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 20,
                                 height: 20,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.white,
+                                  color: Theme.of(context).primaryColor,
                                 ),
                               )
-                            : const Icon(Icons.search, color: Colors.white),
+                            : Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).primaryColor,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.search,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimary,
+                                  size: 20,
+                                ),
+                              ),
                         tooltip: "Auto-complete",
                         onPressed: _isSearching ? null : _autoCompleteStation,
                       ),
@@ -297,17 +388,28 @@ class _EditStationScreenState extends State<EditStationScreen> {
                       height: 56, // Match text field height generally
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
+                        color: Theme.of(
+                          context,
+                        ).cardColor.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white12),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.1),
+                        ),
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           value: _selectedSearchCountry,
                           isExpanded: true,
-                          dropdownColor: const Color(0xFF1a1a2e),
-                          style: const TextStyle(color: Colors.white),
-                          icon: const Icon(Icons.public, color: Colors.white54),
+                          dropdownColor: Theme.of(context).cardColor,
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodyLarge?.color,
+                          ),
+                          icon: Icon(
+                            Icons.public,
+                            color: Theme.of(context).iconTheme.color,
+                          ),
                           items: () {
                             List<DropdownMenuItem<String>> items = [];
 
@@ -363,32 +465,58 @@ class _EditStationScreenState extends State<EditStationScreen> {
                 "Stream URL",
                 _urlController,
                 Icons.link,
-                suffix: IconButton(
-                  icon: _isTestingLink
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.play_circle_fill,
-                          color: Colors.greenAccent,
-                        ),
-                  tooltip: "Test Link",
-                  onPressed: _isTestingLink ? null : _testStreamUrl,
+                suffix: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        Icons.image_search,
+                        color: _nameController.text.trim().isNotEmpty
+                            ? Theme.of(context).primaryColor
+                            : Theme.of(context).disabledColor,
+                      ),
+                      tooltip: "Search Default Logo",
+                      onPressed:
+                          _nameController.text.trim().isNotEmpty &&
+                              !_isSearching
+                          ? () => _searchAndShowLogos(
+                              context,
+                              _nameController.text.trim(),
+                            )
+                          : null,
+                    ),
+                    IconButton(
+                      icon: _isTestingLink
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            )
+                          : Icon(
+                              Icons.play_circle_fill,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                      tooltip: "Test Link",
+                      onPressed: _isTestingLink ? null : _testStreamUrl,
+                    ),
+                  ],
                 ),
               ),
 
               const SizedBox(height: 32),
               _buildSectionTitle("Classification"),
 
+              const SizedBox(height: 8),
               // Custom Genre Selector
-              const Text(
+              Text(
                 "Genres",
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 8),
               _buildGenreSelector(context, allGenres.toList()),
@@ -396,9 +524,12 @@ class _EditStationScreenState extends State<EditStationScreen> {
               const SizedBox(height: 24),
 
               // Custom Category Selector (Single Select)
-              const Text(
+              Text(
                 "Category",
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 8),
               _buildCategorySelector(context, allCategories.toList()),
@@ -417,7 +548,10 @@ class _EditStationScreenState extends State<EditStationScreen> {
                 isOptional: true,
                 suffix: _logoController.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white54),
+                        icon: Icon(
+                          Icons.close,
+                          color: Theme.of(context).primaryColor,
+                        ),
                         onPressed: () {
                           setState(() {
                             _logoController.clear();
@@ -444,8 +578,12 @@ class _EditStationScreenState extends State<EditStationScreen> {
                       height: 150,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white24),
-                        color: Colors.white.withValues(alpha: 0.05),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.2),
+                        ),
+                        color: Theme.of(context).cardColor,
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: (previewUrl != null && previewUrl.isNotEmpty)
@@ -482,31 +620,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
               // Icon selector removed
               const SizedBox(height: 48),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 8,
-                    shadowColor: Theme.of(
-                      context,
-                    ).primaryColor.withValues(alpha: 0.5),
-                  ),
-                  onPressed: _save,
-                  child: const Text(
-                    "Save Station",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
+              // Save Button Removed (Moved to AppBar)
+              const SizedBox(height: 24),
               const SizedBox(height: 24),
             ],
           ),
@@ -537,9 +652,11 @@ class _EditStationScreenState extends State<EditStationScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Theme.of(context).cardColor.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -554,11 +671,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
                   backgroundColor: Theme.of(
                     context,
                   ).primaryColor.withValues(alpha: 0.2),
-                  labelStyle: const TextStyle(color: Colors.white),
-                  deleteIcon: const Icon(
+                  labelStyle: TextStyle(
+                    color: Theme.of(context).textTheme.bodyMedium?.color,
+                  ),
+                  deleteIcon: Icon(
                     Icons.close,
                     size: 16,
-                    color: Colors.white70,
+                    color: Theme.of(context).iconTheme.color,
                   ),
                   onDeleted: () {
                     setState(() {
@@ -571,9 +690,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
               ),
               ActionChip(
                 label: const Text("Add +"),
-                backgroundColor: Colors.white.withValues(alpha: 0.1),
-                labelStyle: const TextStyle(color: Colors.white),
-                side: BorderSide.none,
+                backgroundColor: Theme.of(context).cardColor,
+                labelStyle: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                ),
+                side: BorderSide(
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                ),
                 onPressed: () {
                   _showAddGenreDialog(context, availableGenres);
                 },
@@ -623,9 +746,11 @@ class _EditStationScreenState extends State<EditStationScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Theme.of(context).cardColor.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+        ),
       ),
       child: Row(
         children: [
@@ -637,11 +762,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
                 backgroundColor: Theme.of(
                   context,
                 ).primaryColor.withValues(alpha: 0.2),
-                labelStyle: const TextStyle(color: Colors.white),
-                deleteIcon: const Icon(
+                labelStyle: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                ),
+                deleteIcon: Icon(
                   Icons.edit,
                   size: 14,
-                  color: Colors.white70,
+                  color: Theme.of(context).iconTheme.color,
                 ),
                 onDeleted: () {
                   _showSelectCategoryDialog(context, availableCategories);
@@ -652,9 +779,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
           if (_selectedCategory == null)
             ActionChip(
               label: const Text("Select Category"),
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
-              labelStyle: const TextStyle(color: Colors.white),
-              side: BorderSide.none,
+              backgroundColor: Theme.of(context).cardColor,
+              labelStyle: TextStyle(
+                color: Theme.of(context).textTheme.bodyMedium?.color,
+              ),
+              side: BorderSide(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+              ),
               onPressed: () {
                 _showSelectCategoryDialog(context, availableCategories);
               },
@@ -690,7 +821,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Theme.of(context).cardColor.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -703,7 +834,10 @@ class _EditStationScreenState extends State<EditStationScreen> {
                 decoration: BoxDecoration(
                   color: currentColor,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white24, width: 2),
+                  border: Border.all(
+                    color: Theme.of(context).dividerColor,
+                    width: 2,
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: currentColor.withValues(alpha: 0.4),
@@ -717,13 +851,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
               Expanded(
                 child: TextFormField(
                   controller: _colorController,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: Theme.of(context).textTheme.bodyMedium?.color,
                     fontFamily: 'monospace',
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: "Hex Color",
-                    labelStyle: TextStyle(color: Colors.white54),
+                    labelStyle: TextStyle(color: Theme.of(context).hintColor),
                     border: InputBorder.none,
                   ),
                   onChanged: (val) {
@@ -758,11 +892,18 @@ class _EditStationScreenState extends State<EditStationScreen> {
                     color: color,
                     shape: BoxShape.circle,
                     border: isSelected
-                        ? Border.all(color: Colors.white, width: 2)
+                        ? Border.all(
+                            color: Theme.of(context).iconTheme.color!,
+                            width: 2,
+                          )
                         : null,
                   ),
                   child: isSelected
-                      ? const Icon(Icons.check, color: Colors.white, size: 16)
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(context).cardColor,
+                          size: 16,
+                        )
                       : null,
                 ),
               );
@@ -782,14 +923,16 @@ class _EditStationScreenState extends State<EditStationScreen> {
   }) {
     return TextFormField(
       controller: controller,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: Colors.white70),
-        prefixIcon: Icon(icon, color: Colors.white54),
+        labelStyle: TextStyle(color: Theme.of(context).hintColor),
+        prefixIcon: Icon(icon, color: Theme.of(context).iconTheme.color),
         suffixIcon: suffix,
         enabledBorder: OutlineInputBorder(
-          borderSide: const BorderSide(color: Colors.white12),
+          borderSide: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+          ),
           borderRadius: BorderRadius.circular(12),
         ),
         focusedBorder: OutlineInputBorder(
@@ -797,7 +940,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
           borderRadius: BorderRadius.circular(12),
         ),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.05),
+        fillColor: Theme.of(context).cardColor.withValues(alpha: 0.5),
       ),
       validator: (val) {
         if (isOptional) return null;
@@ -808,9 +951,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
   Future<void> _autoCompleteStation() async {
     final query = _nameController.text.trim();
-    if (query.isEmpty) {
+
+    // If query is empty, we only proceed if a specific country is selected.
+    if (query.isEmpty && _selectedSearchCountry == "ALL") {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a station name")),
+        const SnackBar(
+          content: Text("Please enter a name or select a specific Country"),
+        ),
       );
       return;
     }
@@ -821,29 +968,49 @@ class _EditStationScreenState extends State<EditStationScreen> {
     setState(() => _isSearching = true);
 
     try {
-      Uri url;
+      List<dynamic> stations = [];
+      String? successServer;
 
-      if (_selectedSearchCountry == "ALL") {
-        url = Uri.parse(
-          "https://de1.api.radio-browser.info/json/stations/byname/${Uri.encodeComponent(query)}?limit=30",
-        );
-      } else {
-        url = Uri.parse(
-          "https://de1.api.radio-browser.info/json/stations/search?name=${Uri.encodeComponent(query)}&countrycode=${_selectedSearchCountry}&limit=30",
-        );
+      // Try servers de1 to de5
+      for (int i = 1; i <= 5; i++) {
+        final server = "de$i.api.radio-browser.info";
+        Uri url;
+
+        if (query.isEmpty) {
+          url = Uri.parse(
+            "https://$server/json/stations/search?countrycode=${_selectedSearchCountry.toLowerCase()}&limit=100&order=clickcount&reverse=true",
+          );
+        } else if (_selectedSearchCountry == "ALL") {
+          url = Uri.parse(
+            "https://$server/json/stations/byname/${Uri.encodeComponent(query)}?limit=100",
+          );
+        } else {
+          url = Uri.parse(
+            "https://$server/json/stations/search?name=${Uri.encodeComponent(query)}&countrycode=${_selectedSearchCountry.toLowerCase()}&limit=100",
+          );
+        }
+
+        try {
+          debugPrint("Trying Radio Browser Server: $server");
+          final response = await http
+              .get(url)
+              .timeout(
+                const Duration(seconds: 4),
+              ); // Short timeout for faster failover
+
+          if (response.statusCode == 200) {
+            stations = json.decode(response.body);
+            successServer = server;
+            break; // Success! Exit loop.
+          }
+        } catch (e) {
+          debugPrint("Failed to fetch from $server: $e");
+          // Continue to next server
+        }
       }
 
-      List<dynamic> stations = [];
-      try {
-        final response = await http
-            .get(url)
-            .timeout(const Duration(seconds: 5));
-
-        if (response.statusCode == 200) {
-          stations = json.decode(response.body);
-        }
-      } catch (e) {
-        debugPrint("Station search exception: $e");
+      if (successServer == null) {
+        debugPrint("All Radio Browser servers failed.");
       }
 
       if (!mounted) return;
@@ -865,10 +1032,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
           (a, b) => (b['bitrate'] ?? 0).compareTo(a['bitrate'] ?? 0),
         );
 
-        final candidates = [
-          ...stationsWithImages,
-          ...stationsOthers,
-        ].take(20).toList();
+        final candidates = [...stationsWithImages, ...stationsOthers].toList();
 
         if (candidates.isNotEmpty) {
           setState(() => _isSearching = false);
@@ -1068,13 +1232,16 @@ class _EditStationScreenState extends State<EditStationScreen> {
       final selected = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF16213e),
+          backgroundColor: Theme.of(context).cardColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
           title: Text(
             "Select Logo for '$query'",
-            style: const TextStyle(color: Colors.white, fontSize: 16),
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleLarge?.color,
+              fontSize: 16,
+            ),
           ),
           content: SizedBox(
             width: double.maxFinite,
@@ -1133,6 +1300,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
       if (selected != null && mounted) {
         setState(() => _logoController.text = selected);
+        // Automatic Color Extraction
+        _extractColorFromLogo();
       }
     } catch (e) {
       if (mounted) {
@@ -1242,8 +1411,11 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF16213e),
-      title: const Text("Select Genres", style: TextStyle(color: Colors.white)),
+      backgroundColor: Theme.of(context).cardColor,
+      title: Text(
+        "Select Genres",
+        style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
+      ),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -1253,10 +1425,13 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
             TextField(
               decoration: InputDecoration(
                 hintText: "Search genres...",
-                hintStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.search, color: Colors.white38),
+                hintStyle: TextStyle(color: Theme.of(context).hintColor),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: Theme.of(context).iconTheme.color,
+                ),
                 filled: true,
-                fillColor: Colors.black12,
+                fillColor: Theme.of(context).scaffoldBackgroundColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -1266,7 +1441,9 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
                   horizontal: 12,
                 ),
               ),
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+              ),
               onChanged: (val) {
                 setState(() {
                   searchQuery = val;
@@ -1320,7 +1497,10 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
                           ).primaryColor.withValues(alpha: 0.2),
                           labelStyle: const TextStyle(color: Colors.white),
                           checkmarkColor: Colors.white,
-                          backgroundColor: Colors.white10,
+                          backgroundColor:
+                              Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white10
+                              : Colors.black12,
                           side: BorderSide.none,
                         );
                       }).toList(),
@@ -1336,23 +1516,32 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   "Or add new:",
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).hintColor,
+                    fontSize: 12,
+                  ),
                 ),
                 Row(
                   children: [
                     Expanded(
                       child: TextField(
                         controller: textController,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: "New Genre Name",
-                          hintStyle: TextStyle(color: Colors.white24),
+                          hintStyle: TextStyle(
+                            color: Theme.of(context).hintColor,
+                          ),
                           enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Colors.white24),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                            ),
                           ),
                         ),
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
                         onSubmitted: (val) {
                           if (val.trim().isNotEmpty) {
                             setState(() {
@@ -1435,10 +1624,10 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF16213e),
-      title: const Text(
+      backgroundColor: Theme.of(context).cardColor,
+      title: Text(
         "Select Category",
-        style: TextStyle(color: Colors.white),
+        style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
       ),
       content: SizedBox(
         width: double.maxFinite,
@@ -1449,10 +1638,13 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
             TextField(
               decoration: InputDecoration(
                 hintText: "Search categories...",
-                hintStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.search, color: Colors.white38),
+                hintStyle: TextStyle(color: Theme.of(context).hintColor),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: Theme.of(context).iconTheme.color,
+                ),
                 filled: true,
-                fillColor: Colors.black12,
+                fillColor: Theme.of(context).scaffoldBackgroundColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -1462,7 +1654,9 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
                   horizontal: 12,
                 ),
               ),
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+              ),
               onChanged: (val) {
                 setState(() {
                   searchQuery = val;
@@ -1511,9 +1705,14 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
                           },
                           selectedColor: Theme.of(context).primaryColor,
                           labelStyle: TextStyle(
-                            color: isSelected ? Colors.white : Colors.white70,
+                            color: isSelected
+                                ? Colors.white
+                                : Theme.of(context).textTheme.bodySmall?.color,
                           ),
-                          backgroundColor: Colors.white10,
+                          backgroundColor:
+                              Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white10
+                              : Colors.grey.withValues(alpha: 0.1),
                           side: BorderSide.none,
                         );
                       }).toList(),
@@ -1529,23 +1728,32 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   "Or add new:",
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(
+                    color: Theme.of(context).hintColor,
+                    fontSize: 12,
+                  ),
                 ),
                 Row(
                   children: [
                     Expanded(
                       child: TextField(
                         controller: textController,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: "New Category Name",
-                          hintStyle: TextStyle(color: Colors.white24),
+                          hintStyle: TextStyle(
+                            color: Theme.of(context).hintColor,
+                          ),
                           enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Colors.white24),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                            ),
                           ),
                         ),
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
                         onSubmitted: (val) {
                           if (val.trim().isNotEmpty) {
                             setState(() {
@@ -1600,10 +1808,10 @@ class _StationSelectionDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF16213e),
-      title: const Text(
+      backgroundColor: Theme.of(context).cardColor,
+      title: Text(
         "Select Station",
-        style: TextStyle(color: Colors.white),
+        style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
       ),
       content: SizedBox(
         width: double.maxFinite,
@@ -1625,9 +1833,13 @@ class _StationSelectionDialog extends StatelessWidget {
               onTap: () => Navigator.pop(context, s),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white12),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).dividerColor.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1639,7 +1851,8 @@ class _StationSelectionDialog extends StatelessWidget {
                           borderRadius: BorderRadius.vertical(
                             top: Radius.circular(12),
                           ),
-                          color: Colors.black12,
+                          color:
+                              Colors.black12, // Keep dark for image background
                         ),
                         child: hasImage
                             ? Image.network(
@@ -1671,8 +1884,10 @@ class _StationSelectionDialog extends StatelessWidget {
                           children: [
                             Text(
                               s['name'] ?? 'Unknown',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodyLarge?.color,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
@@ -1682,8 +1897,10 @@ class _StationSelectionDialog extends StatelessWidget {
                             const SizedBox(height: 2),
                             Text(
                               "${(s['bitrate'] ?? 0)} kbps | ${s['countrycode'] ?? ''}",
-                              style: const TextStyle(
-                                color: Colors.white54,
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
                                 fontSize: 10,
                               ),
                               maxLines: 1,
@@ -1694,8 +1911,10 @@ class _StationSelectionDialog extends StatelessWidget {
                               const SizedBox(height: 2),
                               Text(
                                 s['country'],
-                                style: const TextStyle(
-                                  color: Colors.white24,
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall?.color,
                                   fontSize: 10,
                                 ),
                                 maxLines: 1,

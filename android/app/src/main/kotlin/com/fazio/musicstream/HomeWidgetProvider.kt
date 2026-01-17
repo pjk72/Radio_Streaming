@@ -1,4 +1,4 @@
-package com.fazio.radio_stream
+package com.fazio.musicstream
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
@@ -20,7 +20,7 @@ class HomeWidgetProvider : HomeWidgetProvider() {
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_layout).apply {
                 // Text Updates
-                val title = widgetData.getString("title", "Radio Streaming")
+                val title = widgetData.getString("title", "MusicStream")
                 val subtitle = widgetData.getString("subtitle", "Tap to listen")
                 setTextViewText(R.id.widget_title, title)
                 setTextViewText(R.id.widget_subtitle, subtitle)

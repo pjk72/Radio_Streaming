@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 
 import '../utils/icon_library.dart';
+import '../widgets/tutorial_create_radio_wizard.dart';
 import 'edit_station_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
+enum GroupingMode { none, genre, origin }
 
 class ManageStationsScreen extends StatefulWidget {
   const ManageStationsScreen({super.key});
@@ -19,7 +22,8 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
   String _searchQuery = '';
 
   bool _isSearching = false;
-  bool _isGridView = false;
+  // bool _isGridView = false; - Now in Provider
+  // GroupingMode _groupingMode = GroupingMode.none; - Now in Provider
 
   @override
   void initState() {
@@ -52,85 +56,60 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
         );
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: _isSearching
             ? TextField(
                 controller: _searchController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
+                decoration: InputDecoration(
                   hintText: "Search Stations...",
-                  hintStyle: TextStyle(color: Colors.white54),
+                  hintStyle: TextStyle(color: Theme.of(context).hintColor),
                   border: InputBorder.none,
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(
+                            Icons.close,
+                            color: Theme.of(context).iconTheme.color,
+                          ),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
                 ),
                 autofocus: true,
               )
-            : const Text(
+            : Text(
                 "Manage Stations",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                ),
               ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         actions: [
           IconButton(
-            icon: Icon(
-              _isSearching ? Icons.close : Icons.search,
-              color: Colors.white,
-            ),
+            icon: const Icon(Icons.auto_fix_high),
+            tooltip: 'Station Wizard',
             onPressed: () {
-              setState(() {
-                if (_isSearching) {
-                  _isSearching = false;
-                  _searchController.clear();
-                } else {
-                  _isSearching = true;
-                }
-              });
-            },
-          ),
-          if (!_isSearching) ...[
-            IconButton(
-              icon: Icon(
-                _isGridView ? Icons.view_list : Icons.grid_view,
-                color: Colors.white,
-              ),
-              onPressed: () => setState(() => _isGridView = !_isGridView),
-              tooltip: _isGridView ? "List View" : "Grid View",
-            ),
-            Row(
-              children: [
-                Text(
-                  provider.backupService.currentUser?.displayName
-                          ?.split(' ')
-                          .first ??
-                      "Guest",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => Scaffold(
+                    appBar: AppBar(title: const Text('Add Station Wizard')),
+                    body: const TutorialCreateRadioWizard(),
                   ),
                 ),
-                const SizedBox(width: 12),
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Colors.white24,
-                  backgroundImage:
-                      provider.backupService.currentUser?.photoUrl != null
-                      ? NetworkImage(
-                          provider.backupService.currentUser!.photoUrl!,
-                        )
-                      : null,
-                  child: provider.backupService.currentUser?.photoUrl == null
-                      ? const Icon(Icons.person, size: 16, color: Colors.white)
-                      : null,
-                ),
-                const SizedBox(width: 16),
-              ],
-            ),
-          ],
+              );
+            },
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.add, color: Colors.white),
+        child: Icon(Icons.add, color: Theme.of(context).colorScheme.onPrimary),
         onPressed: () {
           Navigator.push(
             context,
@@ -140,111 +119,295 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
       ),
       body: Column(
         children: [
-          Expanded(
-            child: _isGridView
-                ? GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.8,
-                        ),
-                    itemCount: filteredStations.length,
-                    itemBuilder: (context, index) {
-                      final s = filteredStations[index];
-                      return _buildStationCard(context, s, provider);
-                    },
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 80),
-                    itemCount: filteredStations.length,
-                    itemBuilder: (context, index) {
-                      final s = filteredStations[index];
-                      return ListTile(
-                        leading: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: Color(
-                              int.tryParse(s.color) ?? 0xFFFFFFFF,
-                            ).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(
-                            child: s.logo != null && s.logo!.isNotEmpty
-                                ? (s.logo!.startsWith('http')
-                                      ? Image.network(
-                                          s.logo!,
-                                          errorBuilder: (c, e, s) => const Icon(
-                                            Icons.radio,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : Image.asset(
-                                          s.logo!,
-                                          errorBuilder: (c, e, s) => const Icon(
-                                            Icons.radio,
-                                            color: Colors.white,
-                                          ),
-                                        ))
-                                : FaIcon(
-                                    IconLibrary.getIcon(s.icon),
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                          ),
-                        ),
-                        title: Text(
-                          s.name,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        subtitle: Text(
-                          s.genre,
-                          style: const TextStyle(color: Colors.white54),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                provider.favorites.contains(s.id)
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: provider.favorites.contains(s.id)
-                                    ? Colors.redAccent
-                                    : Colors.white54,
-                              ),
-                              onPressed: () => provider.toggleFavorite(s.id),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                provider.isPlaying &&
-                                        provider.currentStation?.id == s.id
-                                    ? Icons.stop_circle_outlined
-                                    : Icons.play_circle_outline,
-                                color:
-                                    provider.isPlaying &&
-                                        provider.currentStation?.id == s.id
-                                    ? Colors.redAccent
-                                    : Colors.greenAccent,
-                              ),
-                              onPressed: () {
-                                if (provider.isPlaying &&
-                                    provider.currentStation?.id == s.id) {
-                                  provider.stop();
-                                } else {
-                                  provider.playStation(s);
-                                }
-                              },
-                            ),
-                            _buildPopupMenu(context, s, provider),
-                          ],
-                        ),
-                      );
-                    },
+          Expanded(child: _buildBody(context, provider, filteredStations)),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        height: 60,
+        margin: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).shadowColor.withValues(alpha: 0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(
+              icon: Icon(
+                _isSearching ? Icons.close : Icons.search,
+                color: _isSearching
+                    ? Colors.blueAccent
+                    : Theme.of(context).iconTheme.color,
+              ),
+              onPressed: () {
+                setState(() {
+                  if (_isSearching) {
+                    _isSearching = false;
+                    _searchController.clear();
+                  } else {
+                    _isSearching = true;
+                  }
+                });
+              },
+              tooltip: "Search",
+            ),
+            IconButton(
+              icon: Icon(
+                provider.isManageGridView ? Icons.view_list : Icons.grid_view,
+                color: Theme.of(context).iconTheme.color,
+              ),
+              onPressed: () =>
+                  provider.setManageGridView(!provider.isManageGridView),
+              tooltip: provider.isManageGridView ? "List View" : "Grid View",
+            ),
+            PopupMenuButton<GroupingMode>(
+              icon: Icon(
+                Icons.sort_rounded,
+                color:
+                    provider.manageGroupingMode !=
+                        0 // 0 is GroupingMode.none
+                    ? Colors.blueAccent
+                    : Theme.of(context).iconTheme.color,
+              ),
+              onSelected: (mode) => provider.setManageGroupingMode(mode.index),
+              tooltip: "Group by",
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: GroupingMode.none,
+                  child: Text("No Grouping"),
+                ),
+                const PopupMenuItem(
+                  value: GroupingMode.genre,
+                  child: Text("Group by Genre"),
+                ),
+                const PopupMenuItem(
+                  value: GroupingMode.origin,
+                  child: Text("Group by Origin"),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    RadioProvider provider,
+    List<dynamic> stations,
+  ) {
+    final groupingMode = GroupingMode.values[provider.manageGroupingMode];
+    if (groupingMode == GroupingMode.none) {
+      return _buildUngroupedContent(context, provider, stations);
+    }
+
+    final Map<String, List<dynamic>> grouped = {};
+    for (var s in stations) {
+      String key;
+      if (groupingMode == GroupingMode.genre) {
+        key = s.genre.split('|').first.trim();
+        if (key.isEmpty) key = "Unknown Genre";
+      } else {
+        key = s.category.trim();
+        if (key.isEmpty) key = "Unknown Origin";
+      }
+
+      if (!grouped.containsKey(key)) grouped[key] = [];
+      grouped[key]!.add(s);
+    }
+
+    final sortedKeys = grouped.keys.toList()..sort();
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80),
+      itemCount: sortedKeys.length,
+      itemBuilder: (context, index) {
+        final key = sortedKeys[index];
+        final groupStations = grouped[key]!;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.label_outline,
+                    color: Colors.blueAccent,
+                    size: 18,
                   ),
+                  const SizedBox(width: 8),
+                  Text(
+                    key,
+                    style: const TextStyle(
+                      color: Colors.blueAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Divider(
+                      color: Colors.blueAccent.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (provider.isManageGridView)
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.8,
+                ),
+                itemCount: groupStations.length,
+                itemBuilder: (context, idx) {
+                  return _buildStationCard(
+                    context,
+                    groupStations[idx],
+                    provider,
+                  );
+                },
+              )
+            else
+              ...groupStations.map(
+                (s) => _buildStationListItem(context, s, provider),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildUngroupedContent(
+    BuildContext context,
+    RadioProvider provider,
+    List<dynamic> stations,
+  ) {
+    if (provider.isManageGridView) {
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 0.8,
+        ),
+        itemCount: stations.length,
+        itemBuilder: (context, index) {
+          final s = stations[index];
+          return _buildStationCard(context, s, provider);
+        },
+      );
+    } else {
+      return ListView.builder(
+        padding: const EdgeInsets.only(bottom: 80),
+        itemCount: stations.length,
+        itemBuilder: (context, index) {
+          final s = stations[index];
+          return _buildStationListItem(context, s, provider);
+        },
+      );
+    }
+  }
+
+  Widget _buildStationListItem(
+    BuildContext context,
+    dynamic s,
+    RadioProvider provider,
+  ) {
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Color(
+            int.tryParse(s.color) ?? 0xFFFFFFFF,
+          ).withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: s.logo != null && s.logo!.isNotEmpty
+              ? (s.logo!.startsWith('http')
+                    ? Image.network(
+                        s.logo!,
+                        errorBuilder: (c, e, s) =>
+                            const Icon(Icons.radio, color: Colors.white),
+                      )
+                    : Image.asset(
+                        s.logo!,
+                        errorBuilder: (c, e, s) =>
+                            const Icon(Icons.radio, color: Colors.white),
+                      ))
+              : FaIcon(
+                  IconLibrary.getIcon(s.icon),
+                  color: Colors.white,
+                  size: 20,
+                ),
+        ),
+      ),
+      title: Text(
+        s.name,
+        style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+      ),
+      subtitle: Text(
+        s.genre,
+        style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              provider.favorites.contains(s.id)
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              color: provider.favorites.contains(s.id)
+                  ? Colors.redAccent
+                  : Colors.white54,
+            ),
+            onPressed: () => provider.toggleFavorite(s.id),
+          ),
+          IconButton(
+            icon: Icon(
+              provider.isPlaying && provider.currentStation?.id == s.id
+                  ? Icons.stop_circle_outlined
+                  : Icons.play_circle_outline,
+              color: provider.isPlaying && provider.currentStation?.id == s.id
+                  ? Colors.redAccent
+                  : Theme.of(context).textTheme.bodyLarge?.color,
+            ),
+            onPressed: () {
+              if (provider.isPlaying && provider.currentStation?.id == s.id) {
+                provider.stop();
+              } else {
+                provider.playStation(s);
+              }
+            },
+          ),
+          _buildPopupMenu(
+            context,
+            s,
+            provider,
+            iconColor: Theme.of(context).iconTheme.color,
           ),
         ],
       ),
@@ -254,13 +417,16 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
   Widget _buildPopupMenu(
     BuildContext context,
     dynamic s,
-    RadioProvider provider,
-  ) {
-    // ... existing PopupMenu implementation ...
+    RadioProvider provider, {
+    Color? iconColor,
+  }) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: Colors.white54),
+      icon: Icon(
+        Icons.more_vert,
+        color: iconColor ?? Theme.of(context).iconTheme.color,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: const Color(0xFF222831),
+      color: Theme.of(context).cardColor,
       onSelected: (value) async {
         if (value == 'edit') {
           Navigator.push(
@@ -271,14 +437,18 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
           final confirm = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
-              backgroundColor: const Color(0xFF16213e),
-              title: const Text(
+              backgroundColor: Theme.of(context).cardColor,
+              title: Text(
                 "Delete Station?",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                ),
               ),
               content: Text(
                 "Are you sure you want to delete '${s.name}'?",
-                style: const TextStyle(color: Colors.white70),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                ),
               ),
               actions: [
                 TextButton(
@@ -302,23 +472,33 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
         }
       },
       itemBuilder: (BuildContext context) => [
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'edit',
           child: Row(
             children: [
-              Icon(Icons.edit, color: Colors.blueAccent),
+              Icon(Icons.edit, color: Theme.of(context).primaryColor),
               SizedBox(width: 12),
-              Text("Edit", style: TextStyle(color: Colors.white)),
+              Text(
+                "Edit",
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
+              ),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'delete',
           child: Row(
             children: [
-              Icon(Icons.delete_outline, color: Colors.redAccent),
-              SizedBox(width: 12),
-              Text("Delete", style: TextStyle(color: Colors.white)),
+              const Icon(Icons.delete_outline, color: Colors.redAccent),
+              const SizedBox(width: 12),
+              Text(
+                "Delete",
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
+              ),
             ],
           ),
         ),
@@ -413,7 +593,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                               provider.isPlaying &&
                                   provider.currentStation?.id == s.id
                               ? Colors.redAccent
-                              : Colors.white,
+                              : Theme.of(context).textTheme.bodyLarge?.color,
                           size: 24,
                         ),
                       ),

@@ -1,5 +1,5 @@
 name: radio_streaming_app
-description: "Radio Stream - Premium Radio Player"
+description: "MusicStream - Premium Music Player"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -35,7 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   audioplayers: ^6.5.1
-  google_fonts: ^6.3.3
+  google_fonts: ^7.0.2
   font_awesome_flutter: ^10.12.0
   provider: ^6.1.5+1
   transparent_image: ^2.0.1
@@ -45,12 +45,12 @@ dependencies:
   audio_service: ^0.18.18
   shared_preferences: ^2.5.3
   intl: ^0.20.2
-  home_widget: ^0.8.1
+  home_widget: ^0.9.0
   connectivity_plus: ^7.0.0
-  google_sign_in: ^6.2.2
-  googleapis: ^13.0.0
-  googleapis_auth: ^1.6.0
-  extension_google_sign_in_as_googleapis_auth: ^2.0.7
+  google_sign_in: ^6.2.1
+  googleapis: ^15.0.0
+  googleapis_auth: ^2.0.0
+  extension_google_sign_in_as_googleapis_auth: 2.0.13
   image: ^4.6.0
   permission_handler: ^12.0.1
   device_preview: ^1.3.1
@@ -64,6 +64,11 @@ dependencies:
   webview_flutter_android: ^4.10.11
   palette_generator: ^0.3.3+7
   reorderable_grid_view: ^2.2.8
+  cached_network_image: ^3.4.1
+  scrollable_positioned_list: ^0.3.8
+  google_mobile_ads: ^7.0.0
+  on_audio_query: ^2.9.0
+
 
 dev_dependencies:
   flutter_test:
