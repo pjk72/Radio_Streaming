@@ -851,15 +851,32 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                   ),
                   if (provider.currentAlbum.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Text(
-                      provider.currentAlbum,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                        fontSize: 14,
-                      ),
+                    Builder(
+                      builder: (context) {
+                        String albumText = provider.currentAlbum;
+                        final stationName = station.name;
+
+                        if (stationName.isNotEmpty &&
+                            albumText.contains(stationName)) {
+                          albumText = albumText
+                              .replaceAll(stationName, "")
+                              .replaceAll("•", "")
+                              .trim();
+                        }
+
+                        if (albumText.isEmpty) return const SizedBox.shrink();
+
+                        return Text(
+                          albumText,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 14,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ],

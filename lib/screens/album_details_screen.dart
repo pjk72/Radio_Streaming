@@ -35,6 +35,8 @@ class AlbumDetailsScreen extends StatefulWidget {
 class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
   late Future<Map<String, dynamic>?> _albumInfoFuture;
   int? _selectedTrackIndex; // Track index to highlight
+  Future<List<Map<String, dynamic>>>? _tracksFuture;
+  List<Map<String, dynamic>>? _cachedTracks;
 
   @override
   void initState() {
@@ -195,6 +197,7 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
           return trackA.compareTo(trackB);
         });
 
+        _cachedTracks = tracks;
         return tracks;
       }
     } catch (e) {
@@ -432,19 +435,35 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                               const SizedBox(height: 16),
                               ElevatedButton.icon(
                                 onPressed: () async {
-                                  final tracks = await _fetchTracks(
-                                    albumData['collectionId'],
-                                  );
+                                  final tracks =
+                                      _cachedTracks ??
+                                      await _fetchTracks(
+                                        albumData['collectionId'],
+                                      );
                                   if (tracks.isEmpty) return;
 
                                   if (!context.mounted) return;
+
+                                  // Show loading indicator for bulk add
+                                  showDialog(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (ctx) => const Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+
                                   final provider = Provider.of<RadioProvider>(
                                     context,
                                     listen: false,
                                   );
-                                  int addedCount = 0;
 
-                                  for (var track in tracks) {
+                                  List<SongSearchResult> toAdd = [];
+
+                                  final now = DateTime.now();
+                                  final timestamp = now.millisecondsSinceEpoch;
+                                  for (int i = 0; i < tracks.length; i++) {
+                                    final track = tracks[i];
                                     final trackArtist =
                                         track['artistName'] ?? displayArtist;
                                     final trackName =
@@ -453,32 +472,38 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                     final song = SavedSong(
                                       id:
                                           track['trackId']?.toString() ??
-                                          DateTime.now().millisecondsSinceEpoch
-                                              .toString(),
+                                          "${timestamp}_${track['trackNumber'] ?? i}",
                                       title: trackName,
                                       artist: trackArtist,
                                       album: displayName,
                                       artUri: displayImage,
                                       appleMusicUrl: track['trackViewUrl'],
-                                      dateAdded: DateTime.now(),
+                                      dateAdded: now,
                                       releaseDate: albumData['releaseDate'],
                                     );
 
-                                    await provider.addFoundSongToGenre(
+                                    toAdd.add(
                                       SongSearchResult(
                                         song: song,
                                         genre: genre ?? "Mix",
                                       ),
                                     );
-                                    addedCount++;
                                   }
 
+                                  await provider.addFoundSongsToGenre(toAdd);
+
                                   if (context.mounted) {
+                                    Navigator.of(
+                                      context,
+                                      rootNavigator: true,
+                                    ).pop(); // Dismiss loading
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          "Added $addedCount songs to ${genre ?? "Mix"}",
+                                          "Successfully added ${toAdd.length} songs to ${genre ?? "Mix"}",
                                         ),
+                                        behavior: SnackBarBehavior.floating,
+                                        backgroundColor: Colors.green,
                                       ),
                                     );
                                   }
@@ -507,9 +532,15 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                                   ),
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.greenAccent,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).primaryColor,
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
+                                    borderRadius: BorderRadius.circular(25),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 12,
                                   ),
                                 ),
                               ),
@@ -522,7 +553,9 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                     // Tracks List
                     if (albumData != null)
                       FutureBuilder<List<Map<String, dynamic>>>(
-                        future: _fetchTracks(albumData['collectionId']),
+                        future: _tracksFuture ??= _fetchTracks(
+                          albumData['collectionId'],
+                        ),
                         builder: (context, trackSnap) {
                           if (trackSnap.connectionState ==
                               ConnectionState.waiting) {

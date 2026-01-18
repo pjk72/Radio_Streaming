@@ -29,6 +29,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
   void _loadAd() {
     _nativeAd = NativeAd(
       adUnitId: _adUnitId,
+      factoryId: 'smallAdFactory',
       listener: NativeAdListener(
         onAdLoaded: (ad) {
           debugPrint('Native Ad loaded.');
@@ -42,32 +43,6 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
         },
       ),
       request: const AdRequest(),
-      nativeTemplateStyle: NativeTemplateStyle(
-        templateType: TemplateType.small,
-        mainBackgroundColor: const Color(0xFF1A1A1A),
-        cornerRadius: 12.0,
-        callToActionTextStyle: NativeTemplateTextStyle(
-          textColor: Colors.white,
-          backgroundColor: Colors.blueAccent,
-          style: NativeTemplateFontStyle.bold,
-          size: 14.0,
-        ),
-        primaryTextStyle: NativeTemplateTextStyle(
-          textColor: Colors.white,
-          style: NativeTemplateFontStyle.bold,
-          size: 14.0,
-        ),
-        secondaryTextStyle: NativeTemplateTextStyle(
-          textColor: Colors.white70,
-          style: NativeTemplateFontStyle.normal,
-          size: 12.0,
-        ),
-        tertiaryTextStyle: NativeTemplateTextStyle(
-          textColor: Colors.white70,
-          style: NativeTemplateFontStyle.normal,
-          size: 12.0,
-        ),
-      ),
     )..load();
   }
 
@@ -85,7 +60,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
 
     final cardColor = Theme.of(context).cardColor;
     return Container(
-      height: 100,
+      height: 70,
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: cardColor.withValues(alpha: 0.5),

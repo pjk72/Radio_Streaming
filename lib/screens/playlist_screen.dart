@@ -29,7 +29,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'playlist_screen_duplicates_logic.dart';
 import '../widgets/native_ad_widget.dart';
-import '../widgets/add_song_dialog.dart';
+import 'add_song_screen.dart';
 
 enum MetadataViewMode { playlists, artists, albums }
 
@@ -3206,7 +3206,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   }
 
   void _showAddSongDialog(BuildContext context, RadioProvider provider) {
-    AddSongDialog.show(context, provider);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AddSongScreen()),
+    );
   }
 
   void _showFilterDialog(BuildContext context, RadioProvider provider) {
@@ -3404,21 +3407,43 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       }
     }
 
-    // Logic for Ads
+    // Logic for Ads: At start, at end, and every 10 songs (including grouped content)
     final List<dynamic> listItems = [];
     if (groupedSongs.isNotEmpty) {
-      // 1. All'inizio della lista
-      listItems.add(const _AdItem());
+      listItems.add(const _AdItem()); // Initial Ad
 
-      for (int i = 0; i < groupedSongs.length; i++) {
-        listItems.add(groupedSongs[i]);
-        // 2. Ogni 10 canzoni (items della lista)
-        if ((i + 1) % 10 == 0) {
+      int songCounter = 0;
+      for (var group in groupedSongs) {
+        final List<dynamic> internalItems = [];
+        for (var song in group) {
+          songCounter++;
+          internalItems.add(song);
+          if (songCounter % 10 == 0) {
+            internalItems.add(const _AdItem());
+          }
+        }
+
+        // Pull out trailing ad from group to main list (between cards)
+        if (internalItems.isNotEmpty && internalItems.last is _AdItem) {
+          internalItems.removeLast();
+          if (internalItems.length == 1) {
+            listItems.add([
+              internalItems.first,
+            ]); // Still a list for consistency
+          } else {
+            listItems.add(internalItems);
+          }
           listItems.add(const _AdItem());
+        } else {
+          if (internalItems.length == 1) {
+            listItems.add([internalItems.first]);
+          } else {
+            listItems.add(internalItems);
+          }
         }
       }
 
-      // 3. Alla fine della lista (se non è già presente un ad alla fine)
+      // Final Ad if not already present
       if (listItems.isNotEmpty && listItems.last is! _AdItem) {
         listItems.add(const _AdItem());
       }
@@ -3433,10 +3458,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
     for (int i = 0; i < listItems.length; i++) {
       final item = listItems[i];
-      if (item is! List<SavedSong>) continue;
+      if (item is! List) continue;
 
       final group = item;
-      final match = group.firstWhere(
+      final match = group.whereType<SavedSong>().firstWhere(
         (s) {
           final isPlaying =
               provider.audioOnlySongId == s.id ||
@@ -3495,9 +3520,14 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             return const NativeAdWidget();
           }
 
-          final group = item as List<SavedSong>;
-          if (group.length == 1) {
-            return _buildSongItem(context, provider, playlist, group.first);
+          final group = item as List<dynamic>;
+          if (group.length == 1 && group.first is SavedSong) {
+            return _buildSongItem(
+              context,
+              provider,
+              playlist,
+              group.first as SavedSong,
+            );
           }
           return _buildAlbumGroup(context, provider, playlist, group);
         },
@@ -3517,11 +3547,16 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           return const NativeAdWidget();
         }
 
-        final group = item as List<SavedSong>;
+        final group = item as List<dynamic>;
 
         // If only one song, render strictly as before (Standalone)
-        if (group.length == 1) {
-          return _buildSongItem(context, provider, playlist, group.first);
+        if (group.length == 1 && group.first is SavedSong) {
+          return _buildSongItem(
+            context,
+            provider,
+            playlist,
+            group.first as SavedSong,
+          );
         }
 
         // If multiple songs, render a Group Card
@@ -3534,15 +3569,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     BuildContext context,
     RadioProvider provider,
     Playlist playlist,
-    List<SavedSong> groupSongs,
+    List<dynamic> groupItems,
   ) {
-    // Helper to filter songs
-    List<SavedSong> groupSongsServiceFilter(
-      List<SavedSong> songs,
-      bool Function(SavedSong) predicate,
-    ) {
-      return songs.where((s) => !predicate(s)).toList();
-    }
+    final List<SavedSong> groupSongs = groupItems
+        .whereType<SavedSong>()
+        .toList();
 
     return _AlbumGroupWidget(
       titleOverride: _groupingMode == PlaylistGroupingMode.artist
@@ -3552,6 +3583,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           ? "All Songs"
           : null,
       showFavoritesButton: playlist.id != 'favorites',
+      groupItems: groupItems,
       groupSongs: groupSongs,
       dismissDirection:
           (playlist.id.startsWith('temp_artist_') ||
@@ -3571,90 +3603,82 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         if (playlist.id == 'favorites') return false;
         return result;
       },
-      isFavoriteOverride: playlist.creator == 'local'
-          ? groupSongs.every((s) {
-              final favPlaylist = provider.playlists.firstWhere(
-                (p) => p.id == 'favorites',
-                orElse: () => Playlist(
-                  id: 'favorites',
-                  name: 'Favorites',
-                  songs: [],
-                  createdAt: DateTime.now(),
-                ),
+      isFavoriteOverride: groupSongs.every((s) {
+        final favPlaylist = provider.playlists.firstWhere(
+          (p) => p.id == 'favorites',
+          orElse: () => Playlist(
+            id: 'favorites',
+            name: 'Favorites',
+            songs: [],
+            createdAt: DateTime.now(),
+          ),
+        );
+        return favPlaylist.songs.any(
+          (fav) =>
+              fav.id == s.id ||
+              (fav.title == s.title && fav.artist == s.artist),
+        );
+      }),
+      onFavoriteToggle: () async {
+        final favPlaylist = provider.playlists.firstWhere(
+          (p) => p.id == 'favorites',
+          orElse: () => Playlist(
+            id: 'favorites',
+            name: 'Favorites',
+            songs: [],
+            createdAt: DateTime.now(),
+          ),
+        );
+        final favIds = favPlaylist.songs.map((s) => s.id).toSet();
+        // Also consider title/artist match for robustness
+        bool isAlreadyFav(SavedSong s) {
+          return favIds.contains(s.id) ||
+              favPlaylist.songs.any(
+                (fav) => fav.title == s.title && fav.artist == s.artist,
               );
-              return favPlaylist.songs.any(
-                (fav) =>
-                    fav.id == s.id ||
-                    (fav.title == s.title && fav.artist == s.artist),
-              );
-            })
-          : null,
-      onFavoriteToggle: playlist.creator == 'local'
-          ? () async {
-              final favPlaylist = provider.playlists.firstWhere(
-                (p) => p.id == 'favorites',
-                orElse: () => Playlist(
-                  id: 'favorites',
-                  name: 'Favorites',
-                  songs: [],
-                  createdAt: DateTime.now(),
-                ),
-              );
-              final favIds = favPlaylist.songs.map((s) => s.id).toSet();
-              // Also consider title/artist match for robustness
-              bool isAlreadyFav(SavedSong s) {
-                return favIds.contains(s.id) ||
-                    favPlaylist.songs.any(
-                      (fav) => fav.title == s.title && fav.artist == s.artist,
-                    );
-              }
+        }
 
-              final allFav = groupSongs.every(isAlreadyFav);
+        final allFav = groupSongs.every(isAlreadyFav);
 
-              if (allFav) {
-                // Remove all
-                for (var s in groupSongs) {
-                  // Find the ID in favorites (might handle duplicate titles)
-                  final favSong = favPlaylist.songs.firstWhere(
-                    (fav) =>
-                        fav.id == s.id ||
-                        (fav.title == s.title && fav.artist == s.artist),
-                    orElse: () => s,
-                  );
-                  if (favIds.contains(favSong.id)) {
-                    // We must await locally or just fire and forget?
-                    // removeSongFromPlaylist is async.
-                    // To avoid UI freeze, we can do it.
-                    provider.removeFromPlaylist('favorites', favSong.id);
-                  }
-                }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Removed album from Favorites")),
-                );
-              } else {
-                // Add missing
-                // Identify songs not in fav
-                final toAdd = groupSongsServiceFilter(groupSongs, isAlreadyFav);
-                if (toAdd.isNotEmpty) {
-                  // Use copySongs if possible, or copySong loop
-                  if (playlist.creator == 'local') {
-                    await provider.addSongsToPlaylist('favorites', toAdd);
-                  } else {
-                    await provider.copySongs(
-                      toAdd.map((s) => s.id).toList(),
-                      playlist.id,
-                      'favorites',
-                    );
-                  }
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Added album to Favorites")),
-                    );
-                  }
-                }
-              }
+        if (allFav) {
+          // Remove all
+          final idsToRemove = <String>[];
+          for (var s in groupSongs) {
+            final favSong = favPlaylist.songs.firstWhere(
+              (fav) =>
+                  fav.id == s.id ||
+                  (fav.title == s.title && fav.artist == s.artist),
+              orElse: () => s,
+            );
+            if (favPlaylist.songs.any(
+              (fs) =>
+                  fs.id == favSong.id ||
+                  (fs.title == favSong.title && fs.artist == favSong.artist),
+            )) {
+              idsToRemove.add(favSong.id);
             }
-          : null,
+          }
+          if (idsToRemove.isNotEmpty) {
+            await provider.removeSongsFromPlaylist('favorites', idsToRemove);
+          }
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Removed from Favorites")),
+            );
+          }
+        } else {
+          // Add missing
+          final toAdd = groupSongs.where((s) => !isAlreadyFav(s)).toList();
+          if (toAdd.isNotEmpty) {
+            await provider.bulkToggleFavoriteSongs(toAdd, true);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Added to Favorites")),
+              );
+            }
+          }
+        }
+      },
       onRemove: () async {
         final confirmed = await showDialog<bool>(
           context: context,
@@ -5642,6 +5666,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 }
 
 class _AlbumGroupWidget extends StatefulWidget {
+  final List<dynamic> groupItems;
   final List<SavedSong> groupSongs;
   final Widget Function(BuildContext, SavedSong, int) songBuilder;
   final Future<bool> Function() onMove;
@@ -5654,6 +5679,7 @@ class _AlbumGroupWidget extends StatefulWidget {
   final String? subtitleOverride;
 
   const _AlbumGroupWidget({
+    required this.groupItems,
     required this.groupSongs,
     required this.songBuilder,
     required this.onMove,
@@ -5916,11 +5942,18 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                 padding: EdgeInsets.only(bottom: 0, top: 0),
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: widget.groupSongs.length,
+                itemCount: widget.groupItems.length,
                 separatorBuilder: (_, __) =>
                     const Divider(height: 1, color: Colors.white10),
                 itemBuilder: (ctx, i) {
-                  return widget.songBuilder(ctx, widget.groupSongs[i], i + 1);
+                  final item = widget.groupItems[i];
+                  if (item is _AdItem) {
+                    return const NativeAdWidget();
+                  }
+                  final song = item as SavedSong;
+                  // Calculate index based on its position in the pure song list
+                  final songIndex = widget.groupSongs.indexOf(song) + 1;
+                  return widget.songBuilder(ctx, song, songIndex);
                 },
               ),
             ],

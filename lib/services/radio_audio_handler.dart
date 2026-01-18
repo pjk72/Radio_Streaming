@@ -19,6 +19,7 @@ import '../utils/genre_mapper.dart';
 import 'acr_cloud_service.dart';
 import 'song_link_service.dart';
 
+@pragma('vm:entry-point')
 class RadioAudioHandler extends BaseAudioHandler
     with QueueHandler, SeekHandler {
   List<Station> _stations = [];
@@ -193,12 +194,23 @@ class RadioAudioHandler extends BaseAudioHandler
         // Update duration for playlist songs so progress bar and preloading work
         if (currentItem.duration != d) {
           mediaItem.add(currentItem.copyWith(duration: d));
+          _broadcastState(_player.state);
         }
       }
     });
 
     _playerPositionSubscription = _player.onPositionChanged.listen((pos) {
       _currentPosition = pos; // Track position
+
+      // Fallback: If we see position moving, we are definitely NOT buffering anymore
+      // BUT we don't clear _expectingStop here as it might be a stale event from a previous track
+      if (_isInitialBuffering && pos > Duration.zero) {
+        _isInitialBuffering = false;
+        _broadcastState(_player.state);
+        // Also ensure stuck monitor starts if not already
+        _startStuckMonitor();
+        return;
+      }
 
       if (_isInitialBuffering && !_expectingStop) {
         _isInitialBuffering = false;
@@ -337,6 +349,15 @@ class RadioAudioHandler extends BaseAudioHandler
       if (!_initCompleter.isCompleted) {
         _initCompleter.complete();
       }
+
+      // Heartbeat Timer: Fixes stuck UI progress in Release builds
+      Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (playbackState.value.playing ||
+            _expectingStop ||
+            _isInitialBuffering) {
+          _broadcastState();
+        }
+      });
     }
   }
 
@@ -667,7 +688,23 @@ class RadioAudioHandler extends BaseAudioHandler
 
     _expectingStop =
         true; // Block "Ready" state from stop() to keep UI in Buffering/Loading mode
+    _isInitialBuffering = true;
+    _currentPosition = Duration.zero;
+    _broadcastState(PlayerState.stopped);
 
+    // Safety watchdog: Clear loading state if stuck
+    final watchdogId = sessionId;
+    Future.delayed(const Duration(seconds: 15), () {
+      if (_currentSessionId == watchdogId &&
+          (_expectingStop || _isInitialBuffering)) {
+        LogService().log(
+          "Watchdog: Forcing clear of stuck loading state in _playYoutubeVideo",
+        );
+        _expectingStop = false;
+        _isInitialBuffering = false;
+        _broadcastState();
+      }
+    });
     // Always reset flags
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
@@ -771,14 +808,26 @@ class RadioAudioHandler extends BaseAudioHandler
         return;
       }
 
-      var video = await yt.videos.get(videoId);
+      var video = await yt.videos
+          .get(videoId)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () =>
+                throw TimeoutException("YouTube video info timed out"),
+          );
 
       if (_currentSessionId != sessionId) {
         yt.close();
         return;
       }
 
-      var manifest = await yt.videos.streamsClient.getManifest(videoId);
+      var manifest = await yt.videos.streamsClient
+          .getManifest(videoId)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () =>
+                throw TimeoutException("YouTube manifest timed out"),
+          );
       var streamInfo = manifest.muxed.withHighestBitrate();
       yt.close();
 
@@ -817,6 +866,8 @@ class RadioAudioHandler extends BaseAudioHandler
           errorMessage: "Error playing. Checking connection...",
         ),
       );
+      _expectingStop = false; // Clear flag on error to prevent stuck loading
+      _isInitialBuffering = false;
 
       // Verify Internet before marking invalid (unless it's a local file)
       final bool isLocal =
@@ -887,6 +938,8 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> pause() async {
+    _isInitialBuffering = false;
+    _expectingStop = false;
     try {
       // For playlist songs, use pause() to keep position. For radio, stop() to clear buffer.
       if (mediaItem.value?.extras?['type'] == 'playlist_song') {
@@ -896,13 +949,20 @@ class RadioAudioHandler extends BaseAudioHandler
         _recognitionTimer?.cancel();
       }
     } catch (_) {}
-    // Manually update state so UI knows we paused
-    playbackState.add(
-      playbackState.value.copyWith(
-        playing: false,
-        processingState: AudioProcessingState.ready,
-      ),
-    );
+    // Manually update state so UI knows we paused immediately
+    _broadcastState(PlayerState.paused);
+  }
+
+  @override
+  Future<void> stop() async {
+    _isInitialBuffering = false;
+    _expectingStop = false;
+    try {
+      await _player.stop();
+      await _player.release();
+    } catch (_) {}
+    _broadcastState(PlayerState.stopped);
+    await super.stop();
   }
 
   @override
@@ -914,12 +974,7 @@ class RadioAudioHandler extends BaseAudioHandler
       _expectingStop = false;
       await _player.resume();
       // State will be updated by listener, but we can force it for responsiveness
-      playbackState.add(
-        playbackState.value.copyWith(
-          playing: true,
-          processingState: AudioProcessingState.ready,
-        ),
-      );
+      _broadcastState(PlayerState.playing);
 
       // Restart Recognition Cycle if Radio Mode
       if (_isACRCloudEnabled &&
@@ -1250,16 +1305,28 @@ class RadioAudioHandler extends BaseAudioHandler
       final duration = extras?['duration'];
       final isPlaying = extras?['isPlaying'] ?? false;
       if (position != null) {
-        final current = playbackState.value;
+        final old = playbackState.value;
         playbackState.add(
-          current.copyWith(
-            updatePosition: Duration(milliseconds: position),
+          PlaybackState(
+            controls: old.controls,
+            systemActions: old.systemActions,
+            androidCompactActionIndices: old.androidCompactActionIndices,
+            processingState: AudioProcessingState.ready,
             playing: isPlaying,
+            updatePosition: Duration(milliseconds: position),
             bufferedPosition: duration != null
                 ? Duration(milliseconds: duration)
                 : Duration.zero,
+            speed: 1.0,
+            updateTime: DateTime.now(),
+            queueIndex: old.queueIndex,
+            errorMessage: null,
+            repeatMode: old.repeatMode,
+            shuffleMode: old.shuffleMode,
           ),
         );
+        _isInitialBuffering =
+            false; // If we're getting position updates, we're not buffering anymore
       }
     } else if (name == 'retryPlayback') {
       await _retryPlayback();
@@ -1333,16 +1400,23 @@ class RadioAudioHandler extends BaseAudioHandler
       final response = await client.send(request);
 
       // Safety: Only read body if Content-Type is text-like (playlist)
-      // If server returns audio/mpeg for a PLS url (weird but possible), we shouldn't download it all.
+      // And limit download size to 100KB to prevent hanging on direct audio streams
       final cType = response.headers['content-type']?.toLowerCase() ?? '';
+      final cLength =
+          int.tryParse(response.headers['content-length'] ?? '0') ?? 0;
+
       if (cType.contains('audio') ||
           cType.contains('video') ||
-          cType.contains('octet-stream')) {
-        // Direct stream masquerading as playlist?
+          cType.contains('octet-stream') ||
+          cLength > 102400) {
+        // > 100KB
         return url;
       }
 
-      final bodyBytes = await response.stream.toBytes();
+      final bodyBytes = await response.stream.toBytes().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException("Playlist download timed out"),
+      );
       final body = String.fromCharCodes(bodyBytes);
 
       if (body.contains('[playlist]')) {
@@ -1398,15 +1472,11 @@ class RadioAudioHandler extends BaseAudioHandler
     );
     mediaItem.add(newItem);
 
-    /* GAPLESS: Don't force buffering state initially
-    playbackState.add(
-      playbackState.value.copyWith(
-        processingState: AudioProcessingState.buffering,
-        playing: true,
-        errorMessage: null,
-      ),
-    );
-    */
+    // Force immediate transition to Loading state
+    _expectingStop = true;
+    _isInitialBuffering = true;
+    _currentPosition = Duration.zero;
+    _broadcastState(PlayerState.stopped);
 
     // Async Work
     Future.microtask(() async {
@@ -1461,7 +1531,20 @@ class RadioAudioHandler extends BaseAudioHandler
 
         if (_currentSessionId == sessionId) {
           _expectingStop = false;
-          _broadcastState(PlayerState.playing);
+          _currentPosition = Duration.zero; // Reset for new song
+          _broadcastState(
+            PlayerState.playing,
+          ); // This ensures BOTH position and icon are updated
+
+          // Safety Fallback: Clear initial buffering after 5 seconds if position doesn't move
+          Future.delayed(const Duration(seconds: 5), () {
+            if (_isInitialBuffering &&
+                _currentSessionId == sessionId &&
+                _player.state == PlayerState.playing) {
+              _isInitialBuffering = false;
+              _broadcastState();
+            }
+          });
         }
       } catch (e) {
         if (_currentSessionId == sessionId) {
@@ -1605,14 +1688,29 @@ class RadioAudioHandler extends BaseAudioHandler
 
     mediaItem.add(newItem);
 
-    // Force Buffering/Playing state so Service stays alive
-    playbackState.add(
-      playbackState.value.copyWith(
-        processingState: AudioProcessingState.buffering,
-        playing: true,
-        errorMessage: null,
-      ),
-    );
+    // Force immediate transition to Loading state via expectingStop + stopped state
+    _expectingStop = true;
+    _isInitialBuffering = true;
+    _currentPosition = Duration.zero;
+    _broadcastState(PlayerState.stopped);
+
+    // 3. Defer all heavy player interactions (Stop, Resolve, SetSource, Play)
+    // to a microtask with immediate return to UI.
+    final sessionId = DateTime.now().millisecondsSinceEpoch;
+    _currentSessionId = sessionId;
+
+    // Safety watchdog: Clear loading state if stuck for more than 15 seconds
+    Future.delayed(const Duration(seconds: 15), () {
+      if (_currentSessionId == sessionId &&
+          (_expectingStop || _isInitialBuffering)) {
+        LogService().log(
+          "Watchdog: Forcing clear of stuck loading state in playFromUri",
+        );
+        _expectingStop = false;
+        _isInitialBuffering = false;
+        _broadcastState();
+      }
+    });
 
     // Save Last Played State
     try {
@@ -1621,21 +1719,16 @@ class RadioAudioHandler extends BaseAudioHandler
       await prefs.setString('last_media_title', title);
       await prefs.setString('last_media_art', artUri ?? '');
 
-      final String type = extras?['type'] ?? 'station';
-      await prefs.setString('last_media_type', type);
+      final String typeVal = extras?['type'] ?? 'station';
+      await prefs.setString('last_media_type', typeVal);
 
-      if (type == 'playlist_song') {
+      if (typeVal == 'playlist_song') {
         final pId = extras?['playlistId'];
         if (pId != null) {
           await prefs.setString('last_playlist_id', pId);
         }
       }
     } catch (_) {}
-
-    // 3. Defer all heavy player interactions (Stop, Resolve, SetSource, Play)
-    // to a microtask with immediate return to UI.
-    final sessionId = DateTime.now().millisecondsSinceEpoch;
-    _currentSessionId = sessionId;
 
     Future.microtask(() async {
       if (_currentSessionId != sessionId) return;
@@ -1708,6 +1801,17 @@ class RadioAudioHandler extends BaseAudioHandler
         if (true) {
           _expectingStop = false;
           _broadcastState(PlayerState.playing);
+
+          // For Radio, position might not move from 0 or move very slowly.
+          // Clear initial buffering after 3 seconds of 'playing' as a safety fallback.
+          Future.delayed(const Duration(seconds: 3), () {
+            if (_isInitialBuffering &&
+                _currentSessionId == sessionId &&
+                _player.state == PlayerState.playing) {
+              _isInitialBuffering = false;
+              _broadcastState();
+            }
+          });
         }
       } catch (e) {
         success = false;
@@ -2018,10 +2122,14 @@ class RadioAudioHandler extends BaseAudioHandler
     _stuckSecondsCount = 0;
   }
 
-  void _broadcastState(PlayerState state) {
+  void _broadcastState([PlayerState? forcedState]) {
+    final state = forcedState ?? _player.state;
     // Monitor Stuck Playback
     if (state == PlayerState.playing) {
       _startStuckMonitor();
+      // Keep _isInitialBuffering true until real playback is detected
+      _expectingStop =
+          false; // Safety: If we are playing, we are not expecting a stop anymore
     } else {
       _stopStuckMonitor();
     }
@@ -2034,68 +2142,77 @@ class RadioAudioHandler extends BaseAudioHandler
     // Determine if it is a playlist song
     final isPlaylistSong = mediaItem.value?.extras?['type'] == 'playlist_song';
 
-    // CRITICAL: During station switch (_expectingStop), force "Buffering" or "Ready" state
-    if (_expectingStop) {
-      // Build controls for buffering state
-      final List<MediaControl> bufferControls = [
-        MediaControl.skipToPrevious,
-        MediaControl.pause, // Show Pause (fake playing)
-        MediaControl.skipToNext,
-      ];
-      // ADD SHUFFLE if it's a playlist
-      if (isPlaylistSong) {
-        bufferControls.add(
-          _isShuffleMode ? _shuffleControl : _sequentialControl,
-        );
+    // Watchdog: If we stay in expectingStop for more than 10s, something is stuck.
+    // Force clear it.
+    if (_expectingStop && state != PlayerState.playing) {
+      _stuckSecondsCount++;
+      if (_stuckSecondsCount > 10) {
+        LogService().log("Watchdog: Clearing stuck expectingStop state.");
+        _expectingStop = false;
+        _isInitialBuffering = false;
+        _stuckSecondsCount = 0;
       }
-
-      playbackState.add(
-        playbackState.value.copyWith(
-          processingState: _isSwapping
-              ? AudioProcessingState.ready
-              : AudioProcessingState.buffering,
-          playing: true,
-          controls: bufferControls,
-          queueIndex: isPlaylistSong ? _playlistIndex : null,
-          shuffleMode: (_isShuffleMode && isPlaylistSong)
-              ? AudioServiceShuffleMode.all
-              : AudioServiceShuffleMode.none,
-        ),
-      );
-      return;
+    } else {
+      _stuckSecondsCount = 0;
     }
 
-    final playing = state == PlayerState.playing;
+    // Determine flags for the current broadcast
+    // Critical for Android Auto: session must stay in a 'playing' state during transitions
+    bool isBuffering = _isInitialBuffering;
+    if (_expectingStop && state != PlayerState.playing) {
+      isBuffering = true;
+    }
+
+    final playing =
+        (state == PlayerState.playing || _expectingStop || _isInitialBuffering);
     final int index = _stations.indexWhere((s) => s.url == mediaItem.value?.id);
 
-    // Determine strict processing state: Buffering if logic says so, otherwise map player state
+    // Determine strict processing state
     AudioProcessingState pState = AudioProcessingState.idle;
     if (state == PlayerState.playing) {
-      if (_isInitialBuffering) {
+      pState = isBuffering
+          ? AudioProcessingState.buffering
+          : AudioProcessingState.ready;
+    } else if (state == PlayerState.paused || state == PlayerState.stopped) {
+      // During transition (_expectingStop), we use BUFFERING to keep the spinner visible on AA
+      if (_expectingStop) {
+        pState = _isSwapping
+            ? AudioProcessingState.ready
+            : AudioProcessingState.buffering;
+      } else if (isBuffering) {
         pState = AudioProcessingState.buffering;
       } else {
         pState = AudioProcessingState.ready;
       }
-    } else if (state == PlayerState.paused) {
-      pState = AudioProcessingState.ready;
-    } else if (state == PlayerState.stopped) {
-      pState = AudioProcessingState.ready;
+    } else if (state == PlayerState.completed) {
+      pState = AudioProcessingState.completed;
     } else {
-      pState = AudioProcessingState.idle;
+      pState = (isBuffering || _expectingStop)
+          ? AudioProcessingState.buffering
+          : AudioProcessingState.idle;
     }
 
-    // Build standard controls
-    final List<MediaControl> standardControls = [
-      MediaControl.skipToPrevious,
-      if (playing) MediaControl.pause else MediaControl.play,
-      MediaControl.skipToNext,
-    ];
+    // Controls for transitioning or active state
+    List<MediaControl> controls;
+    if ((_expectingStop || isBuffering) && state != PlayerState.playing) {
+      controls = [
+        MediaControl.skipToPrevious,
+        MediaControl.pause, // Show Pause icon to indicate user intent is 'Play'
+        MediaControl.skipToNext,
+      ];
+    } else {
+      controls = [
+        MediaControl.skipToPrevious,
+        if (state == PlayerState.playing)
+          MediaControl.pause
+        else
+          MediaControl.play,
+        MediaControl.skipToNext,
+      ];
+    }
 
-    // Custom Actions (Shuffle for Playlist, Like for Radio)
     if (isPlaylistSong) {
-      standardControls.add(
-        _isShuffleMode ? _shuffleControl : _sequentialControl,
-      );
+      controls.add(_isShuffleMode ? _shuffleControl : _sequentialControl);
     }
 
     // System Actions
@@ -2112,8 +2229,8 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     playbackState.add(
-      playbackState.value.copyWith(
-        controls: standardControls,
+      PlaybackState(
+        controls: controls,
         systemActions: actions,
         androidCompactActionIndices: const [0, 1, 2],
         processingState: pState,
@@ -2121,6 +2238,7 @@ class RadioAudioHandler extends BaseAudioHandler
         updatePosition: _currentPosition,
         bufferedPosition: Duration.zero,
         speed: 1.0,
+        updateTime: DateTime.now(),
         queueIndex: isPlaylistSong ? _playlistIndex : (index >= 0 ? index : 0),
         errorMessage: null,
         shuffleMode: (_isShuffleMode && isPlaylistSong)

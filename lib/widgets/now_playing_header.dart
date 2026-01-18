@@ -12,8 +12,7 @@ import 'realistic_visualizer.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http; // Add http import
 import 'package:cached_network_image/cached_network_image.dart';
-import 'tutorial_create_radio_wizard.dart';
-import 'add_song_dialog.dart';
+import '../screens/add_song_screen.dart';
 
 class NowPlayingHeader extends StatefulWidget {
   final double height;
@@ -665,42 +664,25 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           ),
         ),
 
-        if (t > 0.6)
-          Positioned(
-            top: dynamicTopPadding,
-            right: 24.0,
-            child: Material(
-              color: Colors.transparent,
-              child: IconButton(
-                icon: const Icon(
-                  Icons.add_circle_outline,
-                  color: Colors.white70,
-                ),
-                tooltip: provider.currentPlayingPlaylistId != null
-                    ? "Add Song"
-                    : "Add New Station",
-                onPressed: () {
-                  if (provider.currentPlayingPlaylistId != null) {
-                    AddSongDialog.show(context, provider);
-                  } else {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (ctx) => Scaffold(
-                          appBar: AppBar(
-                            title: const Text("Add Stations"),
-                            backgroundColor: Theme.of(
-                              ctx,
-                            ).scaffoldBackgroundColor,
-                          ),
-                          body: const TutorialCreateRadioWizard(),
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
+        Positioned(
+          top: dynamicTopPadding,
+          right: 24.0,
+          child: Material(
+            color: Colors.transparent,
+            child: IconButton(
+              icon: const Icon(Icons.add_circle_outline, color: Colors.white70),
+              tooltip: "Add Song",
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddSongScreen(),
+                  ),
+                );
+              },
             ),
           ),
+        ),
       ],
     );
   }

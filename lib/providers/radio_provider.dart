@@ -515,6 +515,20 @@ class RadioProvider with ChangeNotifier {
     await prefs.setStringList(_keyFollowedAlbums, _followedAlbums.toList());
   }
 
+  Future<void> bulkToggleFavoriteSongs(
+    List<SavedSong> songs,
+    bool favorite,
+  ) async {
+    if (songs.isEmpty) return;
+
+    if (favorite) {
+      await addSongsToPlaylist('favorites', songs);
+    } else {
+      final ids = songs.map((s) => s.id).toList();
+      await removeSongsFromPlaylist('favorites', ids);
+    }
+  }
+
   bool _isOffline = false; // Internal connectivity state
 
   RadioProvider(this._audioHandler, this._backupService) {
@@ -667,6 +681,7 @@ class RadioProvider with ChangeNotifier {
       if (metadataChanged) {
         // Trigger lyrics fetch and other updates
         fetchLyrics();
+        checkIfCurrentSongIsSaved(); // Update save status for the new track
         notifyListeners();
       }
 
@@ -1042,6 +1057,7 @@ class RadioProvider with ChangeNotifier {
     _allUniqueSongs = result.uniqueSongs;
 
     refreshAudioHandlerPlaylists(); // Force AA update
+    checkIfCurrentSongIsSaved();
     notifyListeners();
   }
 
@@ -1059,12 +1075,22 @@ class RadioProvider with ChangeNotifier {
   Future<String?> addToPlaylist(String? playlistId) async {
     if (_currentTrack == "Live Broadcast") return null;
 
+    // Sanitize album name: remove station name etc.
+    String cleanAlbum = _currentAlbum;
+    final stationName = _currentStation?.name ?? "";
+    if (stationName.isNotEmpty && cleanAlbum.contains(stationName)) {
+      cleanAlbum = cleanAlbum
+          .replaceAll(stationName, "")
+          .replaceAll("•", "")
+          .trim();
+    }
+
     // Create Song Object
     final song = SavedSong(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       title: _currentTrack,
       artist: _currentArtist,
-      album: _currentAlbum,
+      album: cleanAlbum,
       artUri: _currentAlbumArt,
       spotifyUrl: _currentSpotifyUrl,
       youtubeUrl: _currentYoutubeUrl,
@@ -1370,6 +1396,15 @@ class RadioProvider with ChangeNotifier {
     if (genre.isEmpty) genre = "Mix";
 
     await _playlistService.addToGenrePlaylist(genre, result.song);
+    await _loadPlaylists();
+  }
+
+  Future<void> addFoundSongsToGenre(List<SongSearchResult> results) async {
+    if (results.isEmpty) return;
+
+    await _playlistService.addSongsToGenrePlaylists(
+      results.map((r) => (genre: r.genre, song: r.song)).toList(),
+    );
     await _loadPlaylists();
   }
 
@@ -1828,6 +1863,7 @@ class RadioProvider with ChangeNotifier {
     _isPlaying = true; // Show 'Pause' icon
     // _isLoading = true; // Optional: Show loading state, but better to show song info
 
+    checkIfCurrentSongIsSaved(); // Check if this song from the playlist is already saved somewhere
     notifyListeners(); // <--- CRITICAL: Update UI BEFORE async delays
 
     // --------------------------------------------------------------------------------
@@ -2132,6 +2168,7 @@ class RadioProvider with ChangeNotifier {
       _currentAlbumArt = null;
       _isPlaying = false;
 
+      checkIfCurrentSongIsSaved(); // Reset save status
       notifyListeners();
 
       // Dispose controller to close connections
@@ -3307,11 +3344,21 @@ class RadioProvider with ChangeNotifier {
     final songId = "${_currentTrack}_${_currentArtist}";
     final genre = _currentGenre ?? "Mix";
 
+    // Sanitize album name: remove station name etc.
+    String cleanAlbum = _currentAlbum;
+    final stationName = _currentStation?.name ?? "";
+    if (stationName.isNotEmpty && cleanAlbum.contains(stationName)) {
+      cleanAlbum = cleanAlbum
+          .replaceAll(stationName, "")
+          .replaceAll("•", "")
+          .trim();
+    }
+
     final song = SavedSong(
       id: songId,
       title: _currentTrack,
       artist: _currentArtist,
-      album: _currentAlbum,
+      album: cleanAlbum,
       artUri: _currentAlbumArt ?? _currentStation!.logo ?? "",
       duration: _currentSongDuration ?? Duration.zero,
       dateAdded: DateTime.now(),
@@ -4309,6 +4356,7 @@ class RadioProvider with ChangeNotifier {
       );
     }
 
+    checkIfCurrentSongIsSaved();
     notifyListeners();
   }
 

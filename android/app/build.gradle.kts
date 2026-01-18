@@ -11,7 +11,10 @@ plugins {
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
+    println("Loading keystore properties from: ${keystorePropertiesFile.absolutePath}")
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+} else {
+    println("Warning: key.properties not found at ${keystorePropertiesFile.absolutePath}")
 }
 
 android {
@@ -41,10 +44,21 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String?
-            keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { rootProject.file(it as String) }
-            storePassword = keystoreProperties["storePassword"] as String?
+            val alias = keystoreProperties["keyAlias"] as String?
+            val keyPass = keystoreProperties["keyPassword"] as String?
+            val storePath = keystoreProperties["storeFile"] as String?
+            val storePass = keystoreProperties["storePassword"] as String?
+
+            if (alias == null || keyPass == null || storePath == null || storePass == null) {
+               // Only throw if we intend to release, but here we are configuring 'release' config.
+               // We log a warning or throw. Throwing is safer for "invalid package" debugging.
+               println("Release signing keys missing from key.properties!")
+            } else {
+               keyAlias = alias
+               keyPassword = keyPass
+               storeFile = rootProject.file(storePath)
+               storePassword = storePass
+            }
         }
     }
 
@@ -53,6 +67,13 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("release")
+            
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

@@ -385,44 +385,58 @@ class PlaylistService {
   }
 
   Future<void> addToGenrePlaylist(String genre, SavedSong song) async {
+    await addSongsToGenrePlaylists([(genre: genre, song: song)]);
+  }
+
+  Future<void> addSongsToGenrePlaylists(
+    List<({String genre, SavedSong song})> items,
+  ) async {
+    if (items.isEmpty) return;
+
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();
 
-    // 2. Find or Create Genre Playlist
-    // Normalize genre name
-    String targetName = genre.trim();
-    if (targetName.isEmpty || targetName.toLowerCase() == 'unknown') {
-      targetName = "Mix"; // Dedicated card for no genre
-    }
+    bool changed = false;
 
-    if (targetName.isNotEmpty) {
+    for (var item in items) {
+      String targetName = item.genre.trim();
+      if (targetName.isEmpty || targetName.toLowerCase() == 'unknown') {
+        targetName = "Mix";
+      }
+
       int genreIndex = playlists.indexWhere(
         (p) => p.name.toLowerCase() == targetName.toLowerCase(),
       );
 
       if (genreIndex == -1) {
-        // Create new
         final newPlaylist = Playlist(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          name: targetName, // e.g. "Pop", "Rock"
+          id:
+              DateTime.now().millisecondsSinceEpoch.toString() +
+              "_" +
+              targetName,
+          name: targetName,
           songs: [],
           createdAt: DateTime.now(),
           creator: 'app',
         );
         playlists.add(newPlaylist);
         genreIndex = playlists.length - 1;
+        changed = true;
       }
 
       // Add to Genre Playlist
       if (!playlists[genreIndex].songs.any(
-        (s) => s.title == song.title && s.artist == song.artist,
+        (s) => s.title == item.song.title && s.artist == item.song.artist,
       )) {
-        playlists[genreIndex].songs.insert(0, song);
+        playlists[genreIndex].songs.insert(0, item.song);
+        changed = true;
       }
     }
 
-    await _savePlaylists(prefs, playlists);
-    _notifyListeners();
+    if (changed) {
+      await _savePlaylists(prefs, playlists);
+      _notifyListeners();
+    }
   }
 
   Future<void> restoreSongsToPlaylist(

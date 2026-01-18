@@ -23,6 +23,7 @@ import 'widgets/admob_banner_widget.dart';
 
 late AudioHandler audioHandler;
 
+@pragma('vm:entry-point')
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
