@@ -71,6 +71,11 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await auth.signIn();
       if (auth.isSignedIn && mounted) {
+        // Reset ACRCloud flag for new login
+        Provider.of<RadioProvider>(
+          context,
+          listen: false,
+        ).setACRCloudEnabled(false);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('was_guest', false);
         _goToHome();
@@ -257,6 +262,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             listen: false,
                           );
                           await auth.signOut();
+                          // Reset ACRCloud flag for guest session
+                          if (context.mounted) {
+                            Provider.of<RadioProvider>(
+                              context,
+                              listen: false,
+                            ).setACRCloudEnabled(false);
+                          }
 
                           final prefs = await SharedPreferences.getInstance();
                           await prefs.setBool('was_guest', true);

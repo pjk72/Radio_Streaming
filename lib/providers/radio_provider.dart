@@ -110,20 +110,32 @@ class RadioProvider with ChangeNotifier {
   bool isAlbumFollowed(String album) => _followedAlbums.contains(album);
 
   void _onUserStatusChanged() {
+    final email = _backupService.currentUser?.email.toLowerCase();
     final isDevUser =
-        _backupService.currentUser?.email ==
-        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
+        email ==
+        utf8
+            .decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))
+            .toLowerCase();
 
-    if (!isDevUser) {
-      _isACRCloudEnabled = false;
-      SharedPreferences.getInstance().then((prefs) {
-        prefs.setBool(_keyEnableACRCloud, false);
-      });
-    }
+    SharedPreferences.getInstance().then((prefs) {
+      if (email != null) {
+        prefs.setString('user_email', email);
+        // Force reset ONLY for authenticated non-dev users
+        if (!isDevUser) {
+          _isACRCloudEnabled = false;
+          prefs.setBool(_keyEnableACRCloud, false);
+          if (_audioHandler is RadioAudioHandler) {
+            _audioHandler.setACRCloudEnabled(false);
+          }
+        }
+      } else {
+        prefs.remove('user_email');
+      }
+    });
 
     if (_audioHandler is RadioAudioHandler) {
       _audioHandler.setDevUser(isDevUser);
-      if (!isDevUser) {
+      if (email != null && !isDevUser) {
         _audioHandler.setACRCloudEnabled(false);
       }
     }
@@ -2392,7 +2404,7 @@ class RadioProvider with ChangeNotifier {
   bool get preferYouTubeAudioOnly => _preferYouTubeAudioOnly;
 
   static const String _keyEnableACRCloud = 'enable_acrcloud';
-  bool _isACRCloudEnabled = true;
+  bool _isACRCloudEnabled = false;
   bool get isACRCloudEnabled => _isACRCloudEnabled;
 
   List<String> _genreOrder = [];
@@ -2650,7 +2662,7 @@ class RadioProvider with ChangeNotifier {
     _startOption = prefs.getString(_keyStartOption) ?? 'none';
     _hasPerformedRestore = prefs.getBool(_keyHasPerformedRestore) ?? false;
     _startupStationId = prefs.getInt(_keyStartupStationId);
-    _isACRCloudEnabled = prefs.getBool(_keyEnableACRCloud) ?? true;
+    _isACRCloudEnabled = prefs.getBool(_keyEnableACRCloud) ?? false;
     _isCompactView = prefs.getBool(_keyCompactView) ?? false;
     _isShuffleMode = prefs.getBool(_keyShuffleMode) ?? false;
     // Sync initial state to AudioHandler
@@ -2666,6 +2678,7 @@ class RadioProvider with ChangeNotifier {
       _invalidSongIds.clear();
       _invalidSongIds.addAll(invalidList);
     }
+    notifyListeners();
   }
 
   Future<void> setStartOption(String option) async {
@@ -3769,6 +3782,7 @@ class RadioProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _preferYouTubeAudioOnly =
         prefs.getBool(_keyPreferYouTubeAudioOnly) ?? false;
+    notifyListeners();
   }
 
   Future<Map<String, String>> resolveLinks({
@@ -3886,12 +3900,22 @@ class RadioProvider with ChangeNotifier {
     await prefs.setBool(_keyEnableACRCloud, value);
     notifyListeners();
 
+    // Sync with AudioHandler
+    if (_audioHandler is RadioAudioHandler) {
+      _audioHandler.setACRCloudEnabled(value);
+    }
+
     if (_isACRCloudEnabled) {
+      final email = _backupService.currentUser?.email.toLowerCase();
+      final isDevUser =
+          email ==
+          utf8
+              .decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))
+              .toLowerCase();
       if (_isPlaying &&
           _currentStation != null &&
           _currentPlayingPlaylistId == null &&
-          _backupService.currentUser?.email ==
-              utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))) {
+          isDevUser) {
         _metadataTimer?.cancel();
         LogService().log("Attempting Recognition...2");
         _attemptRecognition();
@@ -4156,8 +4180,8 @@ class RadioProvider with ChangeNotifier {
     _audioHandler.updateMediaItem(
       MediaItem(
         id: _currentStation!.url,
-        title: "${_currentStation?.name ?? "Radio"} 🔍", // Add icon here
-        artist: "Identifying...",
+        title: "${_currentStation?.name ?? "Radio"} 🔍",
+        artist: "Identifying song...",
         album: _currentStation?.name ?? "Radio",
         artUri: _currentStation?.logo != null
             ? Uri.tryParse(_currentStation!.logo!)

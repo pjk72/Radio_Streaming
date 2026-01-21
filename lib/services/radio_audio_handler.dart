@@ -69,7 +69,7 @@ class RadioAudioHandler extends BaseAudioHandler
     if (!_isDevUser && value == true) return;
     _isACRCloudEnabled = value;
     if (!_isACRCloudEnabled) {
-      _recognitionTimer?.cancel();
+      _stopRecognition();
     }
   }
 
@@ -77,10 +77,15 @@ class RadioAudioHandler extends BaseAudioHandler
     _isDevUser = value;
     if (!_isDevUser) {
       _isACRCloudEnabled = false; // Force OFF
-      _recognitionTimer?.cancel();
+      _stopRecognition();
       // Clear any pre-existing song metadata if not authorized
       _handleNoMatch();
     }
+  }
+
+  void _stopRecognition() {
+    _recognitionTimer?.cancel();
+    _acrCloudService.cancel();
   }
 
   // Skip context
@@ -392,7 +397,10 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    _isACRCloudEnabled = prefs.getBool('enable_acrcloud') ?? true;
+    _isACRCloudEnabled = prefs.getBool('enable_acrcloud') ?? false;
+    final email = prefs.getString('user_email');
+    _isDevUser =
+        email == utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
   }
 
   Future<void> _loadStationsFromPrefs() async {
@@ -705,6 +713,9 @@ class RadioAudioHandler extends BaseAudioHandler
         _broadcastState();
       }
     });
+
+    _stopRecognition(); // Stop ACRCloud if switching to a playlist song
+
     // Always reset flags
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
@@ -955,6 +966,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> stop() async {
+    _stopRecognition();
     _isInitialBuffering = false;
     _expectingStop = false;
     try {
@@ -1225,7 +1237,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 2. The Swap
     _isSwapping = true;
-    _recognitionTimer?.cancel(); // Cancel recognition during swap
+    _stopRecognition(); // Cancel recognition during swap
 
     _expectingStop = true; // Silence the dying player events
 
@@ -1576,6 +1588,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Dispatcher
     if (extras != null && extras['type'] == 'playlist_song') {
+      _stopRecognition(); // Stop ACRCloud if switching from radio to playlist
       // If it's already resolved (has stream URL), play it directly
       if (extras['is_resolved'] == true) {
         _expectingStop = true; // Block events from old player
@@ -2747,7 +2760,15 @@ class RadioAudioHandler extends BaseAudioHandler
 
     LogService().log("ACRCloud: Starting recognition for $streamUrl");
 
-    // We don't change state to loading here to avoid UI flickering, strictly background update
+    // Show indicator on Android Auto by updating artist field
+    if (currentItem.id == streamUrl) {
+      mediaItem.add(
+        currentItem.copyWith(
+          title: "${currentItem.title} 🔍",
+          artist: "Identifying song...",
+        ),
+      );
+    }
 
     final result = await _acrCloudService.identifyStream(streamUrl);
 

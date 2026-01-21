@@ -8,10 +8,14 @@ class ACRCloudService {
   final String _accessKey = 'e47be4f50a59873e2612ca7c4981538a';
   final String _secretKey = '5PTB3klzHKOvjjmwERuJnkl08aEeIV5xE4GGBOqP';
 
+  http.Client? _activeClient;
+
   Future<Map<String, dynamic>?> identifyStream(String streamUrl) async {
+    _activeClient = http.Client();
     try {
       // 0. Resolve Stream URL (Handle PLS/M3U)
       final resolvedUrl = await _resolveStreamUrl(streamUrl);
+      if (_activeClient == null) return null; // Cancelled
       print("ACRCloud: Resolved URL: $resolvedUrl");
 
       // 1. Download a buffer of the stream
@@ -21,6 +25,7 @@ class ACRCloudService {
         150 * 1024,
       );
 
+      if (_activeClient == null) return null; // Cancelled
       if (audioData == null || audioData.isEmpty) {
         print("ACRCloud: Failed to download stream chunk.");
         return null;
@@ -63,7 +68,8 @@ class ACRCloudService {
         ),
       );
 
-      final streamedResponse = await request.send();
+      if (_activeClient == null) return null; // Cancelled
+      final streamedResponse = await _activeClient!.send(request);
       final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
@@ -79,20 +85,33 @@ class ACRCloudService {
         print("ACRCloud HTTP Error: ${response.statusCode}");
       }
     } catch (e) {
-      print("ACRCloud Exception: $e");
+      if (_activeClient != null) {
+        print("ACRCloud Exception: $e");
+      } else {
+        print("ACRCloud Recognition Cancelled.");
+      }
+    } finally {
+      _activeClient?.close();
+      _activeClient = null;
     }
     return null;
   }
 
+  void cancel() {
+    print("ACRCloud: Cancelling active recognition...");
+    _activeClient?.close();
+    _activeClient = null;
+  }
+
   Future<Uint8List?> _downloadStreamChunk(String url, int maxSize) async {
-    final client = http.Client();
+    if (_activeClient == null) return null;
     try {
       final request = http.Request('GET', Uri.parse(url));
       // Add headers to mimic a real player to avoid strict anti-bot servers
       request.headers['User-Agent'] = 'VLC/3.0.18 LibVLC/3.0.18';
       // request.headers['Icy-MetaData'] = '1'; // REMOVED: Metadata injects bytes that corrupt the audio file for fingerprinting
 
-      final response = await client
+      final response = await _activeClient!
           .send(request)
           .timeout(const Duration(seconds: 15));
 
@@ -100,14 +119,13 @@ class ACRCloudService {
 
       final List<int> buffer = [];
       await for (var chunk in response.stream) {
+        if (_activeClient == null) return null; // Interrupt if client closed
         buffer.addAll(chunk);
         if (buffer.length >= maxSize) break;
       }
       return Uint8List.fromList(buffer);
     } catch (_) {
       return null;
-    } finally {
-      client.close();
     }
   }
 
@@ -115,6 +133,7 @@ class ACRCloudService {
     String currentUrl = initialUrl;
     // Limit recursion to avoid infinite loops
     for (int i = 0; i < 5; i++) {
+      if (_activeClient == null) return currentUrl;
       final lower = currentUrl.toLowerCase();
 
       // If it looks like a direct audio file, return it
@@ -140,7 +159,9 @@ class ACRCloudService {
 
       try {
         final uri = Uri.parse(currentUrl);
-        final response = await http.get(uri);
+        if (_activeClient == null) return currentUrl;
+
+        final response = await _activeClient!.get(uri);
         if (response.statusCode != 200) return currentUrl;
 
         final body = response.body;
