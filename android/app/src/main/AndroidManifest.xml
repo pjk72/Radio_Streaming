@@ -90,7 +90,10 @@
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="spotify" />
+            <category android:name="android.intent.category.DEFAULT"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="musicstream" android:host="callback"/>
+            <!--<data android:scheme="spotify" /> -->
         </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

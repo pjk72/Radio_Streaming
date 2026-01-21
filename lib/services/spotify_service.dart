@@ -7,7 +7,8 @@ import 'log_service.dart';
 class SpotifyService {
   static const String _clientId = "596732e2f8c542cea5cbac1f4e3a6b5b";
   static const String _clientSecret = "b3ab74b0037b4361842531dc80282d48";
-  static const String _redirectUri = "http://127.0.0.1:8888/callback";
+  //static const String _redirectUri = "http://127.0.0.1:8888/callback";
+  static const String _redirectUri = 'musicstream://callback';
   String get redirectUri => _redirectUri;
 
   static const String _keyAccessToken = 'spotify_access_token_v2';
