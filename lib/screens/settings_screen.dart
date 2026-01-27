@@ -1005,7 +1005,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ],
-                    if (showSpotify) ...[
+                    if (showSpotify && isDevUser) ...[
                       const SizedBox(height: 32),
                       const Text(
                         "Spotify Integration",
@@ -1044,7 +1044,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        radio.spotifyService.isLoggedIn
+                                        radio.spotifyService.isUserConnected
                                             ? "Connected to Spotify"
                                             : "Spotify Not Connected",
                                         style: const TextStyle(
@@ -1053,7 +1053,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         ),
                                       ),
                                       Text(
-                                        radio.spotifyService.isLoggedIn
+                                        radio.spotifyService.isUserConnected
                                             ? "Now you can import your playlists"
                                             : "Login to import your playlists",
                                         style: const TextStyle(
@@ -1066,7 +1066,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                                 TextButton(
                                   onPressed: () async {
-                                    if (radio.spotifyService.isLoggedIn) {
+                                    if (radio.spotifyService.isUserConnected) {
                                       await radio.spotifyLogout();
                                     } else {
                                       final loginUrl = radio.spotifyService
@@ -1104,7 +1104,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     }
                                   },
                                   child: Text(
-                                    radio.spotifyService.isLoggedIn
+                                    radio.spotifyService.isUserConnected
                                         ? "Logout"
                                         : "Connect",
                                     style: const TextStyle(
@@ -1114,7 +1114,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                               ],
                             ),
-                            if (radio.spotifyService.isLoggedIn) ...[
+                            if (radio.spotifyService.isUserConnected) ...[
                               const Divider(color: Colors.white10, height: 32),
                               ElevatedButton.icon(
                                 icon: const Icon(Icons.playlist_add_rounded),

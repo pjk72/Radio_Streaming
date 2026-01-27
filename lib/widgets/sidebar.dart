@@ -121,15 +121,16 @@ class Sidebar extends StatelessWidget {
                     const SizedBox(height: 48),
 
                     _navItem(context, 0, Icons.radio, "MusicStream"),
+                    _navItem(context, 1, Icons.whatshot, "Trending"),
                     _navItem(
                       context,
-                      1,
+                      2,
                       Icons.playlist_play_rounded,
                       "Playlist",
                     ),
 
                     const Spacer(),
-                    _navItem(context, 2, Icons.settings, "Settings"),
+                    _navItem(context, 3, Icons.settings, "Settings"),
                   ],
                 ),
               ),

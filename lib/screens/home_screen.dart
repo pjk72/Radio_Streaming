@@ -8,6 +8,7 @@ import '../widgets/sidebar.dart';
 import 'playlist_screen.dart';
 import 'settings_screen.dart';
 import 'musicstream_home.dart';
+import 'trending_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -66,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     index: _navIndex,
                     children: [
                       const MusicStreamHome(),
+                      const TrendingScreen(),
                       const PlaylistScreen(),
                       const SettingsScreen(),
                     ],
@@ -179,8 +181,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               children: [
                 _buildTopNavItem(Icons.radio, "Radio", 0),
-                _buildTopNavItem(Icons.playlist_play_rounded, "Playlist", 1),
-                _buildTopNavItem(Icons.settings, "Settings", 2),
+                _buildTopNavItem(Icons.whatshot, "Trending", 1),
+                _buildTopNavItem(Icons.playlist_play_rounded, "Playlist", 2),
+                _buildTopNavItem(Icons.settings, "Settings", 3),
               ],
             ),
           ),

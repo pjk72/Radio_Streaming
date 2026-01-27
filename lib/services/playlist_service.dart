@@ -111,7 +111,17 @@ class PlaylistService {
     List<Playlist> playlists,
   ) async {
     _cachedPlaylists = playlists;
-    _cachedUniqueSongs = null; // Clear stale unique songs cache
+
+    // Calculate unique songs immediately to keep cache in sync
+    final Set<String> ids = {};
+    final List<SavedSong> uniqueSongs = [];
+    for (var p in playlists) {
+      for (var s in p.songs) {
+        if (ids.add(s.id)) uniqueSongs.add(s);
+      }
+    }
+    _cachedUniqueSongs = uniqueSongs;
+
     final String jsonString = await compute(_encodePlaylists, playlists);
     await prefs.setString(_keyPlaylists, jsonString);
   }
@@ -170,14 +180,14 @@ class PlaylistService {
     _notifyListeners();
   }
 
-  Future<Playlist> createPlaylist(String name) async {
+  Future<Playlist> createPlaylist(String name, {List<SavedSong>? songs}) async {
     final prefs = await SharedPreferences.getInstance();
     final playlists = await loadPlaylists();
 
     final newPlaylist = Playlist(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       name: name,
-      songs: [],
+      songs: songs ?? [],
       createdAt: DateTime.now(),
       creator: 'user',
     );
@@ -255,9 +265,8 @@ class PlaylistService {
 
     final index = playlists.indexWhere((p) => p.id == playlistId);
     if (index != -1) {
-      bool changed = false;
-      // Pre-fetch safe set
       final existing = playlists[index].songs;
+      final List<SavedSong> toAdd = [];
 
       for (var song in songs) {
         if (!existing.any(
@@ -265,12 +274,13 @@ class PlaylistService {
               s.id == song.id ||
               (s.title == song.title && s.artist == song.artist),
         )) {
-          playlists[index].songs.insert(0, song);
-          changed = true;
+          toAdd.add(song);
         }
       }
 
-      if (changed) {
+      if (toAdd.isNotEmpty) {
+        // Bulk insert at the beginning
+        playlists[index].songs.insertAll(0, toAdd);
         await _savePlaylists(prefs, playlists);
         _notifyListeners();
       }
@@ -623,6 +633,36 @@ class PlaylistService {
       if (songIndex != -1) {
         playlists[index].songs[songIndex] = playlists[index].songs[songIndex]
             .copyWith(duration: duration);
+        await _savePlaylists(prefs, playlists);
+        _notifyListeners();
+      }
+    }
+  }
+
+  Future<void> updateSongInPlaylist(String playlistId, SavedSong song) async {
+    await updateSongsInPlaylist(playlistId, [song]);
+  }
+
+  Future<void> updateSongsInPlaylist(
+    String playlistId,
+    List<SavedSong> songs,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final index = playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      bool changed = false;
+      for (var song in songs) {
+        final songIndex = playlists[index].songs.indexWhere(
+          (s) => s.id == song.id,
+        );
+        if (songIndex != -1) {
+          playlists[index].songs[songIndex] = song;
+          changed = true;
+        }
+      }
+      if (changed) {
         await _savePlaylists(prefs, playlists);
         _notifyListeners();
       }

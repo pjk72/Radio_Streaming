@@ -36,6 +36,42 @@ class SpotifyService {
       _accessToken != null &&
       (_expiresAt == null || _expiresAt!.isAfter(DateTime.now()));
 
+  /// Returns true if the user has personally connected their Spotify account (User Auth).
+  bool get isUserConnected => _refreshToken != null;
+
+  Future<void> _ensureToken() async {
+    if (isLoggedIn) return;
+    if (_refreshToken != null) {
+      await _refreshAccessToken();
+      if (isLoggedIn) return;
+    }
+    await authenticateWithClientCredentials();
+  }
+
+  Future<void> authenticateWithClientCredentials() async {
+    try {
+      final response = await http.post(
+        Uri.parse("https://accounts.spotify.com/api/token"),
+        headers: {
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode("$_clientId:$_clientSecret"))}',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: {'grant_type': 'client_credentials'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _accessToken = data['access_token'];
+        final int expiresIn = data['expires_in'];
+        _expiresAt = DateTime.now().add(Duration(seconds: expiresIn));
+        // We don't persist this to SharedPreferences to avoid confusing it with user tokens
+      }
+    } catch (e) {
+      LogService().log("SpotifyService: Client Credentials Auth failed: $e");
+    }
+  }
+
   String getLoginUrl() {
     // aligning scopes with Exportify to ensure identical access levels
     final scope = Uri.encodeComponent(
@@ -97,6 +133,7 @@ class SpotifyService {
     if (!isLoggedIn && _refreshToken != null) {
       await _refreshAccessToken();
     }
+    if (!isUserConnected) return []; // Require User Auth for personal playlists
     if (!isLoggedIn) return [];
 
     final List<Map<String, dynamic>> allPlaylists = [];
@@ -236,9 +273,7 @@ class SpotifyService {
     int? total,
     Function(double)? onProgress,
   }) async {
-    if (!isLoggedIn && _refreshToken != null) {
-      await _refreshAccessToken();
-    }
+    await _ensureToken();
     if (!isLoggedIn) return [];
 
     List<SavedSong> allTracks = [];
@@ -376,9 +411,7 @@ class SpotifyService {
   }
 
   Future<String?> getArtistImage(String spotifyId) async {
-    if (!isLoggedIn && _refreshToken != null) {
-      await _refreshAccessToken();
-    }
+    await _ensureToken();
     if (!isLoggedIn) return null;
 
     try {
@@ -418,5 +451,43 @@ class SpotifyService {
       LogService().log("SpotifyService: Error fetching artist image: $e");
     }
     return null;
+  }
+
+  Future<List<Map<String, dynamic>>> searchPlaylists(String query) async {
+    await _ensureToken();
+    if (!isLoggedIn) return [];
+
+    try {
+      final encodedQuery = Uri.encodeComponent(query);
+      final url =
+          "https://api.spotify.com/v1/search?q=$encodedQuery&type=playlist&limit=20";
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Authorization': 'Bearer $_accessToken'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final playlists = data['playlists']['items'] as List?;
+
+        if (playlists != null) {
+          return playlists
+              .map((item) {
+                if (item == null) return <String, dynamic>{};
+                return Map<String, dynamic>.from(item);
+              })
+              .where((m) => m.isNotEmpty)
+              .toList();
+        }
+      } else {
+        LogService().log(
+          "SpotifyService: Search failed: ${response.statusCode}",
+        );
+      }
+    } catch (e) {
+      LogService().log("SpotifyService: Search exception: $e");
+    }
+    return [];
   }
 }

@@ -1073,9 +1073,13 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> createPlaylist(String name) async {
-    await _playlistService.createPlaylist(name);
-    await _loadPlaylists();
+  Future<Playlist> createPlaylist(String name, {List<SavedSong>? songs}) async {
+    final newPlaylist = await _playlistService.createPlaylist(
+      name,
+      songs: songs,
+    );
+    await _loadPlaylists(); // Refresh local list
+    return newPlaylist;
   }
 
   Future<void> deletePlaylist(String id) async {
@@ -1156,6 +1160,19 @@ class RadioProvider with ChangeNotifier {
     await _loadPlaylists();
   }
 
+  Future<void> updateSongInPlaylist(String playlistId, SavedSong song) async {
+    await updateSongsInPlaylist(playlistId, [song]);
+  }
+
+  Future<void> updateSongsInPlaylist(
+    String playlistId,
+    List<SavedSong> songs,
+  ) async {
+    if (playlistId.startsWith('local_')) return;
+    await _playlistService.updateSongsInPlaylist(playlistId, songs);
+    await _loadPlaylists();
+  }
+
   Future<void> addSongsToPlaylist(
     String playlistId,
     List<SavedSong> songs,
@@ -1163,6 +1180,48 @@ class RadioProvider with ChangeNotifier {
     if (playlistId.startsWith('local_')) return;
     await _playlistService.addSongsToPlaylist(playlistId, songs);
     await _loadPlaylists();
+  }
+
+  Future<void> resolvePlaylistLinksInBackground(
+    String playlistId,
+    List<SavedSong> songs,
+  ) async {
+    // Start almost immediately but don't block the UI
+    Future.delayed(const Duration(milliseconds: 500), () async {
+      final List<SavedSong> updatedSongs = [];
+
+      for (var song in songs) {
+        if (song.youtubeUrl == null || song.youtubeUrl!.isEmpty) {
+          try {
+            // Minimal pause to stay relatively fast while avoiding harsh rate limits
+            await Future.delayed(const Duration(milliseconds: 200));
+
+            final links = await resolveLinks(
+              title: song.title,
+              artist: song.artist,
+              spotifyUrl: song.spotifyUrl,
+            );
+
+            if (links['youtube'] != null) {
+              updatedSongs.add(song.copyWith(youtubeUrl: links['youtube']));
+            }
+
+            // Batch update every 5 songs to show progress but avoid constant disk I/O
+            if (updatedSongs.length >= 5) {
+              await updateSongsInPlaylist(playlistId, updatedSongs);
+              updatedSongs.clear();
+            }
+          } catch (e) {
+            debugPrint("Error resolving ${song.title}: $e");
+          }
+        }
+      }
+
+      // Final batch for remaining songs
+      if (updatedSongs.isNotEmpty) {
+        await updateSongsInPlaylist(playlistId, updatedSongs);
+      }
+    });
   }
 
   Future<void> renamePlaylist(String id, String newName) async {

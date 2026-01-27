@@ -36,7 +36,7 @@ class PlayerBar extends StatelessWidget {
     );
 
     return Container(
-      height: 90,
+      height: 72,
       decoration: BoxDecoration(
         color: cardColor.withValues(alpha: 0.50),
         border: Border(
@@ -527,7 +527,7 @@ class PlayerBar extends StatelessWidget {
   ) {
     return Container(
       width: double.infinity,
-      height: 24, // Increased height for touch targets
+      height: 18, // Reduced height
       padding: const EdgeInsets.symmetric(horizontal: 16),
       alignment: Alignment.center,
       child: ValueListenableBuilder(
@@ -611,7 +611,7 @@ class PlayerBar extends StatelessWidget {
 
         return Container(
           width: double.infinity,
-          height: 28,
+          height: 18,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           alignment: Alignment.center,
           child: Row(

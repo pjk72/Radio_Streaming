@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widget_previews.dart';
@@ -1988,7 +1989,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
     final hasAnyLocal = provider.playlists.any((p) => p.creator == 'local');
 
-    final bool showSpotifyLink = _searchQuery.isEmpty && !hasAnySpotify;
+    final auth = Provider.of<BackupService>(context, listen: false);
+    final isDevUser =
+        auth.currentUser?.email ==
+        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
+
+    final bool showSpotifyLink =
+        _searchQuery.isEmpty && !hasAnySpotify && isDevUser;
     final bool showLocalLink = _searchQuery.isEmpty && !hasAnyLocal;
 
     final int extraCount = (showSpotifyLink ? 1 : 0) + (showLocalLink ? 1 : 0);
@@ -2418,23 +2425,41 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 ),
               ),
             // MORE OPTIONS MENU
-            if (playlist.id != 'favorites')
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Material(
-                  color: Colors.transparent,
-                  child: PopupMenuButton<String>(
-                    icon: const Icon(
-                      Icons.more_vert_rounded,
-                      color: Colors.white60,
-                      size: 20,
-                    ),
-                    color: const Color(0xFF1e1e24),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    itemBuilder: (context) => [
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Material(
+                color: Colors.transparent,
+                child: PopupMenuButton<String>(
+                  icon: const Icon(
+                    Icons.more_vert_rounded,
+                    color: Colors.white60,
+                    size: 20,
+                  ),
+                  color: const Color(0xFF1e1e24),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  itemBuilder: (context) => [
+                    if (playlist.id == 'favorites')
+                      const PopupMenuItem(
+                        value: 'clean_all',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.delete_sweep_rounded,
+                              size: 18,
+                              color: Colors.orangeAccent,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              "Clean All",
+                              style: TextStyle(color: Colors.orangeAccent),
+                            ),
+                          ],
+                        ),
+                      )
+                    else ...[
                       if (playlist.creator != 'local')
                         const PopupMenuItem(
                           value: 'rename',
@@ -2484,18 +2509,21 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         ),
                       ),
                     ],
-                    onSelected: (value) {
-                      if (value == 'rename') {
-                        _showRenamePlaylistDialog(context, provider, playlist);
-                      } else if (value == 'delete') {
-                        _showDeletePlaylistDialog(context, provider, playlist);
-                      } else if (value == 'copy') {
-                        _showCopyPlaylistDialog(context, provider, playlist);
-                      }
-                    },
-                  ),
+                  ],
+                  onSelected: (value) {
+                    if (value == 'rename') {
+                      _showRenamePlaylistDialog(context, provider, playlist);
+                    } else if (value == 'delete') {
+                      _showDeletePlaylistDialog(context, provider, playlist);
+                    } else if (value == 'copy') {
+                      _showCopyPlaylistDialog(context, provider, playlist);
+                    } else if (value == 'clean_all') {
+                      _showClearFavoritesDialog(context, provider);
+                    }
+                  },
                 ),
               ),
+            ),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -3046,6 +3074,52 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
+  void _showClearFavoritesDialog(BuildContext context, RadioProvider provider) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1e1e24),
+        title: const Text(
+          "Clear Favorites?",
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          "Are you sure you want to remove all songs from your Favorites?",
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final songIds = provider.playlists
+                  .firstWhere((p) => p.id == 'favorites')
+                  .songs
+                  .map((s) => s.id)
+                  .toList();
+
+              if (songIds.isNotEmpty) {
+                await provider.removeSongsFromPlaylist('favorites', songIds);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Favorites cleared.")),
+                  );
+                }
+              }
+            },
+            child: const Text(
+              "Clear All",
+              style: TextStyle(color: Colors.orangeAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showRenamePlaylistDialog(
     BuildContext context,
     RadioProvider provider,
@@ -3288,20 +3362,26 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       setState(() {});
                     },
                   ),
-                  CheckboxListTile(
-                    title: Text(
-                      "Spotify Imported",
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
+                  if (provider.backupService.currentUser?.email.toLowerCase() ==
+                      utf8
+                          .decode(
+                            base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="),
+                          )
+                          .toLowerCase())
+                    CheckboxListTile(
+                      title: Text(
+                        "Spotify Imported",
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                        ),
                       ),
+                      activeColor: Theme.of(context).primaryColor,
+                      value: isSpotify || filters.isEmpty,
+                      onChanged: (val) {
+                        provider.togglePlaylistCreatorFilter('spotify');
+                        setState(() {});
+                      },
                     ),
-                    activeColor: Theme.of(context).primaryColor,
-                    value: isSpotify || filters.isEmpty,
-                    onChanged: (val) {
-                      provider.togglePlaylistCreatorFilter('spotify');
-                      setState(() {});
-                    },
-                  ),
                   if (filters.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
