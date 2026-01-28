@@ -495,7 +495,7 @@ class _TrendingPlaylistCoverState extends State<_TrendingPlaylistCover> {
       final tracks = await widget.service.getPlaylistTracks(widget.playlist);
       final urls = tracks
           .map((t) => t['image'])
-          .where((img) => img != null && img!.isNotEmpty)
+          .where((img) => img != null && img.isNotEmpty)
           .cast<String>()
           .toList();
 

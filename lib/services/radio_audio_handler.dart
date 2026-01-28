@@ -786,7 +786,7 @@ class RadioAudioHandler extends BaseAudioHandler
       album: song.album,
       title: song.title,
       artist: song.artist,
-      artUri: song.artUri != null ? Uri.parse(song.artUri!) : null,
+      artUri: _sanitizeArtUri(song.artUri, "${song.title} ${song.artist}"),
       extras: {
         'type': 'playlist_song',
         'playlistId': playlistId,
@@ -1469,6 +1469,9 @@ class RadioAudioHandler extends BaseAudioHandler
     final String album = extras['album'] ?? "Playlist";
     final String? artUri = extras['artUri'];
 
+    // Use sanitized URI helper to ensure AA compatibility
+    final Uri? validArtUri = _sanitizeArtUri(artUri, "$title $artist");
+
     // Set MediaItem
     MediaItem newItem = MediaItem(
       id: extras['stableId'] ?? url,
@@ -1478,7 +1481,7 @@ class RadioAudioHandler extends BaseAudioHandler
       duration: extras['duration'] != null
           ? Duration(seconds: extras['duration'])
           : null,
-      artUri: artUri != null ? Uri.parse(artUri) : null,
+      artUri: validArtUri,
       playable: true,
       extras: extras,
     );
@@ -2381,7 +2384,7 @@ class RadioAudioHandler extends BaseAudioHandler
             title: s.title,
             artist: s.artist,
             album: s.album,
-            artUri: s.artUri != null ? Uri.parse(s.artUri!) : null,
+            artUri: _sanitizeArtUri(s.artUri, "${s.title} ${s.artist}"),
             duration: s.duration,
             playable: true,
             extras: {
@@ -2480,7 +2483,7 @@ class RadioAudioHandler extends BaseAudioHandler
             title: s.title,
             artist: s.artist,
             album: s.album,
-            artUri: s.artUri != null ? Uri.parse(s.artUri!) : null,
+            artUri: _sanitizeArtUri(s.artUri, "${s.title} ${s.artist}"),
             duration: s.duration,
             extras: {
               'type': 'playlist_song',
@@ -2563,7 +2566,10 @@ class RadioAudioHandler extends BaseAudioHandler
                     title: ps.title,
                     artist: ps.artist,
                     album: ps.album,
-                    artUri: ps.artUri != null ? Uri.parse(ps.artUri!) : null,
+                    artUri: _sanitizeArtUri(
+                      ps.artUri,
+                      "${ps.title} ${ps.artist}",
+                    ),
                     duration: ps.duration,
                     extras: {
                       'type': 'playlist_song',
@@ -2655,7 +2661,7 @@ class RadioAudioHandler extends BaseAudioHandler
                 title: ps.title,
                 artist: ps.artist,
                 album: ps.album,
-                artUri: ps.artUri != null ? Uri.parse(ps.artUri!) : null,
+                artUri: _sanitizeArtUri(ps.artUri, "${ps.title} ${ps.artist}"),
                 duration: ps.duration,
                 extras: {
                   'type': 'playlist_song',
@@ -2725,10 +2731,38 @@ class RadioAudioHandler extends BaseAudioHandler
       album: "Live Radio",
       title: s.name,
       artist: s.genre,
-      artUri: s.logo != null ? Uri.parse(s.logo!) : null,
+      artUri: _sanitizeArtUri(s.logo, s.genre.isNotEmpty ? s.genre : s.name),
       playable: true,
       extras: {'url': s.url, 'type': 'station', 'stationId': s.id},
     );
+  }
+
+  /// IMPORTANT: Android Auto requires HTTPS URLs.
+  /// Local assets or HTTP URLs will often fail to load.
+  /// This helper ensures we always return a valid, renderable URI.
+  Uri? _sanitizeArtUri(String? uriString, String seed) {
+    if (uriString == null || uriString.isEmpty) {
+      return _generateFallback(seed);
+    }
+
+    // Fix HTTP -> HTTPS
+    if (uriString.startsWith('http:')) {
+      return Uri.tryParse(uriString.replaceFirst('http:', 'https:'));
+    }
+
+    // Bypass if already HTTPS
+    if (uriString.startsWith('https:')) {
+      return Uri.tryParse(uriString);
+    }
+
+    // If local asset or file path, fallback to generator
+    // (Android Auto cannot read local assets from the app bundle)
+    return _generateFallback(seed);
+  }
+
+  Uri? _generateFallback(String seed) {
+    final newArt = GenreMapper.getGenreImage(seed);
+    return newArt != null ? Uri.parse(newArt) : null;
   }
 
   String? _extractVideoId(String url) {
