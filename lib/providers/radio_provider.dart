@@ -3330,9 +3330,17 @@ class RadioProvider with ChangeNotifier {
     _isObservingLyrics = isObserving;
   }
 
-  Future<void> fetchLyrics() async {
-    // Only fetch if UI is observing or explicitly requested (implicit via this check)
-    if (!_isObservingLyrics) return;
+  Future<void> refreshLyrics() async {
+    _lastLyricsSearch = null;
+    await fetchLyrics(force: true);
+  }
+
+  Future<void> fetchLyrics({
+    bool force = false,
+    bool fromRecognition = false,
+  }) async {
+    // Only fetch if UI is observing or explicitly requested
+    if (!_isObservingLyrics && !force) return;
 
     // Guard: Do not fetch if nothing is playing
     if (!_isPlaying &&
@@ -3358,38 +3366,92 @@ class RadioProvider with ChangeNotifier {
     }
 
     final sanitizedArtist = _sanitizeArtistName(_currentArtist);
-    final searchKey = "$sanitizedArtist|$_currentTrack";
+    final cleanArtist = LyricsService.cleanString(sanitizedArtist);
+    final cleanTitle = LyricsService.cleanString(_currentTrack);
+    final searchKey = "$cleanArtist|$cleanTitle";
 
-    // Skip if already fetched/fetching for this song
-    if (_lastLyricsSearch == searchKey &&
-        !_isFetchingLyrics &&
-        _currentLyrics.lines.isNotEmpty) {
-      return;
+    // 1. Auto-Clear Logic: Always clear if song changed
+    // This ensures that even if we are waiting for recognition, the previous lyrics are gone.
+    if (force || _lastLyricsSearch != searchKey) {
+      _currentLyrics = LyricsData.empty();
+      _lyricsOffset = Duration.zero;
+      // We don't set _lastLyricsSearch here yet, we do it when we decide what to do
+      notifyListeners();
     }
 
-    // Check if we are currently fetching the exact same thing
+    // 2. Control Flow Logic
+    final bool isRadio =
+        _currentPlayingPlaylistId == null && _currentStation != null;
+
+    if (!force) {
+      if (isRadio) {
+        if (!_isACRCloudEnabled) {
+          // Radio + No ACR -> No Lyrics
+          _lastLyricsSearch = searchKey; // Mark as handled (Empty)
+          _isFetchingLyrics = false;
+          notifyListeners();
+          return;
+        }
+        if (!fromRecognition) {
+          // Radio + ACR -> Wait for Recognition
+          _lastLyricsSearch = searchKey; // Mark as handled (Waiting)
+          _isFetchingLyrics = false;
+          notifyListeners();
+          return;
+        }
+      }
+      // Playlists: Wait 5 seconds before searching
+      if (!isRadio) {
+        // Wait 5 seconds
+        await Future.delayed(const Duration(seconds: 5));
+
+        // Re-verify if the song is still the same
+        final currentCleanArtist = LyricsService.cleanString(
+          _sanitizeArtistName(_currentArtist),
+        );
+        final currentCleanTitle = LyricsService.cleanString(_currentTrack);
+        final currentSearchKey = "$currentCleanArtist|$currentCleanTitle";
+
+        if (currentSearchKey != searchKey) {
+          // Song changed during wait, abort
+          return;
+        }
+      }
+    }
+
+    // 3. Check if we actually need to fetch (redundant if cleared, but relevant if same key passed logic)
+    // If we cleared above, we proceed.
+    // If we didn't clear (same key) but passed logic (e.g. fromRecognition=true on same key), we proceed.
+    // Safety check: if we are ALREADY fetching for this key, don't double dip.
     if (_isFetchingLyrics && _lastLyricsSearch == searchKey) return;
 
     _lastLyricsSearch = searchKey;
     _isFetchingLyrics = true;
-    _currentLyrics = LyricsData.empty(); // Clear previous lyrics immediately
-    _lyricsOffset = Duration.zero; // Reset offset
     notifyListeners();
 
     try {
-      _currentLyrics = await _lyricsService.fetchLyrics(
-        artist: sanitizedArtist,
+      // LyricsService now handles all combinations (sanitized, raw, cleaned) internally
+      final results = await _lyricsService.fetchLyrics(
+        artist: _currentArtist,
         title: _currentTrack,
-        album: _currentAlbum,
         isRadio: _currentPlayingPlaylistId == null,
       );
+
+      // Only update if metadata hasn't changed while we were fetching
+      if (_lastLyricsSearch == searchKey) {
+        if (results.lines.isNotEmpty) {
+          _currentLyrics = results;
+        }
+      }
     } catch (e) {
       _currentLyrics = LyricsData.empty();
       // Allow retry if failed
       _lastLyricsSearch = null;
     } finally {
-      _isFetchingLyrics = false;
-      notifyListeners();
+      if (_lastLyricsSearch == searchKey) {
+        _isFetchingLyrics = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -4339,7 +4401,7 @@ class RadioProvider with ChangeNotifier {
 
           // Trigger fetchSmartLinks (which does SongLink search and updates artwork/links)
           await fetchSmartLinks(keepExistingArtwork: acrArtwork != null);
-          fetchLyrics();
+          fetchLyrics(fromRecognition: true);
         } else {
           LogService().log("ACRCloud: Same song detected.");
           _lastApiResponse = "Same song: $title";

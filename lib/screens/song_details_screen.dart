@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
@@ -462,6 +463,35 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                       tooltip: 'Sync Lyrics',
                                       onPressed: () {
                                         _openSyncOverlay(context, provider);
+                                      },
+                                    ),
+                                  if (provider.currentLyrics.lines.isNotEmpty)
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.copy_rounded,
+                                        color: Colors.white54,
+                                        size: 20,
+                                      ),
+                                      tooltip: 'Copy Lyrics',
+                                      onPressed: () {
+                                        final text = provider
+                                            .currentLyrics
+                                            .lines
+                                            .map((l) => l.text)
+                                            .join('\n');
+                                        Clipboard.setData(
+                                          ClipboardData(text: text),
+                                        );
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Lyrics copied to clipboard',
+                                            ),
+                                            duration: Duration(seconds: 2),
+                                          ),
+                                        );
                                       },
                                     ),
                                 ],
@@ -1065,12 +1095,44 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     Positioned(
                       right: 20,
                       child: IconButton(
-                        icon: const Icon(
-                          Icons.smartphone_rounded,
-                          color: Colors.white54,
+                        icon: Icon(
+                          (provider.currentLocalPath != null &&
+                                  (provider.currentLocalPath!.contains(
+                                        '_secure.',
+                                      ) ||
+                                      provider.currentLocalPath!.endsWith(
+                                        '.mst',
+                                      ) ||
+                                      provider.currentLocalPath!.contains(
+                                        'offline_music',
+                                      )))
+                              ? Icons.offline_pin_rounded
+                              : Icons.smartphone_rounded,
+                          color:
+                              (provider.currentLocalPath != null &&
+                                  (provider.currentLocalPath!.contains(
+                                        '_secure.',
+                                      ) ||
+                                      provider.currentLocalPath!.endsWith(
+                                        '.mst',
+                                      ) ||
+                                      provider.currentLocalPath!.contains(
+                                        'offline_music',
+                                      )))
+                              ? Colors.greenAccent.withValues(alpha: 0.8)
+                              : Colors.white54,
                           size: 24,
                         ),
                         onPressed: () {
+                          final isSecure =
+                              provider.currentLocalPath != null &&
+                              (provider.currentLocalPath!.contains(
+                                    '_secure.',
+                                  ) ||
+                                  provider.currentLocalPath!.endsWith('.mst') ||
+                                  provider.currentLocalPath!.contains(
+                                    'offline_music',
+                                  ));
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               behavior: SnackBarBehavior.floating,

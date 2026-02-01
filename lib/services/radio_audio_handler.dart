@@ -1531,7 +1531,13 @@ class RadioAudioHandler extends BaseAudioHandler
           // Stop any existing playback first to ensure clean state
           await _player.stop();
           // Ensure Release Mode is correct before setting source
-          await _player.setSource(DeviceFileSource(url));
+          final bool isEncrypted =
+              url.contains('_secure') || url.endsWith('.mst');
+          if (isEncrypted) {
+            await _player.setSource(UrlSource(EncryptionService().getUrl(url)));
+          } else {
+            await _player.setSource(DeviceFileSource(url));
+          }
         } else {
           await _player.setSource(UrlSource(url));
         }
@@ -2737,32 +2743,47 @@ class RadioAudioHandler extends BaseAudioHandler
     );
   }
 
-  /// IMPORTANT: Android Auto requires HTTPS URLs.
-  /// Local assets or HTTP URLs will often fail to load.
-  /// This helper ensures we always return a valid, renderable URI.
-  Uri? _sanitizeArtUri(String? uriString, String seed) {
-    if (uriString == null || uriString.isEmpty) {
-      return _generateFallback(seed);
+  MediaItem _songToMediaItem(
+    SavedSong s,
+    String playlistId, {
+    String? mediaIdOverride,
+  }) {
+    String titlePrefix = "";
+    int downloadStatus = 0; // 0: none, 1: downloading, 2: downloaded
+
+    if (s.localPath != null) {
+      if (s.localPath!.contains('_secure.') ||
+          s.localPath!.endsWith('.mst') ||
+          s.localPath!.contains('offline_music')) {
+        titlePrefix = "✅ ";
+        downloadStatus = 2; // STATUS_DOWNLOADED
+      } else {
+        titlePrefix = "📱 ";
+        downloadStatus = 2;
+      }
     }
 
-    // Fix HTTP -> HTTPS
-    if (uriString.startsWith('http:')) {
-      return Uri.tryParse(uriString.replaceFirst('http:', 'https:'));
-    }
+    final String stableId = s.youtubeUrl ?? 'song_${s.id}';
+    final String mId = mediaIdOverride ?? stableId;
 
-    // Bypass if already HTTPS
-    if (uriString.startsWith('https:')) {
-      return Uri.tryParse(uriString);
-    }
-
-    // If local asset or file path, fallback to generator
-    // (Android Auto cannot read local assets from the app bundle)
-    return _generateFallback(seed);
-  }
-
-  Uri? _generateFallback(String seed) {
-    final newArt = GenreMapper.getGenreImage(seed);
-    return newArt != null ? Uri.parse(newArt) : null;
+    return MediaItem(
+      id: mId,
+      title: "$titlePrefix${s.title}",
+      artist: s.artist,
+      album: s.album,
+      artUri: s.artUri != null ? Uri.parse(s.artUri!) : null,
+      duration: s.duration,
+      playable: true,
+      extras: {
+        'type': 'playlist_song',
+        'playlistId': playlistId,
+        'songId': s.id,
+        'stableId': stableId,
+        'youtubeUrl': s.youtubeUrl,
+        'isLocal': s.localPath != null,
+        'android.media.metadata.extras.DOWNLOAD_STATUS': downloadStatus,
+      },
+    );
   }
 
   String? _extractVideoId(String url) {

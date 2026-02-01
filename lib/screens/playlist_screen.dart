@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:io';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widget_previews.dart';
@@ -11,6 +12,8 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Playlist;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../providers/radio_provider.dart';
 import '../services/radio_audio_handler.dart';
@@ -18,6 +21,7 @@ import '../models/playlist.dart';
 import '../models/saved_song.dart';
 
 import '../services/backup_service.dart';
+import '../services/notification_service.dart';
 import 'album_details_screen.dart';
 import 'artist_details_screen.dart';
 import '../widgets/youtube_popup.dart';
@@ -2576,6 +2580,579 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
+  Future<void> _downloadPlaylist(
+    BuildContext context,
+    RadioProvider provider,
+    Playlist playlist,
+  ) async {
+    // 1. Initialize Notifiers BEFORE the dialog so they are ready
+    ValueNotifier<String> songTitleNotifier = ValueNotifier("Initializing...");
+    ValueNotifier<String> statusNotifier = ValueNotifier("Waiting...");
+    ValueNotifier<double> currentFileProgress = ValueNotifier(0.0);
+    ValueNotifier<double> totalProgress = ValueNotifier(0.0);
+    bool isJobCancelled = false;
+    bool isDismissed = false;
+    int notificationId = playlist.id.hashCode;
+
+    // Placeholder for saveDir until we determine it
+    String currentPath = "Determining Path...";
+    ValueNotifier<String> pathNotifier = ValueNotifier(currentPath);
+
+    final cancelSubscription = NotificationService().onCancelDownload.listen((
+      id,
+    ) {
+      if (id == notificationId) {
+        isJobCancelled = true;
+        statusNotifier.value = "Stopping...";
+      }
+    });
+
+    // 2. Show Progress Dialog IMMEDIATELY
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            color: const Color(0xFF1e1e24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              width: 320,
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    "Downloading Playlist",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Song Title
+                  ValueListenableBuilder<String>(
+                    valueListenable: songTitleNotifier,
+                    builder: (context, title, _) {
+                      return Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+
+                  // File Progress Bar
+                  ValueListenableBuilder<double>(
+                    valueListenable: currentFileProgress,
+                    builder: (context, progress, _) {
+                      return Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Current Song",
+                                style: TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              ValueListenableBuilder<String>(
+                                valueListenable: statusNotifier,
+                                builder: (context, status, _) => Text(
+                                  status,
+                                  style: const TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          LinearProgressIndicator(
+                            value: progress,
+                            backgroundColor: Colors.white10,
+                            color: Colors.greenAccent,
+                            minHeight: 6,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Total Progress Bar
+                  Column(
+                    children: [
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "Total Progress",
+                          style: TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ValueListenableBuilder<double>(
+                        valueListenable: totalProgress,
+                        builder: (context, progress, _) {
+                          return LinearProgressIndicator(
+                            value: progress,
+                            backgroundColor: Colors.white10,
+                            color: Colors.blueAccent,
+                            minHeight: 6,
+                            borderRadius: BorderRadius.circular(3),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Action Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            isJobCancelled = true;
+                            statusNotifier.value = "Stopping...";
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.redAccent.withValues(
+                              alpha: 0.1,
+                            ),
+                            foregroundColor: Colors.redAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: const BorderSide(color: Colors.redAccent),
+                            ),
+                          ),
+                          icon: const Icon(Icons.stop_rounded, size: 18),
+                          label: const Text(
+                            "Stop",
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            isDismissed = true;
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Download continuing in background",
+                                ),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueAccent.withValues(
+                              alpha: 0.1,
+                            ),
+                            foregroundColor: Colors.blueAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: const BorderSide(color: Colors.blueAccent),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.visibility_off_rounded,
+                            size: 18,
+                          ), // Hide dialog icon
+                          label: const Text(
+                            "Hide",
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 3. Perform Async Setup inside a try-catch
+    Directory saveDir;
+    try {
+      if (Platform.isAndroid) {
+        await [
+          Permission.storage,
+          Permission.audio,
+        ].request().timeout(const Duration(seconds: 10), onTimeout: () => {});
+      }
+
+      String safeName = playlist.name
+          .replaceAll(RegExp(r'[^\w\s\-]'), '_')
+          .trim();
+      if (safeName.isEmpty)
+        safeName = playlist.id.replaceAll(RegExp(r'[^\w\d_]'), '_');
+
+      Directory? fallbackBase;
+
+      if (Platform.isAndroid) {
+        saveDir = Directory(
+          '/storage/emulated/0/Android/media/com.fazio.musicstream/download/$safeName',
+        );
+      } else {
+        try {
+          fallbackBase = await getDownloadsDirectory();
+        } catch (_) {}
+        fallbackBase ??= await getApplicationDocumentsDirectory();
+        saveDir = Directory('${fallbackBase.path}/MusicStream/$safeName');
+      }
+
+      if (!saveDir.existsSync()) {
+        try {
+          await saveDir.create(recursive: true);
+        } catch (e) {
+          fallbackBase ??= await getApplicationDocumentsDirectory();
+          saveDir = Directory('${fallbackBase.path}/MusicStream/$safeName');
+          await saveDir.create(recursive: true);
+        }
+      }
+
+      pathNotifier.value = saveDir.path;
+    } catch (e) {
+      if (mounted && !isDismissed) Navigator.pop(context);
+      return;
+    }
+
+    int successCount = 0;
+    List<SavedSong> updatedSongs = List.from(playlist.songs);
+    bool anyUpdate = false;
+
+    try {
+      for (int i = 0; i < updatedSongs.length; i++) {
+        if (isJobCancelled) break;
+
+        final song = updatedSongs[i];
+        final String progressText =
+            "${i + 1}/${updatedSongs.length}: ${song.title}";
+        songTitleNotifier.value = progressText;
+        statusNotifier.value = "Preparing...";
+
+        if (isDismissed && !isJobCancelled) {
+          NotificationService().showDownloadProgress(
+            id: notificationId,
+            title: song.title,
+            progress: i,
+            maxProgress: updatedSongs.length,
+          );
+        }
+        currentFileProgress.value = 0.0;
+
+        bool isHandled = false;
+
+        // 1. Device Search
+        if (song.localPath != null) {
+          if (File(song.localPath!).existsSync()) {
+            successCount++;
+            isHandled = true;
+          } else {
+            updatedSongs[i] = song.copyWith(forceClearLocalPath: true);
+            anyUpdate = true;
+          }
+        }
+
+        if (!isHandled && !isJobCancelled) {
+          try {
+            final foundOnDevice = await provider
+                .findSongOnDevice(song.title, song.artist)
+                .timeout(const Duration(seconds: 5));
+            if (foundOnDevice != null && File(foundOnDevice).existsSync()) {
+              updatedSongs[i] = song.copyWith(localPath: foundOnDevice);
+              anyUpdate = true;
+              successCount++;
+              isHandled = true;
+            }
+          } catch (_) {}
+        }
+
+        // 2. Internal Cache Check
+        if (!isHandled && !isJobCancelled) {
+          final hashedId = sha1.convert(utf8.encode(song.id)).toString();
+          File? confirmedCache;
+
+          // New check for hashed name and .mst extension
+          final mstFile = File('${saveDir.path}/$hashedId.mst');
+
+          // Legacy check for old extension/unhashed
+          final safeId = song.id.replaceAll(RegExp(r'[^\w\d_]'), '');
+          final m4aFile = File('${saveDir.path}/${safeId}_secure.m4a');
+          final webmFile = File('${saveDir.path}/${safeId}_secure.webm');
+
+          if (mstFile.existsSync() && mstFile.lengthSync() > 1024 * 50) {
+            confirmedCache = mstFile;
+          } else if (m4aFile.existsSync() && m4aFile.lengthSync() > 1024 * 50) {
+            confirmedCache = m4aFile;
+          } else if (webmFile.existsSync() &&
+              webmFile.lengthSync() > 1024 * 50) {
+            confirmedCache = webmFile;
+          }
+
+          if (confirmedCache != null) {
+            updatedSongs[i] = song.copyWith(localPath: confirmedCache.path);
+            anyUpdate = true;
+            successCount++;
+            isHandled = true;
+          }
+        }
+
+        // 3. Download
+        if (!isHandled) {
+          if (isJobCancelled) break;
+
+          try {
+            String? audioUrl = song.youtubeUrl;
+            if (audioUrl == null) {
+              final links = await provider
+                  .resolveLinks(
+                    title: song.title,
+                    artist: song.artist,
+                    spotifyUrl: song.spotifyUrl,
+                    youtubeUrl: song.youtubeUrl,
+                  )
+                  .timeout(const Duration(seconds: 20));
+              audioUrl = links['youtube'];
+            }
+
+            if (audioUrl != null) {
+              if (isJobCancelled) break;
+
+              var videoId = YoutubePlayer.convertUrlToId(audioUrl);
+              if (videoId == null && audioUrl.contains('v=')) {
+                videoId = audioUrl.split('v=').last.split('&').first;
+              }
+
+              if (videoId != null) {
+                int retryCount = 0;
+                const int maxRetries = 2;
+                bool downloadSuccess = false;
+
+                while (retryCount < maxRetries && !downloadSuccess) {
+                  if (isJobCancelled) break;
+
+                  try {
+                    statusNotifier.value = retryCount == 0
+                        ? "Downloading..."
+                        : "Retry ${retryCount + 1}...";
+
+                    if (retryCount > 0) {
+                      await Future.delayed(const Duration(seconds: 2));
+                    }
+                    if (isJobCancelled) break;
+
+                    final yt = ye.YoutubeExplode();
+
+                    try {
+                      final manifest = await yt.videos.streamsClient
+                          .getManifest(videoId)
+                          .timeout(const Duration(seconds: 40));
+
+                      ye.StreamInfo? audioStreamInfo;
+
+                      final m4aStreams = manifest.audioOnly.where(
+                        (s) => s.container.name == 'm4a',
+                      );
+
+                      if (m4aStreams.isNotEmpty) {
+                        audioStreamInfo = m4aStreams.withHighestBitrate();
+                      } else {
+                        final muxedStreams = manifest.muxed.where(
+                          (s) => s.container.name == 'mp4',
+                        );
+                        if (muxedStreams.isNotEmpty) {
+                          audioStreamInfo = muxedStreams.withHighestBitrate();
+                        } else {
+                          audioStreamInfo = manifest.audioOnly
+                              .withHighestBitrate();
+                        }
+                      }
+
+                      final hashedId = sha1
+                          .convert(utf8.encode(song.id))
+                          .toString();
+                      final fileName = '$hashedId.mst';
+                      final file = File('${saveDir.path}/$fileName');
+
+                      if (await file.exists()) {
+                        try {
+                          await file.delete();
+                        } catch (_) {}
+                      }
+
+                      int totalBytes = audioStreamInfo.size.totalBytes;
+                      int receivedBytes = 0;
+                      int bytesSinceLastUpdate = 0;
+                      DateTime lastUpdateTime = DateTime.now();
+
+                      final stream = yt.videos.streamsClient.get(
+                        audioStreamInfo,
+                      );
+                      final iosink = file.openWrite(mode: FileMode.writeOnly);
+
+                      try {
+                        await for (final data in stream.timeout(
+                          const Duration(seconds: 45),
+                        )) {
+                          if (isJobCancelled) {
+                            throw Exception("CancelledByUser");
+                          }
+
+                          iosink.add(EncryptionService().encryptData(data));
+                          receivedBytes += data.length;
+                          bytesSinceLastUpdate += data.length;
+
+                          final now = DateTime.now();
+                          final timeDiff = now
+                              .difference(lastUpdateTime)
+                              .inMilliseconds;
+
+                          if (bytesSinceLastUpdate > 100 * 1024 ||
+                              timeDiff > 500) {
+                            double curProgress = 0.0;
+                            if (totalBytes > 0) {
+                              curProgress = (receivedBytes / totalBytes).clamp(
+                                0.0,
+                                1.0,
+                              );
+                            }
+                            currentFileProgress.value = curProgress;
+
+                            final speedKbps = timeDiff > 0
+                                ? (bytesSinceLastUpdate / 1024) /
+                                      (timeDiff / 1000)
+                                : 0.0;
+                            final speedStr = speedKbps > 1024
+                                ? "${(speedKbps / 1024).toStringAsFixed(1)} MB/s"
+                                : "${speedKbps.toStringAsFixed(0)} KB/s";
+
+                            statusNotifier.value = "$speedStr";
+
+                            lastUpdateTime = now;
+                            bytesSinceLastUpdate = 0;
+                          }
+                        }
+                      } finally {
+                        await iosink.flush();
+                        await iosink.close();
+                      }
+
+                      if (isJobCancelled) {
+                        if (await file.exists()) {
+                          await file.delete();
+                        }
+                        break;
+                      }
+
+                      final finalLength = await file.length();
+                      if (finalLength < 100 * 1024) {
+                        throw Exception("File is incomplete.");
+                      }
+
+                      updatedSongs[i] = song.copyWith(localPath: file.path);
+                      anyUpdate = true;
+                      successCount++;
+                      downloadSuccess = true;
+                    } finally {
+                      yt.close();
+                    }
+                  } catch (e) {
+                    if (e.toString().contains("CancelledByUser")) {
+                      // Cleanup partial file on cancellation
+                      final hashedId = sha1
+                          .convert(utf8.encode(song.id))
+                          .toString();
+                      try {
+                        final mstFile = File('${saveDir.path}/$hashedId.mst');
+                        if (await mstFile.exists()) await mstFile.delete();
+                      } catch (_) {}
+                      break; // Break retry loop
+                    }
+                    retryCount++;
+                    if (retryCount >= maxRetries) {
+                      // Final failure, cleanup
+                      final hashedId = sha1
+                          .convert(utf8.encode(song.id))
+                          .toString();
+                      try {
+                        final mstFile = File('${saveDir.path}/$hashedId.mst');
+                        if (await mstFile.exists()) await mstFile.delete();
+                      } catch (_) {}
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // Error solving link
+          }
+        }
+
+        totalProgress.value = (i + 1) / updatedSongs.length;
+        if (isJobCancelled) break;
+      }
+
+      if (anyUpdate) {
+        await provider.updateSongsInPlaylist(playlist.id, updatedSongs);
+      }
+    } catch (e) {
+      // General error
+    } finally {
+      if (mounted && !isDismissed)
+        Navigator.pop(context); // Close dialog if still open
+      NotificationService().cancel(notificationId);
+      cancelSubscription.cancel();
+
+      if (mounted) {
+        if (isJobCancelled) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Download Cancelled"),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Download Complete: $successCount / ${playlist.songs.length}",
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   void _handleSpotifyLogin(BuildContext context, RadioProvider provider) async {
     final url = provider.spotifyService.getLoginUrl();
     final redirect = provider.spotifyService.redirectUri;
@@ -4157,10 +4734,29 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         ),
                                         shape: BoxShape.circle,
                                       ),
-                                      child: const Icon(
-                                        Icons.smartphone_rounded,
-                                        size: 10,
-                                        color: Colors.white,
+                                      child: Icon(
+                                        (song.localPath!.contains('_secure.') ||
+                                                song.localPath!.endsWith(
+                                                  '.mst',
+                                                ) ||
+                                                song.localPath!.contains(
+                                                  'offline_music',
+                                                ))
+                                            ? Icons.offline_pin_rounded
+                                            : Icons.smartphone_rounded,
+                                        size: 12,
+                                        color:
+                                            (song.localPath!.contains(
+                                                  '_secure.',
+                                                ) ||
+                                                song.localPath!.endsWith(
+                                                  '.mst',
+                                                ) ||
+                                                song.localPath!.contains(
+                                                  'offline_music',
+                                                ))
+                                            ? Colors.greenAccent
+                                            : Colors.white,
                                       ),
                                     ),
                                   ),
@@ -5940,10 +6536,25 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                     color: Colors.black.withValues(alpha: 0.6),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(
-                                    Icons.smartphone_rounded,
+                                  child: Icon(
+                                    (widget.groupSongs.first.localPath!
+                                                .contains('_secure.') ||
+                                            widget.groupSongs.first.localPath!
+                                                .endsWith('.mst') ||
+                                            widget.groupSongs.first.localPath!
+                                                .contains('offline_music'))
+                                        ? Icons.offline_pin_rounded
+                                        : Icons.smartphone_rounded,
                                     size: 10,
-                                    color: Colors.white,
+                                    color:
+                                        (widget.groupSongs.first.localPath!
+                                                .contains('_secure.') ||
+                                            widget.groupSongs.first.localPath!
+                                                .endsWith('.mst') ||
+                                            widget.groupSongs.first.localPath!
+                                                .contains('offline_music'))
+                                        ? Colors.greenAccent
+                                        : Colors.white,
                                   ),
                                 ),
                               ),

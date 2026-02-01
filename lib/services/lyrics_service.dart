@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'dart:math';
 import 'log_service.dart';
 
 class LyricLine {
@@ -26,60 +27,81 @@ class LyricsService {
   Future<LyricsData> fetchLyrics({
     required String artist,
     required String title,
-    String? album,
-    int? durationSeconds,
     bool isRadio = false,
   }) async {
-    final cleanArtist = _cleanString(artist);
-    final cleanTitle = _cleanString(title);
+    final cleanArtist = cleanString(artist);
+    final cleanTitle = cleanString(title);
 
     LogService().log(
-      "Lyrics Search: '$artist' - '$title' -> Cleaned: '$cleanArtist' - '$cleanTitle'",
+      "Lyrics Search Initiated (Strict): '$cleanArtist' - '$cleanTitle'",
     );
 
-    // 1. Try LRCLIB (Primary - supports Synced Lyrics)
-    // Endpoint: https://lrclib.net/api/get
+    if (cleanArtist.isEmpty || cleanTitle.isEmpty) {
+      return LyricsData.empty();
+    }
+
+    // 2. Try LRCLIB (Primary - supports Synced Lyrics)
+    // Only search using the cleaned names.
     try {
-      final queryParameters = {
-        'artist_name': cleanArtist,
-        'track_name': cleanTitle,
-      };
-      if (album != null && album.isNotEmpty && album != "Live Radio") {
-        queryParameters['album_name'] = album;
-      }
-      if (durationSeconds != null && durationSeconds > 0) {
-        queryParameters['duration'] = durationSeconds.toString();
-      }
+      final result = await _tryLrclib(
+        artist: cleanArtist,
+        title: cleanTitle,
+        isRadio: isRadio,
+      );
+      if (result != null) return result;
+    } catch (e) {
+      LogService().log("LRCLIB Error ($cleanArtist - $cleanTitle): $e");
+    }
+
+    // 3. Fallback to Lyrics.ovh (Secondary - Static only)
+    try {
+      final ovhResult = await _tryLyricsOvh(
+        artist: cleanArtist,
+        title: cleanTitle,
+      );
+      if (ovhResult != null) return ovhResult;
+    } catch (e) {
+      LogService().log("Lyrics.ovh Error ($cleanArtist - $cleanTitle): $e");
+    }
+
+    LogService().log("Lyrics NOT FOUND for: $cleanArtist - $cleanTitle");
+    return LyricsData.empty();
+  }
+
+  Future<LyricsData?> _tryLrclib({
+    required String artist,
+    required String title,
+    bool isRadio = false,
+  }) async {
+    try {
+      final queryParameters = {'artist_name': artist, 'track_name': title};
+
+      // Removed strict Album/Duration checks to ensure broader matching
+      // as requested by user ("semplicemente ricerca col nome dell'artista e il titolo")
 
       final uri = Uri.parse(
         _lrclibBaseUrl,
       ).replace(queryParameters: queryParameters);
-
       LogService().log("Trying LRCLIB: $uri");
 
-      final response = await http.get(uri).timeout(const Duration(seconds: 5));
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final String? syncedLyrics = data['syncedLyrics'];
         final String? plainLyrics = data['plainLyrics'];
 
-        LogService().log(
-          "LRCLIB Success. Synced: ${syncedLyrics != null}, Plain: ${plainLyrics != null}, Mode: ${isRadio ? 'Radio' : 'Normal'}",
-        );
+        LogService().log("LRCLIB Success for '$artist' - '$title'");
 
-        // Radio Mode: Prefer Plain Text (Un-synced)
-        if (isRadio) {
-          if (plainLyrics != null && plainLyrics.isNotEmpty) {
-            return LyricsData(
-              lines: plainLyrics
-                  .split('\n')
-                  .map((l) => LyricLine(time: Duration.zero, text: l.trim()))
-                  .toList(),
-              source: 'LRCLIB (Plain)',
-              isSynced: false,
-            );
-          }
+        if (isRadio && plainLyrics != null && plainLyrics.isNotEmpty) {
+          return LyricsData(
+            lines: plainLyrics
+                .split('\n')
+                .map((l) => LyricLine(time: Duration.zero, text: l.trim()))
+                .toList(),
+            source: 'LRCLIB (Plain)',
+            isSynced: false,
+          );
         }
 
         if (syncedLyrics != null && syncedLyrics.isNotEmpty && !isRadio) {
@@ -97,30 +119,30 @@ class LyricsService {
             source: 'LRCLIB (Plain)',
           );
         }
-      } else {
-        LogService().log("LRCLIB Failed/Not Found: ${response.statusCode}");
       }
-    } catch (e) {
-      LogService().log("LRCLIB Error: $e");
-    }
+    } catch (_) {}
+    return null;
+  }
 
-    // 2. Fallback to Lyrics.ovh (Secondary - Static only)
-    // Endpoint: https://api.lyrics.ovh/v1/Artist/Title
+  Future<LyricsData?> _tryLyricsOvh({
+    required String artist,
+    required String title,
+  }) async {
     try {
       final uri = Uri.parse(
-        '$_lyricsOvhBaseUrl/${Uri.encodeComponent(cleanArtist)}/${Uri.encodeComponent(cleanTitle)}',
+        '$_lyricsOvhBaseUrl/${Uri.encodeComponent(artist)}/${Uri.encodeComponent(title)}',
       );
 
       LogService().log("Trying Lyrics.ovh: $uri");
 
-      final response = await http.get(uri).timeout(const Duration(seconds: 5));
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final String? lyrics = data['lyrics'];
 
         if (lyrics != null && lyrics.isNotEmpty) {
-          LogService().log("Lyrics.ovh Success.");
+          LogService().log("Lyrics.ovh Success for '$artist' - '$title'");
           return LyricsData(
             lines: lyrics
                 .split('\n')
@@ -129,30 +151,36 @@ class LyricsService {
                 .toList(),
             source: 'Lyrics.ovh',
           );
-        } else {
-          LogService().log("Lyrics.ovh: Empty response");
         }
-      } else {
-        LogService().log("Lyrics.ovh Failed: ${response.statusCode}");
       }
-    } catch (e) {
-      LogService().log("Lyrics.ovh Error: $e");
-    }
-
-    LogService().log("Lyrics NOT FOUND for: $cleanArtist - $cleanTitle");
-    return LyricsData.empty();
+    } catch (_) {}
+    return null;
   }
 
   List<LyricLine> _parseLrc(String lrcContent) {
-    final List<LyricLine> lines = [];
-    final RegExp regExp = RegExp(r'\[(\d+):(\d+\.\d+)\](.*)');
+    if (lrcContent.isEmpty) {
+      LogService().log("Warning: _parseLrc called with empty content");
+      return [];
+    }
+    // Log first 50 chars to verify format
+    LogService().log(
+      "Parsing LRC content (first 50): ${lrcContent.substring(0, min(lrcContent.length, 50)).replaceAll('\n', '\\n')}",
+    );
 
-    for (var line in lrcContent.split('\n')) {
+    final List<LyricLine> lines = [];
+    final RegExp regExp = RegExp(r'\[(\d+):(\d+(\.\d+)?)\](.*)');
+
+    final splitLines = lrcContent.split('\n');
+    LogService().log("Total lines to parse: ${splitLines.length}");
+
+    for (var line in splitLines) {
+      if (line.trim().isEmpty) continue;
+
       final match = regExp.firstMatch(line);
       if (match != null) {
         final minutes = int.parse(match.group(1)!);
         final seconds = double.parse(match.group(2)!);
-        final text = match.group(3)!.trim();
+        final text = match.group(4)!.trim();
 
         final duration = Duration(
           minutes: minutes,
@@ -160,8 +188,12 @@ class LyricsService {
         );
 
         lines.add(LyricLine(time: duration, text: text));
+      } else {
+        LogService().log("Failed to match line: '$line'");
       }
     }
+
+    LogService().log("Successfully parsed ${lines.length} lines.");
 
     // Sort lines by time just in case
     lines.sort((a, b) => a.time.compareTo(b.time));
@@ -173,26 +205,24 @@ class LyricsService {
 
     String clean = s;
 
-    // Remove common suffixes
-    final suffixesToRemove = [
-      ' - Topic',
-      ' (Official Video)',
-      ' (Official Audio)',
-      ' (Lyric Video)',
-      ' (Lyrics)',
-      ' [Official Video]',
-      ' [Official Audio]',
-      ' (HD)',
-      ' (HQ)',
-    ];
+    // 2. Explicitly remove requested common suffixes (with or without brackets)
+    final suffixesPattern = RegExp(
+      r'(\s-\sTopic|\s-\sSingle(\sVersion)?|\s-\sRadio\sEdit|\s-\sRemastered|\s-\sDeluxe(\sEdition|\sVersion)?|\s-\sMain\sVersion|\s?\(?Official Video\)?|\s?\(?Official Audio\)?|\s?\(?Lyric Video\)?|\s?\(?Lyrics\)?|\s?\[?Official Video\]?|\s?\[?Official Audio\]?|\s?\(?HD\)?|\s?\(?HQ\)?)$',
+      caseSensitive: false,
+    );
+    clean = clean.replaceAll(suffixesPattern, '');
 
-    for (var suffix in suffixesToRemove) {
-      if (clean.toLowerCase().endsWith(suffix.toLowerCase())) {
-        clean = clean.substring(0, clean.length - suffix.length);
-      }
-    }
+    // 3. Remove anything else inside parentheses or brackets
+    clean = clean.replaceAll(RegExp(r'\([^)]*\)'), '');
+    clean = clean.replaceAll(RegExp(r'\[[^\]]*\]'), '');
 
-    // Remove text after bullet point (•) often used in radio metadata
+    // 4. Remove "feat", "ft", "prod", "with" followed by anything
+    clean = clean.replaceAll(
+      RegExp(r'\s(feat|ft|with|prod)\.?\s.*', caseSensitive: false),
+      '',
+    );
+
+    // 5. Remove text after bullet point (•)
     if (clean.contains('•')) {
       clean = clean.split('•').first;
     }

@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import '../services/lyrics_service.dart';
 
@@ -106,7 +105,17 @@ class _LyricsWidgetState extends State<LyricsWidget> {
                     _lastViewportHeight = constraints.viewportMainAxisExtent;
 
                     if (widget.lyrics.lines.isEmpty) {
-                      return const SliverToBoxAdapter(child: SizedBox.shrink());
+                      return SliverFillRemaining(
+                        child: Center(
+                          child: Text(
+                            "No lyrics available",
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      );
                     }
 
                     return SliverList(

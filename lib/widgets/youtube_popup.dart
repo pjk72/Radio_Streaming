@@ -76,7 +76,6 @@ class _YouTubePopupState extends State<YouTubePopup> {
     final lyrics = await LyricsService().fetchLyrics(
       title: widget.songName!,
       artist: widget.artistName!,
-      album: widget.albumName,
     );
 
     if (mounted) {

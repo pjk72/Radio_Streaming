@@ -157,7 +157,9 @@ class PlayerBar extends StatelessWidget {
                                                     ),
                                             ),
                                           ),
-                                          if (provider.currentStation?.genre ==
+                                          if (provider.currentLocalPath !=
+                                                  null ||
+                                              provider.currentStation?.genre ==
                                                   "Local Device" ||
                                               provider.currentStation?.icon ==
                                                   "smartphone")
@@ -173,10 +175,39 @@ class PlayerBar extends StatelessWidget {
                                                       .withValues(alpha: 0.6),
                                                   shape: BoxShape.circle,
                                                 ),
-                                                child: const Icon(
-                                                  Icons.smartphone_rounded,
+                                                child: Icon(
+                                                  (provider.currentLocalPath !=
+                                                              null &&
+                                                          (provider
+                                                                  .currentLocalPath!
+                                                                  .contains(
+                                                                    '_secure.',
+                                                                  ) ||
+                                                              provider
+                                                                  .currentLocalPath!
+                                                                  .contains(
+                                                                    'offline_music',
+                                                                  )))
+                                                      ? Icons
+                                                            .offline_pin_rounded
+                                                      : Icons
+                                                            .smartphone_rounded,
                                                   size: 10,
-                                                  color: Colors.white,
+                                                  color:
+                                                      (provider.currentLocalPath !=
+                                                              null &&
+                                                          (provider
+                                                                  .currentLocalPath!
+                                                                  .contains(
+                                                                    '_secure.',
+                                                                  ) ||
+                                                              provider
+                                                                  .currentLocalPath!
+                                                                  .contains(
+                                                                    'offline_music',
+                                                                  )))
+                                                      ? Colors.greenAccent
+                                                      : Colors.white,
                                                 ),
                                               ),
                                             ),
