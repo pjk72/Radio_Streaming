@@ -392,7 +392,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                           ), // spacer replacement
                                         // ARTIST HIGHLIGHT MODE
                                         Text(
-                                          provider.currentTrack.toUpperCase(),
+                                          provider.currentTrack
+                                              .replaceFirst("✅ ", "")
+                                              .replaceFirst("📱 ", "")
+                                              .toUpperCase(),
                                           style: TextStyle(
                                             fontSize: titleSize,
                                             fontWeight: FontWeight.w900,
@@ -670,8 +673,12 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           child: Material(
             color: Colors.transparent,
             child: IconButton(
-              icon: const Icon(Icons.add_circle_outline, color: Colors.white70),
-              tooltip: "Add Song",
+              icon: const FaIcon(
+                FontAwesomeIcons.magnifyingGlassPlus,
+                color: Colors.white70,
+                size: 20,
+              ),
+              tooltip: "Find New Music",
               onPressed: () {
                 Navigator.push(
                   context,

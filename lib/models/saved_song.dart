@@ -81,6 +81,7 @@ class SavedSong {
     bool? isValid,
     Duration? duration,
     String? localPath,
+    bool forceClearLocalPath = false,
   }) {
     return SavedSong(
       id: id ?? this.id,
@@ -95,7 +96,7 @@ class SavedSong {
       releaseDate: releaseDate ?? this.releaseDate,
       isValid: isValid ?? this.isValid,
       duration: duration ?? this.duration,
-      localPath: localPath ?? this.localPath,
+      localPath: forceClearLocalPath ? null : (localPath ?? this.localPath),
     );
   }
 }

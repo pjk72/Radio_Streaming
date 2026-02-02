@@ -18,6 +18,7 @@ import 'log_service.dart';
 import '../utils/genre_mapper.dart';
 import 'acr_cloud_service.dart';
 import 'song_link_service.dart';
+import 'encryption_service.dart';
 
 @pragma('vm:entry-point')
 class RadioAudioHandler extends BaseAudioHandler
@@ -376,6 +377,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
       if (lastId != null && lastTitle != null && mediaItem.value == null) {
         final lastStationId = prefs.getInt('last_station_id');
+        final lastIsLocal = prefs.getBool('last_media_is_local') ?? false;
         final item = MediaItem(
           id: lastId,
           title: lastTitle,
@@ -385,6 +387,7 @@ class RadioAudioHandler extends BaseAudioHandler
           extras: {
             'url': lastId,
             'type': lastType,
+            'isLocal': lastIsLocal,
             if (lastStationId != null) 'stationId': lastStationId,
           },
         );
@@ -602,24 +605,9 @@ class RadioAudioHandler extends BaseAudioHandler
               if (playlist.id == lastPlaylistId) {
                 // Rebuild Queue logic (similar to playFromMediaId)
                 _currentPlayingPlaylistId = playlist.id;
-                _playlistQueue = playlist.songs.map((ps) {
-                  final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
-                  return MediaItem(
-                    id: pId,
-                    title: ps.title,
-                    artist: ps.artist,
-                    album: ps.album,
-                    artUri: ps.artUri != null ? Uri.parse(ps.artUri!) : null,
-                    duration: ps.duration,
-                    extras: {
-                      'type': 'playlist_song',
-                      'playlistId': playlist.id,
-                      'songId': ps.id,
-                      'youtubeUrl': ps.youtubeUrl,
-                      'stableId': pId,
-                    },
-                  );
-                }).toList();
+                _playlistQueue = playlist.songs
+                    .map((ps) => _songToMediaItem(ps, playlist.id))
+                    .toList();
 
                 // Find specific song
                 final songIndex = _playlistQueue.indexWhere(
@@ -723,7 +711,7 @@ class RadioAudioHandler extends BaseAudioHandler
     // LOCAL FILE CHECK
     if (song.localPath != null) {
       final extras = {
-        'title': song.title,
+        'title': _getSongTitleWithIcons(song.title, song.localPath),
         'artist': song.artist,
         'album': song.album,
         'artUri': song.artUri,
@@ -784,7 +772,7 @@ class RadioAudioHandler extends BaseAudioHandler
     final placeholderItem = MediaItem(
       id: stableId,
       album: song.album,
-      title: song.title,
+      title: _getSongTitleWithIcons(song.title, song.localPath),
       artist: song.artist,
       artUri: _sanitizeArtUri(song.artUri, "${song.title} ${song.artist}"),
       extras: {
@@ -1464,7 +1452,8 @@ class RadioAudioHandler extends BaseAudioHandler
     _currentSessionId = sessionId;
 
     // Update UI immediately
-    final String title = extras['title'] ?? "Song";
+    final String rawTitle = extras['title'] ?? "Song";
+    final String title = _getSongTitleWithIcons(rawTitle, extras['localPath']);
     final String artist = extras['artist'] ?? "Artist";
     final String album = extras['album'] ?? "Playlist";
     final String? artUri = extras['artUri'];
@@ -1743,6 +1732,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
       final String typeVal = extras?['type'] ?? 'station';
       await prefs.setString('last_media_type', typeVal);
+      await prefs.setBool('last_media_is_local', extras?['isLocal'] == true);
 
       if (typeVal == 'playlist_song') {
         final pId = extras?['playlistId'];
@@ -2095,15 +2085,7 @@ class RadioAudioHandler extends BaseAudioHandler
         return;
       }
 
-      // 1. Check Connectivity FIRST
-      // If no internet, we are likely buffering/retrying naturally, so do not count as "stuck".
-      final connectivity = await Connectivity().checkConnectivity();
-      if (connectivity.contains(ConnectivityResult.none)) {
-        _stuckSecondsCount = 0;
-        return;
-      }
-
-      // 2. Active Polling for Real Position
+      // 1. Active Polling for Real Position
       // Background streams often throttle. We must ASK the player where it is.
       final Duration? realPos = await _player.getCurrentPosition();
       if (realPos == null) return;
@@ -2112,8 +2094,19 @@ class RadioAudioHandler extends BaseAudioHandler
       // Update cache to keep UI in sync if stream is lagging
       _currentPosition = realPos;
 
+      // 2. Stuck Detection Logic
       // If position hasn't moved significantly (< 100ms)
       if ((currentPos - _lastStuckCheckPosition).abs().inMilliseconds < 100) {
+        // 3. Check Connectivity (Only if not local)
+        // If it's a remote stream and we are offline, it's expected to be "stuck" (buffering).
+        final bool isLocal = mediaItem.value?.extras?['isLocal'] == true;
+        if (!isLocal) {
+          final connectivity = await Connectivity().checkConnectivity();
+          if (connectivity.contains(ConnectivityResult.none)) {
+            _stuckSecondsCount = 0;
+            return;
+          }
+        }
         _stuckSecondsCount++;
       } else {
         _stuckSecondsCount = 0;
@@ -2311,6 +2304,12 @@ class RadioAudioHandler extends BaseAudioHandler
           title: 'Playlists',
           playable: false,
         ),
+        const MediaItem(
+          id: 'downloads_root',
+          title: '📥 Downloads',
+          playable: false,
+          extras: {'style': 'list_item'},
+        ),
       ];
     }
 
@@ -2381,26 +2380,9 @@ class RadioAudioHandler extends BaseAudioHandler
 
         final List<MediaItem> songItems = playlist.songs.map((s) {
           final String mId = s.youtubeUrl ?? 'song_${s.id}';
-          final String stableId = s.youtubeUrl ?? 'song_${s.id}';
-          // Create Context-Aware ID to identify WHICH playlist this song click comes from
           final String contextId = 'ctx_${playlist.id}_$mId';
 
-          return MediaItem(
-            id: contextId,
-            title: s.title,
-            artist: s.artist,
-            album: s.album,
-            artUri: _sanitizeArtUri(s.artUri, "${s.title} ${s.artist}"),
-            duration: s.duration,
-            playable: true,
-            extras: {
-              'type': 'playlist_song',
-              'playlistId': playlist.id,
-              'songId': s.id,
-              'stableId': stableId,
-              'youtubeUrl': s.youtubeUrl,
-            },
-          );
+          return _songToMediaItem(s, playlist.id, mediaIdOverride: contextId);
         }).toList();
 
         // Add Play All Item at the top
@@ -2421,6 +2403,39 @@ class RadioAudioHandler extends BaseAudioHandler
 
         return songItems;
       } catch (_) {}
+    }
+
+    // 5. Downloads List
+    if (parentMediaId == 'downloads_root') {
+      final result = await _playlistService.loadPlaylistsResult();
+      final downloadedSongs = result.uniqueSongs
+          .where((s) => s.localPath != null)
+          .toList();
+
+      final List<MediaItem> songItems = downloadedSongs.map((s) {
+        final String mId = s.youtubeUrl ?? 'song_${s.id}';
+        return _songToMediaItem(
+          s,
+          'downloads_root',
+          mediaIdOverride: 'ctx_downloads_root_$mId',
+        );
+      }).toList();
+
+      if (songItems.isNotEmpty) {
+        songItems.insert(
+          0,
+          MediaItem(
+            id: 'play_all_downloads_root',
+            title: 'Play All Downloads',
+            playable: true,
+            artUri: Uri.parse(
+              "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+            ),
+            extras: {'style': 'list_item'},
+          ),
+        );
+      }
+      return songItems;
     }
 
     return [];
@@ -2468,6 +2483,36 @@ class RadioAudioHandler extends BaseAudioHandler
       final prefix = isShuffle ? 'shuffle_all_' : 'play_all_';
       final playlistId = mediaId.substring(prefix.length);
 
+      if (playlistId == 'downloads_root') {
+        final result = await _playlistService.loadPlaylistsResult();
+        final downloadedSongs = result.uniqueSongs
+            .where((s) => s.localPath != null)
+            .toList();
+        if (downloadedSongs.isEmpty) return;
+
+        _currentPlayingPlaylistId = 'downloads_root';
+        _isShuffleMode = true;
+        _playlistQueue = downloadedSongs.map((s) {
+          final String mId = s.youtubeUrl ?? 'song_${s.id}';
+          return _songToMediaItem(
+            s,
+            'downloads_root',
+            mediaIdOverride: 'ctx_downloads_root_$mId',
+          );
+        }).toList();
+
+        if (_isShuffleMode) {
+          _playlistQueue.shuffle();
+        }
+
+        if (_playlistQueue.isNotEmpty) {
+          _playlistIndex = 0;
+          queue.add(_playlistQueue);
+          await playFromMediaId(_playlistQueue.first.id, {'queue_ready': true});
+        }
+        return;
+      }
+
       final playlists = await _playlistService.loadPlaylists();
       try {
         final playlist = playlists.firstWhere((p) => p.id == playlistId);
@@ -2482,23 +2527,9 @@ class RadioAudioHandler extends BaseAudioHandler
               true; // Force shuffle for both 'Shuffle' and 'Play All' actions
         }
 
-        _playlistQueue = playlist.songs.map((s) {
-          final String mId = s.youtubeUrl ?? 'song_${s.id}';
-          return MediaItem(
-            id: mId,
-            title: s.title,
-            artist: s.artist,
-            album: s.album,
-            artUri: _sanitizeArtUri(s.artUri, "${s.title} ${s.artist}"),
-            duration: s.duration,
-            extras: {
-              'type': 'playlist_song',
-              'playlistId': playlist.id,
-              'songId': s.id,
-              'youtubeUrl': s.youtubeUrl,
-            },
-          );
-        }).toList();
+        _playlistQueue = playlist.songs
+            .map((s) => _songToMediaItem(s, playlist.id))
+            .toList();
 
         if (_isShuffleMode) {
           _playlistQueue.shuffle();
@@ -2523,6 +2554,40 @@ class RadioAudioHandler extends BaseAudioHandler
     // START: Context-Aware Resolution
     if (mediaId.startsWith('ctx_')) {
       try {
+        if (mediaId.startsWith('ctx_downloads_root_')) {
+          final realMediaId = mediaId.substring('ctx_downloads_root_'.length);
+          final result = await _playlistService.loadPlaylistsResult();
+          final downloadedSongs = result.uniqueSongs
+              .where((s) => s.localPath != null)
+              .toList();
+          final song = downloadedSongs.firstWhere(
+            (s) => (s.youtubeUrl ?? 'song_${s.id}') == realMediaId,
+          );
+
+          if (_currentPlayingPlaylistId != 'downloads_root') {
+            _currentPlayingPlaylistId = 'downloads_root';
+            _isShuffleMode = true;
+            _playlistQueue = downloadedSongs.map((s) {
+              final String mId = s.youtubeUrl ?? 'song_${s.id}';
+              return _songToMediaItem(
+                s,
+                'downloads_root',
+                mediaIdOverride: 'ctx_downloads_root_$mId',
+              );
+            }).toList();
+            if (_isShuffleMode) _playlistQueue.shuffle();
+            queue.add(_playlistQueue);
+          }
+
+          _playlistIndex = _playlistQueue.indexWhere(
+            (item) => item.id == mediaId,
+          );
+          final String finalUrl = song.youtubeUrl ?? '';
+          final String videoId = _extractVideoId(finalUrl) ?? '';
+          await _playYoutubeVideo(videoId, song, 'downloads_root');
+          return;
+        }
+
         // Format: ctx_{playlistId}_{originalId}
         // Be careful with parsing if playlistId has underscores, but usually it's timestamp or "favorites".
         // Assuming playlistId matches first segment after ctx_.
@@ -2567,23 +2632,10 @@ class RadioAudioHandler extends BaseAudioHandler
 
                 _playlistQueue = p.songs.map((ps) {
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
-                  return MediaItem(
-                    id: 'ctx_${p.id}_$pId', // Keep consistent IDs in queue
-                    title: ps.title,
-                    artist: ps.artist,
-                    album: ps.album,
-                    artUri: _sanitizeArtUri(
-                      ps.artUri,
-                      "${ps.title} ${ps.artist}",
-                    ),
-                    duration: ps.duration,
-                    extras: {
-                      'type': 'playlist_song',
-                      'playlistId': p.id,
-                      'songId': ps.id,
-                      'youtubeUrl': ps.youtubeUrl,
-                      'stableId': pId,
-                    },
+                  return _songToMediaItem(
+                    ps,
+                    p.id,
+                    mediaIdOverride: 'ctx_${p.id}_$pId',
                   );
                 }).toList();
 
@@ -2662,20 +2714,10 @@ class RadioAudioHandler extends BaseAudioHandler
 
             _playlistQueue = p.songs.map((ps) {
               final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
-              return MediaItem(
-                id: 'ctx_${p.id}_$pId', // Update to use context ID!
-                title: ps.title,
-                artist: ps.artist,
-                album: ps.album,
-                artUri: _sanitizeArtUri(ps.artUri, "${ps.title} ${ps.artist}"),
-                duration: ps.duration,
-                extras: {
-                  'type': 'playlist_song',
-                  'playlistId': p.id,
-                  'songId': ps.id,
-                  'youtubeUrl': ps.youtubeUrl,
-                  'stableId': pId,
-                },
+              return _songToMediaItem(
+                ps,
+                p.id,
+                mediaIdOverride: 'ctx_${p.id}_$pId',
               );
             }).toList();
 
@@ -2748,30 +2790,15 @@ class RadioAudioHandler extends BaseAudioHandler
     String playlistId, {
     String? mediaIdOverride,
   }) {
-    String titlePrefix = "";
-    int downloadStatus = 0; // 0: none, 1: downloading, 2: downloaded
-
-    if (s.localPath != null) {
-      if (s.localPath!.contains('_secure.') ||
-          s.localPath!.endsWith('.mst') ||
-          s.localPath!.contains('offline_music')) {
-        titlePrefix = "✅ ";
-        downloadStatus = 2; // STATUS_DOWNLOADED
-      } else {
-        titlePrefix = "📱 ";
-        downloadStatus = 2;
-      }
-    }
-
     final String stableId = s.youtubeUrl ?? 'song_${s.id}';
     final String mId = mediaIdOverride ?? stableId;
 
     return MediaItem(
       id: mId,
-      title: "$titlePrefix${s.title}",
+      title: _getSongTitleWithIcons(s.title, s.localPath),
       artist: s.artist,
       album: s.album,
-      artUri: s.artUri != null ? Uri.parse(s.artUri!) : null,
+      artUri: _sanitizeArtUri(s.artUri, "${s.title} ${s.artist}"),
       duration: s.duration,
       playable: true,
       extras: {
@@ -2781,9 +2808,26 @@ class RadioAudioHandler extends BaseAudioHandler
         'stableId': stableId,
         'youtubeUrl': s.youtubeUrl,
         'isLocal': s.localPath != null,
-        'android.media.metadata.extras.DOWNLOAD_STATUS': downloadStatus,
+        'localPath': s.localPath,
+        'android.media.metadata.extras.DOWNLOAD_STATUS': s.localPath != null
+            ? 2
+            : 0,
       },
     );
+  }
+
+  String _getSongTitleWithIcons(String title, String? localPath) {
+    if (localPath == null) return title;
+    // Avoid double icons
+    if (title.startsWith("✅ ") || title.startsWith("📱 ")) return title;
+
+    if (localPath.contains('_secure.') ||
+        localPath.endsWith('.mst') ||
+        localPath.contains('offline_music')) {
+      return "✅ $title";
+    } else {
+      return "📱 $title";
+    }
   }
 
   String? _extractVideoId(String url) {
@@ -2997,6 +3041,16 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       }
     } catch (_) {}
+    return null;
+  }
+
+  Uri? _sanitizeArtUri(dynamic art, String fallback) {
+    if (art == null || (art is String && art.isEmpty)) {
+      final img = GenreMapper.getGenreImage(fallback);
+      return img != null ? Uri.tryParse(img) : null;
+    }
+    if (art is Uri) return art;
+    if (art is String) return Uri.tryParse(art);
     return null;
   }
 }

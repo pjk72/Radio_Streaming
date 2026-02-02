@@ -68,6 +68,8 @@ dependencies:
   scrollable_positioned_list: ^0.3.8
   google_mobile_ads: ^7.0.0
   on_audio_query: ^2.9.0
+  shelf: ^1.4.1
+  flutter_local_notifications: ^20.0.0
 
 
 dev_dependencies:

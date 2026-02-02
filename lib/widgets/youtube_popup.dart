@@ -33,6 +33,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
   bool _isAudioOnly = false;
   bool _isFullScreen = false;
   bool _isInPipMode = false;
+  bool _isHD = false;
 
   // Lyrics State
   LyricsData? _lyrics;
@@ -58,20 +59,66 @@ class _YouTubePopupState extends State<YouTubePopup> {
     });
   }
 
-  void _initializeVideoPlayer() {
+  void _initializeVideoPlayer({bool forceHD = false}) {
     _videoController = YoutubePlayerController(
       initialVideoId: widget.videoId,
-      flags: const YoutubePlayerFlags(
+      flags: YoutubePlayerFlags(
         autoPlay: true,
         mute: false,
         enableCaption: false,
         hideControls: false,
+        forceHD: forceHD,
       ),
     );
   }
 
-  Future<void> _fetchLyrics() async {
+  void _toggleHD() {
+    final oldController = _videoController;
+    final currentPosition = oldController.value.position;
+    final isPlaying = oldController.value.isPlaying;
+
+    setState(() {
+      _isHD = !_isHD;
+
+      // Update state and recreate controller with new flags
+      _videoController = YoutubePlayerController(
+        initialVideoId: widget.videoId,
+        flags: YoutubePlayerFlags(
+          autoPlay: isPlaying,
+          mute: false,
+          enableCaption: false,
+          hideControls: false,
+          forceHD: _isHD,
+          startAt: currentPosition.inSeconds,
+        ),
+      );
+    });
+
+    // Quality change is handled by the controller recreation above with forceHD flag
+    final quality = _isHD ? 'hd1080' : 'default';
+    debugPrint('Switching quality to $quality');
+
+    // Safe disposal of the old controller after the new one is active in the bridge
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Small delay prevents potential race conditions with the bridge
+      Future.delayed(const Duration(milliseconds: 200), () {
+        oldController.dispose();
+      });
+    });
+  }
+
+  Future<void> _fetchLyrics({bool force = false}) async {
     if (widget.songName == null || widget.artistName == null) return;
+
+    if (mounted) {
+      setState(() {
+        _lyrics = null; // Clear to show loading state
+      });
+    }
+
+    // Wait 5 seconds before searching, as requested for playlists/external songs
+    await Future.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
 
     final lyrics = await LyricsService().fetchLyrics(
       title: widget.songName!,
@@ -126,6 +173,27 @@ class _YouTubePopupState extends State<YouTubePopup> {
                         onPressed: () => _openSyncOverlay(context),
                         tooltip: "Sync Lyrics",
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, color: Colors.white54),
+                        onPressed: () => _fetchLyrics(force: true),
+                        tooltip: "Retry Search",
+                      ),
+                      if (_lyrics != null && _lyrics!.lines.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.copy, color: Colors.white54),
+                          onPressed: () {
+                            final text = _lyrics!.lines
+                                .map((l) => l.text)
+                                .join('\n');
+                            Clipboard.setData(ClipboardData(text: text));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Lyrics copied to clipboard'),
+                              ),
+                            );
+                          },
+                          tooltip: "Copy Lyrics",
+                        ),
                       const SizedBox(width: 8),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.white54),
@@ -201,6 +269,9 @@ class _YouTubePopupState extends State<YouTubePopup> {
   @override
   Widget build(BuildContext context) {
     final player = YoutubePlayer(
+      key: ValueKey(
+        '${widget.videoId}_$_isHD',
+      ), // Force recreation on HD toggle
       controller: _videoController,
       aspectRatio: _isFullScreen
           ? MediaQuery.of(context).size.aspectRatio
@@ -233,15 +304,14 @@ class _YouTubePopupState extends State<YouTubePopup> {
               icon: const Icon(Icons.tune, color: Colors.white),
               onPressed: () => _openSyncOverlay(context),
             ),
-          // Settings button is default in YoutubePlayer but we might be overriding actions.
-          // YoutubePlayer default topActions is just empty? No.
-          // If we provide topActions, we override defaults?
-          // Actually YoutubePlayer adds PlaybackSpeed button etc in bottomActions usually.
-          // Let's explicitly add defaults if needed, but YoutubePlayer usually manages its own unless we completely replace controls.
-          // Wait, `topActions` property ADDS to the top bar or REPLACES it?
-          // Documentation: "Custom widgets to display in the top control bar."
-          // It implies replacement of content there, usually just title.
-          // We'll see.
+          IconButton(
+            icon: Icon(
+              _isHD ? Icons.hd : Icons.hd_outlined,
+              color: _isHD ? Colors.redAccent : Colors.white,
+            ),
+            onPressed: _toggleHD,
+            tooltip: _isHD ? "Disable HD" : "Enable HD",
+          ),
         ],
       ],
       onEnded: (_) {},

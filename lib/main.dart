@@ -20,6 +20,7 @@ import 'services/background_tasks.dart';
 import 'widgets/global_hidden_player.dart';
 import 'widgets/connectivity_banner.dart';
 import 'widgets/admob_banner_widget.dart';
+import 'services/encryption_service.dart';
 
 late AudioHandler audioHandler;
 
@@ -47,6 +48,9 @@ Future<void> main() async {
       androidNotificationIcon: 'mipmap/ic_launcher',
     ),
   );
+
+  debugPrint("Initializing EncryptionService...");
+  await EncryptionService().init();
 
   runApp(const AppBootstrapper());
 }

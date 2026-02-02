@@ -321,6 +321,33 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         fontSize: 16,
                                       ),
                                     ),
+                                    if (!provider.isFetchingLyrics) ...[
+                                      const SizedBox(height: 16),
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            provider.fetchLyrics(force: true),
+                                        icon: const Icon(
+                                          Icons.refresh_rounded,
+                                          color: Colors.white,
+                                        ),
+                                        label: const Text(
+                                          "Retry Search",
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                        style: TextButton.styleFrom(
+                                          backgroundColor: Colors.white10,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 24,
+                                            vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              24,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -423,7 +450,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            provider.currentTrack,
+                                            provider.currentTrack
+                                                .replaceFirst("✅ ", "")
+                                                .replaceFirst("📱 ", ""),
                                             style: const TextStyle(
                                               color: Colors.white70,
                                               fontSize: 13,
@@ -465,6 +494,17 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         _openSyncOverlay(context, provider);
                                       },
                                     ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.refresh_rounded,
+                                      color: Colors.white54,
+                                      size: 20,
+                                    ),
+                                    tooltip: 'Retry Search',
+                                    onPressed: () {
+                                      provider.fetchLyrics(force: true);
+                                    },
+                                  ),
                                   if (provider.currentLyrics.lines.isNotEmpty)
                                     IconButton(
                                       icon: const Icon(
@@ -529,14 +569,16 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
           //const SizedBox(height: 60), // More top space
           SizedBox(
-            height: 250,
+            height: 230,
             child:
                 provider.currentPlayingPlaylistId != null &&
                     provider.activeQueue.isNotEmpty
-                ? _buildCarousel(context, provider, height: 270)
-                : _buildAlbumArt(context, provider, mainImage, 270),
+                ? _buildCarousel(context, provider, height: 230)
+                : _buildAlbumArt(context, provider, mainImage, 230),
           ),
-          const SizedBox(height: 12), // Reduced space between art and info
+          const SizedBox(
+            height: 28,
+          ), // Increased space to lower title and controls
           // Bottom Section: Info + Controls + Visualizer
           _buildBottomSection(
             context,
@@ -559,7 +601,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     String? bgImage,
   ) {
     final double screenHeight = MediaQuery.of(context).size.height;
-    final double artSize = (screenHeight * 0.4).clamp(120.0, 180.0);
+    final double artSize = (screenHeight * 0.35).clamp(100.0, 160.0);
 
     return Column(
       children: [
@@ -773,6 +815,13 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     bool isDefaultLogo =
         (provider.currentAlbumArt ?? station.logo) == station.logo;
 
+    final localPath = provider.currentLocalPath;
+    final bool isOffline =
+        localPath != null &&
+        (localPath.contains('_secure.') ||
+            localPath.endsWith('.mst') ||
+            localPath.contains('offline_music'));
+
     return SingleChildScrollView(
       padding: EdgeInsets.only(
         bottom: isLandscape ? 8 : 16,
@@ -815,6 +864,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         child: Text(
                           provider.currentTrack.isNotEmpty
                               ? provider.currentTrack
+                                    .replaceFirst("✅ ", "")
+                                    .replaceFirst("📱 ", "")
                               : "Live Broadcast",
                           textAlign: TextAlign.center,
                           maxLines: 1,
@@ -1096,58 +1147,36 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       right: 20,
                       child: IconButton(
                         icon: Icon(
-                          (provider.currentLocalPath != null &&
-                                  (provider.currentLocalPath!.contains(
-                                        '_secure.',
-                                      ) ||
-                                      provider.currentLocalPath!.endsWith(
-                                        '.mst',
-                                      ) ||
-                                      provider.currentLocalPath!.contains(
-                                        'offline_music',
-                                      )))
+                          isOffline
                               ? Icons.offline_pin_rounded
                               : Icons.smartphone_rounded,
-                          color:
-                              (provider.currentLocalPath != null &&
-                                  (provider.currentLocalPath!.contains(
-                                        '_secure.',
-                                      ) ||
-                                      provider.currentLocalPath!.endsWith(
-                                        '.mst',
-                                      ) ||
-                                      provider.currentLocalPath!.contains(
-                                        'offline_music',
-                                      )))
+                          color: isOffline
                               ? Colors.greenAccent.withValues(alpha: 0.8)
                               : Colors.white54,
                           size: 24,
                         ),
                         onPressed: () {
-                          final isSecure =
-                              provider.currentLocalPath != null &&
-                              (provider.currentLocalPath!.contains(
-                                    '_secure.',
-                                  ) ||
-                                  provider.currentLocalPath!.endsWith('.mst') ||
-                                  provider.currentLocalPath!.contains(
-                                    'offline_music',
-                                  ));
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               behavior: SnackBarBehavior.floating,
                               backgroundColor: Colors.black87,
-                              content: const Row(
+                              content: Row(
                                 children: [
                                   Icon(
-                                    Icons.smartphone_rounded,
-                                    color: Colors.white,
+                                    isOffline
+                                        ? Icons.offline_pin_rounded
+                                        : Icons.smartphone_rounded,
+                                    color: isOffline
+                                        ? Colors.greenAccent
+                                        : Colors.white,
                                     size: 20,
                                   ),
-                                  SizedBox(width: 12),
+                                  const SizedBox(width: 12),
                                   Text(
-                                    "Song is on your device",
-                                    style: TextStyle(color: Colors.white),
+                                    isOffline
+                                        ? "Song is saved offline"
+                                        : "Song is on your device",
+                                    style: const TextStyle(color: Colors.white),
                                   ),
                                 ],
                               ),
@@ -1172,7 +1201,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
             duration: const Duration(milliseconds: 600),
             curve: Curves.fastOutSlowIn,
             height: isLandscape ? 40 : 100, // Reduced height to raise layout
-            child: provider.isPlaying
+            child: (provider.isPlaying && !provider.isLoading)
                 ? Opacity(
                     opacity:
                         (provider.hiddenAudioController != null ||

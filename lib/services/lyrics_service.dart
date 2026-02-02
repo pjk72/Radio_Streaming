@@ -200,10 +200,12 @@ class LyricsService {
     return lines;
   }
 
-  String _cleanString(String s) {
+  static String cleanString(String s) {
     if (s.isEmpty) return s;
 
     String clean = s;
+    // 0. Explicitly remove offline/download icons
+    clean = clean.replaceFirst("✅ ", "").replaceFirst("📱 ", "");
 
     // 2. Explicitly remove requested common suffixes (with or without brackets)
     final suffixesPattern = RegExp(

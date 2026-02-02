@@ -9,7 +9,10 @@ import 'package:flutter/widget_previews.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Playlist;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart'
+    as ye
+    hide Playlist;
+import '../services/encryption_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -650,7 +653,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
       // FALLBACK: If SongLink API found nothing, use internal YouTube search engine
       if (url == null || url.contains('search_query')) {
-        final yt = YoutubeExplode();
+        final yt = ye.YoutubeExplode();
         try {
           final query = "${song.title} ${song.artist.split('•').first.trim()}";
           final searchList = await yt.search.search(query);
@@ -801,7 +804,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           videoId = candidateUrl;
 
         if (videoId != null) {
-          final yt = YoutubeExplode();
+          final yt = ye.YoutubeExplode();
           try {
             await yt.videos.get(videoId).timeout(const Duration(seconds: 10));
             return true;
@@ -1482,7 +1485,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                     ],
                                   ),
                                 ),
-                                if (_selectedPlaylistId != null)
+                                if (_selectedPlaylistId != null) ...[
                                   PopupMenuItem(
                                     value: 'duplicates',
                                     child: Row(
@@ -1501,6 +1504,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                       ],
                                     ),
                                   ),
+                                ],
                                 if (hasInvalidSongs || _showOnlyInvalid) ...[
                                   if (hasInvalidSongs)
                                     PopupMenuItem(
@@ -2445,7 +2449,24 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   itemBuilder: (context) => [
-                    if (playlist.id == 'favorites')
+                    if (playlist.id == 'favorites') ...[
+                      const PopupMenuItem(
+                        value: 'download',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.download_rounded,
+                              size: 18,
+                              color: Colors.greenAccent,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              "Download",
+                              style: TextStyle(color: Colors.greenAccent),
+                            ),
+                          ],
+                        ),
+                      ),
                       const PopupMenuItem(
                         value: 'clean_all',
                         child: Row(
@@ -2462,8 +2483,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             ),
                           ],
                         ),
-                      )
-                    else ...[
+                      ),
+                    ] else ...[
                       if (playlist.creator != 'local')
                         const PopupMenuItem(
                           value: 'rename',
@@ -2474,6 +2495,24 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               Text(
                                 "Rename",
                                 style: TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (playlist.creator != 'local')
+                        const PopupMenuItem(
+                          value: 'download',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.download_rounded,
+                                size: 18,
+                                color: Colors.greenAccent,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                "Download",
+                                style: TextStyle(color: Colors.greenAccent),
                               ),
                             ],
                           ),
@@ -2515,7 +2554,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     ],
                   ],
                   onSelected: (value) {
-                    if (value == 'rename') {
+                    if (value == 'download') {
+                      _downloadPlaylist(context, provider, playlist);
+                    } else if (value == 'rename') {
                       _showRenamePlaylistDialog(context, provider, playlist);
                     } else if (value == 'delete') {
                       _showDeletePlaylistDialog(context, provider, playlist);
@@ -2606,6 +2647,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         statusNotifier.value = "Stopping...";
       }
     });
+
+    // 1. Initial Global Sync: Link any already downloaded duplicates
+    await provider.syncAllDownloadStatuses();
 
     // 2. Show Progress Dialog IMMEDIATELY
     if (!mounted) return;
@@ -2758,6 +2802,16 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                           onPressed: () {
                             isDismissed = true;
                             Navigator.pop(ctx);
+
+                            // Trigger initial notification immediately upon hiding
+                            NotificationService().showDownloadProgress(
+                              id: notificationId,
+                              title: playlist.name,
+                              subTitle: "Preparing...",
+                              progress: 0,
+                              maxProgress: playlist.songs.length * 100,
+                            );
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
@@ -2861,9 +2915,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         if (isDismissed && !isJobCancelled) {
           NotificationService().showDownloadProgress(
             id: notificationId,
-            title: song.title,
-            progress: i,
-            maxProgress: updatedSongs.length,
+            title: playlist.name,
+            subTitle: "Song ${i + 1}/${updatedSongs.length}: ${song.title}",
+            progress: i * 100,
+            maxProgress: updatedSongs.length * 100,
           );
         }
         currentFileProgress.value = 0.0;
@@ -2891,6 +2946,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               anyUpdate = true;
               successCount++;
               isHandled = true;
+              // Sync this status to all other playlists
+              await provider.updateSongDownloadStatusGlobally(updatedSongs[i]);
             }
           } catch (_) {}
         }
@@ -2922,6 +2979,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             anyUpdate = true;
             successCount++;
             isHandled = true;
+            // Sync this status to all other playlists
+            await provider.updateSongDownloadStatusGlobally(updatedSongs[i]);
           }
         }
 
@@ -2965,7 +3024,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         : "Retry ${retryCount + 1}...";
 
                     if (retryCount > 0) {
-                      await Future.delayed(const Duration(seconds: 2));
+                      await Future.delayed(const Duration(milliseconds: 500));
                     }
                     if (isJobCancelled) break;
 
@@ -3058,6 +3117,25 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
                             lastUpdateTime = now;
                             bytesSinceLastUpdate = 0;
+
+                            // Update notification progress within the stream
+                            if (isDismissed && !isJobCancelled) {
+                              final int totalSongs = updatedSongs.length;
+                              final int songIndex = i;
+                              // Total progress: (current song index * 100) + current song percentage
+                              final int overallProgress =
+                                  (songIndex * 100) +
+                                  (curProgress * 100).toInt();
+
+                              NotificationService().showDownloadProgress(
+                                id: notificationId,
+                                title: playlist.name,
+                                subTitle:
+                                    "Song ${i + 1}/$totalSongs: ${song.title} (${(curProgress * 100).toInt()}%)",
+                                progress: overallProgress,
+                                maxProgress: totalSongs * 100,
+                              );
+                            }
                           }
                         }
                       } finally {
@@ -3081,6 +3159,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       anyUpdate = true;
                       successCount++;
                       downloadSuccess = true;
+                      // Sync this status to all other playlists
+                      await provider.updateSongDownloadStatusGlobally(
+                        updatedSongs[i],
+                      );
                     } finally {
                       yt.close();
                     }
@@ -3126,20 +3208,39 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     } catch (e) {
       // General error
     } finally {
-      if (mounted && !isDismissed)
-        Navigator.pop(context); // Close dialog if still open
-      NotificationService().cancel(notificationId);
+      if (mounted && !isDismissed) Navigator.pop(context);
       cancelSubscription.cancel();
 
-      if (mounted) {
-        if (isJobCancelled) {
+      if (isJobCancelled) {
+        NotificationService().cancel(notificationId);
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text("Download Cancelled"),
               backgroundColor: Colors.orange,
             ),
           );
+        }
+      } else {
+        if (isDismissed) {
+          // Show final completion in notification
+          NotificationService().showDownloadProgress(
+            id: notificationId,
+            title: playlist.name,
+            subTitle:
+                "Download Complete: $successCount / ${playlist.songs.length}",
+            progress: playlist.songs.length * 100,
+            maxProgress: playlist.songs.length * 100,
+          );
+          // Only clear after a delay so they see it's done
+          Future.delayed(const Duration(seconds: 5), () {
+            NotificationService().cancel(notificationId);
+          });
         } else {
+          NotificationService().cancel(notificationId);
+        }
+
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -4735,26 +4836,34 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         shape: BoxShape.circle,
                                       ),
                                       child: Icon(
-                                        (song.localPath!.contains('_secure.') ||
-                                                song.localPath!.endsWith(
-                                                  '.mst',
-                                                ) ||
-                                                song.localPath!.contains(
-                                                  'offline_music',
-                                                ))
+                                        ((song.localPath?.contains(
+                                                      '_secure.',
+                                                    ) ??
+                                                    false) ||
+                                                (song.localPath?.endsWith(
+                                                      '.mst',
+                                                    ) ??
+                                                    false) ||
+                                                (song.localPath?.contains(
+                                                      'offline_music',
+                                                    ) ??
+                                                    false))
                                             ? Icons.offline_pin_rounded
                                             : Icons.smartphone_rounded,
                                         size: 12,
                                         color:
-                                            (song.localPath!.contains(
-                                                  '_secure.',
-                                                ) ||
-                                                song.localPath!.endsWith(
-                                                  '.mst',
-                                                ) ||
-                                                song.localPath!.contains(
-                                                  'offline_music',
-                                                ))
+                                            ((song.localPath?.contains(
+                                                      '_secure.',
+                                                    ) ??
+                                                    false) ||
+                                                (song.localPath?.endsWith(
+                                                      '.mst',
+                                                    ) ??
+                                                    false) ||
+                                                (song.localPath?.contains(
+                                                      'offline_music',
+                                                    ) ??
+                                                    false))
                                             ? Colors.greenAccent
                                             : Colors.white,
                                       ),
@@ -5220,7 +5329,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   ),
                 ),
               ),
-              if (song.localPath != null)
+              if (song.localPath != null &&
+                  !(song.localPath!.contains('_secure.') ||
+                      song.localPath!.endsWith('.mst') ||
+                      song.localPath!.contains('offline_music')))
                 Padding(
                   padding: const EdgeInsets.only(
                     left: 8,

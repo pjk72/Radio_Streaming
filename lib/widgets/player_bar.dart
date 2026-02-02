@@ -172,8 +172,12 @@ class PlayerBar extends StatelessWidget {
                                                 ),
                                                 decoration: BoxDecoration(
                                                   color: Colors.black
-                                                      .withValues(alpha: 0.6),
+                                                      .withValues(alpha: 0.8),
                                                   shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Colors.white24,
+                                                    width: 0.5,
+                                                  ),
                                                 ),
                                                 child: Icon(
                                                   (provider.currentLocalPath !=
@@ -186,13 +190,18 @@ class PlayerBar extends StatelessWidget {
                                                               provider
                                                                   .currentLocalPath!
                                                                   .contains(
+                                                                    '.mst',
+                                                                  ) ||
+                                                              provider
+                                                                  .currentLocalPath!
+                                                                  .contains(
                                                                     'offline_music',
                                                                   )))
                                                       ? Icons
-                                                            .offline_pin_rounded
+                                                            .check_circle_rounded
                                                       : Icons
                                                             .smartphone_rounded,
-                                                  size: 10,
+                                                  size: 12,
                                                   color:
                                                       (provider.currentLocalPath !=
                                                               null &&
@@ -200,6 +209,11 @@ class PlayerBar extends StatelessWidget {
                                                                   .currentLocalPath!
                                                                   .contains(
                                                                     '_secure.',
+                                                                  ) ||
+                                                              provider
+                                                                  .currentLocalPath!
+                                                                  .contains(
+                                                                    '.mst',
                                                                   ) ||
                                                               provider
                                                                   .currentLocalPath!
@@ -261,7 +275,15 @@ class PlayerBar extends StatelessWidget {
                                                         Flexible(
                                                           child: Text(
                                                             provider
-                                                                .currentTrack,
+                                                                .currentTrack
+                                                                .replaceFirst(
+                                                                  "✅ ",
+                                                                  "",
+                                                                )
+                                                                .replaceFirst(
+                                                                  "📱 ",
+                                                                  "",
+                                                                ),
                                                             style: TextStyle(
                                                               color: playerTheme
                                                                   .textTheme

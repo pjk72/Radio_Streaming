@@ -621,6 +621,13 @@ class RadioProvider with ChangeNotifier {
           notifyListeners();
         } else if (isReadyOrError && _isLoading) {
           _isLoading = false;
+          if (state.processingState == AudioProcessingState.ready) {
+            // STREAMING STARTED: Now we can start the 5 second countdown for lyrics
+            if (_currentTrackStartTime == null) {
+              _currentTrackStartTime = DateTime.now();
+              fetchLyrics(); // Re-trigger search with the updated start time
+            }
+          }
           notifyListeners();
 
           // Wait for loading to finish before identifying song
@@ -690,7 +697,24 @@ class RadioProvider with ChangeNotifier {
         metadataChanged = true;
       }
 
+      // Sync Local Path if available in extras
+      final String? itemLocalPath = item.extras?['localPath'];
+      if (_currentLocalPath != itemLocalPath) {
+        _currentLocalPath = itemLocalPath;
+        metadataChanged = true;
+      }
+
       if (metadataChanged) {
+        // Only set start time if we are already in 'ready' state.
+        // If we are buffering/loading, leave it null so playback listener can trigger it when ready.
+        final processingState =
+            _audioHandler.playbackState.value.processingState;
+        if (processingState == AudioProcessingState.ready) {
+          _currentTrackStartTime = DateTime.now();
+        } else {
+          _currentTrackStartTime = null;
+        }
+
         // Trigger lyrics fetch and other updates
         fetchLyrics();
         checkIfCurrentSongIsSaved(); // Update save status for the new track
@@ -1063,10 +1087,22 @@ class RadioProvider with ChangeNotifier {
     playStation(list[prevIndex]);
   }
 
+  bool _isSyncingDownloads = false;
+
   Future<void> _loadPlaylists() async {
     final result = await _playlistService.loadPlaylistsResult();
     _playlists = result.playlists;
     _allUniqueSongs = result.uniqueSongs;
+
+    // Proactive Sync: Ensure all duplicates share download status
+    if (!_isSyncingDownloads) {
+      _isSyncingDownloads = true;
+      try {
+        await syncAllDownloadStatuses();
+      } finally {
+        _isSyncingDownloads = false;
+      }
+    }
 
     refreshAudioHandlerPlaylists(); // Force AA update
     checkIfCurrentSongIsSaved();
@@ -1171,6 +1207,127 @@ class RadioProvider with ChangeNotifier {
     if (playlistId.startsWith('local_')) return;
     await _playlistService.updateSongsInPlaylist(playlistId, songs);
     await _loadPlaylists();
+  }
+
+  /// Normalizes a string for song matching by removing non-alphanumeric chars,
+  /// extra whitespace, and common suffixes in brackets/parentheses.
+  String _normalizeForMatching(String s) {
+    String res = s.toLowerCase();
+    // Remove content within parentheses/brackets (e.g. "(Official Video)", "[Remastered]")
+    res = res.replaceAll(RegExp(r'\([^)]*\)'), '');
+    res = res.replaceAll(RegExp(r'\[[^\]]*\]'), '');
+    // Remove all non-alphanumeric
+    res = res.replaceAll(RegExp(r'[^\w\d]'), '');
+    return res.trim();
+  }
+
+  Future<void> updateSongDownloadStatusGlobally(
+    SavedSong downloadedSong,
+  ) async {
+    bool changed = false;
+
+    final targetTitle = _normalizeForMatching(downloadedSong.title);
+    final targetArtist = _normalizeForMatching(downloadedSong.artist);
+
+    if (targetTitle.isEmpty) return;
+
+    for (int i = 0; i < _playlists.length; i++) {
+      final playlist = _playlists[i];
+      if (playlist.creator == 'local') continue;
+
+      bool playlistChanged = false;
+      final updatedSongsInPlaylist = List<SavedSong>.from(playlist.songs);
+      for (int j = 0; j < updatedSongsInPlaylist.length; j++) {
+        final song = updatedSongsInPlaylist[j];
+
+        // Match by exact ID or normalized Title + Artist
+        bool isMatch = song.id == downloadedSong.id;
+        if (!isMatch) {
+          isMatch =
+              _normalizeForMatching(song.title) == targetTitle &&
+              _normalizeForMatching(song.artist) == targetArtist;
+        }
+
+        if (isMatch) {
+          if (song.localPath != downloadedSong.localPath) {
+            LogService().log(
+              "Sync: Found match for '${song.title}' in playlist '${playlist.name}'. Updating localPath.",
+            );
+            updatedSongsInPlaylist[j] = song.copyWith(
+              localPath: downloadedSong.localPath,
+              youtubeUrl: downloadedSong.youtubeUrl?.isNotEmpty == true
+                  ? downloadedSong.youtubeUrl
+                  : song.youtubeUrl,
+            );
+            playlistChanged = true;
+          }
+        }
+      }
+      if (playlistChanged) {
+        _playlists[i] = playlist.copyWith(songs: updatedSongsInPlaylist);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await _playlistService.saveAll(_playlists);
+      await _loadPlaylists(); // REFRESH ALL STATE (including unique songs)
+    }
+  }
+
+  /// Scans the entire library and ensures all occurrences of the same song
+  /// share the same localPath if at least one of them is downloaded.
+  Future<void> syncAllDownloadStatuses() async {
+    final Map<String, String> bestPaths = {}; // "artist|title" -> path
+
+    String combinedKey(String a, String t) =>
+        "${_normalizeForMatching(a)}|${_normalizeForMatching(t)}";
+
+    // 1. Collect best paths
+    for (var p in _playlists) {
+      for (var s in p.songs) {
+        if (s.localPath != null && s.localPath!.isNotEmpty) {
+          final k = combinedKey(s.artist, s.title);
+          if (k.length < 3) continue; // Skip very short/empty keys
+
+          // Prefer app-managed paths (.mst / _secure)
+          if (!bestPaths.containsKey(k) ||
+              s.localPath!.endsWith('.mst') ||
+              s.localPath!.contains('_secure')) {
+            bestPaths[k] = s.localPath!;
+          }
+        }
+      }
+    }
+
+    if (bestPaths.isEmpty) return;
+
+    bool overallChanged = false;
+    for (int i = 0; i < _playlists.length; i++) {
+      final playlist = _playlists[i];
+      if (playlist.creator == 'local') continue;
+
+      bool playlistChanged = false;
+      final updatedSongs = List<SavedSong>.from(playlist.songs);
+      for (int j = 0; j < updatedSongs.length; j++) {
+        final s = updatedSongs[j];
+        final k = combinedKey(s.artist, s.title);
+        if (bestPaths.containsKey(k) && s.localPath != bestPaths[k]) {
+          updatedSongs[j] = s.copyWith(localPath: bestPaths[k]);
+          playlistChanged = true;
+        }
+      }
+
+      if (playlistChanged) {
+        _playlists[i] = playlist.copyWith(songs: updatedSongs);
+        overallChanged = true;
+      }
+    }
+
+    if (overallChanged) {
+      await _playlistService.saveAll(_playlists);
+      await _loadPlaylists();
+    }
   }
 
   Future<void> addSongsToPlaylist(
@@ -1304,6 +1461,34 @@ class RadioProvider with ChangeNotifier {
     await _loadPlaylists();
   }
 
+  Future<void> clearSongPath(String playlistId, String songId) async {
+    try {
+      final p = _playlists.firstWhere((p) => p.id == playlistId);
+      final index = p.songs.indexWhere((s) => s.id == songId);
+      if (index != -1) {
+        // Clear path and ensure it's marked as valid (since it can play online)
+        final s = p.songs[index].copyWith(
+          forceClearLocalPath: true,
+          isValid: true,
+        );
+        final updatedSongs = List<SavedSong>.from(p.songs);
+        updatedSongs[index] = s;
+        final updatedPlaylist = p.copyWith(songs: updatedSongs);
+
+        await _playlistService.addPlaylist(updatedPlaylist);
+
+        // Also unmark from global invalid list if it was there
+        if (_invalidSongIds.contains(songId)) {
+          await unmarkSongAsInvalid(songId, playlistId: playlistId);
+        } else {
+          await _loadPlaylists();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error clearing song path: $e");
+    }
+  }
+
   Future<void> validateLocalSongsInPlaylist(String playlistId) async {
     try {
       final p = _playlists.firstWhere((p) => p.id == playlistId);
@@ -1348,13 +1533,28 @@ class RadioProvider with ChangeNotifier {
               await unmarkSongAsInvalid(song.id, playlistId: playlistId);
             }
             anyChanged = true;
-          } else if (song.isValid) {
-            // Still not found and was valid -> Mark as invalid
-            debugPrint(
-              "Song ${song.title} not found on device, marking invalid.",
-            );
-            await markSongAsInvalid(playlistId, song.id);
-            anyChanged = true;
+          } else {
+            // Still not found on device
+            // Check if it's a downloaded song that can revert to online
+            final bool canRevert =
+                song.youtubeUrl != null ||
+                song.spotifyUrl != null ||
+                song.appleMusicUrl != null;
+
+            if (canRevert && song.localPath != null) {
+              debugPrint(
+                "Downloaded song ${song.title} missing file, reverting to online.",
+              );
+              await clearSongPath(playlistId, song.id);
+              anyChanged = true;
+            } else if (song.isValid) {
+              // Pure local song or no online link, mark as invalid
+              debugPrint(
+                "Song ${song.title} not found on device, marking invalid.",
+              );
+              await markSongAsInvalid(playlistId, song.id);
+              anyChanged = true;
+            }
           }
         }
       }
@@ -1565,11 +1765,13 @@ class RadioProvider with ChangeNotifier {
 
   String? _currentReleaseDate;
   String? _currentGenre;
+  String? _currentLocalPath;
 
   LyricsData _currentLyrics = LyricsData.empty();
   LyricsData get currentLyrics => _currentLyrics;
   bool _isFetchingLyrics = false;
   bool get isFetchingLyrics => _isFetchingLyrics;
+  DateTime? _currentTrackStartTime;
 
   bool _isLoading = false;
   final List<String> _metadataLog = [];
@@ -1663,6 +1865,7 @@ class RadioProvider with ChangeNotifier {
 
   String? get currentReleaseDate => _currentReleaseDate;
   String? get currentGenre => _currentGenre;
+  String? get currentLocalPath => _currentLocalPath;
 
   bool get isCurrentSongSaved {
     if (_currentTrack == "Live Broadcast" || _playlists.isEmpty) return false;
@@ -1931,9 +2134,11 @@ class RadioProvider with ChangeNotifier {
     _currentAlbumArt = artwork;
     _currentReleaseDate = releaseDate;
     _currentArtistImage = null;
+    _currentLocalPath = isLocal ? videoId : null;
     _isPlaying = true; // Show 'Pause' icon
     // _isLoading = true; // Optional: Show loading state, but better to show song info
 
+    _currentTrackStartTime = DateTime.now();
     checkIfCurrentSongIsSaved(); // Check if this song from the playlist is already saved somewhere
     notifyListeners(); // <--- CRITICAL: Update UI BEFORE async delays
 
@@ -3133,6 +3338,7 @@ class RadioProvider with ChangeNotifier {
     );
 
     // Fetch lyrics for the playlist song
+    _currentTrackStartTime = DateTime.now();
     fetchLyrics();
 
     _metadataTimer?.cancel(); // CANCEL recognition timer
@@ -3370,64 +3576,67 @@ class RadioProvider with ChangeNotifier {
     final cleanTitle = LyricsService.cleanString(_currentTrack);
     final searchKey = "$cleanArtist|$cleanTitle";
 
+    // 0. Streaming Check: Ensure we have started streaming
+    // If _currentTrackStartTime is null, we are likely still buffering.
+    // The playback listener will re-call fetchLyrics() once state hits 'ready'.
+    if (_currentTrackStartTime == null && !force) {
+      LogService().log("Lyrics Search: Waiting for streaming to start...");
+      return;
+    }
+
+    // 0. Universal Wait Logic: Ensure at least 5 seconds from stream start
+    final streamStartTime = _currentTrackStartTime ?? DateTime.now();
+    final elapsedSinceStream = DateTime.now().difference(streamStartTime);
+    if (!force && elapsedSinceStream < const Duration(seconds: 5)) {
+      await Future.delayed(const Duration(seconds: 5) - elapsedSinceStream);
+      // Re-check after wait: if song changed, abort this old call
+      final verArtistNow = LyricsService.cleanString(
+        _sanitizeArtistName(_currentArtist),
+      );
+      final verTitleNow = LyricsService.cleanString(_currentTrack);
+      if ("$verArtistNow|$verTitleNow" != searchKey) return;
+    }
+
     // 1. Auto-Clear Logic: Always clear if song changed
-    // This ensures that even if we are waiting for recognition, the previous lyrics are gone.
     if (force || _lastLyricsSearch != searchKey) {
       _currentLyrics = LyricsData.empty();
       _lyricsOffset = Duration.zero;
-      // We don't set _lastLyricsSearch here yet, we do it when we decide what to do
       notifyListeners();
     }
 
     // 2. Control Flow Logic
     final bool isRadio =
         _currentPlayingPlaylistId == null && _currentStation != null;
-
     if (!force) {
       if (isRadio) {
         if (!_isACRCloudEnabled) {
-          // Radio + No ACR -> No Lyrics
-          _lastLyricsSearch = searchKey; // Mark as handled (Empty)
+          _lastLyricsSearch = searchKey;
           _isFetchingLyrics = false;
           notifyListeners();
           return;
         }
         if (!fromRecognition) {
-          // Radio + ACR -> Wait for Recognition
-          _lastLyricsSearch = searchKey; // Mark as handled (Waiting)
+          _lastLyricsSearch = searchKey;
           _isFetchingLyrics = false;
           notifyListeners();
           return;
         }
       }
-      // Playlists: Wait 5 seconds before searching
-      if (!isRadio) {
-        // Wait 5 seconds
-        await Future.delayed(const Duration(seconds: 5));
-
-        // Re-verify if the song is still the same
-        final currentCleanArtist = LyricsService.cleanString(
-          _sanitizeArtistName(_currentArtist),
-        );
-        final currentCleanTitle = LyricsService.cleanString(_currentTrack);
-        final currentSearchKey = "$currentCleanArtist|$currentCleanTitle";
-
-        if (currentSearchKey != searchKey) {
-          // Song changed during wait, abort
-          return;
-        }
-      }
     }
 
-    // 3. Check if we actually need to fetch (redundant if cleared, but relevant if same key passed logic)
-    // If we cleared above, we proceed.
-    // If we didn't clear (same key) but passed logic (e.g. fromRecognition=true on same key), we proceed.
-    // Safety check: if we are ALREADY fetching for this key, don't double dip.
-    if (_isFetchingLyrics && _lastLyricsSearch == searchKey) return;
-
-    _lastLyricsSearch = searchKey;
+    // 3. Initiate Search State
     _isFetchingLyrics = true;
+    _lastLyricsSearch = searchKey;
     notifyListeners();
+
+    // Re-verify if the song is still the same after wait (Final Check)
+    // Re-verify if the song is still the same after wait
+    final verArtist = LyricsService.cleanString(
+      _sanitizeArtistName(_currentArtist),
+    );
+    final verTitle = LyricsService.cleanString(_currentTrack);
+    final verKey = "$verArtist|$verTitle";
+    if (verKey != searchKey || _lastLyricsSearch != searchKey) return;
 
     try {
       // LyricsService now handles all combinations (sanitized, raw, cleaned) internally

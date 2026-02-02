@@ -20,7 +20,7 @@ class _AdMobBannerWidgetState extends State<AdMobBannerWidget> {
   // Android: ca-app-pub-3940256099942544/6300978111
   // iOS: ca-app-pub-3940256099942544/2934735716
   final String _adUnitId = kReleaseMode
-      ? 'ca-app-pub-3351319116434923/2254648654'
+      ? 'ca-app-pub-3351319116434923/3699933511'
       : (Platform.isAndroid
             ? 'ca-app-pub-3940256099942544/6300978111'
             : 'ca-app-pub-3940256099942544/2934735716');
