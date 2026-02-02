@@ -1,126 +1,279 @@
 <!DOCTYPE html>
 <html lang="it">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>pjk developer</title>
+
+    <title>MusicStream</title>
+
+    <!-- Google Search Console -->
+    <meta name="google-site-verification" content="jztC_YOr0Bv9p2F5x157ZYVnYUZnN41X9Nx-rxd6dbE" />
+
+    <!-- SEO -->
+    <meta name="description" content="MusicStreaming App è l'app per ascoltare musica in streaming, radio online e playlist sempre aggiornate.">
+    <meta name="author" content="PJK Developer">
+
+    <!-- FAVICON (usa l’icona Play Store dell’app) -->
+    <link rel="icon" type="image/png"
+          href="https://play-lh.googleusercontent.com/1xrvupxj_jVvqZF_me2PD4L930wyj9QHiQzpqKyHkb-8-Lv6_x834VwsUgeVEodx6nHatRgDWPoXb75FkCgL=s48">
+
+    <!-- Font elegante -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
-        body {
-            font-family: Arial, Helvetica, sans-serif;
-            background-color: #f5f5f5;
+        * {
             margin: 0;
             padding: 0;
-            color: #333;
+            box-sizing: border-box;
         }
 
-        header {
-            background-color: #1a73e8;
-            color: white;
-            padding: 30px 20px;
-            text-align: center;
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(180deg, #f4f6fb, #ffffff);
+            color: #1e293b;
         }
 
-        main {
-            max-width: 900px;
-            margin: 30px auto;
-            background: #ffffff;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        .container {
+            width: 90%;
+            max-width: 1150px;
+            margin: auto;
         }
 
-        h2 {
-            border-bottom: 2px solid #eee;
-            padding-bottom: 8px;
+        /* Top bar */
+        .top-bar {
+            background: #0f172a;
+            color: #cbd5f5;
+            font-size: 0.9rem;
         }
 
-        .apps ul {
-            padding-left: 20px;
+        .top-bar-content {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
         }
 
-        .apps li {
-            margin-bottom: 10px;
-        }
-
-        .policy {
-            margin-top: 30px;
-            text-align: center;
-        }
-
-        .policy a {
-            display: inline-block;
-            padding: 12px 18px;
-            background-color: #1a73e8;
-            color: white;
+        .top-bar a {
+            color: #a5b4fc;
             text-decoration: none;
-            border-radius: 5px;
         }
 
-        .policy a:hover {
-            background-color: #1558b0;
+        .top-bar a:hover {
+            text-decoration: underline;
         }
 
-        footer {
+        /* Hero */
+        .hero {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+            padding: 90px 0;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1.3fr 0.7fr;
+            gap: 50px;
+            align-items: center;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.95;
+            margin-bottom: 30px;
+            max-width: 520px;
+        }
+
+        /* CTA */
+        .cta {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary {
+            background: #ffffff;
+            color: #4f46e5;
+            padding: 14px 30px;
+            border-radius: 40px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.25s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .btn-secondary {
+            border: 2px solid rgba(255,255,255,0.6);
+            color: #fff;
+            padding: 13px 28px;
+            border-radius: 40px;
+            text-decoration: none;
+        }
+
+        /* App image */
+        .hero-image img {
+            width: 100%;
+            max-width: 260px;
+            border-radius: 26px;
+            box-shadow: 0 30px 70px rgba(0,0,0,0.35);
+        }
+
+        /* Features */
+        .features {
+            padding: 90px 0;
+            background: #ffffff;
+        }
+
+        .features h2 {
             text-align: center;
-            padding: 20px;
-            font-size: 14px;
-            color: #777;
+            font-size: 2.3rem;
+            margin-bottom: 50px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 30px;
+        }
+
+        .feature-card {
+            background: #f8fafc;
+            padding: 35px 30px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.08);
+            transition: transform 0.2s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        /* Footer */
+        .footer {
+            background: #0f172a;
+            color: #cbd5f5;
+            padding: 35px 0;
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .footer a {
+            color: #a5b4fc;
+            text-decoration: none;
+            margin-left: 15px;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+
+            .hero-image img {
+                margin: 40px auto 0;
+            }
+
+            .cta {
+                justify-content: center;
+            }
+
+            .subtitle {
+                margin: auto auto 30px;
+            }
+
+            .footer-content {
+                justify-content: center;
+                text-align: center;
+            }
         }
     </style>
 </head>
 
 <body>
 
-    <header>
-        <h1>pjk developer</h1>
-        <p>Innovative software solutions and cutting-edge design</p>
-    </header>
+<header class="top-bar">
+    <div class="container top-bar-content">
+        <span>PJK Developer</span>
+        <a href="https://play.google.com/store/apps/dev?id=6305350565263081254" target="_blank">
+            Profilo sviluppatore
+        </a>
+    </div>
+</header>
 
-    <main>
+<section class="hero">
+    <div class="container hero-grid">
 
-        <section class="about">
-            <h2>Chi siamo</h2>
-            <p>
-                pjk developer realizza applicazioni moderne, intuitive e orientate
-                all’esperienza utente. Il nostro obiettivo è trasformare idee complesse
-                in soluzioni digitali semplici ed efficaci.
-            </p>
-        </section>
-
-        <section class="apps">
-            <h2>Le nostre applicazioni</h2>
-            <ul>
-                <li>Music & Radio Streaming App</li>
-                <li>Media Player e servizi audio</li>
-                <li>Applicazioni Android basate su Flutter</li>
-            </ul>
-            <p>
-                Le applicazioni sono disponibili sullo store ufficiale e vengono
-                aggiornate regolarmente per garantire stabilità, sicurezza e nuove funzionalità.
-            </p>
-        </section>
-
-        <section class="policy">
-            <h2>Privacy e dati</h2>
-            <p>
-                La tutela della privacy degli utenti è una priorità.
-                Consulta la nostra informativa completa:
+        <div>
+            <h1>MusicStream</h1>
+            <p class="subtitle">
+                Ascolta musica in streaming, radio online e playlist sempre aggiornate
+                con un’esperienza moderna e fluida.
             </p>
 
-            <!-- UNICO LINK ESTERNO -->
-            <a href="https://pjk72.github.io/Radio_Streaming/Policy.html" target="_blank">
-                Privacy Policy
+            <div class="cta">
+                <a class="btn-primary"
+                   href="https://play.google.com/store/apps/details?id=com.fazio.musicstream"
+                   target="_blank">
+                    Scarica su Google Play
+                </a>
+
+                <a class="btn-secondary"
+                   href="https://pjk72.github.io/Radio_Streaming/Policy.html">
+                    Privacy Policy
+                </a>
+            </div>
+        </div>
+
+        <div class="hero-image">
+            <img src="https://play-lh.googleusercontent.com/1xrvupxj_jVvqZF_me2PD4L930wyj9QHiQzpqKyHkb-8-Lv6_x834VwsUgeVEodx6nHatRgDWPoXb75FkCgL=w480-h960-rw"
+                 alt="MusicStreaming App screenshot">
+        </div>
+
+    </div>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2>Funzionalità principali</h2>
+
+        <div class="features-grid">
+            <div class="feature-card">🎧 Streaming continuo</div>
+            <div class="feature-card">📻 Radio online</div>
+            <div class="feature-card">🔥 Playlist aggiornate</div>
+            <div class="feature-card">📱 Design moderno</div>
+        </div>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="container footer-content">
+        <p>© 2026 PJK Developer</p>
+        <div>
+            <a href="https://pjk72.github.io/Radio_Streaming/Policy.html">Privacy Policy</a>
+            <a href="https://play.google.com/store/apps/dev?id=6305350565263081254" target="_blank">
+                Sviluppatore
             </a>
-        </section>
-
-    </main>
-
-    <footer>
-        © 2026 pjk developer – All rights reserved
-    </footer>
+        </div>
+    </div>
+</footer>
 
 </body>
-
 </html>
