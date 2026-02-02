@@ -2626,6 +2626,142 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     RadioProvider provider,
     Playlist playlist,
   ) async {
+    // 0. High Data Usage Confirmation
+    final bool shouldProceed =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1e1e24),
+            elevation: 24,
+            shadowColor: Colors.black,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+            title: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orangeAccent.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.signal_wifi_off_rounded,
+                    color: Colors.orangeAccent,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  "Data Usage Warning",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Downloading music consumes a significant amount of mobile data. This could lead to extra charges on your mobile plan.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 16,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.blueAccent.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        color: Colors.blueAccent,
+                        size: 20,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "We recommend using a WiFi connection to avoid potential carrier costs.",
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        "Cancel",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        "Continue",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!shouldProceed) return;
+
     // 1. Initialize Notifiers BEFORE the dialog so they are ready
     ValueNotifier<String> songTitleNotifier = ValueNotifier("Initializing...");
     ValueNotifier<String> statusNotifier = ValueNotifier("Waiting...");
@@ -2933,6 +3069,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           } else {
             updatedSongs[i] = song.copyWith(forceClearLocalPath: true);
             anyUpdate = true;
+            // Persist the clearance immediately
+            await provider.updateSongsInPlaylist(playlist.id, updatedSongs);
           }
         }
 
@@ -2981,6 +3119,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             isHandled = true;
             // Sync this status to all other playlists
             await provider.updateSongDownloadStatusGlobally(updatedSongs[i]);
+            // Persist progress
+            await provider.updateSongsInPlaylist(playlist.id, updatedSongs);
           }
         }
 
@@ -3162,6 +3302,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       // Sync this status to all other playlists
                       await provider.updateSongDownloadStatusGlobally(
                         updatedSongs[i],
+                      );
+                      // Persist progress immediately so we don't lose it if killed
+                      await provider.updateSongsInPlaylist(
+                        playlist.id,
+                        updatedSongs,
                       );
                     } finally {
                       yt.close();
