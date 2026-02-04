@@ -2999,10 +2999,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       }
 
       String safeName = playlist.name
-          .replaceAll(RegExp(r'[^\w\s\-]'), '_')
+          .replaceAll(RegExp(r'[^\w\-]'), '_')
           .trim();
-      if (safeName.isEmpty)
-        safeName = playlist.id.replaceAll(RegExp(r'[^\w\d_]'), '_');
+      if (safeName.isEmpty) safeName = "playlist_${playlist.id}";
 
       Directory? fallbackBase;
 
@@ -3295,7 +3294,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         throw Exception("File is incomplete.");
                       }
 
-                      updatedSongs[i] = song.copyWith(localPath: file.path);
+                      // If we resolved the URL dynamically, save it too
+                      updatedSongs[i] = song.copyWith(
+                        localPath: file.path,
+                        youtubeUrl: audioUrl,
+                      );
                       anyUpdate = true;
                       successCount++;
                       downloadSuccess = true;
@@ -3802,7 +3805,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       context: context,
       builder: (context) {
         final playlists = provider.playlists
-            .where((p) => p.id != 'favorites' && p.id != sourcePlaylist.id)
+            .where((p) => p.id != sourcePlaylist.id)
             .toList();
 
         return AlertDialog(
@@ -4967,8 +4970,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           ),
                                         ),
                                       ),
-                                if (song.localPath != null ||
-                                    song.id.startsWith('local_'))
+                                if (song.localPath != null &&
+                                    song.localPath!.isNotEmpty)
                                   Positioned(
                                     bottom: 2,
                                     right: 2,
@@ -4993,7 +4996,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                                       'offline_music',
                                                     ) ??
                                                     false))
-                                            ? Icons.offline_pin_rounded
+                                            ? Icons.file_download_done_rounded
                                             : Icons.smartphone_rounded,
                                         size: 12,
                                         color:
@@ -6782,8 +6785,8 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                       ),
                                     ),
                             ),
-                            if (widget.groupSongs.first.localPath != null ||
-                                widget.groupSongs.first.id.startsWith('local_'))
+                            if (widget.groupSongs.first.localPath != null &&
+                                widget.groupSongs.first.localPath!.isNotEmpty)
                               Positioned(
                                 bottom: 2,
                                 right: 2,
@@ -6800,7 +6803,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                                 .endsWith('.mst') ||
                                             widget.groupSongs.first.localPath!
                                                 .contains('offline_music'))
-                                        ? Icons.offline_pin_rounded
+                                        ? Icons.file_download_done_rounded
                                         : Icons.smartphone_rounded,
                                     size: 10,
                                     color:

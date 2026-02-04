@@ -3,14 +3,12 @@ import 'dart:developer' as developer;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 import 'artist_details_screen.dart';
 import 'package:provider/provider.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../providers/radio_provider.dart';
-import '../widgets/youtube_popup.dart';
+import '../widgets/player_bar.dart';
 import '../models/saved_song.dart';
-import '../services/music_metadata_service.dart';
+import '../models/playlist.dart';
 
 class AlbumDetailsScreen extends StatefulWidget {
   final String albumName;
@@ -34,7 +32,6 @@ class AlbumDetailsScreen extends StatefulWidget {
 
 class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
   late Future<Map<String, dynamic>?> _albumInfoFuture;
-  int? _selectedTrackIndex; // Track index to highlight
   Future<List<Map<String, dynamic>>>? _tracksFuture;
   List<Map<String, dynamic>>? _cachedTracks;
 
@@ -204,6 +201,382 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
       developer.log("Error fetching tracks: $e");
     }
     return [];
+  }
+
+  // --- Playback & Playlist Helpers ---
+
+  void _playTrack(int index) {
+    if (_cachedTracks == null || _cachedTracks!.isEmpty) return;
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    // Convert to SavedSong
+    final songs = _convertToSavedSongs();
+    final song = songs[index];
+    final playlistId = 'album_${widget.albumName.hashCode}';
+
+    if (provider.currentPlayingPlaylistId == playlistId) {
+      provider.playPlaylistSong(song, playlistId);
+    } else {
+      final tempPlaylist = Playlist(
+        id: playlistId,
+        name: widget.albumName,
+        songs: songs,
+        createdAt: DateTime.now(),
+      );
+      provider.playAdHocPlaylist(tempPlaylist, song.id);
+    }
+  }
+
+  void _playRandom() {
+    if (_cachedTracks == null || _cachedTracks!.isEmpty) return;
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    final songs = _convertToSavedSongs();
+    songs.shuffle();
+
+    final tempPlaylist = Playlist(
+      id: 'album_${widget.albumName.hashCode}',
+      name: widget.albumName,
+      songs: songs,
+      createdAt: DateTime.now(),
+    );
+
+    provider.playAdHocPlaylist(tempPlaylist, null);
+  }
+
+  List<SavedSong> _convertToSavedSongs() {
+    if (_cachedTracks == null) return [];
+    return _cachedTracks!.map((t) => _trackToSavedSong(t)).toList();
+  }
+
+  SavedSong _trackToSavedSong(Map<String, dynamic> track) {
+    // If api lookup hasn't happened yet, we might miss artist/album names in 'track' map for simple tracks
+    // But _fetchTracks returns full objects from lookup entity=song
+    final trackArtist = track['artistName'] ?? widget.artistName;
+    final trackName = track['trackName'] ?? "Unknown Track";
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+    // Fallback image
+    final String displayImage = widget.artworkUrl ?? "";
+
+    // Find best distinct image
+    String art =
+        track['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
+        displayImage;
+
+    return SavedSong(
+      id:
+          track['trackId']?.toString() ??
+          "${timestamp}_${track['trackNumber'] ?? 0}",
+      title: trackName,
+      artist: trackArtist,
+      album: widget.albumName,
+      artUri: art,
+      appleMusicUrl: track['trackViewUrl'],
+      dateAdded: DateTime.now(),
+      releaseDate: track['releaseDate'],
+    );
+  }
+
+  void _showCopyDialog() {
+    if (_cachedTracks == null || _cachedTracks!.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No tracks to copy")));
+      return;
+    }
+
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        final playlists = provider.playlists;
+
+        return AlertDialog(
+          backgroundColor: Theme.of(context).cardColor,
+          title: Text(
+            "Copy Album",
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleLarge?.color,
+            ),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    "Copy all songs to:",
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: playlists.length + 1,
+                    itemBuilder: (ctx, index) {
+                      if (index == 0) {
+                        return ListTile(
+                          leading: const Icon(
+                            Icons.add,
+                            color: Colors.blueAccent,
+                          ),
+                          title: const Text(
+                            "Create New Playlist",
+                            style: TextStyle(color: Colors.blueAccent),
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _createNewPlaylist();
+                          },
+                        );
+                      }
+                      final p = playlists[index - 1];
+                      return ListTile(
+                        leading: const Icon(Icons.playlist_play_rounded),
+                        title: Text(
+                          p.name,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _copySongsTo(p.id);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _createNewPlaylist() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        title: Text(
+          "New Playlist",
+          style: TextStyle(
+            color: Theme.of(context).textTheme.titleLarge?.color,
+          ),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+          decoration: InputDecoration(
+            labelText: "Playlist Name",
+            labelStyle: TextStyle(
+              color: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.color?.withValues(alpha: 0.6),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Theme.of(context).dividerColor),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Theme.of(context).primaryColor),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                final name = controller.text;
+                Navigator.pop(ctx);
+
+                final provider = Provider.of<RadioProvider>(
+                  context,
+                  listen: false,
+                );
+                final songs = _convertToSavedSongs();
+                final newPlaylist = await provider.createPlaylist(
+                  name,
+                  songs: songs,
+                );
+                provider.resolvePlaylistLinksInBackground(
+                  newPlaylist.id,
+                  songs,
+                );
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Copied ${songs.length} songs!")),
+                  );
+                }
+              }
+            },
+            child: Text(
+              "Create",
+              style: TextStyle(color: Theme.of(context).primaryColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _copySongsTo(String playlistId) async {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final songs = _convertToSavedSongs();
+    await provider.addSongsToPlaylist(playlistId, songs);
+    provider.resolvePlaylistLinksInBackground(playlistId, songs);
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Copied ${songs.length} songs!")));
+    }
+  }
+
+  void _showAddSongDialog(SavedSong song) {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        final playlists = provider.playlists;
+
+        return AlertDialog(
+          backgroundColor: Theme.of(context).cardColor,
+          title: Text(
+            "Add to Playlist",
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleLarge?.color,
+            ),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    "Add '${song.title}' to:",
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: playlists.length + 1,
+                    itemBuilder: (ctx, index) {
+                      if (index == 0) {
+                        return ListTile(
+                          leading: const Icon(
+                            Icons.add,
+                            color: Colors.blueAccent,
+                          ),
+                          title: const Text(
+                            "Create New Playlist",
+                            style: TextStyle(color: Colors.blueAccent),
+                          ),
+                          onTap: () async {
+                            Navigator.pop(context);
+                            // Inline creation for single song to save space
+                            final controller = TextEditingController();
+                            await showDialog(
+                              context: context,
+                              builder: (c) => AlertDialog(
+                                title: const Text("New Playlist"),
+                                content: TextField(
+                                  controller: controller,
+                                  autofocus: true,
+                                  decoration: const InputDecoration(
+                                    labelText: "Name",
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(c),
+                                    child: const Text("Cancel"),
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      if (controller.text.isNotEmpty) {
+                                        Navigator.pop(c);
+                                        final np = await provider
+                                            .createPlaylist(
+                                              controller.text,
+                                              songs: [song],
+                                            );
+                                        provider
+                                            .resolvePlaylistLinksInBackground(
+                                              np.id,
+                                              [song],
+                                            );
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text("Added!"),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    child: const Text("Create"),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      }
+                      final p = playlists[index - 1];
+                      return ListTile(
+                        leading: const Icon(Icons.playlist_add_rounded),
+                        title: Text(
+                          p.name,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await provider.addSongToPlaylist(p.id, song);
+                          provider.resolvePlaylistLinksInBackground(p.id, [
+                            song,
+                          ]);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Added!")),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -430,119 +803,89 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                             ),
                             const SizedBox(height: 24),
 
-                            // Provider Selector removed
+                            // 3. Action Buttons
                             if (albumData != null) ...[
                               const SizedBox(height: 16),
-                              ElevatedButton.icon(
-                                onPressed: () async {
-                                  final tracks =
-                                      _cachedTracks ??
-                                      await _fetchTracks(
-                                        albumData['collectionId'],
-                                      );
-                                  if (tracks.isEmpty) return;
-
-                                  if (!context.mounted) return;
-
-                                  // Show loading indicator for bulk add
-                                  showDialog(
-                                    context: context,
-                                    barrierDismissible: false,
-                                    builder: (ctx) => const Center(
-                                      child: CircularProgressIndicator(),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // Shuffle Play
+                                  ElevatedButton.icon(
+                                    onPressed: _playRandom,
+                                    icon: Icon(
+                                      Icons.shuffle,
+                                      color:
+                                          Theme.of(context).primaryColor
+                                                  .computeLuminance() >
+                                              0.5
+                                          ? Colors.black
+                                          : Colors.white,
                                     ),
-                                  );
-
-                                  final provider = Provider.of<RadioProvider>(
-                                    context,
-                                    listen: false,
-                                  );
-
-                                  List<SongSearchResult> toAdd = [];
-
-                                  final now = DateTime.now();
-                                  final timestamp = now.millisecondsSinceEpoch;
-                                  for (int i = 0; i < tracks.length; i++) {
-                                    final track = tracks[i];
-                                    final trackArtist =
-                                        track['artistName'] ?? displayArtist;
-                                    final trackName =
-                                        track['trackName'] ?? "Unknown Track";
-
-                                    final song = SavedSong(
-                                      id:
-                                          track['trackId']?.toString() ??
-                                          "${timestamp}_${track['trackNumber'] ?? i}",
-                                      title: trackName,
-                                      artist: trackArtist,
-                                      album: displayName,
-                                      artUri: displayImage,
-                                      appleMusicUrl: track['trackViewUrl'],
-                                      dateAdded: now,
-                                      releaseDate: albumData['releaseDate'],
-                                    );
-
-                                    toAdd.add(
-                                      SongSearchResult(
-                                        song: song,
-                                        genre: genre ?? "Mix",
+                                    label: Text(
+                                      "Shuffle Play",
+                                      style: TextStyle(
+                                        color:
+                                            Theme.of(context).primaryColor
+                                                    .computeLuminance() >
+                                                0.5
+                                            ? Colors.black
+                                            : Colors.white,
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                    );
-                                  }
-
-                                  await provider.addFoundSongsToGenre(toAdd);
-
-                                  if (context.mounted) {
-                                    Navigator.of(
-                                      context,
-                                      rootNavigator: true,
-                                    ).pop(); // Dismiss loading
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          "Successfully added ${toAdd.length} songs to ${genre ?? "Mix"}",
-                                        ),
-                                        behavior: SnackBarBehavior.floating,
-                                        backgroundColor: Colors.green,
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).primaryColor,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(25),
                                       ),
-                                    );
-                                  }
-                                },
-                                icon: Icon(
-                                  Icons.playlist_add,
-                                  color:
-                                      Theme.of(
-                                            context,
-                                          ).primaryColor.computeLuminance() >
-                                          0.5
-                                      ? Colors.black
-                                      : Colors.white,
-                                ),
-                                label: Text(
-                                  "Add All to Playlist",
-                                  style: TextStyle(
-                                    color:
-                                        Theme.of(
-                                              context,
-                                            ).primaryColor.computeLuminance() >
-                                            0.5
-                                        ? Colors.black
-                                        : Colors.white,
-                                    fontWeight: FontWeight.bold,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 24,
+                                        vertical: 12,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).primaryColor,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(25),
+                                  const SizedBox(width: 16),
+                                  // Stop
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: IconButton(
+                                      icon: const Icon(
+                                        Icons.stop,
+                                        color: Colors.white,
+                                      ),
+                                      onPressed: () {
+                                        Provider.of<RadioProvider>(
+                                          context,
+                                          listen: false,
+                                        ).stop();
+                                      },
+                                    ),
                                   ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 24,
-                                    vertical: 12,
+                                  const SizedBox(width: 16),
+                                  // Copy List
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: IconButton(
+                                      icon: const Icon(
+                                        Icons.copy,
+                                        color: Colors.white,
+                                      ),
+                                      onPressed: _showCopyDialog,
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
                             ],
                           ],
@@ -581,298 +924,156 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                             );
                           }
 
-                          return SliverList(
-                            delegate: SliverChildBuilderDelegate((
-                              innerContext,
-                              index,
-                            ) {
-                              final track = tracks[index];
-                              final trackName =
-                                  track['trackName'] ?? "Unknown Track";
-                              // For artist, use track artist or album artist
-                              final trackArtist =
-                                  track['artistName'] ?? displayArtist;
+                          return Consumer<RadioProvider>(
+                            builder: (context, provider, child) {
+                              final currentMediaItem =
+                                  provider.audioHandler.mediaItem.value;
+                              final playingSongId =
+                                  currentMediaItem?.extras?['songId'];
+                              final theme = Theme.of(context);
+                              final savedSongs = provider.allUniqueSongs;
 
-                              final isSelected = _selectedTrackIndex == index;
+                              return SliverList(
+                                delegate: SliverChildBuilderDelegate((
+                                  innerContext,
+                                  index,
+                                ) {
+                                  final track = tracks[index];
+                                  final trackName =
+                                      track['trackName'] ?? "Unknown Track";
+                                  final trackArtist =
+                                      track['artistName'] ?? displayArtist;
+                                  final trackId = track['trackId']?.toString();
 
-                              final isContextTrack =
-                                  widget.songName != null &&
-                                  _cleanTitle(trackName).toLowerCase() ==
-                                      _cleanTitle(
-                                        widget.songName!,
-                                      ).toLowerCase();
+                                  final isPlaying =
+                                      playingSongId != null &&
+                                      trackId != null &&
+                                      playingSongId == trackId;
 
-                              // Check if song is already saved
-                              final provider = Provider.of<RadioProvider>(
-                                context,
-                              );
+                                  final isContextTrack =
+                                      widget.songName != null &&
+                                      _cleanTitle(trackName).toLowerCase() ==
+                                          _cleanTitle(
+                                            widget.songName!,
+                                          ).toLowerCase();
 
-                              bool isSaved = false;
-                              String? existingPlaylistId;
-                              String? existingSongId;
-
-                              final cleanTrackTitle = _cleanTitle(
-                                trackName,
-                              ).toLowerCase();
-                              final cleanTrackArtist = _cleanArtistName(
-                                trackArtist,
-                              ).toLowerCase();
-
-                              for (var p in provider.playlists) {
-                                if (isSaved) break;
-                                for (var s in p.songs) {
-                                  final sTitle = _cleanTitle(
-                                    s.title,
-                                  ).toLowerCase();
-                                  final sArtist = _cleanArtistName(
-                                    s.artist,
-                                  ).toLowerCase();
-                                  if (sTitle == cleanTrackTitle &&
-                                      sArtist == cleanTrackArtist) {
-                                    isSaved = true;
-                                    existingPlaylistId = p.id;
-                                    existingSongId = s.id;
-                                    break;
+                                  // Check if song is already saved
+                                  bool isSaved = false;
+                                  if (trackId != null) {
+                                    isSaved = savedSongs.any(
+                                      (s) => s.id == trackId,
+                                    );
                                   }
-                                }
-                              }
 
-                              return Container(
-                                color: isSelected
-                                    ? Colors.white.withValues(alpha: 0.1)
-                                    : Colors.transparent,
-                                child: ListTile(
-                                  leading: Text(
-                                    "${track['trackNumber'] ?? index + 1}",
-                                    style: TextStyle(
-                                      color: isSelected
-                                          ? Colors.white
-                                          : Colors.white54,
-                                      fontWeight: isSelected || isContextTrack
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    trackName,
-                                    style: TextStyle(
-                                      color: isContextTrack
-                                          ? Colors.redAccent
-                                          : Colors.white,
-                                      fontWeight: isSelected || isContextTrack
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (track['trackTimeMillis'] != null)
-                                        Text(
-                                          _formatDuration(
-                                            track['trackTimeMillis'],
-                                          ),
-                                          style: const TextStyle(
-                                            color: Colors.white38,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: Icon(
-                                          isSaved
-                                              ? Icons.check_circle
-                                              : Icons.add_circle_outline,
-                                          color: isSaved
-                                              ? Theme.of(context).primaryColor
+                                  if (!isSaved) {
+                                    // Fallback to name match for safety
+                                    final cleanT = _cleanTitle(
+                                      trackName,
+                                    ).toLowerCase();
+                                    final cleanA = _cleanArtistName(
+                                      trackArtist,
+                                    ).toLowerCase();
+                                    isSaved = savedSongs.any(
+                                      (s) =>
+                                          _cleanTitle(s.title).toLowerCase() ==
+                                              cleanT &&
+                                          _cleanArtistName(
+                                                s.artist,
+                                              ).toLowerCase() ==
+                                              cleanA,
+                                    );
+                                  }
+
+                                  return Container(
+                                    color: isPlaying
+                                        ? Colors.white.withValues(alpha: 0.1)
+                                        : Colors.transparent,
+                                    child: ListTile(
+                                      leading: Text(
+                                        "${track['trackNumber'] ?? index + 1}",
+                                        style: TextStyle(
+                                          color: isPlaying
+                                              ? Colors.white
                                               : Colors.white54,
-                                          size: 24,
-                                        ),
-                                        onPressed: () {
-                                          if (isSaved) {
-                                            if (existingPlaylistId != null &&
-                                                existingSongId != null) {
-                                              provider.removeFromPlaylist(
-                                                existingPlaylistId,
-                                                existingSongId,
-                                              );
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    "Removed '$trackName' from playlists",
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                          } else {
-                                            final song = SavedSong(
-                                              id:
-                                                  track['trackId']
-                                                      ?.toString() ??
-                                                  DateTime.now()
-                                                      .millisecondsSinceEpoch
-                                                      .toString(),
-                                              title: trackName,
-                                              artist: trackArtist,
-                                              album: displayName,
-                                              artUri: displayImage,
-                                              appleMusicUrl:
-                                                  track['trackViewUrl'],
-                                              dateAdded: DateTime.now(),
-                                              releaseDate:
-                                                  albumData['releaseDate'],
-                                            );
-
-                                            provider.addFoundSongToGenre(
-                                              SongSearchResult(
-                                                song: song,
-                                                genre: genre ?? "Mix",
-                                              ),
-                                            );
-
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  "Added '$trackName' to ${genre ?? "Mix"}",
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                  onTap: () async {
-                                    setState(() {
-                                      _selectedTrackIndex = index;
-                                    });
-
-                                    final provider = Provider.of<RadioProvider>(
-                                      context,
-                                      listen: false,
-                                    );
-
-                                    // Show loading
-                                    if (!mounted) return;
-                                    showDialog(
-                                      context: context,
-                                      barrierDismissible: false,
-                                      builder: (ctx) => const Center(
-                                        child: CircularProgressIndicator(
-                                          color: Colors.redAccent,
+                                          fontWeight:
+                                              isPlaying || isContextTrack
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
                                         ),
                                       ),
-                                    );
-
-                                    try {
-                                      final searchTitle = _cleanTitle(
+                                      title: Text(
                                         trackName,
-                                      );
-                                      final links = await provider
-                                          .resolveLinks(
-                                            title: searchTitle,
-                                            artist: trackArtist,
-                                          )
-                                          .timeout(
-                                            const Duration(seconds: 10),
-                                            onTimeout: () {
-                                              throw TimeoutException(
-                                                "Connection timed out",
-                                              );
-                                            },
-                                          );
-
-                                      if (!mounted) return;
-                                      Navigator.of(
-                                        context,
-                                        rootNavigator: true,
-                                      ).pop(); // Dismiss loading
-
-                                      // Always force YouTube
-                                      String? videoUrl = links['youtube'];
-                                      String? videoId;
-
-                                      if (videoUrl != null) {
-                                        videoId = YoutubePlayer.convertUrlToId(
-                                          videoUrl,
-                                        );
-                                        // Fallback manual extraction
-                                        if (videoId == null) {
-                                          final regExp = RegExp(
-                                            r'[?&]v=([^&#]+)',
-                                          );
-                                          final match = regExp.firstMatch(
-                                            videoUrl,
-                                          );
-                                          if (match != null) {
-                                            videoId = match.group(1);
-                                          }
-                                        }
-                                      }
-                                      if (videoId != null) {
-                                        provider.pause();
-                                        if (mounted) {
-                                          await showDialog(
-                                            context: context,
-                                            builder: (_) => YouTubePopup(
-                                              videoId: videoId!,
-                                              songName: trackName,
-                                              artistName: trackArtist,
-                                              albumName: displayName,
-                                              artworkUrl: displayImage,
-                                            ),
-                                          );
-                                        }
-                                        return; // Done
-                                      } else if (videoUrl != null) {
-                                        // Valid URL outside library
-                                        await launchUrl(
-                                          Uri.parse(videoUrl),
-                                          mode: LaunchMode.externalApplication,
-                                        );
-                                        return;
-                                      } else {
-                                        // No link found
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "YouTube link not found",
+                                        style: TextStyle(
+                                          color: isPlaying
+                                              ? theme.primaryColor
+                                              : (isContextTrack
+                                                    ? Colors.redAccent
+                                                    : Colors.white),
+                                          fontWeight:
+                                              isPlaying || isContextTrack
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        trackArtist,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (isPlaying)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 8.0,
+                                              ),
+                                              child: Icon(
+                                                Icons.equalizer,
+                                                color: theme.primaryColor,
+                                                size: 20,
                                               ),
                                             ),
-                                          );
-                                        }
-                                        return;
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        Navigator.of(
-                                          context,
-                                          rootNavigator: true,
-                                        ).pop();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(content: Text("Error: $e")),
-                                        );
-                                      }
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() {
-                                          _selectedTrackIndex = null;
-                                        });
-                                      }
-                                    }
-                                  },
-                                ),
+                                          if (track['trackTimeMillis'] != null)
+                                            Text(
+                                              _formatDuration(
+                                                track['trackTimeMillis'],
+                                              ),
+                                              style: const TextStyle(
+                                                color: Colors.white38,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            icon: Icon(
+                                              isSaved
+                                                  ? Icons.check_circle
+                                                  : Icons.add_circle_outline,
+                                              color: isSaved
+                                                  ? theme.primaryColor
+                                                  : Colors.white54,
+                                              size: 24,
+                                            ),
+                                            onPressed: () {
+                                              final song = _trackToSavedSong(
+                                                track,
+                                              );
+                                              _showAddSongDialog(song);
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                      onTap: () => _playTrack(index),
+                                    ),
+                                  );
+                                }, childCount: tracks.length),
                               );
-                            }, childCount: tracks.length),
+                            },
                           );
                         },
                       )
@@ -901,21 +1102,27 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
               ), // End Positioned.fill
               // 5. Back Button (Fixed)
               Positioned(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 8,
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                  color: Colors.white,
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black.withValues(alpha: 0.2),
+                top: 0,
+                left: 0,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black.withValues(alpha: 0.5),
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                        tooltip: "Back",
+                      ),
+                    ),
                   ),
-                  onPressed: () => Navigator.pop(context),
                 ),
               ),
             ],
           );
         },
       ),
+      bottomNavigationBar: const PlayerBar(),
     );
   }
 

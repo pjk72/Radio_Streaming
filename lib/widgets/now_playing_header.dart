@@ -393,7 +393,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                         // ARTIST HIGHLIGHT MODE
                                         Text(
                                           provider.currentTrack
-                                              .replaceFirst("✅ ", "")
+                                              .replaceFirst("⬇️ ", "")
                                               .replaceFirst("📱 ", "")
                                               .toUpperCase(),
                                           style: TextStyle(
@@ -672,21 +672,27 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           right: 24.0,
           child: Material(
             color: Colors.transparent,
-            child: IconButton(
-              icon: const FaIcon(
-                FontAwesomeIcons.magnifyingGlassPlus,
-                color: Colors.white70,
-                size: 20,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
               ),
-              tooltip: "Find New Music",
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AddSongScreen(),
-                  ),
-                );
-              },
+              child: IconButton(
+                icon: const Icon(
+                  Icons.travel_explore_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                tooltip: "Find New Music",
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AddSongScreen(),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ),

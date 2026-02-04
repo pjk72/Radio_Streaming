@@ -4,8 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:palette_generator/palette_generator.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async'; // Add Timer support
-import 'package:audioplayers/audioplayers.dart'; // Add AudioPlayer
+
 import '../providers/radio_provider.dart';
 import '../models/station.dart';
 import '../utils/genre_mapper.dart';
@@ -21,8 +20,6 @@ class TutorialCreateRadioWizard extends StatefulWidget {
 class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   @override
   void dispose() {
-    _previewPlayer.dispose();
-    _previewTimer?.cancel();
     super.dispose();
   }
 
@@ -35,9 +32,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   bool _showSelectedOnly = false;
 
   // Audio Preview
-  final AudioPlayer _previewPlayer = AudioPlayer();
-  String? _previewingUrl;
-  Timer? _previewTimer;
+  // Stream Testing
+  String? _testingUrl;
+  final Map<String, bool?> _testResults = {};
 
   // Selection State
   // Map of Station UUID (or index if no UUID) -> Data
@@ -324,53 +321,56 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     }
   }
 
-  Future<void> _togglePreview(String url) async {
-    if (_previewingUrl == url) {
-      // Stop
-      await _previewPlayer.stop();
-      _previewTimer?.cancel();
-      if (mounted) {
-        setState(() {
-          _previewingUrl = null;
-        });
-      }
-    } else {
-      // Stop current
-      await _previewPlayer.stop();
-      _previewTimer?.cancel();
+  Future<void> _testStream(String url) async {
+    if (_testingUrl == url) return; // Already testing
 
-      // Stop Main Radio
-      if (mounted) {
-        Provider.of<RadioProvider>(context, listen: false).stop();
-      }
+    setState(() {
+      _testingUrl = url;
+      _testResults[url] = null; // Reset result
+    });
 
-      if (mounted) {
-        setState(() {
-          _previewingUrl = url;
-        });
-      }
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 3));
 
-      try {
-        await _previewPlayer.setSource(UrlSource(url));
-        await _previewPlayer.resume();
-
-        _previewTimer = Timer(const Duration(seconds: 3), () {
-          _previewPlayer.stop();
-          if (mounted) {
-            setState(() {
-              if (_previewingUrl == url) {
-                _previewingUrl = null;
-              }
-            });
-          }
-        });
-      } catch (e) {
+      if (response.statusCode >= 200 && response.statusCode < 400) {
         if (mounted) {
-          setState(() => _previewingUrl = null);
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text("Preview failed: $e")));
+          setState(() {
+            _testResults[url] = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.green,
+              content: Text("Success: Stream is valid!"),
+              duration: Duration(seconds: 2),
+            ),
+          );
         }
+      } else {
+        throw Exception("Status code: ${response.statusCode}");
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _testResults[url] = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red,
+            content: Text("Stream verify failed: $e"),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      client.close();
+      if (mounted) {
+        setState(() {
+          _testingUrl = null;
+        });
       }
     }
   }
@@ -864,32 +864,52 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                                   });
                                 },
                               ),
-                            // Preview Button
-                            IconButton(
-                              icon: Icon(
-                                _previewingUrl ==
-                                        (station['url_resolved'] ??
-                                            station['url'])
-                                    ? Icons.stop_circle
-                                    : Icons.play_circle_fill,
-                                color:
-                                    _previewingUrl ==
-                                        (station['url_resolved'] ??
-                                            station['url'])
-                                    ? Colors.redAccent
-                                    : Theme.of(context).primaryColor,
+                            // Stream Check Button
+                            if (_testingUrl ==
+                                (station['url_resolved'] ?? station['url']))
+                              Container(
+                                width: 36,
+                                height: 36,
+                                padding: const EdgeInsets.all(8),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                              )
+                            else
+                              IconButton(
+                                icon: Icon(
+                                  _testResults[station['url_resolved'] ??
+                                              station['url']] ==
+                                          true
+                                      ? Icons.check_circle
+                                      : _testResults[station['url_resolved'] ??
+                                                station['url']] ==
+                                            false
+                                      ? Icons.error
+                                      : Icons.network_check,
+                                  color:
+                                      _testResults[station['url_resolved'] ??
+                                              station['url']] ==
+                                          true
+                                      ? Colors.green
+                                      : _testResults[station['url_resolved'] ??
+                                                station['url']] ==
+                                            false
+                                      ? Colors.red
+                                      : Theme.of(context).primaryColor,
+                                ),
+                                onPressed: () {
+                                  final url =
+                                      station['url_resolved'] ??
+                                      station['url'] ??
+                                      '';
+                                  if (url.isNotEmpty) {
+                                    _testStream(url);
+                                  }
+                                },
+                                tooltip: "Test Connection",
                               ),
-                              onPressed: () {
-                                final url =
-                                    station['url_resolved'] ??
-                                    station['url'] ??
-                                    '';
-                                if (url.isNotEmpty) {
-                                  _togglePreview(url);
-                                }
-                              },
-                              tooltip: "Test station (3s)",
-                            ),
                           ],
                         ),
                         onTap: () {

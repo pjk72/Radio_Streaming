@@ -1251,13 +1251,15 @@ class RadioProvider with ChangeNotifier {
         if (isMatch) {
           if (song.localPath != downloadedSong.localPath) {
             LogService().log(
-              "Sync: Found match for '${song.title}' in playlist '${playlist.name}'. Updating localPath.",
+              "Sync: Found match for '${song.title}' in playlist '${playlist.name}'. Updating status.",
             );
             updatedSongsInPlaylist[j] = song.copyWith(
               localPath: downloadedSong.localPath,
+              forceClearLocalPath: downloadedSong.localPath == null,
               youtubeUrl: downloadedSong.youtubeUrl?.isNotEmpty == true
                   ? downloadedSong.youtubeUrl
                   : song.youtubeUrl,
+              isValid: downloadedSong.isValid,
             );
             playlistChanged = true;
           }
@@ -1348,29 +1350,74 @@ class RadioProvider with ChangeNotifier {
       final List<SavedSong> updatedSongs = [];
 
       for (var song in songs) {
-        if (song.youtubeUrl == null || song.youtubeUrl!.isEmpty) {
+        bool changed = false;
+        SavedSong currentSong = song;
+
+        // 1. Resolve Links (YouTube)
+        if (currentSong.youtubeUrl == null || currentSong.youtubeUrl!.isEmpty) {
           try {
             // Minimal pause to stay relatively fast while avoiding harsh rate limits
             await Future.delayed(const Duration(milliseconds: 200));
 
             final links = await resolveLinks(
-              title: song.title,
-              artist: song.artist,
-              spotifyUrl: song.spotifyUrl,
+              title: currentSong.title,
+              artist: currentSong.artist,
+              spotifyUrl: currentSong.spotifyUrl,
             );
 
             if (links['youtube'] != null) {
-              updatedSongs.add(song.copyWith(youtubeUrl: links['youtube']));
-            }
-
-            // Batch update every 5 songs to show progress but avoid constant disk I/O
-            if (updatedSongs.length >= 5) {
-              await updateSongsInPlaylist(playlistId, updatedSongs);
-              updatedSongs.clear();
+              currentSong = currentSong.copyWith(youtubeUrl: links['youtube']);
+              changed = true;
             }
           } catch (e) {
-            debugPrint("Error resolving ${song.title}: $e");
+            debugPrint("Error resolving links for ${currentSong.title}: $e");
           }
+        }
+
+        // 2. Check and Correct Album Photos (Metadata)
+        try {
+          String cleanTitle = currentSong.title
+              .replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$'), '')
+              .trim();
+          final metaResults = await _musicMetadataService.searchSongs(
+            query: "$cleanTitle ${currentSong.artist}",
+          );
+
+          if (metaResults.isNotEmpty) {
+            final bestMatch = metaResults.first.song;
+            // Update artwork if available and different
+            if (bestMatch.artUri != null &&
+                bestMatch.artUri!.isNotEmpty &&
+                bestMatch.artUri != currentSong.artUri) {
+              currentSong = currentSong.copyWith(
+                artUri: bestMatch.artUri,
+                // Also update Album/ReleaseDate if missing or better
+                album:
+                    (currentSong.album.isEmpty ||
+                        currentSong.album == 'Unknown Album')
+                    ? bestMatch.album
+                    : currentSong.album,
+                releaseDate:
+                    (currentSong.releaseDate == null ||
+                        currentSong.releaseDate!.isEmpty)
+                    ? bestMatch.releaseDate
+                    : currentSong.releaseDate,
+              );
+              changed = true;
+            }
+          }
+        } catch (e) {
+          debugPrint("Error enriching metadata for ${currentSong.title}: $e");
+        }
+
+        if (changed) {
+          updatedSongs.add(currentSong);
+        }
+
+        // Batch update every 5 songs to show progress but avoid constant disk I/O
+        if (updatedSongs.length >= 5) {
+          await updateSongsInPlaylist(playlistId, updatedSongs);
+          updatedSongs.clear();
         }
       }
 
@@ -1491,68 +1538,86 @@ class RadioProvider with ChangeNotifier {
 
   Future<void> validateLocalSongsInPlaylist(String playlistId) async {
     try {
-      final p = _playlists.firstWhere((p) => p.id == playlistId);
-      bool anyChanged = false;
+      final index = _playlists.indexWhere((p) => p.id == playlistId);
+      if (index == -1) return;
 
-      for (var song in p.songs) {
-        // Only process local songs
+      final p = _playlists[index];
+      bool anyChanged = false;
+      final List<SavedSong> currSongs = List.from(p.songs);
+      final List<SavedSong> changedSongsToSync = [];
+      final Set<String> revivedIds = {};
+      final Set<String> invalidatedIds = {};
+
+      for (int i = 0; i < currSongs.length; i++) {
+        final s = currSongs[i];
+
         final isLocal =
-            song.id.startsWith('local_') ||
-            song.localPath != null ||
+            s.id.startsWith('local_') ||
+            s.localPath != null ||
             p.creator == 'local';
         if (!isLocal) continue;
 
         bool needsCheck = false;
-        if (song.isValid) {
-          if (song.localPath != null) {
-            final f = File(song.localPath!);
-            if (!await f.exists()) {
-              needsCheck = true; // File disappeared
+        if (s.isValid) {
+          if (s.localPath != null) {
+            final f = File(s.localPath!);
+            // A valid song should be at least 100KB (header + some data)
+            // MST files are encrypted, but should still have size
+            if (!await f.exists() || (await f.length()) < 1024 * 50) {
+              needsCheck = true;
             }
-          } else {
-            needsCheck = true; // Valid but no path? Should check.
+          } else if (p.creator == 'local' || s.id.startsWith('local_')) {
+            needsCheck = true;
           }
         } else {
-          // It's already invalid. Let's see if we can revive it!
+          // Even if marked invalid, we check if we can fix it
           needsCheck = true;
         }
 
         if (needsCheck) {
           final newPath = await _localPlaylistService.findSongOnDevice(
-            song.title,
-            song.artist,
+            s.title,
+            s.artist,
           );
 
           if (newPath != null) {
-            debugPrint("Found/Fixed local song: ${song.title} at $newPath");
-            // 1. Update Path
-            await updateSongPath(playlistId, song.id, newPath);
-
-            // 2. Unmark if it was invalid
-            if (!song.isValid) {
-              await unmarkSongAsInvalid(song.id, playlistId: playlistId);
-            }
+            LogService().log("Found/Fixed local song: ${s.title} at $newPath");
+            final updated = s.copyWith(localPath: newPath, isValid: true);
+            currSongs[i] = updated;
+            changedSongsToSync.add(updated);
+            if (_invalidSongIds.contains(s.id)) revivedIds.add(s.id);
             anyChanged = true;
           } else {
-            // Still not found on device
-            // Check if it's a downloaded song that can revert to online
             final bool canRevert =
-                song.youtubeUrl != null ||
-                song.spotifyUrl != null ||
-                song.appleMusicUrl != null;
+                s.youtubeUrl != null ||
+                s.spotifyUrl != null ||
+                s.appleMusicUrl != null;
 
-            if (canRevert && song.localPath != null) {
-              debugPrint(
-                "Downloaded song ${song.title} missing file, reverting to online.",
+            if (canRevert) {
+              if (s.localPath != null) {
+                LogService().log(
+                  "Downloaded song ${s.title} missing file, reverting to online.",
+                );
+                final updated = s.copyWith(
+                  forceClearLocalPath: true,
+                  isValid: true,
+                );
+                currSongs[i] = updated;
+                changedSongsToSync.add(updated);
+                if (_invalidSongIds.contains(s.id)) revivedIds.add(s.id);
+                anyChanged = true;
+              }
+            } else {
+              LogService().log(
+                "Local song ${s.title} not found, marking invalid.",
               );
-              await clearSongPath(playlistId, song.id);
-              anyChanged = true;
-            } else if (song.isValid) {
-              // Pure local song or no online link, mark as invalid
-              debugPrint(
-                "Song ${song.title} not found on device, marking invalid.",
+              final updated = s.copyWith(
+                isValid: false,
+                forceClearLocalPath: true,
               );
-              await markSongAsInvalid(playlistId, song.id);
+              currSongs[i] = updated;
+              changedSongsToSync.add(updated);
+              if (!_invalidSongIds.contains(s.id)) invalidatedIds.add(s.id);
               anyChanged = true;
             }
           }
@@ -1560,10 +1625,72 @@ class RadioProvider with ChangeNotifier {
       }
 
       if (anyChanged) {
-        await _loadPlaylists();
+        _playlists[index] = p.copyWith(songs: currSongs);
+        await _playlistService.saveAll(_playlists);
+
+        // Sync changes to OTHER playlists and persist all
+        for (var updatedSong in changedSongsToSync) {
+          await _syncSongDownloadStatusInternal(updatedSong);
+        }
+        await _playlistService.saveAll(_playlists);
+
+        if (revivedIds.isNotEmpty || invalidatedIds.isNotEmpty) {
+          bool prefChanged = false;
+          for (var id in revivedIds) {
+            if (_invalidSongIds.remove(id)) prefChanged = true;
+            await _playlistService.unmarkSongAsInvalidGlobally(id);
+          }
+          for (var id in invalidatedIds) {
+            if (!_invalidSongIds.contains(id)) {
+              _invalidSongIds.add(id);
+              prefChanged = true;
+            }
+            await _playlistService.markSongAsInvalidGlobally(id);
+          }
+
+          if (prefChanged) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+          }
+        }
+
+        notifyListeners();
+        LogService().log(
+          "Validated playlist $playlistId: Consolidated changes saved and UI notified.",
+        );
       }
     } catch (e) {
-      debugPrint("Error validating/reviving local songs: $e");
+      LogService().log("Error validating local songs: $e");
+    }
+  }
+
+  /// Internal sync that doesn't reload entire state from disk to avoid race conditions
+  Future<void> _syncSongDownloadStatusInternal(SavedSong updatedSong) async {
+    final targetTitle = _normalizeForMatching(updatedSong.title);
+    final targetArtist = _normalizeForMatching(updatedSong.artist);
+
+    for (int i = 0; i < _playlists.length; i++) {
+      bool playlistChanged = false;
+      final songs = List<SavedSong>.from(_playlists[i].songs);
+      for (int j = 0; j < songs.length; j++) {
+        if (songs[j].id == updatedSong.id ||
+            (_normalizeForMatching(songs[j].title) == targetTitle &&
+                _normalizeForMatching(songs[j].artist) == targetArtist)) {
+          if (songs[j].localPath != updatedSong.localPath ||
+              songs[j].isValid != updatedSong.isValid) {
+            songs[j] = songs[j].copyWith(
+              localPath: updatedSong.localPath,
+              forceClearLocalPath: updatedSong.localPath == null,
+              isValid: updatedSong.isValid,
+              youtubeUrl: updatedSong.youtubeUrl ?? songs[j].youtubeUrl,
+            );
+            playlistChanged = true;
+          }
+        }
+      }
+      if (playlistChanged) {
+        _playlists[i] = _playlists[i].copyWith(songs: songs);
+      }
     }
   }
 
@@ -3365,13 +3492,18 @@ class RadioProvider with ChangeNotifier {
           return;
         } else {
           LogService().log(
-            "Local file not found: ${song.localPath}. Marking invalid.",
+            "Local file not found: ${song.localPath}. Reverting to online.",
           );
-          // Invalidate FIRST, then go next to ensure consistent state
-          final idToInvalidate = song.id;
-          _playNextInPlaylist();
-          _markCurrentSongAsInvalid(songId: idToInvalidate);
-          return;
+          // Instead of invalidating, we clear the local path and let it fall through to online playback
+          final updated = song.copyWith(forceClearLocalPath: true);
+
+          // Sync this change so UI updates (removes download icon)
+          await _syncSongDownloadStatusInternal(updated);
+          await _playlistService.saveAll(_playlists);
+
+          // Update local variable to proceed with online logic
+          // ignore: parameter_assignments
+          song = updated;
         }
       }
 
@@ -4308,13 +4440,18 @@ class RadioProvider with ChangeNotifier {
           final p = _playlists[i];
           final index = p.songs.indexWhere((s) => s.id == targetId);
           if (index != -1) {
-            final updatedSong = p.songs[index].copyWith(isValid: false);
+            final updatedSong = p.songs[index].copyWith(
+              isValid: false,
+              forceClearLocalPath: true,
+            );
             p.songs[index] = updatedSong;
             memoryUpdated = true;
           }
         }
         if (memoryUpdated) {
-          LogService().log("Updated _playlists in memory immediately.");
+          LogService().log(
+            "Updated _playlists in memory immediately and cleared localPath.",
+          );
         }
 
         // 2. Notify UI immediately
@@ -4327,7 +4464,26 @@ class RadioProvider with ChangeNotifier {
 
         // 4. Mark globally in DB (Async)
         await _playlistService.markSongAsInvalidGlobally(targetId);
-        LogService().log("Marked invalid globally via Service");
+
+        // Also sync localPath clearance globally
+        try {
+          final s = _allUniqueSongs.firstWhere((s) => s.id == targetId);
+          await _syncSongDownloadStatusInternal(
+            s.copyWith(
+              localPath: null,
+              forceClearLocalPath: true,
+              isValid: false,
+            ),
+          );
+          await _playlistService.saveAll(_playlists);
+        } catch (_) {
+          // Fallback if not in unique
+          await _playlistService.saveAll(_playlists);
+        }
+
+        LogService().log(
+          "Marked invalid globally via Service and cleared localPath.",
+        );
 
         // 5. Update Temp Playlist
         if (_tempPlaylist != null) {
@@ -4337,9 +4493,10 @@ class RadioProvider with ChangeNotifier {
           if (index != -1) {
             _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index].copyWith(
               isValid: false,
+              forceClearLocalPath: true,
             );
             LogService().log(
-              "Updated _tempPlaylist in memory for index $index",
+              "Updated _tempPlaylist in memory for index $index and cleared localPath",
             );
           }
         }

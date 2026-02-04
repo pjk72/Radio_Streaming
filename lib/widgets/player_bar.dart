@@ -198,7 +198,7 @@ class PlayerBar extends StatelessWidget {
                                                                     'offline_music',
                                                                   )))
                                                       ? Icons
-                                                            .check_circle_rounded
+                                                            .file_download_done_rounded
                                                       : Icons
                                                             .smartphone_rounded,
                                                   size: 12,
@@ -277,7 +277,7 @@ class PlayerBar extends StatelessWidget {
                                                             provider
                                                                 .currentTrack
                                                                 .replaceFirst(
-                                                                  "✅ ",
+                                                                  "⬇️ ",
                                                                   "",
                                                                 )
                                                                 .replaceFirst(
@@ -777,7 +777,8 @@ class PlayerBar extends StatelessWidget {
 
         // Add to Genre Playlist Button (Radio Only)
         // Moved to the left of controls
-        if (provider.currentPlayingPlaylistId == null &&
+        if (provider.currentSongDuration != null &&
+            provider.currentPlayingPlaylistId == null &&
             provider.currentTrack.isNotEmpty &&
             provider.currentTrack != "Live Broadcast" &&
             provider.currentTrack != "Unknown Title" &&

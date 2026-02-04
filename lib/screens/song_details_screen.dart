@@ -451,7 +451,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         children: [
                                           Text(
                                             provider.currentTrack
-                                                .replaceFirst("✅ ", "")
+                                                .replaceFirst("⬇️ ", "")
                                                 .replaceFirst("📱 ", ""),
                                             style: const TextStyle(
                                               color: Colors.white70,
@@ -864,7 +864,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                         child: Text(
                           provider.currentTrack.isNotEmpty
                               ? provider.currentTrack
-                                    .replaceFirst("✅ ", "")
+                                    .replaceFirst("⬇️ ", "")
                                     .replaceFirst("📱 ", "")
                               : "Live Broadcast",
                           textAlign: TextAlign.center,
@@ -1148,7 +1148,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       child: IconButton(
                         icon: Icon(
                           isOffline
-                              ? Icons.offline_pin_rounded
+                              ? Icons.file_download_done_rounded
                               : Icons.smartphone_rounded,
                           color: isOffline
                               ? Colors.greenAccent.withValues(alpha: 0.8)
@@ -1164,7 +1164,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                 children: [
                                   Icon(
                                     isOffline
-                                        ? Icons.offline_pin_rounded
+                                        ? Icons.file_download_done_rounded
                                         : Icons.smartphone_rounded,
                                     color: isOffline
                                         ? Colors.greenAccent

@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io'; // Added for Platform.localeName
-import 'package:audioplayers/audioplayers.dart';
+
 import 'package:palette_generator/palette_generator.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
@@ -71,6 +71,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
     "MA": "Morocco",
   };
 
+  bool? _lastTestResult;
+
   Future<void> _testStreamUrl() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
@@ -80,41 +82,48 @@ class _EditStationScreenState extends State<EditStationScreen> {
       return;
     }
 
-    setState(() => _isTestingLink = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Testing stream... (Playing for 3s)")),
-    );
+    setState(() {
+      _isTestingLink = true;
+      _lastTestResult = null;
+    });
 
-    final player = AudioPlayer();
+    final client = http.Client();
     try {
-      await player.setSourceUrl(url);
-      await player.setVolume(1.0);
-      await player.resume();
+      final request = http.Request('GET', Uri.parse(url));
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 3));
 
-      await Future.delayed(const Duration(seconds: 3));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Colors.green,
-            content: Text("Success: Stream is working!"),
-          ),
-        );
+      if (response.statusCode >= 200 && response.statusCode < 400) {
+        if (mounted) {
+          setState(() {
+            _lastTestResult = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.green,
+              content: Text("Success: Stream is valid!"),
+            ),
+          );
+        }
+      } else {
+        throw Exception("Status code: ${response.statusCode}");
       }
     } catch (e) {
+      debugPrint("Stream Test Error: $e");
       if (mounted) {
+        setState(() {
+          _lastTestResult = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.red,
-            content: Text("Error: Cannot play stream.\n$e"),
+            content: Text("Error: Cannot connect to stream.\n$e"),
           ),
         );
       }
     } finally {
-      try {
-        await player.stop();
-        await player.dispose();
-      } catch (_) {}
+      client.close();
       if (mounted) setState(() => _isTestingLink = false);
     }
   }
@@ -496,8 +505,16 @@ class _EditStationScreenState extends State<EditStationScreen> {
                               ),
                             )
                           : Icon(
-                              Icons.play_circle_fill,
-                              color: Theme.of(context).primaryColor,
+                              _lastTestResult == true
+                                  ? Icons.check_circle
+                                  : _lastTestResult == false
+                                  ? Icons.error
+                                  : Icons.network_check,
+                              color: _lastTestResult == true
+                                  ? Colors.green
+                                  : _lastTestResult == false
+                                  ? Colors.red
+                                  : Theme.of(context).primaryColor,
                             ),
                       tooltip: "Test Link",
                       onPressed: _isTestingLink ? null : _testStreamUrl,
@@ -1072,26 +1089,59 @@ class _EditStationScreenState extends State<EditStationScreen> {
   }
 
   void _populateStationData(Map<String, dynamic> selected) {
-    _urlController.text = selected['url_resolved'] ?? selected['url'] ?? '';
-    final String favicon = selected['favicon'] ?? '';
-    if (favicon.isNotEmpty) _logoController.text = favicon;
-    final String name = selected['name'] ?? '';
-    if (name.isNotEmpty) _nameController.text = name;
+    setState(() {
+      _urlController.text = selected['url_resolved'] ?? selected['url'] ?? '';
+      final String favicon = selected['favicon'] ?? '';
+      if (favicon.isNotEmpty) _logoController.text = favicon;
+      final String name = selected['name'] ?? '';
+      if (name.isNotEmpty) _nameController.text = name;
 
-    final String tags = selected['tags'] ?? '';
-    if (tags.isNotEmpty) {
-      final List<String> newGenres = tags
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty && e.length < 20)
-          .take(3)
-          .toList();
-      _selectedGenres = newGenres.map((g) {
-        if (g.isEmpty) return g;
-        return g[0].toUpperCase() + g.substring(1);
-      }).toList();
-      _updateLogoFromGenres();
-    }
+      final String tags = selected['tags'] ?? '';
+      if (tags.isNotEmpty) {
+        final List<String> newGenres = tags
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty && e.length < 20)
+            .take(3)
+            .toList();
+        _selectedGenres = newGenres.map((g) {
+          if (g.isEmpty) return g;
+          return g[0].toUpperCase() + g.substring(1);
+        }).toList();
+        _updateLogoFromGenres();
+      }
+
+      // Auto-set Category from Country
+      String category = 'Global';
+      String apiCountry = selected['country'] ?? '';
+      String apiCountryCode = selected['countrycode'] ?? '';
+
+      // 1. Try to match by Country Code (e.g. IT -> Italy)
+      if (apiCountryCode.isNotEmpty &&
+          _countryMap.containsKey(apiCountryCode.toUpperCase())) {
+        category = _countryMap[apiCountryCode.toUpperCase()]!;
+      }
+      // 2. Try to match by Country Name directly (e.g. "Italy" == "Italy")
+      else if (apiCountry.isNotEmpty) {
+        // Check if apiCountry exists in _countryMap values
+        final matchingEntry = _countryMap.entries.firstWhere(
+          (entry) => entry.value.toLowerCase() == apiCountry.toLowerCase(),
+          orElse: () => const MapEntry('', ''),
+        );
+
+        if (matchingEntry.key.isNotEmpty) {
+          category = matchingEntry.value;
+        } else {
+          category = 'Global';
+        }
+      }
+
+      if (category.length > 35) {
+        category = category.substring(0, 35);
+      }
+      _selectedCategory = category;
+    });
+
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text("Selected: ${selected['name']}")));
@@ -1336,6 +1386,15 @@ class _EditStationScreenState extends State<EditStationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Please select a Category"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      if (_selectedCategory!.length > 35) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Category must be 35 characters or less"),
             backgroundColor: Colors.red,
           ),
         );
@@ -1756,8 +1815,12 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
                         ),
                         onSubmitted: (val) {
                           if (val.trim().isNotEmpty) {
+                            String newCat = val.trim();
+                            if (newCat.length > 35) {
+                              newCat = newCat.substring(0, 35);
+                            }
                             setState(() {
-                              tempSelected = val.trim();
+                              tempSelected = newCat;
                               textController.clear();
                             });
                           }
@@ -1771,8 +1834,12 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
                       ),
                       onPressed: () {
                         if (textController.text.trim().isNotEmpty) {
+                          String newCat = textController.text.trim();
+                          if (newCat.length > 35) {
+                            newCat = newCat.substring(0, 35);
+                          }
                           setState(() {
-                            tempSelected = textController.text.trim();
+                            tempSelected = newCat;
                             textController.clear();
                           });
                         }
@@ -1789,7 +1856,11 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
         TextButton(
           onPressed: () {
             if (textController.text.trim().isNotEmpty) {
-              tempSelected = textController.text.trim();
+              String newCat = textController.text.trim();
+              if (newCat.length > 35) {
+                newCat = newCat.substring(0, 35);
+              }
+              tempSelected = newCat;
             }
             Navigator.pop(context, {'selection': tempSelected});
           },

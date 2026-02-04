@@ -2819,12 +2819,12 @@ class RadioAudioHandler extends BaseAudioHandler
   String _getSongTitleWithIcons(String title, String? localPath) {
     if (localPath == null) return title;
     // Avoid double icons
-    if (title.startsWith("✅ ") || title.startsWith("📱 ")) return title;
+    if (title.startsWith("⬇️ ") || title.startsWith("📱 ")) return title;
 
     if (localPath.contains('_secure.') ||
         localPath.endsWith('.mst') ||
         localPath.contains('offline_music')) {
-      return "✅ $title";
+      return "⬇️ $title";
     } else {
       return "📱 $title";
     }
