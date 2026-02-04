@@ -38,6 +38,7 @@ import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'playlist_screen_duplicates_logic.dart';
 import '../widgets/native_ad_widget.dart';
 import 'add_song_screen.dart';
+import '../services/entitlement_service.dart';
 
 enum MetadataViewMode { playlists, artists, albums }
 
@@ -1997,14 +1998,14 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
     final hasAnyLocal = provider.playlists.any((p) => p.creator == 'local');
 
-    final auth = Provider.of<BackupService>(context, listen: false);
-    final isDevUser =
-        auth.currentUser?.email ==
-        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
+    final entitlements = Provider.of<EntitlementService>(context);
+    final canUseSpotify = entitlements.isFeatureEnabled('spotify_integration');
+    final canUseLocal = entitlements.isFeatureEnabled('local_library');
 
     final bool showSpotifyLink =
-        _searchQuery.isEmpty && !hasAnySpotify && isDevUser;
-    final bool showLocalLink = _searchQuery.isEmpty && !hasAnyLocal;
+        _searchQuery.isEmpty && !hasAnySpotify && canUseSpotify;
+    final bool showLocalLink =
+        _searchQuery.isEmpty && !hasAnyLocal && canUseLocal;
 
     final int extraCount = (showSpotifyLink ? 1 : 0) + (showLocalLink ? 1 : 0);
 
@@ -2626,6 +2627,21 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     RadioProvider provider,
     Playlist playlist,
   ) async {
+    // Entitlement Check: download_songs
+    final entitlements = Provider.of<EntitlementService>(
+      context,
+      listen: false,
+    );
+    if (!entitlements.isFeatureEnabled('download_songs')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You do not have permission to download songs."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     // 0. High Data Usage Confirmation
     final bool shouldProceed =
         await showDialog<bool>(
@@ -4118,11 +4134,18 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setState) {
+            final entitlements = Provider.of<EntitlementService>(
+              context,
+              listen: false,
+            );
             final filters = provider.playlistCreatorFilter;
             final isApp = filters.contains('app');
             final isUser = filters.contains('user');
             final isSpotify = filters.contains('spotify');
             final isLocal = filters.contains('local');
+            final canUseSpotify = entitlements.isFeatureEnabled(
+              'spotify_integration',
+            );
 
             return AlertDialog(
               backgroundColor: Theme.of(context).cardColor,
@@ -4188,12 +4211,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       setState(() {});
                     },
                   ),
-                  if (provider.backupService.currentUser?.email.toLowerCase() ==
-                      utf8
-                          .decode(
-                            base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="),
-                          )
-                          .toLowerCase())
+                  if (canUseSpotify)
                     CheckboxListTile(
                       title: Text(
                         "Spotify Imported",
@@ -7404,7 +7422,14 @@ Widget invalidSongIndicatorPreview() {
     home: Scaffold(
       body: Center(
         child: ChangeNotifierProvider(
-          create: (_) => RadioProvider(RadioAudioHandler(), BackupService()),
+          create: (_) {
+            final backup = BackupService();
+            return RadioProvider(
+              RadioAudioHandler(),
+              backup,
+              EntitlementService(backup),
+            );
+          },
           child: const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
@@ -11,6 +11,7 @@ import 'debug_log_screen.dart';
 import 'spotify_login_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'local_library_screen.dart';
+import '../services/entitlement_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -75,10 +76,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final auth = Provider.of<BackupService>(context);
     final radio = Provider.of<RadioProvider>(context);
+    final entitlements = Provider.of<EntitlementService>(context);
 
-    final isDevUser =
-        auth.currentUser?.email ==
-        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
+    final canUseRecognition = entitlements.isFeatureEnabled('song_recognition');
+    final canUseSpotify = entitlements.isFeatureEnabled('spotify_integration');
+    final canUseLocal = entitlements.isFeatureEnabled('local_library');
+    final canManageStations = entitlements.isFeatureEnabled('manage_stations');
+    final canUseAppearance = entitlements.isFeatureEnabled('appearance');
+    final canUseDebugLogs = entitlements.isFeatureEnabled('debug_logs');
 
     // Filter Logic
     final bool showAppearance =
@@ -123,6 +128,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _matches("Media") ||
         _matches("File") ||
         _matches("Device");
+
+    final bool showLogs =
+        _searchQuery.isEmpty ||
+        _matches("Logs") ||
+        _matches("Debug") ||
+        _matches("API");
 
     return Stack(
       children: [
@@ -226,7 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    if (showAppearance)
+                    if (showAppearance && canUseAppearance)
                       _buildSettingsTile(
                         context,
                         icon: Icons.palette_rounded,
@@ -242,7 +253,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                    if (showManageStations)
+                    if (showManageStations && canManageStations)
                       _buildSettingsTile(
                         context,
                         icon: Icons.radio,
@@ -258,7 +269,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                    if (showLocalMedia)
+                    if (showLocalMedia && canUseLocal)
                       _buildSettingsTile(
                         context,
                         icon: Icons.folder,
@@ -273,36 +284,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                    if (isDevUser) ...[
+                    if (showLogs && canUseDebugLogs)
                       _buildSettingsTile(
                         context,
-                        icon: Icons.code,
-                        title: "API Debug",
-                        subtitle: "View raw JSON responses",
+                        icon: Icons.bug_report_rounded,
+                        title: "Logs",
+                        subtitle: "View API responses and app logs",
                         onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ApiDebugScreen(),
-                            ),
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            isScrollControlled: true,
+                            builder: (context) => _buildLogsSubMenu(context),
                           );
                         },
                       ),
-                      _buildSettingsTile(
-                        context,
-                        icon: Icons.bug_report,
-                        title: "Debug Logs",
-                        subtitle: "View application logs",
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const DebugLogScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
                     if (showGeneral)
                       _buildSettingsSwitchTile(
                         context,
@@ -313,7 +309,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: (val) => radio.setCompactView(val),
                       ),
                     if (showGeneral) ...[
-                      if (isDevUser)
+                      if (canUseRecognition)
                         _buildSettingsSwitchTile(
                           context,
                           icon: Icons.music_note_rounded,
@@ -1005,7 +1001,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ],
-                    if (showSpotify && isDevUser) ...[
+                    if (showSpotify && canUseSpotify) ...[
                       const SizedBox(height: 32),
                       const Text(
                         "Spotify Integration",
@@ -1370,6 +1366,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildLogsSubMenu(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            "System Logs",
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 24),
+          _buildSettingsTile(
+            context,
+            icon: Icons.code,
+            title: "API Debug",
+            subtitle: "View raw JSON responses",
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ApiDebugScreen()),
+              );
+            },
+          ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.bug_report,
+            title: "Debug Logs",
+            subtitle: "View application logs",
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DebugLogScreen()),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 

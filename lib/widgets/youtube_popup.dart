@@ -5,6 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../services/lyrics_service.dart';
 import '../widgets/lyrics_components.dart';
 import 'package:flutter/services.dart';
+import '../services/entitlement_service.dart';
+import 'package:provider/provider.dart';
 
 class YouTubePopup extends StatefulWidget {
   final String videoId;
@@ -46,7 +48,15 @@ class _YouTubePopupState extends State<YouTubePopup> {
     super.initState();
     _initializeVideoPlayer();
     _isAudioOnly = widget.initialAudioOnly;
-    _fetchLyrics();
+
+    // Check entitlement before fetching
+    final entitlements = Provider.of<EntitlementService>(
+      context,
+      listen: false,
+    );
+    if (entitlements.isFeatureEnabled('lyrics')) {
+      _fetchLyrics();
+    }
 
     platform.setMethodCallHandler((call) async {
       if (call.method == 'pipModeChanged') {
@@ -268,6 +278,9 @@ class _YouTubePopupState extends State<YouTubePopup> {
 
   @override
   Widget build(BuildContext context) {
+    final entitlements = Provider.of<EntitlementService>(context);
+    final canUseLyrics = entitlements.isFeatureEnabled('lyrics');
+
     final player = YoutubePlayer(
       key: ValueKey(
         '${widget.videoId}_$_isHD',
@@ -289,7 +302,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
             tooltip: "Picture-in-Picture",
           ),
         if (_isFullScreen) ...[
-          if (_lyrics != null)
+          if (canUseLyrics && _lyrics != null)
             IconButton(
               icon: Icon(
                 Icons.lyrics,

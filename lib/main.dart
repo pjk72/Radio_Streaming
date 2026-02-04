@@ -21,6 +21,7 @@ import 'widgets/global_hidden_player.dart';
 import 'widgets/connectivity_banner.dart';
 import 'widgets/admob_banner_widget.dart';
 import 'services/encryption_service.dart';
+import 'services/entitlement_service.dart';
 
 late AudioHandler audioHandler;
 
@@ -150,12 +151,16 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
     }
 
     // 3. App Loaded
+    final entitlementService = EntitlementService(_backupService);
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: _backupService),
+        ChangeNotifierProvider.value(value: entitlementService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
-          create: (_) => RadioProvider(audioHandler, _backupService),
+          create: (_) =>
+              RadioProvider(audioHandler, _backupService, entitlementService),
           lazy: false,
         ),
       ],

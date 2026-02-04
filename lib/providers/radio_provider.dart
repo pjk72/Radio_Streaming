@@ -28,6 +28,7 @@ import '../services/music_metadata_service.dart';
 import '../services/log_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/spotify_service.dart';
+import '../services/entitlement_service.dart';
 
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -431,6 +432,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   final AudioHandler _audioHandler;
+  final EntitlementService _entitlementService;
   AudioHandler get audioHandler => _audioHandler;
   Timer? _youtubeKeepAliveTimer;
   final PlaylistService _playlistService = PlaylistService();
@@ -501,6 +503,14 @@ class RadioProvider with ChangeNotifier {
       else if (p.id == 'favorites')
         type = 'app';
 
+      final canUseSpotify = _entitlementService.isFeatureEnabled(
+        'spotify_integration',
+      );
+      if (type == 'spotify' && !canUseSpotify) return false;
+
+      final canUseLocal = _entitlementService.isFeatureEnabled('local_library');
+      if (type == 'local' && !canUseLocal) return false;
+
       return _playlistCreatorFilter.contains(type);
     }).toList();
   }
@@ -543,7 +553,11 @@ class RadioProvider with ChangeNotifier {
 
   bool _isOffline = false; // Internal connectivity state
 
-  RadioProvider(this._audioHandler, this._backupService) {
+  RadioProvider(
+    this._audioHandler,
+    this._backupService,
+    this._entitlementService,
+  ) {
     // connectivity_plus listener
     Connectivity().onConnectivityChanged.listen((results) {
       final bool isNowOffline = results.contains(ConnectivityResult.none);
@@ -643,10 +657,7 @@ class RadioProvider with ChangeNotifier {
                   _currentPlayingPlaylistId == null) {
                 // Double check if ACRCloud is enabled
                 if (_isACRCloudEnabled &&
-                    _backupService.currentUser?.email ==
-                        utf8.decode(
-                          base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="),
-                        )) {
+                    _entitlementService.isFeatureEnabled('song_recognition')) {
                   LogService().log("Attempting Recognition...1");
                   _attemptRecognition();
                 }
@@ -3680,6 +3691,9 @@ class RadioProvider with ChangeNotifier {
     // Only fetch if UI is observing or explicitly requested
     if (!_isObservingLyrics && !force) return;
 
+    // Entitlement Check
+    if (!_entitlementService.isFeatureEnabled('lyrics')) return;
+
     // Guard: Do not fetch if nothing is playing
     if (!_isPlaying &&
         _currentStation == null &&
@@ -4367,21 +4381,11 @@ class RadioProvider with ChangeNotifier {
       _audioHandler.setACRCloudEnabled(value);
     }
 
-    if (_isACRCloudEnabled) {
-      final email = _backupService.currentUser?.email.toLowerCase();
-      final isDevUser =
-          email ==
-          utf8
-              .decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))
-              .toLowerCase();
-      if (_isPlaying &&
-          _currentStation != null &&
-          _currentPlayingPlaylistId == null &&
-          isDevUser) {
-        _metadataTimer?.cancel();
-        LogService().log("Attempting Recognition...2");
-        _attemptRecognition();
-      }
+    if (_isACRCloudEnabled &&
+        _entitlementService.isFeatureEnabled('song_recognition')) {
+      _metadataTimer?.cancel();
+      LogService().log("Attempting Recognition...2");
+      _attemptRecognition();
     } else {
       _metadataTimer?.cancel();
       _isRecognizing = false;
@@ -4588,6 +4592,9 @@ class RadioProvider with ChangeNotifier {
     String spotifyId, {
     int? total,
   }) async {
+    if (!_entitlementService.isFeatureEnabled('spotify_integration')) {
+      return false;
+    }
     _isImportingSpotify = true;
     _spotifyImportProgress = 0;
     _spotifyImportName = name;
@@ -4639,12 +4646,8 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> _attemptRecognition() async {
-    // Strict Guard: ONLY specific email allowed
-    final isDevUser =
-        _backupService.currentUser?.email ==
-        utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
-
-    if (!isDevUser) {
+    // Entitlement Check: song_recognition
+    if (!_entitlementService.isFeatureEnabled('song_recognition')) {
       _isRecognizing = false; // Ensure loading state is OFF
       return;
     }

@@ -15,6 +15,7 @@ import '../models/playlist.dart';
 import 'artist_details_screen.dart';
 import 'album_details_screen.dart';
 import '../services/lyrics_service.dart';
+import '../services/entitlement_service.dart';
 
 class SongDetailsScreen extends StatefulWidget {
   const SongDetailsScreen({super.key});
@@ -136,6 +137,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
+    final entitlements = Provider.of<EntitlementService>(context);
+    final canUseLyrics = entitlements.isFeatureEnabled('lyrics');
     final station = provider.currentStation;
     final bool isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -232,21 +235,21 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
             ),
           ),
 
-          // 4. Lyrics "Tendina" (Draggable Pull-up Sheet)
-          Positioned(
-            left: 0,
-            bottom: 0, // Raise by banner height
-            top: 0,
-            width: isLandscape
-                ? MediaQuery.of(context).size.width * 0.5
-                : MediaQuery.of(context).size.width,
-            child: _buildDraggableLyrics(
-              context,
-              provider,
-              visualizerColor,
-              isLandscape: isLandscape,
+          if (canUseLyrics)
+            Positioned(
+              left: 0,
+              bottom: 0, // Raise by banner height
+              top: 0,
+              width: isLandscape
+                  ? MediaQuery.of(context).size.width * 0.5
+                  : MediaQuery.of(context).size.width,
+              child: _buildDraggableLyrics(
+                context,
+                provider,
+                visualizerColor,
+                isLandscape: isLandscape,
+              ),
             ),
-          ),
         ],
       ),
     );
