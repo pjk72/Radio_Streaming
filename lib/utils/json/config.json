@@ -1,27 +1,29 @@
 {
     "features": {
-        "download_songs": [
-            "Administrator"
-        ],
+        "download_songs": {
+            "Administrator": -1,
+            "All login": 5,
+            "All": 0
+        },
         "song_recognition": [
             "Administrator"
         ],
         "spotify_integration": [
             "Administrator"
         ],
+        "debug_logs": [
+            "Administrator"
+        ],
         "local_library": [
             "All login"
         ],
-        "debug_logs": [
-            "Administrator"
+        "lyrics": [
+            "All login"
         ],
         "manage_stations": [
             "All"
         ],
         "appearance": [
-            "All"
-        ],
-        "lyrics": [
             "All"
         ]
     },

@@ -58,8 +58,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else if (diff.inDays >= 30) {
       final months = (diff.inDays / 30).floor();
       final days = diff.inDays % 30;
-      if (days > 0)
+      if (days > 0) {
         return "$months month${months > 1 ? 's' : ''} and $days day${days > 1 ? 's' : ''} ago$typeStr";
+      }
       return "$months month${months > 1 ? 's' : ''} ago$typeStr";
     } else if (diff.inDays >= 1) {
       return "${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago$typeStr";
@@ -348,24 +349,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           children: [
                             Row(
                               children: [
-                                CircleAvatar(
-                                  backgroundImage:
-                                      auth.currentUser?.photoUrl != null
-                                      ? NetworkImage(
-                                          auth.currentUser!.photoUrl!,
-                                        )
-                                      : null,
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).dividerColor.withValues(alpha: 0.1),
-                                  child: auth.currentUser?.photoUrl == null
-                                      ? Icon(
-                                          Icons.person,
-                                          color: Theme.of(
-                                            context,
-                                          ).iconTheme.color,
-                                        )
-                                      : null,
+                                Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: entitlements.isUsingLocalConfig
+                                        ? Border.all(
+                                            color: Theme.of(
+                                              context,
+                                            ).primaryColor,
+                                            width: 2,
+                                          )
+                                        : null,
+                                  ),
+                                  child: CircleAvatar(
+                                    backgroundImage:
+                                        auth.currentUser?.photoUrl != null
+                                        ? NetworkImage(
+                                            auth.currentUser!.photoUrl!,
+                                          )
+                                        : null,
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).dividerColor.withValues(alpha: 0.1),
+                                    child: auth.currentUser?.photoUrl == null
+                                        ? Icon(
+                                            Icons.person,
+                                            color: Theme.of(
+                                              context,
+                                            ).iconTheme.color,
+                                          )
+                                        : null,
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

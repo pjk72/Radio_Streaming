@@ -450,6 +450,20 @@ class RadioProvider with ChangeNotifier {
 
   List<SavedSong> _allUniqueSongs = [];
   List<SavedSong> get allUniqueSongs => _allUniqueSongs;
+
+  /// Returns the total number of unique songs currently downloaded (including local media)
+  int get totalDownloadedSongs {
+    final Set<String> downloadedIds = {};
+    for (var playlist in _playlists) {
+      for (var song in playlist.songs) {
+        if (song.isDownloaded) {
+          downloadedIds.add(song.id);
+        }
+      }
+    }
+    return downloadedIds.length;
+  }
+
   Playlist? _tempPlaylist;
   DateTime? _lastPlayNextTime;
   DateTime? _zeroDurationStartTime;
@@ -1130,9 +1144,23 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> deletePlaylist(String id) async {
-    // Allow deleting local playlists (unchecks them in Local Library)
+    // 1. Collect paths of downloaded songs in this playlist before deletion
+    final playlist = _playlists.firstWhere(
+      (p) => p.id == id,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+    final List<String> potentialPathsToDelete = playlist.songs
+        .where((s) => s.isDownloaded)
+        .map((s) => s.localPath!)
+        .toList();
+
     await _playlistService.deletePlaylist(id);
     await _loadPlaylists();
+
+    if (potentialPathsToDelete.isNotEmpty) {
+      await _cleanupUnreferencedFiles(potentialPathsToDelete);
+    }
   }
 
   Future<String?> addToPlaylist(String? playlistId) async {
@@ -1712,8 +1740,31 @@ class RadioProvider with ChangeNotifier {
 
   Future<void> removeFromPlaylist(String playlistId, String songId) async {
     if (playlistId.startsWith('local_')) return;
+
+    // 1. Find the song to get its potential physical path
+    final playlist = _playlists.firstWhere(
+      (p) => p.id == playlistId,
+      orElse: () =>
+          Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+    );
+    final song = playlist.songs.firstWhere(
+      (s) => s.id == songId,
+      orElse: () => SavedSong(
+        id: '',
+        title: '',
+        artist: '',
+        album: '',
+        dateAdded: DateTime.now(),
+      ),
+    );
+    final String? path = song.isDownloaded ? song.localPath : null;
+
     await _playlistService.removeSongFromPlaylist(playlistId, songId);
     await _loadPlaylists();
+
+    if (path != null) {
+      await _cleanupUnreferencedFiles([path]);
+    }
 
     if (playlistId == 'favorites') return;
 
@@ -1786,13 +1837,51 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> removeSongFromLibrary(String songId) async {
+    // 1. Get path before removal
+    String? path;
+    for (var p in _playlists) {
+      final s = p.songs.firstWhere(
+        (s) => s.id == songId,
+        orElse: () => SavedSong(
+          id: '',
+          title: '',
+          artist: '',
+          album: '',
+          dateAdded: DateTime.now(),
+        ),
+      );
+      if (s.id.isNotEmpty && s.isDownloaded) {
+        path = s.localPath;
+        break;
+      }
+    }
+
     await _playlistService.removeSongFromAllPlaylists(songId);
     await _loadPlaylists();
+
+    if (path != null) {
+      await _cleanupUnreferencedFiles([path]);
+    }
   }
 
   Future<void> removeSongsFromLibrary(List<String> songIds) async {
+    // 1. Collect paths before removal
+    final List<String> paths = [];
+    final idSet = songIds.toSet();
+    for (var p in _playlists) {
+      for (var s in p.songs) {
+        if (idSet.contains(s.id) && s.isDownloaded && s.localPath != null) {
+          paths.add(s.localPath!);
+        }
+      }
+    }
+
     await _playlistService.removeSongsFromAllPlaylists(songIds);
     await _loadPlaylists();
+
+    if (paths.isNotEmpty) {
+      await _cleanupUnreferencedFiles(paths);
+    }
   }
 
   Future<List<SongSearchResult>> searchMusic(String query) async {
@@ -5086,6 +5175,46 @@ class RadioProvider with ChangeNotifier {
     if (anyChanged) {
       await _playlistService.saveAll(_playlists);
       notifyListeners();
+    }
+  }
+
+  Future<void> _deletePhysicalFile(String? path) async {
+    if (path == null || path.isEmpty) return;
+
+    final file = File(path);
+    if (await file.exists()) {
+      try {
+        await file.delete();
+        LogService().log("Deleted physical file: $path");
+      } catch (e) {
+        LogService().log("Error deleting physical file $path: $e");
+      }
+    }
+  }
+
+  Future<void> _cleanupUnreferencedFiles(List<String> pathsToCheck) async {
+    if (pathsToCheck.isEmpty) return;
+
+    // Build a set of all localPaths currently in use across all playlists
+    final Set<String> activePaths = {};
+    for (var p in _playlists) {
+      for (var s in p.songs) {
+        if (s.localPath != null && s.localPath!.isNotEmpty) {
+          activePaths.add(s.localPath!);
+        }
+      }
+    }
+
+    for (var path in pathsToCheck.toSet()) {
+      // Only delete if NOT in activePaths AND is a download (security check)
+      final isDownload =
+          path.toLowerCase().contains('_secure.') ||
+          path.toLowerCase().endsWith('.mst') ||
+          path.toLowerCase().contains('offline_music');
+
+      if (isDownload && !activePaths.contains(path)) {
+        await _deletePhysicalFile(path);
+      }
     }
   }
 

@@ -99,4 +99,12 @@ class SavedSong {
       localPath: forceClearLocalPath ? null : (localPath ?? this.localPath),
     );
   }
+
+  bool get isDownloaded {
+    if (localPath == null || localPath!.isEmpty) return false;
+    final path = localPath!.toLowerCase();
+    return path.contains('_secure.') ||
+        path.endsWith('.mst') ||
+        path.contains('offline_music');
+  }
 }

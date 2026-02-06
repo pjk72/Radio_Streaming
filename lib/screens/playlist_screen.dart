@@ -2451,23 +2451,28 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   ),
                   itemBuilder: (context) => [
                     if (playlist.id == 'favorites') ...[
-                      const PopupMenuItem(
-                        value: 'download',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.download_rounded,
-                              size: 18,
-                              color: Colors.greenAccent,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              "Download",
-                              style: TextStyle(color: Colors.greenAccent),
-                            ),
-                          ],
+                      if (Provider.of<EntitlementService>(
+                            context,
+                            listen: false,
+                          ).getFeatureLimit('download_songs') !=
+                          0)
+                        const PopupMenuItem(
+                          value: 'download',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.download_rounded,
+                                size: 18,
+                                color: Colors.greenAccent,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                "Download",
+                                style: TextStyle(color: Colors.greenAccent),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                       const PopupMenuItem(
                         value: 'clean_all',
                         child: Row(
@@ -2500,7 +2505,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             ],
                           ),
                         ),
-                      if (playlist.creator != 'local')
+                      if (playlist.creator != 'local' &&
+                          Provider.of<EntitlementService>(
+                                context,
+                                listen: false,
+                              ).getFeatureLimit('download_songs') !=
+                              0)
                         const PopupMenuItem(
                           value: 'download',
                           child: Row(
@@ -2632,11 +2642,26 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       context,
       listen: false,
     );
-    if (!entitlements.isFeatureEnabled('download_songs')) {
+    final int downloadLimit = entitlements.getFeatureLimit('download_songs');
+
+    if (downloadLimit == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("You do not have permission to download songs."),
           backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    // Check if limit already reached before starting
+    if (downloadLimit != -1 && provider.totalDownloadedSongs >= downloadLimit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Download limit reached ($downloadLimit songs). Delete some downloads to continue.",
+          ),
+          backgroundColor: Colors.orangeAccent,
         ),
       );
       return;
@@ -2696,6 +2721,18 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (downloadLimit > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Text(
+                      "Remaining downloads: ${downloadLimit - provider.totalDownloadedSongs}",
+                      style: const TextStyle(
+                        color: Colors.greenAccent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -3142,6 +3179,24 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         // 3. Download
         if (!isHandled) {
           if (isJobCancelled) break;
+
+          // Check limit again before downloading a BRAND NEW song
+          if (downloadLimit != -1 &&
+              provider.totalDownloadedSongs >= downloadLimit) {
+            statusNotifier.value = "Limit Reached";
+            if (mounted && !isDismissed) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Download limit of $downloadLimit songs reached. Skipping remaining.",
+                  ),
+                  backgroundColor: Colors.orangeAccent,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+            break; // Stop the entire playlist download if limit reached
+          }
 
           try {
             String? audioUrl = song.youtubeUrl;
@@ -4146,6 +4201,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             final canUseSpotify = entitlements.isFeatureEnabled(
               'spotify_integration',
             );
+            final canUseLocal = entitlements.isFeatureEnabled('local_library');
 
             return AlertDialog(
               backgroundColor: Theme.of(context).cardColor,
@@ -4188,29 +4244,30 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                       setState(() {});
                     },
                   ),
-                  CheckboxListTile(
-                    title: Text(
-                      "Local Device",
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
+                  if (canUseLocal)
+                    CheckboxListTile(
+                      title: Text(
+                        "Local Device",
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                        ),
                       ),
-                    ),
-                    subtitle: Text(
-                      "Folders from this device",
-                      style: TextStyle(
-                        color: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.color?.withValues(alpha: 0.54),
-                        fontSize: 12,
+                      subtitle: Text(
+                        "Folders from this device",
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.54),
+                          fontSize: 12,
+                        ),
                       ),
+                      activeColor: Theme.of(context).primaryColor,
+                      value: isLocal || filters.isEmpty,
+                      onChanged: (val) {
+                        provider.togglePlaylistCreatorFilter('local');
+                        setState(() {});
+                      },
                     ),
-                    activeColor: Theme.of(context).primaryColor,
-                    value: isLocal || filters.isEmpty,
-                    onChanged: (val) {
-                      provider.togglePlaylistCreatorFilter('local');
-                      setState(() {});
-                    },
-                  ),
                   if (canUseSpotify)
                     CheckboxListTile(
                       title: Text(
@@ -5002,36 +5059,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                         shape: BoxShape.circle,
                                       ),
                                       child: Icon(
-                                        ((song.localPath?.contains(
-                                                      '_secure.',
-                                                    ) ??
-                                                    false) ||
-                                                (song.localPath?.endsWith(
-                                                      '.mst',
-                                                    ) ??
-                                                    false) ||
-                                                (song.localPath?.contains(
-                                                      'offline_music',
-                                                    ) ??
-                                                    false))
+                                        song.isDownloaded
                                             ? Icons.file_download_done_rounded
                                             : Icons.smartphone_rounded,
                                         size: 12,
-                                        color:
-                                            ((song.localPath?.contains(
-                                                      '_secure.',
-                                                    ) ??
-                                                    false) ||
-                                                (song.localPath?.endsWith(
-                                                      '.mst',
-                                                    ) ??
-                                                    false) ||
-                                                (song.localPath?.contains(
-                                                      'offline_music',
-                                                    ) ??
-                                                    false))
+                                        color: song.isDownloaded
                                             ? Colors.greenAccent
-                                            : Colors.white,
+                                            : Colors.blueAccent,
                                       ),
                                     ),
                                   ),
@@ -6815,22 +6849,11 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
-                                    (widget.groupSongs.first.localPath!
-                                                .contains('_secure.') ||
-                                            widget.groupSongs.first.localPath!
-                                                .endsWith('.mst') ||
-                                            widget.groupSongs.first.localPath!
-                                                .contains('offline_music'))
+                                    widget.groupSongs.first.isDownloaded
                                         ? Icons.file_download_done_rounded
                                         : Icons.smartphone_rounded,
                                     size: 10,
-                                    color:
-                                        (widget.groupSongs.first.localPath!
-                                                .contains('_secure.') ||
-                                            widget.groupSongs.first.localPath!
-                                                .endsWith('.mst') ||
-                                            widget.groupSongs.first.localPath!
-                                                .contains('offline_music'))
+                                    color: widget.groupSongs.first.isDownloaded
                                         ? Colors.greenAccent
                                         : Colors.white,
                                   ),

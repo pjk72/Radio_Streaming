@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
+import '../services/entitlement_service.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -15,6 +16,7 @@ class Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
+    final entitlements = Provider.of<EntitlementService>(context);
     final user = provider.backupService.currentUser;
 
     return Container(
@@ -65,21 +67,35 @@ class Sidebar extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Theme.of(context).primaryColor,
-                            backgroundImage: user?.photoUrl != null
-                                ? NetworkImage(user!.photoUrl!)
-                                : null,
-                            child: user?.photoUrl == null
-                                ? Icon(
-                                    Icons.person,
-                                    size: 16,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onPrimary,
-                                  )
-                                : null,
+                          Container(
+                            padding: const EdgeInsets.all(
+                              2,
+                            ), // Space for border
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: entitlements.isUsingLocalConfig
+                                  ? Border.all(
+                                      color: Theme.of(context).primaryColor,
+                                      width: 2,
+                                    )
+                                  : null,
+                            ),
+                            child: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Theme.of(context).primaryColor,
+                              backgroundImage: user?.photoUrl != null
+                                  ? NetworkImage(user!.photoUrl!)
+                                  : null,
+                              child: user?.photoUrl == null
+                                  ? Icon(
+                                      Icons.person,
+                                      size: 16,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimary,
+                                    )
+                                  : null,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
