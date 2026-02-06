@@ -15,7 +15,8 @@ class TrendingScreen extends StatefulWidget {
   State<TrendingScreen> createState() => _TrendingScreenState();
 }
 
-class _TrendingScreenState extends State<TrendingScreen> {
+class _TrendingScreenState extends State<TrendingScreen>
+    with AutomaticKeepAliveClientMixin {
   late TrendingService _trendingService;
 
   // State
@@ -77,8 +78,13 @@ class _TrendingScreenState extends State<TrendingScreen> {
     // Let's implement `didChangeDependencies` to get it safe.
 
     _selectedCountryCode = _detectCountry();
-    _fetchTrending();
+    if (_playlists.isEmpty) {
+      _fetchTrending();
+    }
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   String _detectCountry() {
     try {
@@ -142,6 +148,7 @@ class _TrendingScreenState extends State<TrendingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       backgroundColor: Colors.transparent, // Parent handles background
       body: Column(

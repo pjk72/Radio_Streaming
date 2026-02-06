@@ -18,11 +18,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _navIndex = 0; // Navigation state
+  int _navIndex = 0;
+  late PageController _pageController;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _navIndex);
     // Trigger startup playback ONLY when we reach Home Screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -56,19 +58,28 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 240,
                     child: Sidebar(
                       selectedIndex: _navIndex,
-                      onItemSelected: (index) =>
-                          setState(() => _navIndex = index),
+                      onItemSelected: (index) {
+                        setState(() => _navIndex = index);
+                        _pageController.animateToPage(
+                          index,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      },
                     ),
                   ),
 
                 // Main Content Area
                 Expanded(
-                  child: IndexedStack(
-                    index: _navIndex,
+                  child: PageView(
+                    controller: _pageController,
+                    onPageChanged: (index) {
+                      setState(() => _navIndex = index);
+                    },
                     children: [
                       const MusicStreamHome(),
-                      const TrendingScreen(),
                       const PlaylistScreen(),
+                      const TrendingScreen(),
                       const SettingsScreen(),
                     ],
                   ),
@@ -181,8 +192,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               children: [
                 _buildTopNavItem(Icons.radio, "Radio", 0),
-                _buildTopNavItem(Icons.whatshot, "Trending", 1),
-                _buildTopNavItem(Icons.playlist_play_rounded, "Playlist", 2),
+                _buildTopNavItem(Icons.playlist_play_rounded, "Playlist", 1),
+                _buildTopNavItem(Icons.whatshot, "Trending", 2),
                 _buildTopNavItem(Icons.settings, "Settings", 3),
               ],
             ),
@@ -196,7 +207,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final isSelected = _navIndex == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _navIndex = index),
+        onTap: () {
+          setState(() => _navIndex = index);
+          _pageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        },
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -248,7 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    // _bgController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 }

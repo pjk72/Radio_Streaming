@@ -57,7 +57,8 @@ class PlaylistScreen extends StatefulWidget {
   State<PlaylistScreen> createState() => _PlaylistScreenState();
 }
 
-class _PlaylistScreenState extends State<PlaylistScreen> {
+class _PlaylistScreenState extends State<PlaylistScreen>
+    with AutomaticKeepAliveClientMixin {
   String? _selectedPlaylistId;
   String? _selectedArtist;
   String? _selectedArtistDisplay;
@@ -83,6 +84,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       });
     });
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void didChangeDependencies() {
@@ -953,6 +957,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final provider = Provider.of<RadioProvider>(context);
     // Use filtered playlists as the source of truth for the list view
     final allPlaylists = provider.filteredPlaylists;
@@ -4816,225 +4821,110 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 song.artist.trim().toLowerCase() ==
                     provider.currentArtist.trim().toLowerCase()));
 
-    return Dismissible(
-      key: Key(song.id),
-      direction:
-          (playlist.id.startsWith('temp_artist_') ||
-              playlist.id.startsWith('temp_album_'))
-          ? DismissDirection.none
-          : (playlist.id == 'favorites'
-                ? DismissDirection.endToStart
-                : DismissDirection.horizontal),
-      background: Container(
-        alignment: Alignment.centerLeft,
-        color: Colors.green,
-        padding: const EdgeInsets.only(left: 24),
-        child: Icon(
-          Icons.drive_file_move_outline,
-          color: Theme.of(context).colorScheme.onSurface,
-        ),
+    return Container(
+      margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isInvalid
+            ? Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.color?.withValues(alpha: 0.02) ??
+                  Colors.white.withValues(alpha: 0.02)
+            : isThisSongPlaying
+            ? Theme.of(context).primaryColor.withValues(
+                alpha: 0.25,
+              ) // Stronger alpha
+            : isGrouped
+            ? Colors.transparent
+            : Theme.of(context).cardColor.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.zero,
+        border: isThisSongPlaying
+            ? Border.all(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                width: 1.5,
+              )
+            : null,
       ),
-      secondaryBackground: Container(
-        alignment: Alignment.centerRight,
-        color: Colors.red,
-        padding: const EdgeInsets.only(right: 24),
-        child: Icon(
-          Icons.delete,
-          color: Theme.of(context).colorScheme.onSurface,
-        ),
-      ),
-      confirmDismiss: (direction) async {
-        if (direction == DismissDirection.startToEnd) {
-          await _showCopySongDialog(context, provider, playlist, song.id);
-          return false;
-        } else {
-          if (playlist.creator == 'local') {
-            return await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                backgroundColor: Theme.of(context).cardColor,
-                title: const Text("Delete File"),
-                content: Text("Delete '${song.title}' from device?"),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text("Cancel"),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text(
-                      "Delete",
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          return true;
-        }
-      },
-      onDismissed: (direction) {
-        if (direction == DismissDirection.endToStart) {
-          final deletedSong = song;
 
-          if (playlist.id == 'temp_view') {
-            provider.removeSongFromLibrary(song.id);
-            ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("Song removed from library"),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          } else {
-            if (playlist.creator == 'local' && song.localPath != null) {
-              final f = File(song.localPath!);
-              if (f.existsSync()) {
-                f.deleteSync();
-              }
-            }
-            provider.removeFromPlaylist(playlist.id, song.id);
-            ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text("Song removed from playlist"),
-                action: SnackBarAction(
-                  label: 'Undo',
-                  textColor: Colors.black,
-                  onPressed: () {
-                    provider.restoreSongToPlaylist(playlist.id, deletedSong);
-                  },
-                ),
-                duration: const Duration(seconds: 5),
-              ),
-            );
-          }
-        }
-      },
-
-      child: Container(
-        margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: isInvalid
-              ? Theme.of(
+      child: Listener(
+        onPointerDown: isInvalid
+            ? (_) => _startUnlockTimer(provider, song, playlist.id)
+            : null,
+        onPointerUp: isInvalid ? (_) => _cancelUnlockTimer() : null,
+        onPointerCancel: isInvalid ? (_) => _cancelUnlockTimer() : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              onTap: isInvalid
+                  ? () => _showInvalidTrackOptions(
                       context,
-                    ).textTheme.bodyLarge?.color?.withValues(alpha: 0.02) ??
-                    Colors.white.withValues(alpha: 0.02)
-              : isThisSongPlaying
-              ? Theme.of(context).primaryColor.withValues(
-                  alpha: 0.25,
-                ) // Stronger alpha
-              : isGrouped
-              ? Colors.transparent
-              : Theme.of(context).cardColor.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.zero,
-          border: isThisSongPlaying
-              ? Border.all(
-                  color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
-                  width: 1.5,
-                )
-              : null,
-        ),
+                      provider,
+                      song,
+                      playlist.id,
+                    )
+                  : () => _handleSongAudioAction(
+                      provider,
+                      song,
+                      playlist.id,
+                      adHocPlaylist: playlist,
+                    ),
 
-        child: Listener(
-          onPointerDown: isInvalid
-              ? (_) => _startUnlockTimer(provider, song, playlist.id)
-              : null,
-          onPointerUp: isInvalid ? (_) => _cancelUnlockTimer() : null,
-          onPointerCancel: isInvalid ? (_) => _cancelUnlockTimer() : null,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ListTile(
-                onTap: isInvalid
-                    ? () => _showInvalidTrackOptions(
-                        context,
-                        provider,
-                        song,
-                        playlist.id,
-                      )
-                    : () => _handleSongAudioAction(
-                        provider,
-                        song,
-                        playlist.id,
-                        adHocPlaylist: playlist,
-                      ),
-                // onLongPress removed, handled by GestureDetector's 3s timer via onTapDown
-                visualDensity: isGrouped
-                    ? const VisualDensity(horizontal: 0, vertical: -4)
-                    : VisualDensity.compact,
-                contentPadding: isGrouped
-                    ? const EdgeInsets.all(0)
-                    : const EdgeInsets.only(
-                        top: 0,
-                        left: 8,
-                        right: 4,
-                        bottom: 0,
-                      ),
-                leading: isGrouped
-                    ? Container(
-                        padding: const EdgeInsets.all(0),
-                        width: 32,
-                        alignment: Alignment.center,
-                        child: Text(
-                          "${groupIndex ?? ''}",
-                          style: TextStyle(
-                            color: contrastColor.withValues(alpha: 0.5),
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
+              // onLongPress removed, handled by GestureDetector's 3s timer via onTapDown
+              visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
+              minVerticalPadding: 0, // Reduce vertical padding
+
+              contentPadding: isGrouped
+                  ? const EdgeInsets.all(0)
+                  : const EdgeInsets.only(top: 0, left: 8, right: 4, bottom: 0),
+
+              leading: isGrouped
+                  ? Container(
+                      padding: const EdgeInsets.all(0),
+                      width: 32,
+                      alignment: Alignment.center,
+                      child: Text(
+                        "${groupIndex ?? ''}",
+                        style: TextStyle(
+                          color: contrastColor.withValues(alpha: 0.5),
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
                         ),
-                      )
-                    : MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          onTap: () {
-                            var albumName = song.album.trim();
-                            // Clean song title: remove content in parentheses/brackets for better search
-                            var songTitle = song.title
-                                .replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '')
-                                .trim();
+                      ),
+                    )
+                  : MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: () {
+                          var albumName = song.album.trim();
+                          // Clean song title: remove content in parentheses/brackets for better search
+                          var songTitle = song.title
+                              .replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '')
+                              .trim();
 
-                            // Filter artist name: keep only text before '•'
-                            var cleanArtist = song.artist
-                                .split('•')
-                                .first
-                                .trim();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => AlbumDetailsScreen(
-                                  albumName: albumName,
-                                  artistName: cleanArtist,
-                                  songName: songTitle,
-                                ),
+                          // Filter artist name: keep only text before '•'
+                          var cleanArtist = song.artist.split('•').first.trim();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => AlbumDetailsScreen(
+                                albumName: albumName,
+                                artistName: cleanArtist,
+                                songName: songTitle,
                               ),
-                            );
-                          },
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Stack(
-                              children: [
-                                song.artUri != null
-                                    ? CachedNetworkImage(
-                                        imageUrl: song.artUri!,
-                                        width: 48,
-                                        height: 48,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (_, _, _) => Container(
-                                          width: 48,
-                                          height: 48,
-                                          color: Colors.grey[900],
-                                          child: Icon(
-                                            Icons.music_note,
-                                            color: contrastColor.withValues(
-                                              alpha: 0.24,
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                    : Container(
+                            ),
+                          );
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Stack(
+                            children: [
+                              song.artUri != null
+                                  ? CachedNetworkImage(
+                                      imageUrl: song.artUri!,
+                                      width: 48,
+                                      height: 48,
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, _, _) => Container(
                                         width: 48,
                                         height: 48,
                                         color: Colors.grey[900],
@@ -5045,514 +4935,411 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                           ),
                                         ),
                                       ),
-                                if (song.localPath != null &&
-                                    song.localPath!.isNotEmpty)
-                                  Positioned(
-                                    bottom: 2,
-                                    right: 2,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.6,
-                                        ),
-                                        shape: BoxShape.circle,
-                                      ),
+                                    )
+                                  : Container(
+                                      width: 48,
+                                      height: 48,
+                                      color: Colors.grey[900],
                                       child: Icon(
-                                        song.isDownloaded
-                                            ? Icons.file_download_done_rounded
-                                            : Icons.smartphone_rounded,
-                                        size: 12,
-                                        color: song.isDownloaded
-                                            ? Colors.greenAccent
-                                            : Colors.blueAccent,
+                                        Icons.music_note,
+                                        color: contrastColor.withValues(
+                                          alpha: 0.24,
+                                        ),
                                       ),
                                     ),
+                              if (song.localPath != null &&
+                                  song.localPath!.isNotEmpty)
+                                Positioned(
+                                  bottom: 2,
+                                  right: 2,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      song.isDownloaded
+                                          ? Icons.file_download_done_rounded
+                                          : Icons.smartphone_rounded,
+                                      size: 12,
+                                      color: song.isDownloaded
+                                          ? Colors.greenAccent
+                                          : Colors.blueAccent,
+                                    ),
                                   ),
-                              ],
-                            ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        song.title,
-                        style: TextStyle(
-                          color:
-                              (provider.audioOnlySongId == song.id ||
-                                  (provider.currentTrack.isNotEmpty &&
-                                      song.title.trim().toLowerCase() ==
-                                          provider.currentTrack
-                                              .trim()
-                                              .toLowerCase() &&
-                                      song.artist.trim().toLowerCase() ==
-                                          provider.currentArtist
-                                              .trim()
-                                              .toLowerCase()))
-                              ? Theme.of(context).primaryColor
-                              : (isInvalid
-                                    ? contrastColor.withValues(alpha: 0.5)
-                                    : contrastColor),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
                     ),
-                    if (isGrouped)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (playlist.id != 'favorites') ...[
-                            GestureDetector(
-                              onTap: () async {
-                                if (isFavorite) {
-                                  await provider.removeFromPlaylist(
-                                    'favorites',
-                                    song.id,
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          style: TextStyle(
+                            color:
+                                (provider.audioOnlySongId == song.id ||
+                                    (provider.currentTrack.isNotEmpty &&
+                                        song.title.trim().toLowerCase() ==
+                                            provider.currentTrack
+                                                .trim()
+                                                .toLowerCase() &&
+                                        song.artist.trim().toLowerCase() ==
+                                            provider.currentArtist
+                                                .trim()
+                                                .toLowerCase()))
+                                ? Theme.of(context).primaryColor
+                                : (isInvalid
+                                      ? contrastColor.withValues(alpha: 0.5)
+                                      : contrastColor),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (!isGrouped)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2.0),
+                            child: Text(
+                              song.artist,
+                              style: TextStyle(
+                                color: contrastColor.withValues(alpha: 0.7),
+                                fontWeight: FontWeight.normal,
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (playlist.id != 'favorites') ...[
+                        GestureDetector(
+                          onTap: () async {
+                            if (isFavorite) {
+                              await provider.removeFromPlaylist(
+                                'favorites',
+                                song.id,
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).clearSnackBars();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Removed from Favorites"),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                            } else {
+                              if (playlist.creator == 'local') {
+                                isFavorite = true; // Optimistic update
+                                await provider.addSongToPlaylist(
+                                  'favorites',
+                                  song,
+                                );
+                              } else {
+                                await provider.copySong(
+                                  song.id,
+                                  playlist.id,
+                                  'favorites',
+                                );
+                              }
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).clearSnackBars();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Added to Favorites"),
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          child: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            color: isFavorite
+                                ? Colors.pinkAccent
+                                : contrastColor.withValues(alpha: 0.54),
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+
+                      _InvalidSongIndicator(
+                        songId: song.id,
+                        isStaticInvalid: !song.isValid,
+                      ),
+                      if (!isInvalid) ...[
+                        PopupMenuButton<String>(
+                          icon: Icon(
+                            Icons.more_vert_rounded,
+                            color: contrastColor,
+                          ),
+                          onSelected: (value) async {
+                            if (value == 'video') {
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (ctx) => const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.redAccent,
+                                  ),
+                                ),
+                              );
+
+                              try {
+                                final links = await provider
+                                    .resolveLinks(
+                                      title: song.title,
+                                      artist: song.artist,
+                                      spotifyUrl: song.spotifyUrl,
+                                      youtubeUrl: song.youtubeUrl,
+                                    )
+                                    .timeout(
+                                      const Duration(seconds: 10),
+                                      onTimeout: () {
+                                        throw TimeoutException(
+                                          "Connection timed out",
+                                        );
+                                      },
+                                    );
+
+                                if (!mounted) return;
+                                Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop();
+
+                                final url = links['youtube'] ?? song.youtubeUrl;
+                                if (url != null) {
+                                  final videoId = YoutubePlayer.convertUrlToId(
+                                    url,
                                   );
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).clearSnackBars();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text("Removed from Favorites"),
-                                        duration: Duration(seconds: 1),
+                                  if (videoId != null) {
+                                    provider.pause();
+                                    if (!mounted) return;
+                                    showDialog(
+                                      context: context,
+                                      builder: (_) => YouTubePopup(
+                                        videoId: videoId,
+                                        songName: song.title,
+                                        artistName: song.artist,
+                                        albumName: song.album,
+                                        artworkUrl: song.artUri,
                                       ),
+                                    );
+                                  } else {
+                                    launchUrl(
+                                      Uri.parse(url),
+                                      mode: LaunchMode.externalApplication,
                                     );
                                   }
                                 } else {
-                                  if (playlist.creator == 'local') {
-                                    isFavorite = true; // Optimistic update
-                                    await provider.addSongToPlaylist(
-                                      'favorites',
-                                      song,
-                                    );
-                                  } else {
-                                    await provider.copySong(
-                                      song.id,
-                                      playlist.id,
-                                      'favorites',
-                                    );
-                                  }
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).clearSnackBars();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text("Added to Favorites"),
-                                        duration: Duration(seconds: 1),
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                              child: Icon(
-                                isFavorite
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: isFavorite
-                                    ? Colors.pinkAccent
-                                    : contrastColor.withValues(alpha: 0.54),
-                                size: 18,
-                              ),
-                            ),
-                            const SizedBox(width: 24),
-                          ],
-
-                          _InvalidSongIndicator(
-                            songId: song.id,
-                            isStaticInvalid: !song.isValid,
-                          ),
-                          if (!isInvalid) ...[
-                            GestureDetector(
-                              onTap: () async {
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (ctx) => const Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.redAccent,
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("YouTube link not found"),
                                     ),
-                                  ),
-                                );
-
-                                try {
-                                  final links = await provider
-                                      .resolveLinks(
-                                        title: song.title,
-                                        artist: song.artist,
-                                        spotifyUrl: song.spotifyUrl,
-                                        youtubeUrl: song.youtubeUrl,
-                                      )
-                                      .timeout(
-                                        const Duration(seconds: 10),
-                                        onTimeout: () {
-                                          throw TimeoutException(
-                                            "Connection timed out",
-                                          );
-                                        },
-                                      );
-
-                                  if (!mounted) return;
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
                                   Navigator.of(
                                     context,
                                     rootNavigator: true,
                                   ).pop();
-
-                                  final url =
-                                      links['youtube'] ?? song.youtubeUrl;
-                                  if (url != null) {
-                                    final videoId =
-                                        YoutubePlayer.convertUrlToId(url);
-                                    if (videoId != null) {
-                                      provider.pause();
-                                      if (!mounted) return;
-                                      showDialog(
-                                        context: context,
-                                        builder: (_) => YouTubePopup(
-                                          videoId: videoId,
-                                          songName: song.title,
-                                          artistName: song.artist,
-                                          albumName: song.album,
-                                          artworkUrl: song.artUri,
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text("Error: $e")),
+                                  );
+                                }
+                              }
+                            } else if (value == 'copy') {
+                              await _showCopySongDialog(
+                                context,
+                                provider,
+                                playlist,
+                                song.id,
+                              );
+                            } else if (value == 'delete') {
+                              bool confirm = true;
+                              if (playlist.creator == 'local') {
+                                confirm =
+                                    await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).cardColor,
+                                        title: const Text("Delete File"),
+                                        content: Text(
+                                          "Delete '${song.title}' from device?",
                                         ),
-                                      );
-                                    } else {
-                                      launchUrl(
-                                        Uri.parse(url),
-                                        mode: LaunchMode.externalApplication,
-                                      );
-                                    }
-                                  } else {
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: const Text("Cancel"),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            child: const Text(
+                                              "Delete",
+                                              style: TextStyle(
+                                                color: Colors.red,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ) ??
+                                    false;
+                              }
+
+                              if (confirm) {
+                                final deletedSong = song;
+                                if (playlist.id == 'temp_view') {
+                                  provider.removeSongFromLibrary(song.id);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).clearSnackBars();
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text("YouTube link not found"),
+                                        content: Text(
+                                          "Song removed from library",
+                                        ),
+                                        duration: Duration(seconds: 2),
                                       ),
                                     );
                                   }
-                                } catch (e) {
+                                } else {
+                                  if (playlist.creator == 'local' &&
+                                      song.localPath != null) {
+                                    final f = File(song.localPath!);
+                                    if (f.existsSync()) {
+                                      f.deleteSync();
+                                    }
+                                  }
+                                  provider.removeFromPlaylist(
+                                    playlist.id,
+                                    song.id,
+                                  );
                                   if (mounted) {
-                                    Navigator.of(
+                                    ScaffoldMessenger.of(
                                       context,
-                                      rootNavigator: true,
-                                    ).pop();
+                                    ).clearSnackBars();
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text("Error: $e")),
+                                      SnackBar(
+                                        content: const Text(
+                                          "Song removed from playlist",
+                                        ),
+                                        action: SnackBarAction(
+                                          label: 'Undo',
+                                          textColor: Colors.black,
+                                          onPressed: () {
+                                            provider.restoreSongToPlaylist(
+                                              playlist.id,
+                                              deletedSong,
+                                            );
+                                          },
+                                        ),
+                                        duration: const Duration(seconds: 5),
+                                      ),
                                     );
                                   }
                                 }
-                              },
-                              child: const FaIcon(
-                                FontAwesomeIcons.youtube,
-                                color: Color(0xFFFF0000),
-                                size: 20,
+                              }
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'video',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    FontAwesomeIcons.youtube,
+                                    color: Colors.red,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text("Watch Video"),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 20),
-                            GestureDetector(
-                              onTap: () => _handleSongAudioAction(
-                                provider,
-                                song,
-                                playlist.id,
-                                adHocPlaylist: playlist,
+                            const PopupMenuItem(
+                              value: 'copy',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.content_copy_rounded, size: 20),
+                                  SizedBox(width: 8),
+                                  Text("Copy To"),
+                                ],
                               ),
-                              child:
-                                  (provider.audioOnlySongId == song.id &&
-                                      provider.isLoading)
-                                  ? SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        color: Theme.of(context).primaryColor,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Icon(
-                                      (provider.audioOnlySongId == song.id &&
-                                              provider.isPlaying)
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      color: contrastColor,
-                                      size: 28,
-                                    ),
                             ),
-                          ],
-                        ], // close else...[ and children
-                      ),
-                    if (!isGrouped &&
-                        song.releaseDate != null &&
-                        song.releaseDate!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8.0),
-                        child: Text(
-                          song.releaseDate!.split('-').first,
-                          style: TextStyle(
-                            color: contrastColor.withValues(alpha: 0.5),
-                            fontWeight: FontWeight.normal,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.all(0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (!isGrouped)
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 8),
                                   Text(
-                                    song.artist,
-                                    style: TextStyle(
-                                      color: contrastColor.withValues(
-                                        alpha: 0.9,
-                                      ),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                              ],
-                            ),
-                          ),
-                          if (!isGrouped)
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _InvalidSongIndicator(
-                                  songId: song.id,
-                                  isStaticInvalid: !song.isValid,
-                                ),
-                                if (!isInvalid) ...[
-                                  if (playlist.id != 'favorites') ...[
-                                    GestureDetector(
-                                      onTap: () async {
-                                        if (isFavorite) {
-                                          await provider.removeFromPlaylist(
-                                            'favorites',
-                                            song.id,
-                                          );
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).clearSnackBars();
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  "Removed from Favorites",
-                                                ),
-                                                duration: Duration(seconds: 1),
-                                              ),
-                                            );
-                                          }
-                                        } else {
-                                          // Copy to favorites
-                                          await provider.copySong(
-                                            song.id,
-                                            playlist.id,
-                                            'favorites',
-                                          );
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).clearSnackBars();
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  "Added to Favorites",
-                                                ),
-                                                duration: Duration(seconds: 1),
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
-                                      child: Icon(
-                                        isFavorite
-                                            ? Icons.favorite
-                                            : Icons.favorite_border,
-                                        color: isFavorite
-                                            ? Colors.pinkAccent
-                                            : contrastColor.withValues(
-                                                alpha: 0.54,
-                                              ),
-                                        size: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 20),
-                                  ],
-                                  GestureDetector(
-                                    onTap: () async {
-                                      showDialog(
-                                        context: context,
-                                        barrierDismissible: false,
-                                        builder: (ctx) => const Center(
-                                          child: CircularProgressIndicator(
-                                            color: Colors.redAccent,
-                                          ),
-                                        ),
-                                      );
-
-                                      try {
-                                        final links = await provider
-                                            .resolveLinks(
-                                              title: song.title,
-                                              artist: song.artist,
-                                              spotifyUrl: song.spotifyUrl,
-                                              youtubeUrl: song.youtubeUrl,
-                                            )
-                                            .timeout(
-                                              const Duration(seconds: 10),
-                                              onTimeout: () {
-                                                throw TimeoutException(
-                                                  "Connection timed out",
-                                                );
-                                              },
-                                            );
-
-                                        if (!mounted) return;
-                                        Navigator.of(
-                                          context,
-                                          rootNavigator: true,
-                                        ).pop();
-
-                                        final url =
-                                            links['youtube'] ?? song.youtubeUrl;
-                                        if (url != null) {
-                                          final videoId =
-                                              YoutubePlayer.convertUrlToId(url);
-                                          if (videoId != null) {
-                                            provider.pause();
-                                            if (!mounted) return;
-                                            showDialog(
-                                              context: context,
-                                              builder: (_) => YouTubePopup(
-                                                videoId: videoId,
-                                                songName: song.title,
-                                                artistName: song.artist,
-                                                albumName: song.album,
-                                                artworkUrl: song.artUri,
-                                              ),
-                                            );
-                                          } else {
-                                            launchUrl(
-                                              Uri.parse(url),
-                                              mode: LaunchMode
-                                                  .externalApplication,
-                                            );
-                                          }
-                                        } else {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "YouTube link not found",
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (mounted) {
-                                          Navigator.of(
-                                            context,
-                                            rootNavigator: true,
-                                          ).pop();
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text("Error: $e"),
-                                            ),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    child: const FaIcon(
-                                      FontAwesomeIcons.youtube,
-                                      color: Color(0xFFFF0000),
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 20),
-                                  GestureDetector(
-                                    onTap: () => _handleSongAudioAction(
-                                      provider,
-                                      song,
-                                      playlist.id,
-                                      adHocPlaylist: playlist,
-                                    ),
-                                    child:
-                                        (provider.audioOnlySongId == song.id &&
-                                            provider.isLoading)
-                                        ? const SizedBox(
-                                            width: 24,
-                                            height: 24,
-                                            child: CircularProgressIndicator(
-                                              color: Colors.redAccent,
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : Icon(
-                                            (provider.audioOnlySongId ==
-                                                        song.id &&
-                                                    provider.isPlaying)
-                                                ? Icons.pause_rounded
-                                                : Icons.play_arrow_rounded,
-                                            color: contrastColor,
-                                            size: 28,
-                                          ),
+                                    "Delete",
+                                    style: TextStyle(color: Colors.red),
                                   ),
                                 ],
-                              ], // close else...[ and children
+                              ),
                             ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ], // close else...[ and children
                   ),
+                ],
+              ),
+            ),
+            if (song.localPath != null &&
+                !(song.localPath!.contains('_secure.') ||
+                    song.localPath!.endsWith('.mst') ||
+                    song.localPath!.contains('offline_music')))
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: 8,
+                  bottom: 2,
+                  top: 0,
+                  right: 2,
+                ),
+                child: Text(
+                  song.localPath!,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: contrastColor.withValues(alpha: 0.5),
+                    fontFamily: 'monospace',
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (song.localPath != null &&
-                  !(song.localPath!.contains('_secure.') ||
-                      song.localPath!.endsWith('.mst') ||
-                      song.localPath!.contains('offline_music')))
-                Padding(
-                  padding: const EdgeInsets.only(
-                    left: 8,
-                    bottom: 2,
-                    top: 0,
-                    right: 2,
-                  ),
-                  child: Text(
-                    song.localPath!,
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: contrastColor.withValues(alpha: 0.5),
-                      fontFamily: 'monospace',
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -6724,106 +6511,62 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
         ? Colors.black
         : Colors.white;
 
-    return Dismissible(
-      key: Key("group_${albumName}_$artistName"),
-      direction: widget.dismissDirection ?? DismissDirection.horizontal,
-      background: Container(
-        alignment: Alignment.centerLeft,
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.green,
-          borderRadius: BorderRadius.zero,
-        ),
-        padding: const EdgeInsets.only(left: 24),
-        child: const Icon(Icons.drive_file_move_outline, color: Colors.white),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isPlayingAlbum
+            ? Theme.of(context).primaryColor.withValues(alpha: 0.05)
+            : cardColor.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.zero,
+        border: isPlayingAlbum
+            ? Border.all(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.6),
+                width: 1.5,
+              )
+            : Border.all(color: contrastColor.withValues(alpha: 0.1)),
       ),
-      secondaryBackground: Container(
-        alignment: Alignment.centerRight,
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.zero,
-        ),
-        padding: const EdgeInsets.only(right: 24),
-        child: const Icon(Icons.delete_outline, color: Colors.white),
-      ),
-      confirmDismiss: (direction) async {
-        if (direction == DismissDirection.startToEnd) {
-          return await widget.onMove();
-        } else {
-          return await widget.onRemove();
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: isPlayingAlbum
-              ? Theme.of(context).primaryColor.withValues(alpha: 0.05)
-              : cardColor.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.zero,
-          border: isPlayingAlbum
-              ? Border.all(
-                  color: Theme.of(context).primaryColor.withValues(alpha: 0.6),
-                  width: 1.5,
-                )
-              : Border.all(color: contrastColor.withValues(alpha: 0.1)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Album Header
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  setState(() {
-                    _isExpanded = !_isExpanded;
-                  });
-                },
-                borderRadius: BorderRadius.zero,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          // Navigate to Album Details
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AlbumDetailsScreen(
-                                albumName: albumName,
-                                artistName: artistName,
-                                artworkUrl: artUri,
-                              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Album Header
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isExpanded = !_isExpanded;
+                });
+              },
+              borderRadius: BorderRadius.zero,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        // Navigate to Album Details
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AlbumDetailsScreen(
+                              albumName: albumName,
+                              artistName: artistName,
+                              artworkUrl: artUri,
                             ),
-                          );
-                        },
-                        child: Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: artUri != null
-                                  ? CachedNetworkImage(
-                                      imageUrl: artUri,
-                                      width: 60,
-                                      height: 60,
-                                      fit: BoxFit.cover,
-                                      errorWidget: (_, __, ___) => Container(
-                                        width: 60,
-                                        height: 60,
-                                        color: contrastColor.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        child: Icon(
-                                          Icons.album,
-                                          color: contrastColor.withValues(
-                                            alpha: 0.5,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  : Container(
+                          ),
+                        );
+                      },
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: artUri != null
+                                ? CachedNetworkImage(
+                                    imageUrl: artUri,
+                                    width: 60,
+                                    height: 60,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => Container(
                                       width: 60,
                                       height: 60,
                                       color: contrastColor.withValues(
@@ -6836,121 +6579,174 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                         ),
                                       ),
                                     ),
-                            ),
-                            if (widget.groupSongs.first.localPath != null &&
-                                widget.groupSongs.first.localPath!.isNotEmpty)
-                              Positioned(
-                                bottom: 2,
-                                right: 2,
-                                child: Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    shape: BoxShape.circle,
+                                  )
+                                : Container(
+                                    width: 60,
+                                    height: 60,
+                                    color: contrastColor.withValues(alpha: 0.1),
+                                    child: Icon(
+                                      Icons.album,
+                                      color: contrastColor.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
                                   ),
-                                  child: Icon(
-                                    widget.groupSongs.first.isDownloaded
-                                        ? Icons.file_download_done_rounded
-                                        : Icons.smartphone_rounded,
-                                    size: 10,
-                                    color: widget.groupSongs.first.isDownloaded
-                                        ? Colors.greenAccent
-                                        : Colors.white,
-                                  ),
+                          ),
+                          if (widget.groupSongs.first.localPath != null &&
+                              widget.groupSongs.first.localPath!.isNotEmpty)
+                            Positioned(
+                              bottom: 2,
+                              right: 2,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  widget.groupSongs.first.isDownloaded
+                                      ? Icons.file_download_done_rounded
+                                      : Icons.smartphone_rounded,
+                                  size: 10,
+                                  color: widget.groupSongs.first.isDownloaded
+                                      ? Colors.greenAccent
+                                      : Colors.white,
                                 ),
                               ),
-                          ],
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            albumName,
+                            style: TextStyle(
+                              color: contrastColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            artistName,
+                            style: TextStyle(
+                              color: contrastColor.withValues(alpha: 0.7),
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            "${widget.groupSongs.length} songs",
+                            style: TextStyle(
+                              color: contrastColor.withValues(alpha: 0.5),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (widget.showFavoritesButton) ...[
+                      GestureDetector(
+                        onTap: () async {
+                          if (widget.onFavoriteToggle != null) {
+                            widget.onFavoriteToggle!();
+                          } else {
+                            provider.toggleFollowAlbum(normalizedAlbumName);
+                          }
+                        },
+                        child: Icon(
+                          isFollowed ? Icons.favorite : Icons.favorite_border,
+                          color: isFollowed
+                              ? Colors.pinkAccent
+                              : contrastColor.withValues(alpha: 0.5),
+                          size: 24,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              albumName,
-                              style: TextStyle(
-                                color: contrastColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              artistName,
-                              style: TextStyle(
-                                color: contrastColor.withValues(alpha: 0.7),
-                                fontSize: 14,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              "${widget.groupSongs.length} songs${(firstSong.releaseDate != null && firstSong.releaseDate!.isNotEmpty) ? " • ${firstSong.releaseDate!.split('-').first}" : ""}",
-                              style: TextStyle(
-                                color: contrastColor.withValues(alpha: 0.5),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+                    ],
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.more_vert_rounded,
+                        color: contrastColor.withValues(alpha: 0.54),
                       ),
-                      if (widget.showFavoritesButton) ...[
-                        GestureDetector(
-                          onTap: () async {
-                            if (widget.onFavoriteToggle != null) {
-                              widget.onFavoriteToggle!();
-                            } else {
-                              provider.toggleFollowAlbum(normalizedAlbumName);
-                            }
-                          },
-                          child: Icon(
-                            isFollowed ? Icons.favorite : Icons.favorite_border,
-                            color: isFollowed
-                                ? Colors.pinkAccent
-                                : contrastColor.withValues(alpha: 0.5),
-                            size: 24,
+                      onSelected: (value) async {
+                        if (value == 'copy') {
+                          await widget.onMove();
+                        } else if (value == 'delete') {
+                          await widget.onRemove();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'copy',
+                          child: Row(
+                            children: [
+                              Icon(Icons.content_copy_rounded, size: 20),
+                              SizedBox(width: 8),
+                              Text("Copy To"),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                "Delete",
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                      const SizedBox(width: 16),
-                      Icon(
-                        _isExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        color: contrastColor.withValues(alpha: 0.54),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      _isExpanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: contrastColor.withValues(alpha: 0.54),
+                    ),
+                  ],
                 ),
               ),
             ),
+          ),
 
-            if (_isExpanded) ...[
-              const Divider(height: 1, color: Colors.white10),
-              // Songs List
-              ListView.separated(
-                padding: EdgeInsets.only(bottom: 0, top: 0),
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: widget.groupItems.length,
-                separatorBuilder: (_, __) =>
-                    const Divider(height: 1, color: Colors.white10),
-                itemBuilder: (ctx, i) {
-                  final item = widget.groupItems[i];
-                  if (item is _AdItem) {
-                    return const NativeAdWidget();
-                  }
-                  final song = item as SavedSong;
-                  // Calculate index based on its position in the pure song list
-                  final songIndex = widget.groupSongs.indexOf(song) + 1;
-                  return widget.songBuilder(ctx, song, songIndex);
-                },
-              ),
-            ],
+          if (_isExpanded) ...[
+            const Divider(height: 1, color: Colors.white10),
+            // Songs List
+            ListView.separated(
+              padding: EdgeInsets.only(bottom: 0, top: 0),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: widget.groupItems.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, color: Colors.white10),
+              itemBuilder: (ctx, i) {
+                final item = widget.groupItems[i];
+                if (item is _AdItem) {
+                  return const NativeAdWidget();
+                }
+                final song = item as SavedSong;
+                // Calculate index based on its position in the pure song list
+                final songIndex = widget.groupSongs.indexOf(song) + 1;
+                return widget.songBuilder(ctx, song, songIndex);
+              },
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

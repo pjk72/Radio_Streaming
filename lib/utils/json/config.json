@@ -2,7 +2,7 @@
     "features": {
         "download_songs": {
             "Administrator": -1,
-            "All login": 5,
+            "All login": 0,
             "All": 0
         },
         "song_recognition": [
