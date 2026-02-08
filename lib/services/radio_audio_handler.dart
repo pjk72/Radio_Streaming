@@ -996,6 +996,13 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> skipToNext() async {
     _startupLock = false;
 
+    // Optimistic: Signal buffering/loading immediately
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.buffering,
+      ),
+    );
+
     // 0. Safety Check: If current item is a STATION, force clear queue to ensure we use Radio Logic
     if (mediaItem.value?.extras?['type'] == 'station') {
       _playlistQueue.clear();

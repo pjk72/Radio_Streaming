@@ -3569,11 +3569,24 @@ class RadioProvider with ChangeNotifier {
     fetchLyrics();
 
     _metadataTimer?.cancel(); // CANCEL recognition timer
-    // _isLoading = true; // GAPLESS: Don't force loading state, let buffering event handle it
+    _isLoading = true; // User initiated: Force loading state immediately
     _isPlaying = true; // Optimistically show pause icon
     notifyListeners();
 
     try {
+      // INTERRUPT STREAMING FIRST
+      // We manually manage state to show "Loading" while we resolved/stop
+      _ignoringPause = true;
+      _isLoading = true;
+      _isPlaying = true; // Maintain "Playing" state in UI (Pause icon)
+      notifyListeners();
+
+      await _audioHandler.stop();
+      // Delay resetting to ensure the 'stopped' event from handler is ignored before we resume listening
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _ignoringPause = false;
+      });
+
       String? videoId;
 
       if (song.localPath != null) {

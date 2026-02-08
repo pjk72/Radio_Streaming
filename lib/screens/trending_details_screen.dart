@@ -11,6 +11,7 @@ import '../models/playlist.dart';
 
 import '../widgets/player_bar.dart';
 import '../widgets/native_ad_widget.dart';
+import '../widgets/mini_visualizer.dart';
 
 class _AdItem {
   const _AdItem();
@@ -32,6 +33,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   bool _isLoading = true;
   late TrendingService _trendingService;
   late SpotifyService _spotifyService;
+  String? _lastScrollSongId;
 
   @override
   void initState() {
@@ -290,10 +292,45 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     return Consumer<RadioProvider>(
       builder: (context, provider, child) {
-        final currentMediaItem = provider.audioHandler.mediaItem.value;
-        final playingSongId = currentMediaItem?.extras?['songId'];
+        final playingSongId =
+            provider.currentSongId ??
+            provider.audioHandler.mediaItem.value?.extras?['songId'];
         final theme = Theme.of(context);
-        final savedIds = provider.allUniqueSongs.map((s) => s.id).toSet();
+        final isPlayingState =
+            provider.audioHandler.playbackState.value.playing;
+
+        // Auto-scroll logic
+        if (playingSongId != null &&
+            playingSongId != _lastScrollSongId &&
+            _items.isNotEmpty) {
+          final index = _items.indexWhere(
+            (item) => item is Map && item['id'] == playingSongId,
+          );
+          if (index != -1) {
+            _lastScrollSongId = playingSongId;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (_scrollController.hasClients) {
+                // Estimate offset: Header (~480) + Index * ItemHeight (~72)
+                // This is an approximation.
+                final double headerHeight = 480.0;
+                final double itemHeight = 72.0;
+                final double offset = headerHeight + (index * itemHeight);
+
+                // Center it: offset - screenHeight/2 + itemHeight/2
+                final double target =
+                    offset -
+                    (MediaQuery.of(context).size.height / 2) +
+                    (itemHeight / 2);
+
+                _scrollController.animateTo(
+                  target.clamp(0.0, _scrollController.position.maxScrollExtent),
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.easeInOut,
+                );
+              }
+            });
+          }
+        }
 
         return SliverList(
           delegate: SliverChildBuilderDelegate((context, index) {
@@ -306,12 +343,18 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             final track = item as Map<String, String>;
             final trackIndex = _tracks.indexOf(track);
             final isPlaying = playingSongId == track['id'];
+            final savedIds = provider.allUniqueSongs.map((s) => s.id).toSet();
             final isSaved = savedIds.contains(track['id']);
 
             return Container(
-              color: isPlaying
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.transparent,
+              decoration: BoxDecoration(
+                color: isPlaying
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.transparent,
+                border: isPlaying
+                    ? Border.all(color: theme.primaryColor, width: 2)
+                    : null,
+              ),
               child: ListTile(
                 leading: Text(
                   "${trackIndex + 1}",
@@ -341,7 +384,21 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                     if (isPlaying)
                       Padding(
                         padding: const EdgeInsets.only(right: 8.0),
-                        child: Icon(Icons.equalizer, color: theme.primaryColor),
+                        child: provider.isLoading
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: theme.primaryColor,
+                                ),
+                              )
+                            : MiniVisualizer(
+                                color: theme.primaryColor,
+                                width: 20,
+                                height: 20,
+                                active: isPlayingState,
+                              ),
                       ),
                     IconButton(
                       icon: Icon(

@@ -5028,7 +5028,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (playlist.id != 'favorites') ...[
+                      if (playlist.id != 'favorites' && !isInvalid) ...[
                         GestureDetector(
                           onTap: () async {
                             if (isFavorite) {

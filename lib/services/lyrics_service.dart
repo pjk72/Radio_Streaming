@@ -65,6 +65,64 @@ class LyricsService {
     }
 
     LogService().log("Lyrics NOT FOUND for: $cleanArtist - $cleanTitle");
+
+    // 4. Fallback: Parse "Artist - Title" from the title parameter
+    // User requested: "considera questo format preso direttamente dal titolo dellla canzone '<noem artista> - <titolo canzone>'"
+    // Sometimes metadata puts the full string in the title field.
+    if (title.contains(' - ')) {
+      final parts = title.split(' - ');
+      if (parts.length >= 2) {
+        // Assume format: Applicant - Title
+        final extractedArtist = parts[0];
+        final extractedTitle = parts.sublist(1).join(' - ');
+
+        final cleanExtractedArtist = cleanString(extractedArtist);
+        final cleanExtractedTitle = cleanString(extractedTitle);
+
+        // Prevent redundant search if the fallback is identical to the original search
+        final bool isRedundant =
+            cleanExtractedArtist.trim().toLowerCase() ==
+                cleanArtist.trim().toLowerCase() &&
+            cleanExtractedTitle.trim().toLowerCase() ==
+                cleanTitle.trim().toLowerCase();
+
+        if (!isRedundant &&
+            cleanExtractedArtist.isNotEmpty &&
+            cleanExtractedTitle.isNotEmpty) {
+          LogService().log(
+            "Lyrics Fallback: Parsing from title '$title' -> '$cleanExtractedArtist' - '$cleanExtractedTitle'",
+          );
+
+          // Retry LRCLIB with extracted info
+          try {
+            final result = await _tryLrclib(
+              artist: cleanExtractedArtist,
+              title: cleanExtractedTitle,
+              isRadio: isRadio,
+            );
+            if (result != null) return result;
+          } catch (e) {
+            LogService().log(
+              "LRCLIB Fallback Error ($cleanExtractedArtist - $cleanExtractedTitle): $e",
+            );
+          }
+
+          // Retry Lyrics.ovh with extracted info
+          try {
+            final ovhResult = await _tryLyricsOvh(
+              artist: cleanExtractedArtist,
+              title: cleanExtractedTitle,
+            );
+            if (ovhResult != null) return ovhResult;
+          } catch (e) {
+            LogService().log(
+              "Lyrics.ovh Fallback Error ($cleanExtractedArtist - $cleanExtractedTitle): $e",
+            );
+          }
+        }
+      }
+    }
+
     return LyricsData.empty();
   }
 

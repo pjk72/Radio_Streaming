@@ -481,11 +481,11 @@ class PlayerBar extends StatelessWidget {
                     // Volume (Right Side) - Only show on Desktop
                     if (isDesktop)
                       Expanded(
-                        flex: 2,
+                        flex: 1,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            const SizedBox(width: 32),
+                            const SizedBox(width: 12),
                             SizedBox(
                               width: 120,
                               child: Row(
@@ -832,7 +832,7 @@ class PlayerBar extends StatelessWidget {
           iconSize: isDesktop ? 32 : 28,
           onPressed: () => provider.playPrevious(),
         ),
-        SizedBox(width: isDesktop ? 24 : 12),
+        SizedBox(width: isDesktop ? 24 : 4),
         Container(
           width: isDesktop ? 50 : 42,
           height: isDesktop ? 50 : 42,
@@ -866,7 +866,7 @@ class PlayerBar extends StatelessWidget {
             onPressed: () => provider.togglePlay(),
           ),
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: isDesktop ? 24 : 4),
         IconButton(
           icon: const Icon(Icons.skip_next_rounded),
           color: Theme.of(context).iconTheme.color,
