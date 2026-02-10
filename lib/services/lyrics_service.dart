@@ -64,64 +64,65 @@ class LyricsService {
       LogService().log("Lyrics.ovh Error ($cleanArtist - $cleanTitle): $e");
     }
 
-    LogService().log("Lyrics NOT FOUND for: $cleanArtist - $cleanTitle");
-
-    // 4. Fallback: Parse "Artist - Title" from the title parameter
-    // User requested: "considera questo format preso direttamente dal titolo dellla canzone '<noem artista> - <titolo canzone>'"
-    // Sometimes metadata puts the full string in the title field.
+    // 4. Fallback: Parse "Artist - Title" from the title parameter (Requested Feature)
+    // "prendere solo il titolo della canzone se trovi questo se esiste questo simbolo " - "
+    // considera la prima parte come il nome dell'artista e la seconda parte il titolo della canzone"
     if (title.contains(' - ')) {
       final parts = title.split(' - ');
+      // Take the first part as artist, and the REST as title (in case of multiple dashes, rare but possible)
+      // Or just strictly 2 parts? The user said "prima parte... seconda parte".
+      // Let's assume standard "Artist - Title".
       if (parts.length >= 2) {
-        // Assume format: Applicant - Title
-        final extractedArtist = parts[0];
-        final extractedTitle = parts.sublist(1).join(' - ');
+        final derivedArtist = parts[0];
+        final derivedTitle = parts.sublist(1).join(' - '); // Rejoin the rest
 
-        final cleanExtractedArtist = cleanString(extractedArtist);
-        final cleanExtractedTitle = cleanString(extractedTitle);
+        final cleanDerivedArtist = cleanString(derivedArtist);
+        final cleanDerivedTitle = cleanString(derivedTitle);
 
-        // Prevent redundant search if the fallback is identical to the original search
-        final bool isRedundant =
-            cleanExtractedArtist.trim().toLowerCase() ==
-                cleanArtist.trim().toLowerCase() &&
-            cleanExtractedTitle.trim().toLowerCase() ==
-                cleanTitle.trim().toLowerCase();
+        // Avoid re-trying exactly what we just tried if the cleanup makes them identical
+        // to the passed arguments.
+        final bool isSameAsOriginal =
+            cleanDerivedArtist.toLowerCase() == cleanArtist.toLowerCase() &&
+            cleanDerivedTitle.toLowerCase() == cleanTitle.toLowerCase();
 
-        if (!isRedundant &&
-            cleanExtractedArtist.isNotEmpty &&
-            cleanExtractedTitle.isNotEmpty) {
+        if (!isSameAsOriginal &&
+            cleanDerivedArtist.isNotEmpty &&
+            cleanDerivedTitle.isNotEmpty) {
           LogService().log(
-            "Lyrics Fallback: Parsing from title '$title' -> '$cleanExtractedArtist' - '$cleanExtractedTitle'",
+            "Lyrics Fallback 2: Splitting title '$title' -> Artist: '$cleanDerivedArtist', Title: '$cleanDerivedTitle'",
           );
 
-          // Retry LRCLIB with extracted info
+          // Retry LRCLIB
           try {
             final result = await _tryLrclib(
-              artist: cleanExtractedArtist,
-              title: cleanExtractedTitle,
+              artist: cleanDerivedArtist,
+              title: cleanDerivedTitle,
               isRadio: isRadio,
             );
             if (result != null) return result;
           } catch (e) {
             LogService().log(
-              "LRCLIB Fallback Error ($cleanExtractedArtist - $cleanExtractedTitle): $e",
+              "LRCLIB Fallback 2 Error ($cleanDerivedArtist - $cleanDerivedTitle): $e",
             );
           }
 
-          // Retry Lyrics.ovh with extracted info
+          // Retry Lyrics.ovh
           try {
             final ovhResult = await _tryLyricsOvh(
-              artist: cleanExtractedArtist,
-              title: cleanExtractedTitle,
+              artist: cleanDerivedArtist,
+              title: cleanDerivedTitle,
             );
             if (ovhResult != null) return ovhResult;
           } catch (e) {
             LogService().log(
-              "Lyrics.ovh Fallback Error ($cleanExtractedArtist - $cleanExtractedTitle): $e",
+              "Lyrics.ovh Fallback 2 Error ($cleanDerivedArtist - $cleanDerivedTitle): $e",
             );
           }
         }
       }
     }
+
+    LogService().log("Lyrics NOT FOUND for: $cleanArtist - $cleanTitle");
 
     return LyricsData.empty();
   }

@@ -12,6 +12,8 @@ class SavedSong {
   final bool isValid;
   final Duration? duration;
   final String? localPath;
+  final String? provider;
+  final String? rawStreamUrl;
 
   SavedSong({
     required this.id,
@@ -27,6 +29,8 @@ class SavedSong {
     this.isValid = true,
     this.duration,
     this.localPath,
+    this.provider,
+    this.rawStreamUrl,
   });
 
   Map<String, dynamic> toJson() {
@@ -44,6 +48,8 @@ class SavedSong {
       'isValid': isValid,
       'duration': duration?.inMilliseconds,
       'localPath': localPath,
+      'provider': provider,
+      'rawStreamUrl': rawStreamUrl,
     };
   }
 
@@ -64,6 +70,8 @@ class SavedSong {
           ? Duration(milliseconds: json['duration'])
           : null,
       localPath: json['localPath'],
+      provider: json['provider'],
+      rawStreamUrl: json['rawStreamUrl'],
     );
   }
 
@@ -81,6 +89,8 @@ class SavedSong {
     bool? isValid,
     Duration? duration,
     String? localPath,
+    String? provider,
+    String? rawStreamUrl,
     bool forceClearLocalPath = false,
   }) {
     return SavedSong(
@@ -97,6 +107,8 @@ class SavedSong {
       isValid: isValid ?? this.isValid,
       duration: duration ?? this.duration,
       localPath: forceClearLocalPath ? null : (localPath ?? this.localPath),
+      provider: provider ?? this.provider,
+      rawStreamUrl: rawStreamUrl ?? this.rawStreamUrl,
     );
   }
 

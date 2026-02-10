@@ -38,10 +38,10 @@ class PlayerBar extends StatelessWidget {
     return Container(
       height: 72,
       decoration: BoxDecoration(
-        color: cardColor.withValues(alpha: 0.50),
+        color: cardColor.withOpacity(0.50),
         border: Border(
           top: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+            color: Theme.of(context).dividerColor.withOpacity(0.1),
             width: 1,
           ),
         ),
@@ -172,7 +172,7 @@ class PlayerBar extends StatelessWidget {
                                                 ),
                                                 decoration: BoxDecoration(
                                                   color: Colors.black
-                                                      .withValues(alpha: 0.8),
+                                                      .withOpacity(0.8),
                                                   shape: BoxShape.circle,
                                                   border: Border.all(
                                                     color: Colors.white24,
@@ -419,9 +419,8 @@ class PlayerBar extends StatelessWidget {
                                                                       .textTheme
                                                                       .bodySmall
                                                                       ?.color
-                                                                      ?.withValues(
-                                                                        alpha:
-                                                                            0.5,
+                                                                      ?.withOpacity(
+                                                                        0.5,
                                                                       ),
                                                                   fontSize: 11,
                                                                 ),
@@ -494,7 +493,7 @@ class PlayerBar extends StatelessWidget {
                                     Icons.volume_up_rounded,
                                     size: 20,
                                     color: playerTheme.iconTheme.color
-                                        ?.withValues(alpha: 0.5),
+                                        ?.withOpacity(0.5),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
@@ -518,7 +517,7 @@ class PlayerBar extends StatelessWidget {
                                         ).primaryColor,
                                         inactiveColor: Theme.of(
                                           context,
-                                        ).dividerColor.withValues(alpha: 0.2),
+                                        ).dividerColor.withOpacity(0.2),
                                       ),
                                     ),
                                   ),
@@ -604,7 +603,7 @@ class PlayerBar extends StatelessWidget {
               Expanded(
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
+                    trackHeight: 2,
                     trackShape: const RectangularSliderTrackShape(),
                     thumbShape: const RoundSliderThumbShape(
                       enabledThumbRadius: 0,
@@ -615,11 +614,11 @@ class PlayerBar extends StatelessWidget {
                     activeTrackColor: Theme.of(context).primaryColor,
                     inactiveTrackColor: Theme.of(
                       context,
-                    ).dividerColor.withValues(alpha: 0.3), // Lighter
+                    ).dividerColor.withOpacity(0.3), // Lighter
                     thumbColor: Theme.of(context).primaryColor,
                     overlayColor: Theme.of(
                       context,
-                    ).primaryColor.withValues(alpha: 0.2),
+                    ).primaryColor.withOpacity(0.2),
                   ),
                   child: Slider(
                     value: val,
@@ -682,7 +681,7 @@ class PlayerBar extends StatelessWidget {
               Expanded(
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
+                    trackHeight: 2,
                     trackShape: const RectangularSliderTrackShape(),
                     thumbShape: const RoundSliderThumbShape(
                       enabledThumbRadius: 0,
@@ -693,11 +692,11 @@ class PlayerBar extends StatelessWidget {
                     activeTrackColor: Theme.of(context).primaryColor,
                     inactiveTrackColor: Theme.of(
                       context,
-                    ).dividerColor.withValues(alpha: 0.3),
+                    ).dividerColor.withOpacity(0.3),
                     thumbColor: Theme.of(context).primaryColor,
                     overlayColor: Theme.of(
                       context,
-                    ).primaryColor.withValues(alpha: 0.2),
+                    ).primaryColor.withOpacity(0.2),
                   ),
                   child: Slider(
                     value: val,
@@ -766,7 +765,7 @@ class PlayerBar extends StatelessWidget {
                   : Icons.repeat_rounded,
               color: provider.isShuffleMode
                   ? Theme.of(context).primaryColor
-                  : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
+                  : Theme.of(context).iconTheme.color?.withOpacity(0.5),
             ),
             iconSize: 20,
             tooltip: "Shuffle",
@@ -791,7 +790,7 @@ class PlayerBar extends StatelessWidget {
             ),
             color: provider.currentSongIsSaved
                 ? Colors.greenAccent
-                : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
+                : Theme.of(context).iconTheme.color?.withOpacity(0.5),
             iconSize: 20,
             tooltip: provider.currentSongIsSaved
                 ? "Already saved"
@@ -841,7 +840,7 @@ class PlayerBar extends StatelessWidget {
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.4),
+                color: Theme.of(context).primaryColor.withOpacity(0.4),
                 blurRadius: 10,
               ),
             ],

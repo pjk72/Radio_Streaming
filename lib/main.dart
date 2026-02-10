@@ -22,6 +22,7 @@ import 'widgets/connectivity_banner.dart';
 import 'widgets/admob_banner_widget.dart';
 import 'services/encryption_service.dart';
 import 'services/entitlement_service.dart';
+import 'widgets/admin_debug_overlay.dart';
 
 late AudioHandler audioHandler;
 
@@ -204,7 +205,6 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final radioProvider = Provider.of<RadioProvider>(context);
     final isDark = themeProvider.themeData.brightness == Brightness.dark;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -223,26 +223,45 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         title: 'MusicStream',
         debugShowCheckedModeBanner: false,
         builder: (context, child) {
+          if (child == null) return const SizedBox.shrink();
+
           final isSupportedPlatform =
               !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
-          return Column(
-            children: [
-              Expanded(
-                child: Stack(
-                  children: [
-                    child!,
-                    const GlobalHiddenPlayer(), // Persists across navigation
-                    const ConnectivityBanner(), // Shows "No Internet" when offline
-                  ],
-                ),
+          return Material(
+            type: MaterialType.transparency,
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        child,
+                        const GlobalHiddenPlayer(),
+                        const ConnectivityBanner(),
+                        const AdminDebugOverlay(),
+                      ],
+                    ),
+                  ),
+                  Selector<RadioProvider, bool>(
+                    selector: (_, p) => p.showGlobalBanner,
+                    builder: (context, showBanner, child) {
+                      if (isSupportedPlatform && showBanner) {
+                        return Container(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          child: const SafeArea(
+                            top: false,
+                            child: AdMobBannerWidget(),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ],
               ),
-              if (isSupportedPlatform && radioProvider.showGlobalBanner)
-                Container(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  child: const SafeArea(top: false, child: AdMobBannerWidget()),
-                ),
-            ],
+            ),
           );
         },
         theme: themeProvider.themeData,

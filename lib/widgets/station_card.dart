@@ -49,17 +49,15 @@ class _StationCardState extends State<StationCard> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Color(int.parse(widget.station.color)).withValues(alpha: 0.15),
-                Theme.of(context).colorScheme.surface.withValues(alpha: 0.05),
+                Color(int.parse(widget.station.color)).withOpacity(0.15),
+                Theme.of(context).colorScheme.surface.withOpacity(0.05),
               ],
             ),
             borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
             border: Border.all(
               color: _isHovering
-                  ? Color(
-                      int.parse(widget.station.color),
-                    ).withValues(alpha: 0.8)
-                  : Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                  ? Color(int.parse(widget.station.color)).withOpacity(0.8)
+                  : Theme.of(context).dividerColor.withOpacity(0.1),
               width: _isHovering ? 1.5 : 1,
             ),
             boxShadow: _isHovering
@@ -67,7 +65,7 @@ class _StationCardState extends State<StationCard> {
                     BoxShadow(
                       color: Color(
                         int.parse(widget.station.color),
-                      ).withValues(alpha: 0.3),
+                      ).withOpacity(0.3),
                       blurRadius: 20,
                       spreadRadius: -2,
                       offset: const Offset(0, 8),
@@ -119,7 +117,7 @@ class _StationCardState extends State<StationCard> {
                           colors: [
                             Color(
                               int.parse(widget.station.color),
-                            ).withValues(alpha: 0.3),
+                            ).withOpacity(0.3),
                             Colors.transparent,
                           ],
                           begin: Alignment.centerLeft,
@@ -337,7 +335,7 @@ class _LiveBadge extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: isCompact ? 6 : 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.3),
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.3),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(

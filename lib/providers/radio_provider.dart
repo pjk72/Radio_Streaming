@@ -33,6 +33,7 @@ import '../services/entitlement_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_explode;
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/upgrade_proposal.dart';
@@ -2265,6 +2266,66 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  Future<void> playDirectAudio(
+    String streamUrl,
+    String songId, {
+    String? playlistId,
+    String? overrideTitle,
+    String? overrideArtist,
+    String? overrideAlbum,
+    String? overrideArtUri,
+  }) async {
+    LogService().log(
+      "Playback: Starting Direct Stream: ${overrideTitle ?? 'Audio'} ($streamUrl)",
+    );
+    _invalidDetectionTimer?.cancel();
+    _invalidDetectionTimer = null;
+
+    _currentPlayingPlaylistId = playlistId;
+    _audioOnlySongId = songId;
+
+    String title = overrideTitle ?? "Audio";
+    String artist = overrideArtist ?? "Direct Stream";
+    String? artwork = overrideArtUri;
+    String? album = overrideAlbum;
+
+    _currentStation = Station(
+      id: -998,
+      name: playlistId ?? "Remote",
+      genre: "Direct Stream",
+      url: streamUrl,
+      icon: "cloud_queue",
+      color: "0xFF2196F3",
+      logo: artwork,
+      category: "Remote",
+    );
+    _currentTrack = title;
+    _currentArtist = artist;
+    _currentAlbum = album ?? "";
+    _currentAlbumArt = artwork;
+    _isPlaying = true;
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _audioHandler.playFromUri(Uri.parse(streamUrl), {
+        'title': title,
+        'artist': artist,
+        'artUri': artwork,
+        'album': album ?? "Remote",
+        'type': 'playlist_song',
+        'songId': songId,
+        'playlistId': playlistId,
+        'is_resolved': true,
+        'user_initiated': true,
+      });
+    } catch (e) {
+      LogService().log("Error in playDirectAudio: $e");
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> playYoutubeAudio(
     String videoId,
     String songId, {
@@ -2275,6 +2336,9 @@ class RadioProvider with ChangeNotifier {
     String? overrideArtUri,
     bool isLocal = false,
   }) async {
+    LogService().log(
+      "Playback: Starting YouTube audio: ${overrideTitle ?? 'Audio'} (https://youtube.com/watch?v=$videoId)",
+    );
     _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
     _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
     _invalidDetectionTimer = null;
@@ -2590,6 +2654,21 @@ class RadioProvider with ChangeNotifier {
                             PlayerState.playing &&
                         _hiddenAudioController!.value.position ==
                             _lastMonitoredPosition) {
+                      final bool isRemotePlaylist =
+                          _currentPlayingPlaylistId != null &&
+                          (_currentPlayingPlaylistId!.startsWith('trending_') ||
+                              _currentPlayingPlaylistId!.startsWith(
+                                'spotify_',
+                              ));
+
+                      if (isRemotePlaylist) {
+                        debugPrint(
+                          "Stallo Rilevato (>5s) - Playlist Remota: Ignoro controllo video.",
+                        );
+                        _lastMonitoredPositionTime = null;
+                        return;
+                      }
+
                       debugPrint(
                         "Stallo Rilevato (>5s) e Internet OK. Segnalo canzone invalida.",
                       );
@@ -2742,6 +2821,19 @@ class RadioProvider with ChangeNotifier {
         );
         return;
       }
+
+      final bool isRemotePlaylist =
+          _currentPlayingPlaylistId != null &&
+          (_currentPlayingPlaylistId!.startsWith('trending_') ||
+              _currentPlayingPlaylistId!.startsWith('spotify_'));
+
+      if (isRemotePlaylist) {
+        LogService().log(
+          "YouTube Player Error: ${value.errorCode}. Playlist Remota: Ignoro controllo video.",
+        );
+        return;
+      }
+
       LogService().log(
         "YouTube Player Error: ${value.errorCode}. Marking song invalid.",
       );
@@ -2771,6 +2863,20 @@ class RadioProvider with ChangeNotifier {
             _lastProcessingTime = null;
             return;
           }
+
+          final bool isRemotePlaylist =
+              _currentPlayingPlaylistId != null &&
+              (_currentPlayingPlaylistId!.startsWith('trending_') ||
+                  _currentPlayingPlaylistId!.startsWith('spotify_'));
+
+          if (isRemotePlaylist) {
+            LogService().log(
+              "Playback Processing Timeout (>5s). Playlist Remota: Ignoro controllo video.",
+            );
+            _lastProcessingTime = null;
+            return;
+          }
+
           LogService().log(
             "Playback Processing Timeout (>5s in $state). Marking invalid.",
           );
@@ -3544,6 +3650,22 @@ class RadioProvider with ChangeNotifier {
     _audioOnlySongId =
         song.id; // Also update ID so ID-based UI remains consistent
 
+    // RESET PLAYBACK IMMEDIATE (UI FEEDBACK)
+    // Update MediaItem to new song with 0 duration to reset counters/bar
+    _audioHandler.updateMediaItem(
+      MediaItem(
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        album: song.album,
+        artUri: song.artUri != null ? Uri.tryParse(song.artUri!) : null,
+        duration: Duration.zero,
+      ),
+    );
+    // Reset position state if possible (though stream might lag slightly, this helps)
+    // We invoke stop() which usually resets state in AudioService handlers
+    _audioHandler.stop();
+
     String playlistName = "Playlist";
     if (playlistId != null) {
       try {
@@ -3564,9 +3686,8 @@ class RadioProvider with ChangeNotifier {
       category: "Playlist",
     );
 
-    // Fetch lyrics for the playlist song
+    // Lyrics fetch moved to after successful resolution
     _currentTrackStartTime = DateTime.now();
-    fetchLyrics();
 
     _metadataTimer?.cancel(); // CANCEL recognition timer
     _isLoading = true; // User initiated: Force loading state immediately
@@ -3602,6 +3723,7 @@ class RadioProvider with ChangeNotifier {
             overrideArtUri: song.artUri,
             isLocal: true,
           );
+          fetchLyrics(); // Fetch lyrics for local file
           return;
         } else {
           LogService().log(
@@ -3622,6 +3744,25 @@ class RadioProvider with ChangeNotifier {
 
       if (song.youtubeUrl != null) {
         videoId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
+        // If it was already a raw 11-char ID, use it directly
+        if (videoId == null && song.youtubeUrl!.length == 11) {
+          videoId = song.youtubeUrl;
+        }
+      }
+
+      // Optimization for Remote Playlists:
+      // If we don't have a videoId yet but the song ID itself looks like a YouTube ID
+      // and it's from a trending or remote playlist, use it directly.
+      if (videoId == null &&
+          playlistId != null &&
+          (playlistId.startsWith('trending_') ||
+              playlistId.startsWith('spotify_'))) {
+        if (song.id.length == 11) {
+          videoId = song.id;
+          LogService().log(
+            "Remote Playlist: Using Song ID as direct YouTube ID: $videoId",
+          );
+        }
       }
 
       if (videoId == null) {
@@ -3644,6 +3785,32 @@ class RadioProvider with ChangeNotifier {
           }
         }
       }
+
+      // 3. Backup Search: YoutubeExplode
+      // If we still don't have a videoId, try a direct YouTube search
+      if (videoId == null) {
+        try {
+          LogService().log(
+            "Attempting direct YouTube search for: ${song.title} - ${song.artist}",
+          );
+          final yt = yt_explode.YoutubeExplode();
+          final results = await yt.search.search(
+            "${song.title} ${song.artist}",
+          );
+          if (results.isNotEmpty) {
+            videoId = results.first.id.value;
+            LogService().log("Found ID via direct search: $videoId");
+          }
+          yt.close();
+
+          if (_audioOnlySongId != song.id) return; // Guard
+        } catch (e) {
+          LogService().log("Direct YouTube search error: $e");
+        }
+      }
+
+      // Fetch Lyrics immediately before playing via YouTube (after resolution)
+      fetchLyrics();
 
       if (videoId != null) {
         // Clear loading after a maximum of 15 seconds regardless of state events
@@ -3682,22 +3849,26 @@ class RadioProvider with ChangeNotifier {
             LogService().log(
               "Offline: Cannot resolve video ID for ${song.title}. Waiting for connection...",
             );
-            // We should probably show an error state or stop loading?
             _isLoading = false;
-            // Resetting state effectively pauses/stops without erroring out to invalid
             notifyListeners();
             return;
           }
 
-          LogService().log(
-            "Marking song as invalid (No Video ID): ${song.title}",
-          );
-          await _playlistService.markSongAsInvalidGlobally(song.id);
-          if (!_invalidSongIds.contains(song.id)) {
-            _invalidSongIds.add(song.id);
-            // Persist locally
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+          if (playlistId.startsWith('trending_')) {
+            LogService().log(
+              "Trending Playlist: Cannot resolve video ID for ${song.title}. Skipping without marking as invalid.",
+            );
+          } else {
+            LogService().log(
+              "Marking song as invalid (No Video ID): ${song.title}",
+            );
+            await _playlistService.markSongAsInvalidGlobally(song.id);
+            if (!_invalidSongIds.contains(song.id)) {
+              _invalidSongIds.add(song.id);
+              // Persist locally
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+            }
           }
 
           // Also mark invalid in temp playlist if active
@@ -4523,6 +4694,14 @@ class RadioProvider with ChangeNotifier {
           }
         } catch (_) {}
       }
+    }
+
+    // Trending Check: Do NOT mark invalid if from a remote trending playlist
+    if (_currentPlayingPlaylistId?.startsWith('trending_') == true) {
+      LogService().log(
+        "Blocking 'Mark Invalid' - Song is from a trending playlist",
+      );
+      return;
     }
 
     // Connectivity Check: Do NOT mark invalid if internet is down (unless it is a local file)

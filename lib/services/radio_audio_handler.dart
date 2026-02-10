@@ -2173,6 +2173,13 @@ class RadioAudioHandler extends BaseAudioHandler
         _expectingStop = false;
         _isInitialBuffering = false;
         _stuckSecondsCount = 0;
+
+        if (mediaItem.value != null) {
+          LogService().log(
+            "Watchdog: Relaunching ${mediaItem.value!.title}...",
+          );
+          playFromUri(Uri.parse(mediaItem.value!.id), mediaItem.value!.extras);
+        }
       }
     } else {
       _stuckSecondsCount = 0;

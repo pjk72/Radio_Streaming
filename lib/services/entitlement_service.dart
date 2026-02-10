@@ -54,9 +54,6 @@ class EntitlementService extends ChangeNotifier {
         final newConfig = jsonDecode(response.body);
         _config = newConfig;
         _isUsingLocalConfig = false;
-        LogService().log(
-          "EntitlementService: Config updated successfully from remote",
-        );
         notifyListeners();
       } else {
         await _loadLocalConfig(
@@ -115,10 +112,6 @@ class EntitlementService extends ChangeNotifier {
 
     if (allowedEntities.isEmpty) return false;
 
-    LogService().log(
-      "EntitlementService: Checking feature $featureKey for $allowedEntities",
-    );
-
     // 1. Check "All" (Everyone)
     if (allowedEntities.any((e) => e.toLowerCase() == "all")) {
       return true;
@@ -144,7 +137,6 @@ class EntitlementService extends ChangeNotifier {
     final groups = _config['groups'] as Map<String, dynamic>?;
     if (groups != null) {
       for (final entity in allowedEntities) {
-        LogService().log("EntitlementService: Checking group $entity");
         if (groups.containsKey(entity)) {
           final groupEmails = List<String>.from(groups[entity] ?? []);
           if (groupEmails.contains(userEmail)) {

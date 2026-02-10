@@ -68,17 +68,19 @@ class _GlobalHiddenPlayerState extends State<GlobalHiddenPlayer>
         // To ensure YouTube keeps playing, the view must be "visible" (not culled).
         // YoutubePlayer runs inside an InAppWebView internally anyway (on mobile),
         // but the widget needs to be in the tree.
-        return Align(
-          alignment: Alignment.bottomRight,
-          child: Opacity(
-            opacity: 0.01, // Nearly invisible but RENDERED
-            child: SizedBox(
-              width: 10,
-              height: 10,
-              child: YoutubePlayer(
-                key: ValueKey(provider.audioOnlySongId ?? 'youtube_player'),
-                controller: provider.hiddenAudioController!,
-                showVideoProgressIndicator: false,
+        return IgnorePointer(
+          child: Align(
+            alignment: Alignment.bottomRight,
+            child: Opacity(
+              opacity: 0.01, // Nearly invisible but RENDERED
+              child: SizedBox(
+                width: 10,
+                height: 10,
+                child: YoutubePlayer(
+                  key: ValueKey(provider.audioOnlySongId ?? 'youtube_player'),
+                  controller: provider.hiddenAudioController!,
+                  showVideoProgressIndicator: false,
+                ),
               ),
             ),
           ),

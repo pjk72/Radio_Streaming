@@ -219,6 +219,7 @@ class TrendingService {
                 'album': s.album,
                 'image': s.artUri ?? '',
                 'id': s.id, // Spotify ID
+                'provider': 'Spotify',
               },
             )
             .toList();
@@ -232,6 +233,7 @@ class TrendingService {
                 'album': '',
                 'image': v.thumbnails.highResUrl,
                 'id': v.id.value,
+                'provider': 'YouTube',
               },
             )
             .toList();
@@ -251,6 +253,7 @@ class TrendingService {
                     'album': '',
                     'image': t['artwork']?['480x480']?.toString() ?? '',
                     'id': t['id'].toString(),
+                    'provider': 'Audius',
                   },
                 )
                 .toList();
@@ -273,6 +276,8 @@ class TrendingService {
                 'album': album?['title']?.toString() ?? '',
                 'image': album?['cover_medium']?.toString() ?? '',
                 'id': t['id'].toString(),
+                'provider': 'Deezer',
+                'preview': t['preview']?.toString() ?? '',
               };
             }).toList();
           }

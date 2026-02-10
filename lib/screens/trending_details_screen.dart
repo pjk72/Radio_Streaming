@@ -12,6 +12,7 @@ import '../models/playlist.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/native_ad_widget.dart';
 import '../widgets/mini_visualizer.dart';
+import '../services/log_service.dart';
 
 class _AdItem {
   const _AdItem();
@@ -53,6 +54,11 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     _trendingService = TrendingService(_spotifyService);
 
     final tracks = await _trendingService.getPlaylistTracks(widget.playlist);
+
+    LogService().log(
+      "TrendingDetails: Tracks fetched: ${tracks.length} tracks for playlist '${widget.playlist.title}'",
+    );
+
     if (mounted) {
       setState(() {
         _tracks = tracks;
@@ -106,8 +112,8 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withValues(alpha: 0.6),
-                  Colors.black.withValues(alpha: 0.9),
+                  Colors.black.withOpacity(0.6),
+                  Colors.black.withOpacity(0.9),
                   Colors.black,
                 ],
               ),
@@ -139,7 +145,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.5),
+                                color: Colors.black.withOpacity(0.5),
                                 blurRadius: 30,
                                 offset: const Offset(0, 15),
                               ),
@@ -254,7 +260,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: CircleAvatar(
-                  backgroundColor: Colors.black.withValues(alpha: 0.5),
+                  backgroundColor: Colors.black.withOpacity(0.5),
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () => Navigator.of(context).pop(),
@@ -303,9 +309,18 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         if (playingSongId != null &&
             playingSongId != _lastScrollSongId &&
             _items.isNotEmpty) {
-          final index = _items.indexWhere(
-            (item) => item is Map && item['id'] == playingSongId,
-          );
+          final index = _items.indexWhere((item) {
+            if (item is! Map) return false;
+            if (item['id'] == playingSongId) return true;
+
+            // Fallback for unstable IDs (like lofi playlists): match by title
+            final currentItemTitle = provider.currentTrack;
+            if (currentItemTitle != "Live Broadcast" &&
+                item['title'] == currentItemTitle) {
+              return true;
+            }
+            return false;
+          });
           if (index != -1) {
             _lastScrollSongId = playingSongId;
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -342,14 +357,24 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
             final track = item as Map<String, String>;
             final trackIndex = _tracks.indexOf(track);
-            final isPlaying = playingSongId == track['id'];
+            bool isPlaying = playingSongId == track['id'];
+
+            // Fallback for unstable IDs: if playingSongId doesn't match, check title
+            if (!isPlaying && playingSongId != null) {
+              final currentItemTitle = provider.currentTrack;
+              if (currentItemTitle != "Live Broadcast" &&
+                  track['title'] == currentItemTitle) {
+                isPlaying = true;
+              }
+            }
+
             final savedIds = provider.allUniqueSongs.map((s) => s.id).toSet();
             final isSaved = savedIds.contains(track['id']);
 
             return Container(
               decoration: BoxDecoration(
                 color: isPlaying
-                    ? Colors.white.withValues(alpha: 0.1)
+                    ? Colors.white.withOpacity(0.1)
                     : Colors.transparent,
                 border: isPlaying
                     ? Border.all(color: theme.primaryColor, width: 2)
@@ -434,8 +459,18 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       // Optimization: If already playing this playlist (Linear or Shuffled),
       // just jump to the song within the existing context.
       // This preserves the current queue order (e.g. Shuffle).
+      final link =
+          song.youtubeUrl ?? "ID: ${song.id} (${widget.playlist.provider})";
+      LogService().log(
+        "TrendingDetails: Selection: Playing song '${song.title}' from existing context. Link: $link",
+      );
       provider.playPlaylistSong(song, playlistId);
     } else {
+      final link =
+          song.youtubeUrl ?? "ID: ${song.id} (${widget.playlist.provider})";
+      LogService().log(
+        "TrendingDetails: Selection: Loading new context for song '${song.title}' (Playlist: ${widget.playlist.title}). Link: $link",
+      );
       // New context: Load the full linear playlist
       final tempPlaylist = Playlist(
         id: playlistId,
@@ -481,9 +516,16 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       artist: t['artist']!,
       album: t['album']!,
       artUri: t['image'],
-      youtubeUrl: widget.playlist.provider == 'YouTube'
+      youtubeUrl: t['provider'] == 'YouTube'
           ? "https://youtube.com/watch?v=${t['id']}"
           : null,
+      spotifyUrl: t['provider'] == 'Spotify'
+          ? "https://open.spotify.com/track/${t['id']}"
+          : null,
+      provider: t['provider'],
+      rawStreamUrl: t['provider'] == 'Audius'
+          ? "https://api.audius.co/v1/tracks/${t['id']}/stream?app_name=RadioStreamApp"
+          : (t['provider'] == 'Deezer' ? t['preview'] : null),
       dateAdded: DateTime.now(),
     );
   }
