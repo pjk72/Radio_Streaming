@@ -5205,12 +5205,18 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     ).clearSnackBars();
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
+                                        backgroundColor: const Color(
+                                          0xFF333333,
+                                        ),
                                         content: const Text(
                                           "Song removed from playlist",
+                                          style: TextStyle(color: Colors.white),
                                         ),
                                         action: SnackBarAction(
                                           label: 'Undo',
-                                          textColor: Colors.black,
+                                          textColor: Theme.of(
+                                            context,
+                                          ).primaryColorLight,
                                           onPressed: () {
                                             provider.restoreSongToPlaylist(
                                               playlist.id,
@@ -5218,6 +5224,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                             );
                                           },
                                         ),
+
                                         duration: const Duration(seconds: 5),
                                       ),
                                     );
