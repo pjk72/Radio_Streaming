@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/radio_provider.dart';
 import '../services/music_metadata_service.dart';
-import '../screens/album_details_screen.dart';
+import 'trending_details_screen.dart';
 
 class AddSongScreen extends StatefulWidget {
   const AddSongScreen({super.key});
@@ -251,7 +251,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => AlbumDetailsScreen(
+                          builder: (context) => TrendingDetailsScreen(
                             albumName: song.album,
                             artistName: song.artist,
                             artworkUrl: song.artUri,

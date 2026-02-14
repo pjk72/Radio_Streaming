@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'album_details_screen.dart';
+import 'trending_details_screen.dart';
 import '../providers/radio_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -434,7 +434,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                             context,
                                             MaterialPageRoute(
                                               builder: (context) =>
-                                                  AlbumDetailsScreen(
+                                                  TrendingDetailsScreen(
                                                     albumName:
                                                         album['collectionName'] ??
                                                         "",

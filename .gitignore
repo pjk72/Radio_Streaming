@@ -33,6 +33,7 @@ migrate_working_dir/
 /build/
 /coverage/
 
+
 # Symbolication related
 app.*.symbols
 
@@ -46,6 +47,10 @@ app.*.map.json
 
 # Android signing
 /android/key.properties
+*.json
 *.jks
 *.keystore
 *.txt
+
+# JSON Configuration
+lib/utils/json/

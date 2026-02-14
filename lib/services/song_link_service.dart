@@ -31,7 +31,6 @@ class SongLinkService {
     );
 
     // DEBUG: Store request URL first
-    print('SONG_LINK_REQ: $uri');
     _lastRawJson = "Song Link API Log\n\nREQUEST: $uri\n\nRESPONSE:\n";
 
     final Map<String, String> result = {};
@@ -41,9 +40,9 @@ class SongLinkService {
 
       if (response.statusCode == 200) {
         _lastRawJson += response.body; // Append raw response
-        LogService().log(
-          "SongLink (Odesli) Response: ${response.body}",
-        ); // Log JSON
+        // LogService().log(
+        //   "SongLink (Odesli) Response: ${response.body}",
+        // ); // Log JSON
         final json = jsonDecode(response.body);
         final links = json['linksByPlatform'] as Map<String, dynamic>?;
 
@@ -80,7 +79,7 @@ class SongLinkService {
               }
             }
           } catch (e) {
-            print("Error extracting thumbnail: $e");
+            LogService().log("Error extracting thumbnail: $e");
           }
 
           // Spotify

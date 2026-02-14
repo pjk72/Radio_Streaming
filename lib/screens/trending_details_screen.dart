@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:math';
+
+import 'dart:convert';
+import 'dart:developer' as developer;
+import 'package:http/http.dart' as http;
 
 import '../services/trending_service.dart';
 import '../services/spotify_service.dart';
@@ -19,9 +22,26 @@ class _AdItem {
 }
 
 class TrendingDetailsScreen extends StatefulWidget {
-  final TrendingPlaylist playlist;
+  final TrendingPlaylist? playlist;
+  // Album Mode Parameters
+  final String? albumName;
+  final String? artistName;
+  final String? artworkUrl;
+  final String? appleMusicUrl;
+  final String? songName;
 
-  const TrendingDetailsScreen({super.key, required this.playlist});
+  const TrendingDetailsScreen({
+    super.key,
+    this.playlist,
+    this.albumName,
+    this.artistName,
+    this.artworkUrl,
+    this.appleMusicUrl,
+    this.songName,
+  }) : assert(
+         playlist != null || albumName != null,
+         'Either playlist or albumName must be provided',
+       );
 
   @override
   State<TrendingDetailsScreen> createState() => _TrendingDetailsScreenState();
@@ -29,52 +49,168 @@ class TrendingDetailsScreen extends StatefulWidget {
 
 class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   final ScrollController _scrollController = ScrollController();
-  List<Map<String, String>> _tracks = [];
+  List<SavedSong> _songs = [];
   List<dynamic> _items = [];
   bool _isLoading = true;
-  late TrendingService _trendingService;
-  late SpotifyService _spotifyService;
+  TrendingService? _trendingService;
+  SpotifyService? _spotifyService;
   String? _lastScrollSongId;
+
+  // Album specific data
+  Map<String, dynamic>? _albumData;
 
   @override
   void initState() {
     super.initState();
-    _fetchTracks();
+    _fetchContent();
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _trendingService?.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchTracks() async {
-    _spotifyService = SpotifyService();
-    await _spotifyService.init();
-    _trendingService = TrendingService(_spotifyService);
+  Future<void> _fetchContent() async {
+    if (widget.playlist != null) {
+      await _fetchPlaylistTracks();
+    } else {
+      await _fetchAlbumData();
+    }
+  }
 
-    final tracks = await _trendingService.getPlaylistTracks(widget.playlist);
+  Future<void> _fetchPlaylistTracks() async {
+    _spotifyService = SpotifyService();
+    await _spotifyService!.init();
+    _trendingService = TrendingService(_spotifyService!);
+
+    final tracks = await _trendingService!.getPlaylistTracks(widget.playlist!);
 
     LogService().log(
-      "TrendingDetails: Tracks fetched: ${tracks.length} tracks for playlist '${widget.playlist.title}'",
+      "TrendingDetails: Tracks fetched: ${tracks.length} tracks for playlist '${widget.playlist!.title}'",
     );
 
     if (mounted) {
       setState(() {
-        _tracks = tracks;
+        _songs = tracks.map((t) => _trackToSavedSong(t)).toList();
         _isLoading = false;
         _buildItems();
       });
     }
   }
 
+  Future<void> _fetchAlbumData() async {
+    // Fetch album info
+    _albumData = await _fetchAlbumInfo();
+
+    // Fetch tracks if we have collection ID
+    if (_albumData != null && _albumData!['collectionId'] != null) {
+      final albumTracks = await _fetchAlbumTracks(_albumData!['collectionId']);
+      _songs = albumTracks.map((t) => _trackToSavedSong(t)).toList();
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _buildItems();
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>?> _fetchAlbumInfo() async {
+    // 1. Try to lookup by ID if we have an Apple Music URL
+    if (widget.appleMusicUrl != null) {
+      final id = _extractAlbumId(widget.appleMusicUrl!);
+      if (id != null) {
+        try {
+          final uri = Uri.parse(
+            "https://itunes.apple.com/lookup?id=$id&entity=album",
+          );
+          final response = await http.get(uri);
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            if (data['resultCount'] > 0) {
+              return data['results'][0];
+            }
+          }
+        } catch (e) {
+          developer.log("Error fetching album info by ID: $e");
+        }
+      }
+    }
+
+    // 2. Fallback to search query
+    try {
+      final query =
+          "${widget.artistName} ${widget.songName ?? widget.albumName}";
+      final entityParam = widget.songName != null ? "song" : "album";
+
+      final uri = Uri.parse(
+        "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=$entityParam&limit=5",
+      );
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['resultCount'] > 0) {
+          return data['results'][0];
+        }
+      }
+    } catch (e) {
+      developer.log("Error fetching album info: $e");
+    }
+    return null;
+  }
+
+  String? _extractAlbumId(String url) {
+    final regex = RegExp(r'/id(\d+)');
+    final match = regex.firstMatch(url);
+    return match?.group(1);
+  }
+
+  String _normalize(String s) {
+    return s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '').trim();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAlbumTracks(int collectionId) async {
+    try {
+      final uri = Uri.parse(
+        "https://itunes.apple.com/lookup?id=$collectionId&entity=song&limit=200",
+      );
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final results = List<Map<String, dynamic>>.from(data['results']);
+
+        var tracks = results
+            .where((item) => item['wrapperType'] == 'track')
+            .toList();
+
+        tracks.sort((a, b) {
+          int discA = a['discNumber'] ?? 1;
+          int discB = b['discNumber'] ?? 1;
+          if (discA != discB) return discA.compareTo(discB);
+
+          int trackA = a['trackNumber'] ?? 0;
+          int trackB = b['trackNumber'] ?? 0;
+          return trackA.compareTo(trackB);
+        });
+
+        return tracks;
+      }
+    } catch (e) {
+      developer.log("Error fetching tracks: $e");
+    }
+    return [];
+  }
+
   void _buildItems() {
     _items = [];
-    if (_tracks.isNotEmpty) {
+    if (_songs.isNotEmpty) {
       _items.add(const _AdItem()); // Ad at start
-      for (int i = 0; i < _tracks.length; i++) {
-        _items.add(_tracks[i]);
-        if ((i + 1) % 10 == 0 && (i + 1) < _tracks.length) {
+      for (int i = 0; i < _songs.length; i++) {
+        _items.add(_songs[i]);
+        if ((i + 1) % 10 == 0 && (i + 1) < _songs.length) {
           _items.add(const _AdItem()); // Ad every 10 songs
         }
       }
@@ -84,11 +220,24 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Extract metadata efficiently
-    final mainImage = widget.playlist.imageUrls.isNotEmpty
-        ? widget.playlist.imageUrls.first
-        : '';
-    final title = widget.playlist.title;
+    // Extract metadata
+    String mainImage = "";
+    String title = "";
+    String subtitle = "";
+
+    if (widget.playlist != null) {
+      mainImage = widget.playlist!.imageUrls.isNotEmpty
+          ? widget.playlist!.imageUrls.first
+          : '';
+      title = widget.playlist!.title;
+    } else {
+      mainImage =
+          _albumData?['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
+          widget.artworkUrl ??
+          "";
+      title = _albumData?['collectionName'] ?? widget.albumName ?? "";
+      subtitle = _albumData?['artistName'] ?? widget.artistName ?? "";
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -182,6 +331,17 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                        if (subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            subtitle,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ],
 
                         const SizedBox(height: 24),
 
@@ -229,12 +389,12 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                             IconButton(
                               icon: Icon(
                                 Icons.copy_all,
-                                color: _isLoading || _tracks.isEmpty
+                                color: _isLoading || _songs.isEmpty
                                     ? Colors.white24
                                     : Colors.orangeAccent,
                                 size: 30,
                               ),
-                              onPressed: _isLoading || _tracks.isEmpty
+                              onPressed: _isLoading || _songs.isEmpty
                                   ? null
                                   : _showCopyDialog,
                               tooltip: "Copy List",
@@ -285,7 +445,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         ),
       );
     }
-    if (_tracks.isEmpty) {
+    if (_songs.isEmpty) {
       return const SliverToBoxAdapter(
         child: Center(
           child: Text(
@@ -310,13 +470,13 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             playingSongId != _lastScrollSongId &&
             _items.isNotEmpty) {
           final index = _items.indexWhere((item) {
-            if (item is! Map) return false;
-            if (item['id'] == playingSongId) return true;
+            if (item is! SavedSong) return false;
+            if (item.id == playingSongId) return true;
 
             // Fallback for unstable IDs (like lofi playlists): match by title
             final currentItemTitle = provider.currentTrack;
             if (currentItemTitle != "Live Broadcast" &&
-                item['title'] == currentItemTitle) {
+                item.title == currentItemTitle) {
               return true;
             }
             return false;
@@ -347,29 +507,41 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           }
         }
 
+        // Pre-calculate saved songs for list performance
+        final savedIds = provider.allUniqueSongs.map((s) => s.id).toSet();
+        final savedKeys = provider.allUniqueSongs
+            .map((s) => "${_normalize(s.title)}|${_normalize(s.artist)}")
+            .toSet();
+
         return SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
+          delegate: SliverChildBuilderDelegate((ctx, index) {
             final item = _items[index];
 
             if (item is _AdItem) {
               return const NativeAdWidget();
             }
 
-            final track = item as Map<String, String>;
-            final trackIndex = _tracks.indexOf(track);
-            bool isPlaying = playingSongId == track['id'];
+            final track = item as SavedSong;
+            final trackIndex = _songs.indexOf(track);
+            final trackId = track.id;
+            bool isPlaying = playingSongId == trackId;
 
             // Fallback for unstable IDs: if playingSongId doesn't match, check title
             if (!isPlaying && playingSongId != null) {
               final currentItemTitle = provider.currentTrack;
               if (currentItemTitle != "Live Broadcast" &&
-                  track['title'] == currentItemTitle) {
+                  track.title == currentItemTitle) {
                 isPlaying = true;
               }
             }
 
-            final savedIds = provider.allUniqueSongs.map((s) => s.id).toSet();
-            final isSaved = savedIds.contains(track['id']);
+            final trackTitle = track.title;
+            final trackArtist = track.artist;
+            final trackKey =
+                "${_normalize(trackTitle)}|${_normalize(trackArtist)}";
+
+            final isSaved =
+                savedIds.contains(trackId) || savedKeys.contains(trackKey);
 
             return Container(
               decoration: BoxDecoration(
@@ -389,7 +561,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                   ),
                 ),
                 title: Text(
-                  track['title'] ?? 'Unknown',
+                  track.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -398,7 +570,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                   ),
                 ),
                 subtitle: Text(
-                  track['artist'] ?? 'Unknown',
+                  track.artist,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white54),
@@ -427,7 +599,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                       ),
                     IconButton(
                       icon: Icon(
-                        isSaved ? Icons.check_circle : Icons.add_circle_outline,
+                        isSaved
+                            ? Icons.playlist_add_check_rounded
+                            : Icons.add_circle_outline,
                         color: isSaved ? theme.primaryColor : Colors.white54,
                       ),
                       onPressed: () => _showAddSongDialog(track),
@@ -447,87 +621,109 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   }
 
   void _playTrack(int index) {
-    if (_tracks.isEmpty) return;
+    if (_songs.isEmpty) return;
     final provider = Provider.of<RadioProvider>(context, listen: false);
+    final song = _songs[index];
 
-    // Convert to SavedSong
-    final songs = _convertToSavedSongs();
-    final song = songs[index];
-    final playlistId = 'trending_${widget.playlist.id}'; // Fixed: Stable ID
+    String playlistId;
+    String playlistName;
 
-    if (provider.currentPlayingPlaylistId == playlistId) {
-      // Optimization: If already playing this playlist (Linear or Shuffled),
-      // just jump to the song within the existing context.
-      // This preserves the current queue order (e.g. Shuffle).
-      final link =
-          song.youtubeUrl ?? "ID: ${song.id} (${widget.playlist.provider})";
-      LogService().log(
-        "TrendingDetails: Selection: Playing song '${song.title}' from existing context. Link: $link",
-      );
-      provider.playPlaylistSong(song, playlistId);
+    if (widget.playlist != null) {
+      playlistId = 'trending_${widget.playlist!.id}';
+      playlistName = widget.playlist!.title;
     } else {
-      final link =
-          song.youtubeUrl ?? "ID: ${song.id} (${widget.playlist.provider})";
-      LogService().log(
-        "TrendingDetails: Selection: Loading new context for song '${song.title}' (Playlist: ${widget.playlist.title}). Link: $link",
-      );
-      // New context: Load the full linear playlist
-      final tempPlaylist = Playlist(
-        id: playlistId,
-        name: widget.playlist.title,
-        songs: songs,
-        createdAt: DateTime.now(),
-      );
-      provider.playAdHocPlaylist(tempPlaylist, song.id);
+      playlistId = 'album_${widget.albumName.hashCode}';
+      playlistName = widget.albumName ?? "Album";
     }
+
+    LogService().log(
+      "TrendingDetails: Selection: '${song.title}' from '$playlistName'",
+    );
+
+    // Simple play: always load the playlist context to ensure sequential playback works
+    final tempPlaylist = Playlist(
+      id: playlistId,
+      name: playlistName,
+      songs: _songs,
+      createdAt: DateTime.now(),
+    );
+    provider.playAdHocPlaylist(tempPlaylist, song.id);
   }
 
   void _playRandom() {
-    if (_tracks.isEmpty) return;
+    if (_songs.isEmpty) return;
     final provider = Provider.of<RadioProvider>(context, listen: false);
 
-    // Convert to SavedSong
-    final songs = _convertToSavedSongs();
+    // Copy and Shuffle
+    final shuffledSongs = List<SavedSong>.from(_songs)..shuffle();
 
-    // Shuffle
-    songs.shuffle();
+    String playlistId;
+    String playlistName;
+
+    if (widget.playlist != null) {
+      playlistId = 'trending_${widget.playlist!.id}';
+      playlistName = widget.playlist!.title;
+    } else {
+      playlistId = 'album_${widget.albumName.hashCode}';
+      playlistName = widget.albumName ?? "Album";
+    }
 
     final tempPlaylist = Playlist(
-      id: 'trending_${widget.playlist.id}', // Fixed: Stable ID for identification
-      name: widget.playlist.title,
-      songs: songs,
+      id: playlistId,
+      name: playlistName,
+      songs: shuffledSongs,
       createdAt: DateTime.now(),
     );
 
     provider.playAdHocPlaylist(tempPlaylist, null);
   }
 
-  List<SavedSong> _convertToSavedSongs() {
-    return _tracks.map((t) => _trackToSavedSong(t)).toList();
-  }
+  SavedSong _trackToSavedSong(Map<String, dynamic> t) {
+    if (widget.playlist != null) {
+      String songId = t['id'] ?? '';
+      if (songId.length < 3) {
+        songId =
+            "hash_${_normalize(t['title'] ?? '')}_${_normalize(t['artist'] ?? '')}";
+      }
 
-  SavedSong _trackToSavedSong(Map<String, String> t) {
-    return SavedSong(
-      id: t['id']!.length > 5
-          ? t['id']!
-          : DateTime.now().millisecondsSinceEpoch.toString() +
-                Random().nextInt(1000).toString(),
-      title: t['title']!,
-      artist: t['artist']!,
-      album: t['album']!,
-      artUri: t['image'],
-      youtubeUrl: t['provider'] == 'YouTube'
-          ? "https://youtube.com/watch?v=${t['id']}"
-          : null,
-      spotifyUrl: t['provider'] == 'Spotify'
-          ? "https://open.spotify.com/track/${t['id']}"
-          : null,
-      provider: t['provider'],
-      rawStreamUrl: t['provider'] == 'Audius'
-          ? "https://api.audius.co/v1/tracks/${t['id']}/stream?app_name=RadioStreamApp"
-          : (t['provider'] == 'Deezer' ? t['preview'] : null),
-      dateAdded: DateTime.now(),
-    );
+      return SavedSong(
+        id: songId,
+        title: t['title'] ?? 'Unknown',
+        artist: t['artist'] ?? 'Unknown',
+        album: t['album'] ?? 'Unknown',
+        artUri: t['image'],
+        youtubeUrl: t['provider'] == 'YouTube'
+            ? "https://youtube.com/watch?v=${t['id']}"
+            : null,
+        spotifyUrl: t['provider'] == 'Spotify'
+            ? "https://open.spotify.com/track/${t['id']}"
+            : null,
+        provider: t['provider'],
+        rawStreamUrl: t['provider'] == 'Audius'
+            ? "https://api.audius.co/v1/tracks/${t['id']}/stream?app_name=RadioStreamApp"
+            : null,
+        dateAdded: DateTime.now(),
+      );
+    } else {
+      final trackArtist = t['artistName'] ?? widget.artistName ?? "Unknown";
+      final trackName = t['trackName'] ?? "Unknown Track";
+
+      return SavedSong(
+        id:
+            t['trackId']?.toString() ??
+            "${DateTime.now().millisecondsSinceEpoch}_${t['trackNumber'] ?? 0}",
+        title: trackName,
+        artist: trackArtist,
+        album: widget.albumName ?? "Unknown Album",
+        artUri:
+            t['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
+            widget.artworkUrl ??
+            "",
+        appleMusicUrl: t['trackViewUrl'],
+        dateAdded: DateTime.now(),
+        releaseDate: t['releaseDate'],
+      );
+    }
   }
 
   void _showCopyDialog() {
@@ -537,7 +733,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       ).showSnackBar(const SnackBar(content: Text("Still loading tracks...")));
       return;
     }
-    if (_tracks.isEmpty) {
+    if (_songs.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("No tracks to copy")));
@@ -601,7 +797,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                         leading: const Icon(Icons.playlist_play_rounded),
                         title: Text(
                           p.name,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodyLarge?.color,
+                          ),
                         ),
                         onTap: () {
                           Navigator.pop(ctx);
@@ -667,7 +865,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                   listen: false,
                 );
 
-                final songs = _convertToSavedSongs();
+                final songs = _songs;
                 final newPlaylist = await provider.createPlaylist(
                   name,
                   songs: songs,
@@ -699,7 +897,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
   Future<void> _copySongsTo(String playlistId) async {
     final provider = Provider.of<RadioProvider>(context, listen: false);
-    final songs = _convertToSavedSongs();
+    final songs = _songs;
 
     await provider.addSongsToPlaylist(playlistId, songs);
 
@@ -713,8 +911,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     }
   }
 
-  void _showAddSongDialog(Map<String, String> track) {
-    final song = _trackToSavedSong(track);
+  void _showAddSongDialog(SavedSong song) {
     final provider = Provider.of<RadioProvider>(context, listen: false);
 
     showDialog(
@@ -774,7 +971,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                         leading: const Icon(Icons.playlist_add_rounded),
                         title: Text(
                           p.name,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodyLarge?.color,
+                          ),
                         ),
                         onTap: () {
                           Navigator.pop(ctx);

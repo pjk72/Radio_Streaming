@@ -9,6 +9,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 
 import '../models/station.dart';
 import '../models/saved_song.dart';
@@ -38,6 +39,7 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _isInitialBuffering = false;
   final PlaylistService _playlistService = PlaylistService();
   int _retryCount = 0;
+  int _consecutiveErrorCount = 0; // Prevent infinite skip loops
 
   // Internal Playlist Queue State
   List<MediaItem> _playlistQueue = [];
@@ -58,6 +60,7 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _hasTriggeredPreload = false;
   String? _cachedNextSongUrl;
   Map<String, dynamic>? _cachedNextSongExtras;
+  DateTime? _lastSkipRequestTime;
 
   // Recognition
   bool _isACRCloudEnabled = true;
@@ -65,6 +68,29 @@ class RadioAudioHandler extends BaseAudioHandler
   final ACRCloudService _acrCloudService = ACRCloudService();
   final SongLinkService _songLinkService = SongLinkService();
   Timer? _recognitionTimer;
+
+  void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
+    Future.microtask(() async {
+      try {
+        final Map<String, Object>? cleanParameters = parameters != null
+            ? Map<String, Object>.fromEntries(
+                parameters.entries.where((e) => e.value != null).map((e) {
+                  var val = e.value!;
+                  if (val is bool) val = val ? 1 : 0;
+                  if (val is! num && val is! String) val = val.toString();
+                  if (val is String && val.length > 100) {
+                    val = val.substring(0, 100);
+                  }
+                  return MapEntry(e.key, val);
+                }),
+              )
+            : null;
+        await FirebaseAnalytics.instance
+            .logEvent(name: name, parameters: cleanParameters)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    });
+  }
 
   void setACRCloudEnabled(bool value) {
     if (!_isDevUser && value == true) return;
@@ -179,16 +205,29 @@ class RadioAudioHandler extends BaseAudioHandler
     );
 
     _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
-      if (!_expectingStop) {
-        final hasDuration =
-            mediaItem.value?.duration != null &&
-            mediaItem.value!.duration! > Duration.zero;
+      if (_expectingStop) return;
 
-        if (hasDuration) {
-          skipToNext();
-        } else {
-          _handleConnectionError("Stream ended unexpectedly.");
+      final currentPos = _currentPosition;
+      final totalDuration = mediaItem.value?.duration;
+
+      bool isGenuineCompletion = true;
+      if (totalDuration != null && totalDuration > Duration.zero) {
+        // If we finished more than 10 seconds early, it's likely a stream error, not a natural end
+        if ((totalDuration - currentPos).inSeconds > 10) {
+          isGenuineCompletion = false;
         }
+      } else {
+        // For radio or items without duration, completion is usually an unexpected end
+        isGenuineCompletion = false;
+      }
+
+      if (isGenuineCompletion) {
+        skipToNext(reason: "Song completed normally");
+      } else {
+        LogService().log(
+          "Stream ended prematurely at ${currentPos.inSeconds}s. Triggering recovery...",
+        );
+        _handleConnectionError("Stream ended unexpectedly.");
       }
     }, onError: (Object e) {});
 
@@ -257,13 +296,15 @@ class RadioAudioHandler extends BaseAudioHandler
                 mediaItem.value?.extras?['type'] == 'playlist_song' &&
                 _nextPlayerSourceUrl != null) {
               _hasTriggeredEarlyStart = true;
-              skipToNext();
+              skipToNext(reason: "Gapless transition (early start)");
               return;
             }
           }
 
           if (pos >= expectedDuration) {
-            if (!_expectingStop) skipToNext();
+            if (!_expectingStop) {
+              skipToNext(reason: "Reached expected end of track");
+            }
             return;
           }
         }
@@ -284,7 +325,7 @@ class RadioAudioHandler extends BaseAudioHandler
             (log.contains("403") ||
                 log.contains("-1005") ||
                 log.contains("1002"))) {
-          skipToNext();
+          skipToNext(reason: "Playback error detected in player logs: $log");
         }
       }
     }, onError: (Object e) {});
@@ -307,12 +348,23 @@ class RadioAudioHandler extends BaseAudioHandler
     Connectivity().onConnectivityChanged.listen((
       List<ConnectivityResult> results,
     ) {
+      final current = mediaItem.value;
+      if (current == null) return;
+
+      final extraLocal = current.extras?['isLocal'];
+      final bool isLocal = extraLocal == true || extraLocal == 'true';
+      final bool hasLocalPath = current.extras?['localPath'] != null;
+      final bool isFileId =
+          current.id.startsWith('/') || current.id.startsWith('file://');
+
+      // 1. Local Playback: STRICTLY IGNORE Internet status
+      if (isLocal || hasLocalPath || isFileId) return;
+
       final hasConnection = !results.contains(ConnectivityResult.none);
 
       if (!hasConnection) {
         // Internet Lost: Stop player to prevent buffering stale data
-        final bool isLocal = mediaItem.value?.extras?['isLocal'] == true;
-        if (playbackState.value.playing && !isLocal) {
+        if (playbackState.value.playing) {
           // If playlist song, pause to preserve position logic more naturally
           if (mediaItem.value?.extras?['type'] == 'playlist_song') {
             _player.pause();
@@ -698,7 +750,8 @@ class RadioAudioHandler extends BaseAudioHandler
         );
         _expectingStop = false;
         _isInitialBuffering = false;
-        _broadcastState();
+        _broadcastState(); // Broadcast state to ensure UI updates
+        _retryPlayback(); // Try to restart the song
       }
     });
 
@@ -853,38 +906,84 @@ class RadioAudioHandler extends BaseAudioHandler
 
       if (_currentSessionId == sessionId) {
         await playFromUri(Uri.parse(streamUrl), extras);
-        playbackState.add(playbackState.value.copyWith(errorMessage: null));
+        // Error count will be reset in playFromUri on success
       }
     } catch (e) {
-      // If we switched sessions, simply ignore the error
       if (_currentSessionId != sessionId) return;
 
-      playbackState.add(
-        playbackState.value.copyWith(
-          processingState: AudioProcessingState.error,
-          errorMessage: "Error playing. Checking connection...",
-        ),
+      final errorStr = e.toString();
+      LogService().log(
+        "YouTube Resolution Failure for ${song.title} ($videoId): $errorStr",
       );
-      _expectingStop = false; // Clear flag on error to prevent stuck loading
-      _isInitialBuffering = false;
 
-      // Verify Internet before marking invalid (unless it's a local file)
       final bool isLocal =
           song.localPath != null || song.id.startsWith('local_');
       final connectivityResult = await Connectivity().checkConnectivity();
-      if (!connectivityResult.contains(ConnectivityResult.none) || isLocal) {
-        // Only mark if we have some connection
-        await _playlistService.markSongAsInvalid(playlistId, song.id);
+      final bool isNetwork = !connectivityResult.contains(
+        ConnectivityResult.none,
+      );
 
-        Future.delayed(const Duration(seconds: 5), () {
-          if (_currentSessionId == sessionId) skipToNext();
-        });
+      _expectingStop = false;
+      _isInitialBuffering = false;
+
+      if (isLocal) {
+        playbackState.add(
+          playbackState.value.copyWith(
+            errorMessage: "Local file error: $errorStr",
+            processingState: AudioProcessingState.error,
+          ),
+        );
+      } else if (isNetwork) {
+        if (_consecutiveErrorCount < 3) {
+          _consecutiveErrorCount++;
+
+          // Categorize error for logging
+          String category = "Unknown";
+          if (errorStr.contains("TimeoutException"))
+            category = "Timeout";
+          else if (errorStr.contains("403"))
+            category = "Forbidden (403)";
+          else if (errorStr.contains("unavailable"))
+            category = "Video Unavailable";
+          else if (errorStr.contains("not found"))
+            category = "Not Found";
+
+          LogService().log(
+            "Playback Error Category: $category. Error: $errorStr",
+          );
+
+          if (category != "Timeout" && category != "Unknown") {
+            await _playlistService.markSongAsInvalidGlobally(song.id);
+          }
+
+          playbackState.add(
+            playbackState.value.copyWith(
+              errorMessage: "Playback Error ($category). Skipping...",
+              processingState: AudioProcessingState.buffering,
+            ),
+          );
+
+          Future.delayed(const Duration(seconds: 3), () {
+            if (_currentSessionId == sessionId) {
+              skipToNext(reason: "YouTube resolution failed: $category");
+            }
+          });
+        } else {
+          _consecutiveErrorCount = 0;
+          playbackState.add(
+            playbackState.value.copyWith(
+              errorMessage: "Multiple failures. Stopped.",
+              processingState: AudioProcessingState.error,
+              playing: false,
+            ),
+          );
+        }
       } else {
-        // No internet: Just show error and don't skip/invalidate
         playbackState.add(
           playbackState.value.copyWith(
             errorMessage: "No Internet Connection",
             processingState: AudioProcessingState.error,
+            playing: false,
           ),
         );
       }
@@ -898,16 +997,20 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     // Check connectivity first
-    final bool isLocal = mediaItem.value?.extras?['isLocal'] == true;
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none) && !isLocal) {
-      playbackState.add(
-        playbackState.value.copyWith(
-          errorMessage: "No Internet Connection",
-          processingState: AudioProcessingState.error,
-        ),
-      );
-      return; // Wait for connectivity change
+    final extraLocal = mediaItem.value?.extras?['isLocal'];
+    final bool isLocal = extraLocal == true || extraLocal == 'true';
+
+    if (!isLocal) {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      if (connectivityResult.contains(ConnectivityResult.none)) {
+        playbackState.add(
+          playbackState.value.copyWith(
+            errorMessage: "No Internet Connection",
+            processingState: AudioProcessingState.error,
+          ),
+        );
+        return; // Wait for connectivity change
+      }
     }
 
     _isRetryPending = false;
@@ -959,7 +1062,7 @@ class RadioAudioHandler extends BaseAudioHandler
     _expectingStop = false;
     try {
       await _player.stop();
-      await _player.release();
+      // await _player.release();
     } catch (_) {}
     _broadcastState(PlayerState.stopped);
     await super.stop();
@@ -993,7 +1096,19 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   @override
-  Future<void> skipToNext() async {
+  Future<void> skipToNext({String? reason}) async {
+    final now = DateTime.now();
+    if (_lastSkipRequestTime != null &&
+        now.difference(_lastSkipRequestTime!) <
+            const Duration(milliseconds: 500)) {
+      return;
+    }
+    _lastSkipRequestTime = now;
+
+    LogService().log(
+      "SkipToNext: ${reason ?? 'User initiated or manual skip'}. Current: ${mediaItem.value?.title ?? 'None'}",
+    );
+
     _startupLock = false;
 
     // Optimistic: Signal buffering/loading immediately
@@ -1121,7 +1236,10 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   @override
-  Future<void> skipToPrevious() async {
+  Future<void> skipToPrevious({String? reason}) async {
+    LogService().log(
+      "SkipToPrevious: ${reason ?? 'User initiated'}. Current: ${mediaItem.value?.title ?? 'None'}",
+    );
     _startupLock = false;
 
     // 0. Safety Check: If current item is a STATION, force clear queue to ensure we use Radio Logic
@@ -1468,6 +1586,15 @@ class RadioAudioHandler extends BaseAudioHandler
     // Use sanitized URI helper to ensure AA compatibility
     final Uri? validArtUri = _sanitizeArtUri(artUri, "$title $artist");
 
+    // INFER LOCALITY from URL if not provided
+    // This handles manual playback of local files via playDirectAudio
+    if (!extras.containsKey('isLocal')) {
+      final String lowerUrl = url.toLowerCase();
+      if (lowerUrl.startsWith('/') || lowerUrl.startsWith('file://')) {
+        extras['isLocal'] = true;
+      }
+    }
+
     // Set MediaItem
     MediaItem newItem = MediaItem(
       id: extras['stableId'] ?? url,
@@ -1494,7 +1621,8 @@ class RadioAudioHandler extends BaseAudioHandler
       if (_currentSessionId != sessionId) return;
 
       try {
-        final bool isLocal = extras['isLocal'] == true;
+        final extraLocal = extras['isLocal'];
+        final bool isLocal = extraLocal == true || extraLocal == 'true';
 
         // OPTIMIZATION: Reuse player if healthy
         if (_player.state == PlayerState.disposed) {
@@ -1518,10 +1646,14 @@ class RadioAudioHandler extends BaseAudioHandler
         }
 
         // 4. Load Source & Play
-        // Ensure Release Mode is correct
-        if (_player.releaseMode != ReleaseMode.release) {
-          await _player.setReleaseMode(ReleaseMode.release);
-        }
+        // CRITICAL: Always use ReleaseMode.stop for re-usable players.
+        // ReleaseMode.release can dispose the player on Windows/Android when finished.
+        await _player.setReleaseMode(ReleaseMode.stop);
+
+        // Explicit Clean Stop before source change
+        try {
+          await _player.stop();
+        } catch (_) {}
 
         if (isLocal) {
           // Stop any existing playback first to ensure clean state
@@ -1549,6 +1681,7 @@ class RadioAudioHandler extends BaseAudioHandler
         if (_currentSessionId == sessionId) {
           _expectingStop = false;
           _currentPosition = Duration.zero; // Reset for new song
+          _consecutiveErrorCount = 0; // SUCCESS: Reset error counter
           _broadcastState(
             PlayerState.playing,
           ); // This ensures BOTH position and icon are updated
@@ -1565,14 +1698,61 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       } catch (e) {
         if (_currentSessionId == sessionId) {
-          LogService().log("Error playing YouTube/Local song in handler: $e");
-          if (extras['playlistId'] != null && extras['songId'] != null) {
-            _playlistService.markSongAsInvalid(
-              extras['playlistId'],
-              extras['songId'],
+          final errorStr = e.toString();
+          LogService().log("Player Failure for ${extras['title']}: $errorStr");
+
+          final extraLocal = extras['isLocal'];
+          final bool isLocal = extraLocal == true || extraLocal == 'true';
+
+          if (!isLocal && _consecutiveErrorCount < 3) {
+            _consecutiveErrorCount++;
+
+            String category = "Player Error";
+            if (errorStr.contains("403"))
+              category = "Link Expired (403)";
+            else if (errorStr.contains("-1005"))
+              category = "Network Socket Error (-1005)";
+
+            LogService().log("Playback Failure Category: $category");
+
+            if (category.contains("403")) {
+              if (extras['playlistId'] != null && extras['songId'] != null) {
+                _playlistService.markSongAsInvalid(
+                  extras['playlistId'],
+                  extras['songId'],
+                );
+              }
+            }
+
+            playbackState.add(
+              playbackState.value.copyWith(
+                errorMessage: "Player error ($category). Skipping...",
+                processingState: AudioProcessingState.buffering,
+              ),
+            );
+
+            Future.delayed(const Duration(seconds: 3), () {
+              if (_currentSessionId == sessionId)
+                skipToNext(reason: "Player failure: $category");
+            });
+          } else if (isLocal) {
+            playbackState.add(
+              playbackState.value.copyWith(
+                errorMessage: "Local file error: $errorStr",
+                processingState: AudioProcessingState.error,
+                playing: false,
+              ),
+            );
+          } else {
+            _consecutiveErrorCount = 0;
+            playbackState.add(
+              playbackState.value.copyWith(
+                errorMessage: "Multiple player errors. Stopped.",
+                processingState: AudioProcessingState.error,
+                playing: false,
+              ),
             );
           }
-          Future.delayed(const Duration(seconds: 1), skipToNext);
         }
       }
     });
@@ -1752,60 +1932,31 @@ class RadioAudioHandler extends BaseAudioHandler
     Future.microtask(() async {
       if (_currentSessionId != sessionId) return;
 
-      // Stop previous instance - fire and forget
       try {
-        await _player.stop();
-        // If we encountered a fatal error recently or switching types, explicit dispose/create might help clean native buffers
-        // But for speed we just stop.
-        // Logic: specific 1005 errors usually need a fresh player.
-      } catch (_) {}
-
-      // OPTIMIZATION: Run Player Reset and URL Resolution in PARALLEL
-      // This hides the 100ms hardware safety delay inside the network request time.
-
-      // Task 1: Hard Reset Player
-      final resetTask = (() async {
-        try {
-          await _player.dispose();
-        } catch (_) {}
-        _player = AudioPlayer();
-        _setupPlayerListeners();
-        // Hardware cooldown
-        await Future.delayed(const Duration(milliseconds: 100));
-      })();
-
-      // Task 2: Resolve URL (Network I/O)
-      final urlTask = (() async {
-        try {
-          return await _resolveStreamUrl(
-            url,
-            isPlaylistSong: extras?['type'] == 'playlist_song',
-          ).timeout(const Duration(seconds: 3), onTimeout: () => url);
-        } catch (_) {
-          return url;
+        // 1. Prepare Player (Reuse instead of Dispose)
+        if (_player.state == PlayerState.disposed) {
+          _player = AudioPlayer();
+          _setupPlayerListeners();
+        } else {
+          try {
+            await _player.stop();
+          } catch (_) {}
         }
-      })();
 
-      // Wait for both to finish
-      await resetTask;
-      final finalUrl = await urlTask;
+        // 2. Resolve URL
+        final finalUrl = await _resolveStreamUrl(
+          url,
+          isPlaylistSong: extras?['type'] == 'playlist_song',
+        ).timeout(const Duration(seconds: 4), onTimeout: () => url);
 
-      bool success = true;
-      String? errorMessage;
+        if (_currentSessionId != sessionId) return;
 
-      // Re-check session barrier
-      if (_currentSessionId != sessionId) return;
-
-      // 4. Init & Play
-      try {
+        // 3. Configure & Play
         await _initializePlayer();
 
         if (extras?['type'] == 'playlist_song') {
-          await _player.setReleaseMode(
-            ReleaseMode.release,
-          ); // Allow seamless transitions
+          await _player.setReleaseMode(ReleaseMode.release);
         } else {
-          // Radio
           await _player.setReleaseMode(ReleaseMode.stop);
         }
 
@@ -1813,54 +1964,60 @@ class RadioAudioHandler extends BaseAudioHandler
         if (finalUrl.toLowerCase().contains(".m3u8")) {
           mimeType = "application/x-mpegURL";
         }
+
         await _player.setSource(UrlSource(finalUrl, mimeType: mimeType));
         await _player.setVolume(_volume);
-
         await _player.resume();
-        if (true) {
-          _expectingStop = false;
-          _broadcastState(PlayerState.playing);
 
-          // For Radio, position might not move from 0 or move very slowly.
-          // Clear initial buffering after 3 seconds of 'playing' as a safety fallback.
-          Future.delayed(const Duration(seconds: 3), () {
-            if (_isInitialBuffering &&
-                _currentSessionId == sessionId &&
-                _player.state == PlayerState.playing) {
-              _isInitialBuffering = false;
-              _broadcastState();
-            }
-          });
-        }
-      } catch (e) {
-        success = false;
-        errorMessage = e.toString();
-        LogService().log("Error in generic player init/resume: $e");
         _expectingStop = false;
-      }
+        _consecutiveErrorCount = 0; // Reset on success
+        _broadcastState(PlayerState.playing);
 
-      if (!success) {
-        if (errorMessage != null) {}
-        final hasDuration =
-            mediaItem.value?.duration != null &&
-            mediaItem.value!.duration! > Duration.zero;
+        // Clear initial buffering after success
+        Future.delayed(const Duration(seconds: 1), () {
+          if (_isInitialBuffering &&
+              _currentSessionId == sessionId &&
+              _player.state == PlayerState.playing) {
+            _isInitialBuffering = false;
+            _broadcastState();
+          }
+        });
+      } catch (e) {
+        if (_currentSessionId != sessionId) return;
+        LogService().log("Error in optimized playFromUri: $e");
+        _expectingStop = false;
 
-        if (hasDuration) {
-          skipToNext();
+        // Prevent machine-gun skipping
+        if (_consecutiveErrorCount < 3) {
+          _consecutiveErrorCount++;
+          final hasDuration =
+              mediaItem.value?.duration != null &&
+              mediaItem.value!.duration! > Duration.zero;
+          if (hasDuration) {
+            Future.delayed(const Duration(seconds: 2), () {
+              if (_currentSessionId == sessionId)
+                skipToNext(reason: "Init error: $e");
+            });
+          } else {
+            _handleConnectionError("Failed to play: $e");
+          }
         } else {
-          _handleConnectionError(
-            "Failed to play: ${errorMessage ?? 'Unknown error'}",
+          _consecutiveErrorCount = 0;
+          playbackState.add(
+            playbackState.value.copyWith(
+              errorMessage: "Multiple playback errors. Stopped.",
+              processingState: AudioProcessingState.error,
+              playing: false,
+            ),
           );
         }
       }
     });
 
-    // 5. Watchdog for persistent hangs (like 403 silent failure)
+    // 5. Watchdog for persistent hangs (Reduced to 10s for more reactivity)
     final currentId = url;
-    Future.delayed(const Duration(seconds: 15), () {
-      // Check if it's a playlist song to allow more time or different handling
+    Future.delayed(const Duration(seconds: 10), () {
       bool isPlaylistSong = extras?['type'] == 'playlist_song';
-
       if (_isInitialBuffering &&
           mediaItem.value?.id == currentId &&
           !_expectingStop &&
@@ -1869,7 +2026,7 @@ class RadioAudioHandler extends BaseAudioHandler
             mediaItem.value?.duration != null &&
             mediaItem.value!.duration! > Duration.zero;
         if (hasDuration) {
-          skipToNext();
+          skipToNext(reason: "Watchdog: Player stuck in buffering for >10s");
         }
       }
     });
@@ -2106,7 +2263,8 @@ class RadioAudioHandler extends BaseAudioHandler
       if ((currentPos - _lastStuckCheckPosition).abs().inMilliseconds < 100) {
         // 3. Check Connectivity (Only if not local)
         // If it's a remote stream and we are offline, it's expected to be "stuck" (buffering).
-        final bool isLocal = mediaItem.value?.extras?['isLocal'] == true;
+        final extraLocal = mediaItem.value?.extras?['isLocal'];
+        final bool isLocal = extraLocal == true || extraLocal == 'true';
         if (!isLocal) {
           final connectivity = await Connectivity().checkConnectivity();
           if (connectivity.contains(ConnectivityResult.none)) {
@@ -2128,7 +2286,7 @@ class RadioAudioHandler extends BaseAudioHandler
         // Ensure we hold the CPU awake while we trigger the skip
         WakelockPlus.enable();
         try {
-          skipToNext();
+          skipToNext(reason: "Stuck playback (8s motionless)");
           // Allow 5 seconds for the async chain to start
           await Future.delayed(const Duration(seconds: 5));
         } finally {
@@ -2152,6 +2310,11 @@ class RadioAudioHandler extends BaseAudioHandler
       // Keep _isInitialBuffering true until real playback is detected
       _expectingStop =
           false; // Safety: If we are playing, we are not expecting a stop anymore
+
+      // Reset error counter on successful playback (not buffering)
+      if (!_isInitialBuffering) {
+        _consecutiveErrorCount = 0;
+      }
     } else {
       _stopStuckMonitor();
     }
@@ -2287,6 +2450,11 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 1. Root Level
     if (parentMediaId == 'root') {
+      _logAnalyticsEvent('android_auto_usage', {
+        'action': 'browse_root',
+        'is_car': options?['android.service.media.extra.DEVICE_TYPE'] == 2,
+        'recent': options?['android.service.media.extra.RECENT'],
+      });
       // Auto-start logic for Android Auto (First Run only)
       if (!_hasTriggeredEarlyStart &&
           !playbackState.value.playing &&
@@ -2469,6 +2637,10 @@ class RadioAudioHandler extends BaseAudioHandler
     String mediaId, [
     Map<String, dynamic>? extras,
   ]) async {
+    _logAnalyticsEvent('android_auto_usage', {
+      'action': 'play_item',
+      'mediaId': mediaId,
+    });
     await _initializationComplete;
     // 1. Check Stations
     try {

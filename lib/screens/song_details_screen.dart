@@ -13,7 +13,7 @@ import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
 
 import 'artist_details_screen.dart';
-import 'album_details_screen.dart';
+import 'trending_details_screen.dart';
 import '../services/lyrics_service.dart';
 import '../services/entitlement_service.dart';
 
@@ -755,7 +755,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     mainImage != provider.currentStation?.logo)) {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (context) => AlbumDetailsScreen(
+                  builder: (context) => TrendingDetailsScreen(
                     albumName: provider.currentAlbum,
                     artistName: provider.currentArtist,
                     artworkUrl: provider.currentAlbumArt,
@@ -1541,7 +1541,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => AlbumDetailsScreen(
+                        builder: (context) => TrendingDetailsScreen(
                           albumName: song.album,
                           artistName: song.artist,
                           artworkUrl: song.artUri,

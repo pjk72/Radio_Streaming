@@ -55,57 +55,61 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
         child: Stack(
           children: [
             Positioned(
-              top: MediaQuery.of(context).padding.top + 5,
-              left: 16,
-              right: 16,
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 60,
               child: Visibility(
                 visible: _isOffline,
                 child: Consumer<RadioProvider>(
                   builder: (context, provider, child) {
                     final bool isLocal =
+                        provider.currentLocalPath != null ||
                         provider.currentStation?.genre == "Local Device" ||
                         provider.currentStation?.icon == "smartphone";
 
                     // Hide banner if playing a local song
-                    if (isLocal && provider.isPlaying) {
+                    if (isLocal) {
                       return const SizedBox.shrink();
                     }
 
                     return IgnorePointer(
                       ignoring: false, // Re-enable touch for the banner itself
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.9),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Colors.redAccent.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(30),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 6,
+                              horizontal: 16,
                             ),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.wifi_off_rounded,
-                                color: Colors.white,
-                                size: 20,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.1),
+                                width: 0.5,
                               ),
-                              SizedBox(width: 8),
-                              Text(
-                                "No Internet Connection",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.wifi_off_rounded,
+                                  color: Colors.white70,
+                                  size: 14,
                                 ),
-                              ),
-                            ],
+                                SizedBox(width: 8),
+                                Text(
+                                  "Offline",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

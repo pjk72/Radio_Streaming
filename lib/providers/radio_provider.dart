@@ -1,8 +1,8 @@
 import 'dart:io';
-// TEST EDIT
 import 'dart:async';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 
 import 'dart:convert';
 
@@ -342,47 +342,53 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
+  bool _isPreloading = false;
   Future<void> _preloadNextSong() async {
     // Only preload if we are in playlist mode using native player
-    if (_currentPlayingPlaylistId == null) return;
+    if (_currentPlayingPlaylistId == null || _isPreloading) return;
 
     // Just find the next song
     final nextSong = _getNextSongInPlaylist();
     if (nextSong != null) {
-      String? videoId;
+      _isPreloading = true;
+      try {
+        String? videoId;
 
-      if (nextSong.youtubeUrl != null) {
-        videoId = YoutubePlayer.convertUrlToId(nextSong.youtubeUrl!);
-      } else if (nextSong.id.length == 11) {
-        // Fallback ID
-        videoId = nextSong.id;
-      }
+        if (nextSong.youtubeUrl != null) {
+          videoId = YoutubePlayer.convertUrlToId(nextSong.youtubeUrl!);
+        } else if (nextSong.id.length == 11) {
+          // Fallback ID
+          videoId = nextSong.id;
+        }
 
-      // If still null, try to resolve via search (Heavy!)
-      if (videoId == null) {
-        try {
-          final links = await resolveLinks(
-            title: nextSong.title,
-            artist: nextSong.artist,
-            spotifyUrl: nextSong.spotifyUrl,
-          ).timeout(const Duration(seconds: 8));
+        // If still null, try to resolve via search (Heavy!)
+        if (videoId == null) {
+          try {
+            final links = await resolveLinks(
+              title: nextSong.title,
+              artist: nextSong.artist,
+              spotifyUrl: nextSong.spotifyUrl,
+            ).timeout(const Duration(seconds: 8));
 
-          final url = links['youtube'];
-          if (url != null) {
-            videoId = YoutubePlayer.convertUrlToId(url);
-            if (videoId == null && url.contains('v=')) {
-              videoId = url.split('v=').last.split('&').first;
+            final url = links['youtube'];
+            if (url != null) {
+              videoId = YoutubePlayer.convertUrlToId(url);
+              if (videoId == null && url.contains('v=')) {
+                videoId = url.split('v=').last.split('&').first;
+              }
             }
+          } catch (e) {
+            // resolution failed silently
           }
-        } catch (e) {
-          // resolution failed silently
         }
-      }
 
-      if (videoId != null) {
-        if (_audioHandler is RadioAudioHandler) {
-          _audioHandler.preloadNextStream(videoId, nextSong.id);
+        if (videoId != null) {
+          if (_audioHandler is RadioAudioHandler) {
+            await _audioHandler.preloadNextStream(videoId, nextSong.id);
+          }
         }
+      } finally {
+        _isPreloading = false;
       }
     }
   }
@@ -432,6 +438,9 @@ class RadioProvider with ChangeNotifier {
     super.notifyListeners();
   }
 
+  // --- Auto-Skip Circuit Breaker ---
+  int _autoSkipCount = 0;
+
   final AudioHandler _audioHandler;
   final EntitlementService _entitlementService;
   AudioHandler get audioHandler => _audioHandler;
@@ -467,6 +476,7 @@ class RadioProvider with ChangeNotifier {
 
   Playlist? _tempPlaylist;
   DateTime? _lastPlayNextTime;
+  DateTime? _lastPlayPreviousTime;
   DateTime? _zeroDurationStartTime;
   DateTime? _lastProcessingTime;
   Duration? _lastMonitoredPosition;
@@ -2335,6 +2345,7 @@ class RadioProvider with ChangeNotifier {
     String? overrideAlbum,
     String? overrideArtUri,
     bool isLocal = false,
+    bool isResolved = false,
   }) async {
     LogService().log(
       "Playback: Starting YouTube audio: ${overrideTitle ?? 'Audio'} (https://youtube.com/watch?v=$videoId)",
@@ -2463,6 +2474,7 @@ class RadioProvider with ChangeNotifier {
         'songId': songId,
         'videoId': videoId,
         'isLocal': isLocal,
+        'is_resolved': isResolved || isLocal,
       });
 
       _audioOnlySongId = songId;
@@ -2633,7 +2645,7 @@ class RadioProvider with ChangeNotifier {
                 final diff = DateTime.now().difference(
                   _lastMonitoredPositionTime!,
                 );
-                if (diff.inSeconds > 5) {
+                if (diff.inSeconds > 12) {
                   if (_isOffline) {
                     // If offline, assume stall is due to network and just wait.
                     _lastMonitoredPositionTime =
@@ -2663,16 +2675,17 @@ class RadioProvider with ChangeNotifier {
 
                       if (isRemotePlaylist) {
                         debugPrint(
-                          "Stallo Rilevato (>5s) - Playlist Remota: Ignoro controllo video.",
+                          "Stallo Rilevato (>12s) - Playlist Remota: Skipping.",
                         );
                         _lastMonitoredPositionTime = null;
+                        playNext(false);
                         return;
                       }
 
                       debugPrint(
-                        "Stallo Rilevato (>5s) e Internet OK. Segnalo canzone invalida.",
+                        "Stallo Rilevato (>12s) e Internet OK. Salto (no invalidazione).",
                       );
-                      _markCurrentSongAsInvalid(); // Segnala come invalida
+                      // _markCurrentSongAsInvalid(); // RIMOSSO to reduce skips/removals
                       playNext(false); // Passa alla successiva
 
                       _lastMonitoredPosition = null;
@@ -2681,7 +2694,7 @@ class RadioProvider with ChangeNotifier {
                     }
                   } else {
                     debugPrint(
-                      "Stallo Rilevato (>5s) - Nessuna connessione Internet. Attendo...",
+                      "Stallo Rilevato (>12s) - Nessuna connessione Internet. Attendo...",
                     );
                   }
                 }
@@ -2697,15 +2710,16 @@ class RadioProvider with ChangeNotifier {
             final remainingMs =
                 duration.inMilliseconds - position.inMilliseconds;
 
-            if (remainingMs <= 1000 && !_isLoading) {
+            if (remainingMs <= 200 && !_isLoading) {
+              // Only intervene if practically finished to avoid dead air,
+              // but don't force it 1s early which causes double-skips.
               _isLoading = true;
               notifyListeners();
 
               debugPrint(
-                "PlaybackMonitor: Progress nearly reached duration (remaining: $remainingMs ms). Simulating click.",
+                "PlaybackMonitor: Song finished (remaining: $remainingMs ms).",
               );
-              // Force next - Simulate user click (true) 1s early
-              playNext(true);
+              playNext(false); // Changed to false (system initiated)
             }
           }
         } else {
@@ -2829,8 +2843,9 @@ class RadioProvider with ChangeNotifier {
 
       if (isRemotePlaylist) {
         LogService().log(
-          "YouTube Player Error: ${value.errorCode}. Playlist Remota: Ignoro controllo video.",
+          "YouTube Player Error: ${value.errorCode}. Remote Playlist: Skipping.",
         );
+        playNext(false);
         return;
       }
 
@@ -2857,7 +2872,7 @@ class RadioProvider with ChangeNotifier {
         _lastProcessingTime = DateTime.now();
       } else {
         final diff = DateTime.now().difference(_lastProcessingTime!);
-        if (diff.inSeconds > 5) {
+        if (diff.inSeconds > 12) {
           if (_isOffline) {
             LogService().log("Offline: Ignoring buffering stuck detected.");
             _lastProcessingTime = null;
@@ -2871,18 +2886,18 @@ class RadioProvider with ChangeNotifier {
 
           if (isRemotePlaylist) {
             LogService().log(
-              "Playback Processing Timeout (>5s). Playlist Remota: Ignoro controllo video.",
+              "Playback Processing Timeout (>12s). Playlist Remota: Ignoro controllo video.",
             );
             _lastProcessingTime = null;
             return;
           }
 
           LogService().log(
-            "Playback Processing Timeout (>5s in $state). Marking invalid.",
+            "Playback Processing Timeout (>12s in $state). Skipping (no invalid).",
           );
-          final idToInvalidate = _audioOnlySongId;
+          // final idToInvalidate = _audioOnlySongId;
           playNext(false);
-          _markCurrentSongAsInvalid(songId: idToInvalidate);
+          // _markCurrentSongAsInvalid(songId: idToInvalidate); // RIMOSSO
           _lastProcessingTime = null;
           return;
         }
@@ -2897,51 +2912,59 @@ class RadioProvider with ChangeNotifier {
       _lastProcessingTime = null;
     }
 
-    if (state == PlayerState.playing) {
-      if (_isLoading) {
-        _isLoading = false;
-        notifyListeners();
-      }
-      if (!_isPlaying) {
-        _isPlaying = true;
-        notifyListeners();
-      }
+    if (_isLoading) {
+      _isLoading = false;
+      notifyListeners();
+    }
+    if (!_isPlaying) {
+      _isPlaying = true;
+      notifyListeners();
+    }
 
-      // Check for Zero Duration (Invalid Song) with Timestamp Approach
-      if (_hiddenAudioController != null) {
-        final duration = _hiddenAudioController!.value.metaData.duration;
-        if (duration.inMilliseconds == 0) {
-          if (_isPlaying) {
-            if (_zeroDurationStartTime == null) {
-              _zeroDurationStartTime = DateTime.now();
-              debugPrint(
-                "Detected Zero Duration. Starting invalid detection timer...",
-              );
-            } else {
-              // Check elapsed time
-              final diff = DateTime.now().difference(_zeroDurationStartTime!);
-              if (diff.inSeconds >= 5) {
-                if (_isOffline) {
-                  debugPrint("Offline: Ignoring zero duration.");
-                  _zeroDurationStartTime = null;
-                } else {
-                  debugPrint(
-                    "Song has had Zero Duration for >5s in Playing State. Marking invalid.",
-                  );
-                  final idToInvalidate = _audioOnlySongId;
-                  playNext(false);
-                  _markCurrentSongAsInvalid(songId: idToInvalidate);
-                  _zeroDurationStartTime = null;
-                }
+    // RESET CIRCUIT BREAKER ON SUCCESSFUL PLAYBACK (> 5 seconds)
+    if (_autoSkipCount > 0 &&
+        state == PlayerState.playing &&
+        value.position.inSeconds > 5) {
+      LogService().log(
+        "Playback successful (>5s). Resetting auto-skip counter.",
+      );
+      _autoSkipCount = 0;
+    }
+
+    // Check for Zero Duration (Invalid Song) with Timestamp Approach
+    if (_hiddenAudioController != null) {
+      final duration = _hiddenAudioController!.value.metaData.duration;
+      if (duration.inMilliseconds == 0) {
+        if (_isPlaying) {
+          if (_zeroDurationStartTime == null) {
+            _zeroDurationStartTime = DateTime.now();
+            debugPrint(
+              "Detected Zero Duration. Starting invalid detection timer...",
+            );
+          } else {
+            // Check elapsed time
+            final diff = DateTime.now().difference(_zeroDurationStartTime!);
+            if (diff.inSeconds >= 12) {
+              if (_isOffline) {
+                debugPrint("Offline: Ignoring zero duration.");
+                _zeroDurationStartTime = null;
+              } else {
+                debugPrint(
+                  "Song has had Zero Duration for >12s in Playing State. Skipping.",
+                );
+                // final idToInvalidate = _audioOnlySongId;
+                playNext(false);
+                // _markCurrentSongAsInvalid(songId: idToInvalidate); // RIMOSSO
+                _zeroDurationStartTime = null;
               }
             }
-          } else {
-            _zeroDurationStartTime = null;
           }
         } else {
-          // Duration is valid
           _zeroDurationStartTime = null;
         }
+      } else {
+        // Duration is valid
+        _zeroDurationStartTime = null;
       }
     }
     // 3. Sync Playing State
@@ -3333,7 +3356,48 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
+    // Run in background to ensure it never blocks UI or playback logic
+    Future.microtask(() async {
+      try {
+        final Map<String, Object>? cleanParameters = parameters != null
+            ? Map<String, Object>.fromEntries(
+                parameters.entries.where((e) => e.value != null).map((e) {
+                  var val = e.value!;
+                  // 1. Convert bool to int (more compatible)
+                  if (val is bool) val = val ? 1 : 0;
+                  // 2. Ensure value is either num or String
+                  if (val is! num && val is! String) val = val.toString();
+                  // 3. Respect Firebase max length for parameter values (100 chars)
+                  // 3. Respect Firebase max length for parameter values (100 chars)
+                  if (val is String && val.length > 100) {
+                    val = val.substring(0, 100);
+                  }
+                  return MapEntry(e.key, val);
+                }),
+              )
+            : null;
+
+        LogService().log("Analytics Sending: $name Params: $cleanParameters");
+
+        await FirebaseAnalytics.instance
+            .logEvent(name: name, parameters: cleanParameters)
+            .timeout(const Duration(seconds: 5));
+
+        LogService().log("Analytics Success: $name");
+      } catch (e) {
+        LogService().log("Analytics Error: $e");
+      }
+    });
+  }
+
   void playStation(Station station) async {
+    LogService().log("Analytics Result: $station");
+    _logAnalyticsEvent('play_station', {
+      'station_id': station.id,
+      'station_name': station.name,
+      'station_genre': station.genre,
+    });
     // If we're playing from a playlist (YouTube), stop it first
     if (_hiddenAudioController != null) {
       clearYoutubeAudio();
@@ -3395,6 +3459,11 @@ class RadioProvider with ChangeNotifier {
   }
 
   void togglePlay() {
+    LogService().log("Analytics Result: toggle_play");
+    _logAnalyticsEvent('toggle_play', {
+      'is_playing': (!_isPlaying).toString(),
+      'mode': _currentPlayingPlaylistId != null ? 'playlist' : 'radio',
+    });
     if (_hiddenAudioController != null) {
       _ignoringPause = true; // Guard against notification echo and state loop
       final state = _hiddenAudioController!.value.playerState;
@@ -3460,6 +3529,7 @@ class RadioProvider with ChangeNotifier {
   }
 
   void stop() async {
+    _autoSkipCount = 0; // Reset on manual stop
     await _audioHandler.stop();
   }
 
@@ -3469,15 +3539,63 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
-  void playNext([bool userInitiated = true]) {
-    // Debounce to ensure it only clicks once within a short window (2 seconds)
+  // Helper to instantly kill current audio to prevent overlaps/ghosting
+  // Async to ensure the platform channel actually stops playing before proceeding
+  Future<void> stopPreviousStream() async {
+    if (_hiddenAudioController != null) {
+      _hiddenAudioController!.removeListener(_youtubeListener);
+      _hiddenAudioController!.pause();
+      // Give the native player a moment to process the pause
+      await Future.delayed(const Duration(milliseconds: 100));
+      _hiddenAudioController!.dispose();
+      _hiddenAudioController = null;
+    }
+    // Also stop the background audio handler completely
+    await _audioHandler.stop();
+
+    _stopPlaybackMonitor();
+    _isLoading = true;
+    notifyListeners();
+  }
+
+  Future<void> playNext([bool userInitiated = true]) async {
+    // 1. Interrupt immediately to stop music NOW
+    if (userInitiated) {
+      await stopPreviousStream();
+    } else {
+      // For auto-skip, the player is likely already ended/stopped,
+      // but we still ensure cleanup to be safe.
+      await stopPreviousStream();
+    }
+
+    // Debounce to ensure it only clicks once within a short window (1 second)
     final now = DateTime.now();
     if (_lastPlayNextTime != null &&
-        now.difference(_lastPlayNextTime!) < const Duration(seconds: 2)) {
-      debugPrint("playNext: Ignored (Debounced)");
+        now.difference(_lastPlayNextTime!) < const Duration(seconds: 1)) {
+      // debugPrint("playNext: Ignored (Debounced)");
       return;
     }
     _lastPlayNextTime = now;
+
+    if (userInitiated) {
+      _autoSkipCount = 0; // Reset on user action
+    } else {
+      _autoSkipCount++;
+      if (_autoSkipCount > 5) {
+        LogService().log(
+          "Circuit Breaker: Too many consecutive auto-skips ($_autoSkipCount). Stopping playback.",
+        );
+        stop();
+        _errorMessage = "Unable to play songs"; // Optional: Inform UI
+        notifyListeners();
+        _autoSkipCount = 0;
+        return;
+      }
+    }
+
+    LogService().log(
+      "playNext: Performing skip. userInitiated=$userInitiated. Current Track: $_currentTrack",
+    );
 
     if (_hiddenAudioController != null || _currentPlayingPlaylistId != null) {
       _playNextInPlaylist(userInitiated: userInitiated);
@@ -3486,7 +3604,20 @@ class RadioProvider with ChangeNotifier {
     }
   }
 
-  void playPrevious() {
+  Future<void> playPrevious() async {
+    // 1. Interrupt immediately
+    await stopPreviousStream();
+
+    final now = DateTime.now();
+    if (_lastPlayPreviousTime != null &&
+        now.difference(_lastPlayPreviousTime!) < const Duration(seconds: 1)) {
+      return;
+    }
+    _lastPlayPreviousTime = now;
+
+    LogService().log(
+      "playPrevious: Performing skip. Current Track: $_currentTrack",
+    );
     if (_hiddenAudioController != null || _currentPlayingPlaylistId != null) {
       _playPreviousInPlaylist();
     } else {
@@ -3575,9 +3706,14 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> _playNextInPlaylist({bool userInitiated = true}) async {
+    LogService().log(
+      "Advancing to next song in playlist. userInitiated=$userInitiated",
+    );
     final nextSong = _getNextSongInPlaylist();
     if (nextSong != null && _currentPlayingPlaylistId != null) {
       await playPlaylistSong(nextSong, _currentPlayingPlaylistId!);
+    } else {
+      LogService().log("No next song found in playlist or no active playlist.");
     }
   }
 
@@ -3636,6 +3772,19 @@ class RadioProvider with ChangeNotifier {
   }
 
   Future<void> playPlaylistSong(SavedSong song, String? playlistId) async {
+    // STOP PREVIOUS STREAM IMMEDIATELY
+    // Re-use helper to be sure, although playNext/Prev already called it.
+    // This covers case where playPlaylistSong is called directly (e.g. clicking item in list)
+    await stopPreviousStream();
+
+    LogService().log("Analytics Result: play_song");
+    _logAnalyticsEvent('play_song', {
+      'song_id': song.id,
+      'song_title': song.title,
+      'song_artist': song.artist,
+      'is_local': song.localPath != null,
+      'playlist_id': playlistId ?? 'none',
+    });
     // Prevent playback of invalid songs
     if (!song.isValid || _invalidSongIds.contains(song.id)) {
       LogService().log("Skipping invalid song request: ${song.title}");
@@ -3660,11 +3809,17 @@ class RadioProvider with ChangeNotifier {
         album: song.album,
         artUri: song.artUri != null ? Uri.tryParse(song.artUri!) : null,
         duration: Duration.zero,
+        extras: {
+          'isLocal': song.localPath != null,
+          'type': 'playlist_song',
+          'songId': song.id,
+          'playlistId': playlistId,
+        },
       ),
     );
     // Reset position state if possible (though stream might lag slightly, this helps)
     // We invoke stop() which usually resets state in AudioService handlers
-    _audioHandler.stop();
+    // _audioHandler.stop(); // Redundant and potentially causes race with awaited stop() below
 
     String playlistName = "Playlist";
     if (playlistId != null) {
@@ -3695,21 +3850,23 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // INTERRUPT STREAMING FIRST
       // We manually manage state to show "Loading" while we resolved/stop
       _ignoringPause = true;
       _isLoading = true;
       _isPlaying = true; // Maintain "Playing" state in UI (Pause icon)
       notifyListeners();
 
-      await _audioHandler.stop();
-      // Delay resetting to ensure the 'stopped' event from handler is ignored before we resume listening
-      Future.delayed(const Duration(milliseconds: 300), () {
+      // REMOVED redundant await _audioHandler.stop() - handled by playFromUri/playYoutubeAudio
+      // This avoids extra delay and race conditions with the 'stopped' event broadcast.
+
+      // Delay resetting to ensure any pending events from the PREVIOUS player state are ignored
+      Future.delayed(const Duration(milliseconds: 1000), () {
         _ignoringPause = false;
       });
 
       String? videoId;
 
+      // 0. LOCAL FILE CHECK (Priority over stream)
       if (song.localPath != null) {
         final file = File(song.localPath!);
         if (await file.exists()) {
@@ -3726,6 +3883,26 @@ class RadioProvider with ChangeNotifier {
           fetchLyrics(); // Fetch lyrics for local file
           return;
         } else {
+          // File check failed
+          if (_isOffline) {
+            LogService().log(
+              "Offline: Local file check failed for ${song.localPath}. Attempting to play anyway.",
+            );
+            // Try to play locally even if check failed (e.g. permission issue or flaky check)
+            // This prevents clearing the path when we have no internet to Fallback anyway.
+            await playYoutubeAudio(
+              song.localPath!,
+              song.id,
+              playlistId: playlistId,
+              overrideTitle: song.title,
+              overrideArtist: song.artist,
+              overrideAlbum: song.album,
+              overrideArtUri: song.artUri,
+              isLocal: true,
+            );
+            return;
+          }
+
           LogService().log(
             "Local file not found: ${song.localPath}. Reverting to online.",
           );
@@ -3740,6 +3917,27 @@ class RadioProvider with ChangeNotifier {
           // ignore: parameter_assignments
           song = updated;
         }
+      }
+
+      // 1. Direct Stream Support (Audius, etc.)
+      bool isDeezer = song.provider?.toLowerCase() == 'deezer';
+
+      if (song.rawStreamUrl != null &&
+          song.rawStreamUrl!.isNotEmpty &&
+          !isDeezer) {
+        LogService().log("Direct Link: Using rawStreamUrl for ${song.title}");
+        await playYoutubeAudio(
+          song.rawStreamUrl!,
+          song.id,
+          playlistId: playlistId,
+          overrideTitle: song.title,
+          overrideArtist: song.artist,
+          overrideAlbum: song.album,
+          overrideArtUri: song.artUri,
+          isLocal: false,
+          isResolved: true,
+        );
+        return;
       }
 
       if (song.youtubeUrl != null) {
@@ -3766,12 +3964,19 @@ class RadioProvider with ChangeNotifier {
       }
 
       if (videoId == null) {
-        final links = await resolveLinks(
-          title: song.title,
-          artist: song.artist,
-          spotifyUrl: song.spotifyUrl,
-          youtubeUrl: song.youtubeUrl,
-        ).timeout(const Duration(seconds: 10));
+        Map<String, String> links = {};
+        try {
+          links = await resolveLinks(
+            title: song.title,
+            artist: song.artist,
+            spotifyUrl: song.spotifyUrl,
+            youtubeUrl: song.youtubeUrl,
+          ).timeout(const Duration(seconds: 8));
+        } catch (e) {
+          LogService().log(
+            "ResolveLinks failed or timed out: $e. Proceeding to fallback.",
+          );
+        }
 
         // Race condition guard after deep search
         if (_audioOnlySongId != song.id) return;
@@ -3786,26 +3991,38 @@ class RadioProvider with ChangeNotifier {
         }
       }
 
-      // 3. Backup Search: YoutubeExplode
-      // If we still don't have a videoId, try a direct YouTube search
+      // 3. SEQUENTIAL SEARCH: YoutubeExplode
+      // If we still don't have a videoId, try multiple search queries in sequence
       if (videoId == null) {
+        final yt = yt_explode.YoutubeExplode();
         try {
-          LogService().log(
-            "Attempting direct YouTube search for: ${song.title} - ${song.artist}",
-          );
-          final yt = yt_explode.YoutubeExplode();
-          final results = await yt.search.search(
-            "${song.title} ${song.artist}",
-          );
-          if (results.isNotEmpty) {
-            videoId = results.first.id.value;
-            LogService().log("Found ID via direct search: $videoId");
-          }
-          yt.close();
+          // Attempt 1: Artist + Title (Best for specific matches)
+          LogService().log("Search Step 1: '${song.artist} ${song.title}'");
+          var results = await yt.search.search("${song.artist} ${song.title}");
 
-          if (_audioOnlySongId != song.id) return; // Guard
+          // Attempt 2: Clean Title + Artist (Fallback)
+          if (results.isEmpty) {
+            final cleanTitle = song.title
+                .replaceAll(RegExp(r'[\(\[].*?[\)\]]'), '')
+                .trim();
+            LogService().log("Search Step 2: '$cleanTitle ${song.artist}'");
+            results = await yt.search.search("$cleanTitle ${song.artist}");
+          }
+
+          // Attempt 3: Title only (if long enough)
+          if (results.isEmpty && song.title.length > 5) {
+            LogService().log("Search Step 3: '${song.title}'");
+            results = await yt.search.search(song.title);
+          }
+
+          if (results.isNotEmpty && _audioOnlySongId == song.id) {
+            videoId = results.first.id.value;
+            LogService().log("Found ID via sequential search: $videoId");
+          }
         } catch (e) {
-          LogService().log("Direct YouTube search error: $e");
+          LogService().log("Sequential YouTube search error: $e");
+        } finally {
+          yt.close();
         }
       }
 
@@ -3860,17 +4077,21 @@ class RadioProvider with ChangeNotifier {
             );
           } else {
             LogService().log(
-              "Marking song as invalid (No Video ID): ${song.title}",
+              "No Video ID found for: ${song.title}. Skipping (not invalidating).",
             );
-            await _playlistService.markSongAsInvalidGlobally(song.id);
+            // DON'T INVALIDATE GLOBALLY TO PREVENT EXCESSIVE REMOVALS
+            // await _playlistService.markSongAsInvalidGlobally(song.id);
+            /*
             if (!_invalidSongIds.contains(song.id)) {
               _invalidSongIds.add(song.id);
               // Persist locally
               final prefs = await SharedPreferences.getInstance();
               await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
             }
+            */
           }
 
+          /*
           // Also mark invalid in temp playlist if active
           if (_tempPlaylist != null) {
             final index = _tempPlaylist!.songs.indexWhere(
@@ -3881,6 +4102,7 @@ class RadioProvider with ChangeNotifier {
                   .copyWith(isValid: false);
             }
           }
+          */
 
           await Future.delayed(const Duration(seconds: 1));
           playNext(false);
@@ -3892,6 +4114,7 @@ class RadioProvider with ChangeNotifier {
 
       LogService().log("Error in playPlaylistSong: $e");
 
+      /*
       // Check if error is network related
       final errStr = e.toString().toLowerCase();
       final isNetwork =
@@ -3901,7 +4124,7 @@ class RadioProvider with ChangeNotifier {
           errStr.contains('network') ||
           errStr.contains('lookup');
 
-      if (!isNetwork && playlistId != null) {
+      if (!isNetwork && playlistId != null && song.localPath == null) {
         LogService().log("Marking song as invalid (Playback Error): $e");
         await _playlistService.markSongAsInvalidGlobally(song.id);
         if (!_invalidSongIds.contains(song.id)) {
@@ -3921,6 +4144,7 @@ class RadioProvider with ChangeNotifier {
           }
         }
       }
+      */
 
       if (playlistId != null) {
         await Future.delayed(const Duration(seconds: 1));

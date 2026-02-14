@@ -496,13 +496,13 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 600),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(Icons.public, size: 64, color: Colors.blueAccent),
-            const SizedBox(height: 16),
+            const Icon(Icons.public, size: 48, color: Colors.blueAccent),
+            const SizedBox(height: 12),
             Text(
               "Welcome! Let's set up your radio.",
               style: Theme.of(context).textTheme.headlineSmall,
@@ -511,15 +511,17 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
             const SizedBox(height: 4),
             Text(
               "Allows you to choose your preferred region to find the best stations.",
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+              ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.only(bottom: 120),
+                padding: const EdgeInsets.only(bottom: 24),
                 children: [
                   ...() {
                     // 1. Convert to list and sort alphabetically by Name
@@ -558,7 +560,10 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                         _buildCountryTile(deviceEntry.key, deviceEntry.value),
                       );
                       children.add(
-                        const Divider(color: Colors.white24, height: 32),
+                        Divider(
+                          color: Theme.of(context).dividerColor,
+                          height: 16,
+                        ),
                       ); // Separator
                     }
 
@@ -580,15 +585,23 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   Widget _buildCountryTile(String code, String name) {
     return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
       leading: Text(
         code == "ALL" ? "🌍" : _getFlag(code),
-        style: const TextStyle(fontSize: 24),
+        style: const TextStyle(fontSize: 22),
       ),
-      title: Text(name, style: const TextStyle(color: Colors.white)),
-      trailing: const Icon(
+      title: Text(
+        name,
+        style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+      ),
+      trailing: Icon(
         Icons.arrow_forward_ios,
-        size: 16,
-        color: Colors.white24,
+        size: 14,
+        color: Theme.of(
+          context,
+        ).textTheme.bodySmall?.color?.withValues(alpha: 0.3),
       ),
       onTap: () {
         setState(() {
@@ -718,7 +731,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                           : Icons.check_circle_outline,
                       color: _showSelectedOnly
                           ? Theme.of(context).primaryColor
-                          : Colors.white54,
+                          : Theme.of(
+                              context,
+                            ).iconTheme.color?.withValues(alpha: 0.54),
                     ),
                     tooltip: "Show selected only",
                     onPressed: () {
@@ -777,7 +792,12 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                         title: Text(
                           station['name'] ?? "Unknown",
                           style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.white70,
+                            color: isSelected
+                                ? Theme.of(context).primaryColor
+                                : Theme.of(context).textTheme.bodyLarge?.color,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
                         ),
                         subtitle: Column(
@@ -856,7 +876,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                                       : Icons.favorite_border,
                                   color: isFavorite
                                       ? Colors.redAccent
-                                      : Colors.white38,
+                                      : Theme.of(context).disabledColor,
                                 ),
                                 onPressed: () {
                                   setState(() {

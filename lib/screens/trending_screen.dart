@@ -20,7 +20,8 @@ class _TrendingScreenState extends State<TrendingScreen>
   late TrendingService _trendingService;
 
   // State
-  String _selectedCountryCode = 'IT';
+  late String _selectedCountryCode;
+  String? _systemCountryCode;
 
   final TextEditingController _customQueryController = TextEditingController();
   bool _useCustomQuery = false;
@@ -29,39 +30,39 @@ class _TrendingScreenState extends State<TrendingScreen>
   List<TrendingPlaylist> _playlists = [];
   String? _errorMessage;
 
-  final Map<String, String> _countryMap = {
-    "IT": "Italy",
-    "US": "USA",
-    "GB": "UK",
-    "FR": "France",
-    "DE": "Germany",
-    "ES": "Spain",
-    "CA": "Canada",
-    "AU": "Australia",
-    "BR": "Brazil",
-    "JP": "Japan",
-    "RU": "Russia",
-    "CN": "China",
-    "IN": "India",
-    "MX": "Mexico",
-    "AR": "Argentina",
-    "NL": "Netherlands",
-    "BE": "Belgium",
-    "CH": "Switzerland",
-    "SE": "Sweden",
-    "NO": "Norway",
-    "DK": "Denmark",
-    "FI": "Finland",
-    "PL": "Poland",
-    "AT": "Austria",
-    "PT": "Portugal",
-    "GR": "Greece",
-    "TR": "Turkey",
-    "ZA": "South Africa",
-    "KR": "South Korea",
-    "IE": "Ireland",
-    "NZ": "New Zealand",
-    "MA": "Morocco",
+  Map<String, String> get _countryMap => const {
+    "IT": "🇮🇹 Italy",
+    "US": "🇺🇸 USA",
+    "GB": "🇬🇧 UK",
+    "FR": "🇫🇷 France",
+    "DE": "🇩🇪 Germany",
+    "ES": "🇪🇸 Spain",
+    "CA": "🇨🇦 Canada",
+    "AU": "🇦🇺 Australia",
+    "BR": "🇧🇷 Brazil",
+    "JP": "🇯🇵 Japan",
+    "RU": "🇷🇺 Russia",
+    "CN": "🇨🇳 China",
+    "IN": "🇮🇳 India",
+    "MX": "🇲🇽 Mexico",
+    "AR": "🇦🇷 Argentina",
+    "NL": "🇳🇱 Netherlands",
+    "BE": "🇧🇪 Belgium",
+    "CH": "🇨🇭 Switzerland",
+    "SE": "🇸🇪 Sweden",
+    "NO": "🇳🇴 Norway",
+    "DK": "🇩🇰 Denmark",
+    "FI": "🇫🇮 Finland",
+    "PL": "🇵🇱 Poland",
+    "AT": "🇦🇹 Austria",
+    "PT": "🇵🇹 Portugal",
+    "GR": "🇬🇷 Greece",
+    "TR": "🇹🇷 Turkey",
+    "ZA": "🇿🇦 South Africa",
+    "KR": "🇰🇷 South Korea",
+    "IE": "🇮🇪 Ireland",
+    "NZ": "🇳🇿 New Zealand",
+    "MA": "🇲🇦 Morocco",
   };
 
   @override
@@ -78,6 +79,7 @@ class _TrendingScreenState extends State<TrendingScreen>
     // Let's implement `didChangeDependencies` to get it safe.
 
     _selectedCountryCode = _detectCountry();
+    _systemCountryCode = _selectedCountryCode;
     if (_playlists.isEmpty) {
       _fetchTrending();
     }
@@ -89,15 +91,19 @@ class _TrendingScreenState extends State<TrendingScreen>
   String _detectCountry() {
     try {
       final String systemLocale = Platform.localeName;
-      if (systemLocale.contains('_')) {
-        final parts = systemLocale.split('_');
+      // Normalize separator (some systems use '-' instead of '_')
+      final String normalized = systemLocale.replaceAll('-', '_');
+
+      if (normalized.contains('_')) {
+        final parts = normalized.split('_');
         if (parts.length > 1) {
           final code = parts[1].toUpperCase();
+          // Only return if we actually support this country
           if (_countryMap.containsKey(code)) return code;
         }
       }
     } catch (_) {}
-    return 'IT'; // Default
+    return 'US'; // Safe international fallback
   }
 
   Future<void> _fetchTrending() async {
@@ -116,7 +122,13 @@ class _TrendingScreenState extends State<TrendingScreen>
       _trendingService = TrendingService(spotify);
 
       final results = await _trendingService.searchTrending(
-        _countryMap[_selectedCountryCode] ?? 'Italy',
+        // Robust extraction: Handle "🇮🇹 Italy" vs "Italy" vs legacy
+        // We take everything AFTER the first space to get the full country name ("South Africa", not just "Africa")
+        _countryMap[_selectedCountryCode]!.contains(' ')
+            ? _countryMap[_selectedCountryCode]!.substring(
+                _countryMap[_selectedCountryCode]!.indexOf(' ') + 1,
+              )
+            : _countryMap[_selectedCountryCode] ?? 'USA',
         DateTime.now().year.toString(),
         customQuery: _useCustomQuery && _customQueryController.text.isNotEmpty
             ? _customQueryController.text
@@ -175,6 +187,27 @@ class _TrendingScreenState extends State<TrendingScreen>
   }
 
   Widget _buildControls(BuildContext context) {
+    // Sort entries alphabetically by value (Country Name)
+    // Robust sort: If space exists, sort by name part. Else sort by full string.
+    // Sort entries alphabetically by value (Country Name)
+    // Robust sort: If space exists, sort by name part (everything after first space).
+    // PRIORITIZE: The system detected country (_systemCountryCode) should be at the top.
+    final sortedCountries = _countryMap.entries.toList()
+      ..sort((a, b) {
+        // Priority check
+        if (a.key == _systemCountryCode) return -1;
+        if (b.key == _systemCountryCode) return 1;
+
+        // Name extraction
+        final nameA = a.value.contains(' ')
+            ? a.value.substring(a.value.indexOf(' ') + 1)
+            : a.value;
+        final nameB = b.value.contains(' ')
+            ? b.value.substring(b.value.indexOf(' ') + 1)
+            : b.value;
+        return nameA.compareTo(nameB);
+      });
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -203,7 +236,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                     style: TextStyle(
                       color: Theme.of(context).textTheme.bodyLarge?.color,
                     ),
-                    items: _countryMap.entries.map((e) {
+                    items: sortedCountries.map((e) {
                       return DropdownMenuItem(
                         value: e.key,
                         child: Text(

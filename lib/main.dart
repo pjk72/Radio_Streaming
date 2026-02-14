@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 // import 'package:device_preview/device_preview.dart'; // Disabled for debugging
 import 'package:flutter/foundation.dart'; // For kReleaseMode
 
@@ -29,6 +31,14 @@ late AudioHandler audioHandler;
 @pragma('vm:entry-point')
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  // Ensure Analytics is active and log the first event
+  final analytics = FirebaseAnalytics.instance;
+  await analytics.setAnalyticsCollectionEnabled(true);
+  await analytics.logAppOpen();
+  debugPrint("Firebase Analytics: App Open Event Logged");
+
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   debugPrint("App Entry Point");
 
@@ -269,6 +279,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         themeMode: themeProvider.themeData.brightness == Brightness.dark
             ? ThemeMode.dark
             : ThemeMode.light,
+        navigatorObservers: [
+          FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
+        ],
         home: const LoginScreen(),
       ),
     );

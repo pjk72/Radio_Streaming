@@ -2,29 +2,56 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'backup_service.dart';
 import 'log_service.dart';
 
 class EntitlementService extends ChangeNotifier {
   final BackupService _backupService;
 
-  // The URL where the JSON configuration is hosted.
-  // The user can change this to their own Gist/Pastebin/Server URL.
-  //final String _configUrl = "https://pjk72.github.io/file.json";
-  final String _configUrl =
-      "https://gist.github.com/pjk72/f4978bcc3b7518974b5f64dfd19afa2e/raw/file.json";
   final String _localConfigPath = "lib/utils/json/config.json";
+  final String _remoteConfigKey = "entitlements_json";
 
   Map<String, dynamic> _config = {};
-  Timer? _refreshTimer;
   bool _isLoading = false;
   bool _isUsingLocalConfig = false;
+  StreamSubscription? _remoteConfigSubscription;
 
   EntitlementService(this._backupService) {
     _backupService.addListener(_onAuthChanged);
-    _startPolling();
-    refreshConfig(); // Initial fetch
+    _initializeRemoteConfig();
+  }
+
+  Future<void> _initializeRemoteConfig() async {
+    try {
+      final remoteConfig = FirebaseRemoteConfig.instance;
+
+      // Configure Remote Config
+      await remoteConfig.setConfigSettings(
+        RemoteConfigSettings(
+          fetchTimeout: const Duration(seconds: 10),
+          minimumFetchInterval: kDebugMode
+              ? const Duration(seconds: 0)
+              : const Duration(minutes: 5), // Near real-time
+        ),
+      );
+
+      // Initial fetch and activate
+      await refreshConfig();
+
+      // Listen for real-time updates (available in firebase_remote_config ^5.x.x)
+      _remoteConfigSubscription = remoteConfig.onConfigUpdated.listen((
+        event,
+      ) async {
+        LogService().log(
+          "EntitlementService: Real-time update received from Remote Config.",
+        );
+        await remoteConfig.activate();
+        await _updateConfigFromRemote();
+      });
+    } catch (e) {
+      await _loadLocalConfig("Failed to initialize Remote Config: $e");
+    }
   }
 
   bool get isLoading => _isLoading;
@@ -35,36 +62,55 @@ class EntitlementService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _startPolling() {
-    // Check for updates every 5 minutes to allow "near real-time" interaction
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(minutes: 15), (timer) {
-      refreshConfig();
-    });
-  }
-
   Future<void> refreshConfig() async {
     try {
       _isLoading = true;
-      final response = await http
-          .get(Uri.parse(_configUrl))
-          .timeout(const Duration(seconds: 10));
+      notifyListeners();
 
-      if (response.statusCode == 200) {
-        final newConfig = jsonDecode(response.body);
-        _config = newConfig;
-        _isUsingLocalConfig = false;
-        notifyListeners();
-      } else {
-        await _loadLocalConfig(
-          "Remote server returned status ${response.statusCode}",
-        );
-      }
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      final bool updated = await remoteConfig.fetchAndActivate();
+      LogService().log(
+        "EntitlementService: Remote Config fetchAndActivate completed. Updated: $updated",
+      );
+      await _updateConfigFromRemote();
     } catch (e) {
-      await _loadLocalConfig("Failed to fetch remote config: $e");
+      await _loadLocalConfig("Failed to fetch Remote Config: $e");
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _updateConfigFromRemote() async {
+    try {
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      final jsonStr = remoteConfig.getString(_remoteConfigKey);
+
+      LogService().log(
+        "EntitlementService: Raw config string for key '$_remoteConfigKey': ${jsonStr.isEmpty ? '(empty)' : '${jsonStr.length} chars'}",
+      );
+
+      if (jsonStr.isNotEmpty) {
+        final newConfig = jsonDecode(jsonStr);
+        _config = newConfig;
+        _isUsingLocalConfig = false;
+        notifyListeners();
+        LogService().log(
+          "EntitlementService: Config updated from Remote Config.",
+        );
+      } else {
+        // Debug: Print all available keys to see what we actually fetched
+        final allKeys = remoteConfig.getAll();
+        LogService().log(
+          "EntitlementService: Key '$_remoteConfigKey' not found. Available keys: ${allKeys.keys.toList()}",
+        );
+
+        await _loadLocalConfig(
+          "Remote Config value is empty for key '$_remoteConfigKey'",
+        );
+      }
+    } catch (e) {
+      await _loadLocalConfig("Error parsing Remote Config JSON: $e");
     }
   }
 
@@ -209,7 +255,7 @@ class EntitlementService extends ChangeNotifier {
   @override
   void dispose() {
     _backupService.removeListener(_onAuthChanged);
-    _refreshTimer?.cancel();
+    _remoteConfigSubscription?.cancel();
     super.dispose();
   }
 }
