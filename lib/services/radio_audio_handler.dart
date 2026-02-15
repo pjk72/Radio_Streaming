@@ -2720,11 +2720,33 @@ class RadioAudioHandler extends BaseAudioHandler
     if (parentMediaId == 'playlists_root') {
       final playlists = await _playlistService.loadPlaylists();
       final futures = playlists.map((p) async {
-        String? baseImage = (p.id == 'favorites')
-            ? GenreMapper.getGenreImage("Favorites")
-            : GenreMapper.getGenreImage(p.name);
+        Uri? artUri;
 
-        Uri? artUri = baseImage != null ? Uri.tryParse(baseImage) : null;
+        // 1. Try to find valid art from *any* song in the playlist (matching device logic's search)
+        for (var song in p.songs) {
+          if (song.artUri != null && song.artUri!.isNotEmpty) {
+            Uri? potentialUri = Uri.tryParse(song.artUri!);
+
+            // Sanity check: if it's a local path but not a valid URI scheme, ensure file scheme
+            if (potentialUri != null) {
+              if (!potentialUri.hasScheme && !song.artUri!.startsWith('http')) {
+                potentialUri = Uri.file(song.artUri!);
+              }
+              artUri = potentialUri;
+              break; // Found a valid cover, use it (AA only supports one)
+            }
+          }
+        }
+
+        // 2. Fallback to Genre/Name generation
+        if (artUri == null) {
+          String? baseImage = (p.id == 'favorites')
+              ? GenreMapper.getGenreImage("Favorites")
+              : GenreMapper.getGenreImage(p.name);
+          if (baseImage != null) {
+            artUri = Uri.tryParse(baseImage);
+          }
+        }
 
         final isSpotify = p.id.startsWith('spotify_');
         final subTitle = isSpotify ? 'Spotify Playlist' : 'Playlist';
