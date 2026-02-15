@@ -4,6 +4,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -139,6 +140,9 @@ class RadioAudioHandler extends BaseAudioHandler
     if (_isInitializing) return;
     _isInitializing = true;
 
+    // Ensure EncryptionService is ready (Critical for Background Isolate)
+    await EncryptionService().init();
+
     try {
       // 2. Clear Source/Stop instead of full dispose for tracks
       try {
@@ -194,6 +198,20 @@ class RadioAudioHandler extends BaseAudioHandler
     _playerStateSubscription = _player.onPlayerStateChanged.listen(
       _broadcastState,
       onError: (Object e) {
+        // CRITICAL FIX: Ignore player state errors for local files
+        final bool isLocal =
+            mediaItem.value?.extras?['isLocal'] == true ||
+            mediaItem.value?.extras?['isLocal'] == 'true' ||
+            (mediaItem.value?.id.startsWith('/') ?? false) ||
+            (mediaItem.value?.id.startsWith('file:') ?? false) ||
+            ((mediaItem.value?.id.contains(':') ?? false) &&
+                !(mediaItem.value?.id.startsWith('http') ?? false));
+
+        if (isLocal) {
+          LogService().log("Ignored player state error for local file: $e");
+          return;
+        }
+
         String es = e.toString();
         if (es.contains("-1005") || es.contains("what:1")) {
           LogService().log(
@@ -224,10 +242,25 @@ class RadioAudioHandler extends BaseAudioHandler
       if (isGenuineCompletion) {
         skipToNext(reason: "Song completed normally");
       } else {
-        LogService().log(
-          "Stream ended prematurely at ${currentPos.inSeconds}s. Triggering recovery...",
-        );
-        _handleConnectionError("Stream ended unexpectedly.");
+        // CRITICAL FIX: For local files, premature end shouldn't always trigger network recovery/skip
+        final bool isLocal =
+            mediaItem.value?.extras?['isLocal'] == true ||
+            mediaItem.value?.extras?['isLocal'] == 'true' ||
+            (mediaItem.value?.id.startsWith('/') ?? false) ||
+            (mediaItem.value?.id.startsWith('file:') ?? false);
+
+        if (isLocal) {
+          LogService().log(
+            "Local file ended prematurely at ${currentPos.inSeconds}s. Retrying playback instead of error...",
+          );
+          // Try to just resume or replay without counting as a network error
+          _retryPlayback();
+        } else {
+          LogService().log(
+            "Stream ended prematurely at ${currentPos.inSeconds}s. Triggering recovery...",
+          );
+          _handleConnectionError("Stream ended unexpectedly.");
+        }
       }
     }, onError: (Object e) {});
 
@@ -320,8 +353,13 @@ class RadioAudioHandler extends BaseAudioHandler
     _player.onLog.listen((log) {
       if (log.toLowerCase().contains("error") ||
           log.toLowerCase().contains("exception")) {
+        final bool isLocal =
+            mediaItem.value?.extras?['isLocal'] == true ||
+            mediaItem.value?.extras?['isLocal'] == 'true';
+
         if (_isInitialBuffering &&
             !_expectingStop &&
+            !isLocal &&
             (log.contains("403") ||
                 log.contains("-1005") ||
                 log.contains("1002"))) {
@@ -762,13 +800,22 @@ class RadioAudioHandler extends BaseAudioHandler
     _hasTriggeredEarlyStart = false;
 
     // LOCAL FILE CHECK
-    if (song.localPath != null) {
+    // Fallback: If local path is null but videoId looks like a path
+    String? effectiveLocalPath = song.localPath;
+    if (effectiveLocalPath == null) {
+      if (videoId.startsWith('/') ||
+          (videoId.contains(':') && !videoId.startsWith('http'))) {
+        effectiveLocalPath = videoId;
+      }
+    }
+
+    if (effectiveLocalPath != null) {
       final extras = {
-        'title': _getSongTitleWithIcons(song.title, song.localPath),
+        'title': _getSongTitleWithIcons(song.title, effectiveLocalPath),
         'artist': song.artist,
         'album': song.album,
         'artUri': song.artUri,
-        'localPath': song.localPath,
+        'localPath': effectiveLocalPath,
         'playlistId': playlistId,
         'songId': song.id,
         'type': 'playlist_song',
@@ -778,7 +825,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'stableId': song.id,
         'startAt': startAt,
       };
-      await _playYoutubeSong(song.localPath!, extras);
+      await _playYoutubeSong(effectiveLocalPath, extras);
       return;
     }
 
@@ -1208,6 +1255,43 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Future<void> preloadNextStream(String videoId, String songId) async {
     try {
+      // Handle Local / Encrypted Files
+      if (videoId.contains('/') ||
+          videoId.contains('\\') ||
+          videoId.contains('_secure') ||
+          videoId.startsWith('file://')) {
+        String filePath = videoId;
+        try {
+          if (filePath.startsWith('file://')) {
+            filePath = Uri.parse(filePath).toFilePath();
+          }
+        } catch (_) {}
+
+        final bool isEncrypted =
+            filePath.contains('_secure') ||
+            filePath.endsWith('.mst') ||
+            filePath.contains('offline_music');
+
+        if (isEncrypted) {
+          final tempFile = await EncryptionService().decryptToTempFile(
+            filePath,
+          );
+          await _nextPlayer.setSource(DeviceFileSource(tempFile.path));
+        } else {
+          await _nextPlayer.setSource(DeviceFileSource(filePath));
+        }
+
+        _cachedNextSongUrl = filePath;
+        _cachedNextSongExtras = {
+          'videoId': videoId,
+          'songId': songId,
+          'uniqueId': "$songId-$videoId",
+        };
+        _nextPlayerSourceUrl = filePath;
+        await _nextPlayer.stop();
+        return;
+      }
+
       if (_cachedNextSongExtras?['uniqueId'] == "$songId-$videoId") return;
 
       var yt = YoutubeExplode();
@@ -1590,7 +1674,10 @@ class RadioAudioHandler extends BaseAudioHandler
     // This handles manual playback of local files via playDirectAudio
     if (!extras.containsKey('isLocal')) {
       final String lowerUrl = url.toLowerCase();
-      if (lowerUrl.startsWith('/') || lowerUrl.startsWith('file://')) {
+      // Robust check for local files including Windows paths
+      if (lowerUrl.startsWith('/') ||
+          lowerUrl.startsWith('file://') ||
+          (lowerUrl.contains(':') && !lowerUrl.startsWith('http'))) {
         extras['isLocal'] = true;
       }
     }
@@ -1621,9 +1708,6 @@ class RadioAudioHandler extends BaseAudioHandler
       if (_currentSessionId != sessionId) return;
 
       try {
-        final extraLocal = extras['isLocal'];
-        final bool isLocal = extraLocal == true || extraLocal == 'true';
-
         // OPTIMIZATION: Reuse player if healthy
         if (_player.state == PlayerState.disposed) {
           _player = AudioPlayer();
@@ -1645,6 +1729,16 @@ class RadioAudioHandler extends BaseAudioHandler
           );
         }
 
+        final extraLocal = extras['isLocal'];
+        // FORCE RE-CHECK: If url looks like a path, treat as local
+        final bool looksLikeLocal =
+            url.startsWith('/') ||
+            url.contains(':') && !url.startsWith('http') ||
+            url.startsWith('file://');
+
+        final bool isLocal =
+            (extraLocal == true || extraLocal == 'true') || looksLikeLocal;
+
         // 4. Load Source & Play
         // CRITICAL: Always use ReleaseMode.stop for re-usable players.
         // ReleaseMode.release can dispose the player on Windows/Android when finished.
@@ -1658,13 +1752,106 @@ class RadioAudioHandler extends BaseAudioHandler
         if (isLocal) {
           // Stop any existing playback first to ensure clean state
           await _player.stop();
+
+          LogService().log(
+            "LOCAL PLAYBACK: Attempting to play local file. Raw URL: $url",
+          );
+
+          String filePath = url;
+          // Clean up file URI if present
+          if (url.startsWith('file://')) {
+            try {
+              filePath = Uri.parse(url).toFilePath();
+            } catch (e) {
+              LogService().log(
+                "LOCAL PLAYBACK: Error converting URI to file path: $e",
+              );
+            }
+          }
+
+          LogService().log("LOCAL PLAYBACK: Resolved File Path: $filePath");
+
+          final file = File(filePath);
+          if (!await file.exists()) {
+            // FALLBACK: Path might be URL encoded (e.g. %20 for spaces) but missing file:// scheme
+            if (filePath.contains('%')) {
+              try {
+                final decodedPath = Uri.decodeFull(filePath);
+                final decodedFile = File(decodedPath);
+                if (await decodedFile.exists()) {
+                  LogService().log(
+                    "LOCAL PLAYBACK: Found file after decoding: $decodedPath",
+                  );
+                  filePath = decodedPath;
+                  // file reference not needed to be updated here as we use filePath below,
+                  // but for consistency/safety in future blocks:
+                  // file = decodedFile; // file is final, can't update.
+                }
+              } catch (e) {
+                LogService().log("LOCAL PLAYBACK: Error decoding path: $e");
+              }
+            }
+
+            // Check again after potential update
+            if (!await File(filePath).exists()) {
+              LogService().log(
+                "LOCAL PLAYBACK ERROR: File does not exist at path: $filePath",
+              );
+            }
+          }
+
           // Ensure Release Mode is correct before setting source
           final bool isEncrypted =
-              url.contains('_secure') || url.endsWith('.mst');
-          if (isEncrypted) {
-            await _player.setSource(UrlSource(EncryptionService().getUrl(url)));
-          } else {
-            await _player.setSource(DeviceFileSource(url));
+              url.contains('_secure') ||
+              url.endsWith('.mst') ||
+              url.contains('offline_music');
+
+          try {
+            if (isEncrypted) {
+              LogService().log("LOCAL PLAYBACK: Playing as Encrypted Source");
+
+              // SIMPLIFICATION: Decrypt to temp file instead of streaming via HTTP loopback
+              // This avoids network/binding issues on Android.
+              try {
+                LogService().log("LOCAL PLAYBACK: Decrypting to temp file...");
+                final tempFile = await EncryptionService().decryptToTempFile(
+                  filePath,
+                );
+                if (!await tempFile.exists() || await tempFile.length() == 0) {
+                  throw Exception("Decrypted temp file is invalid or empty");
+                }
+
+                await _player.stop(); // Force stop to clear buffers
+                LogService().log(
+                  "LOCAL PLAYBACK: Set Source: ${tempFile.path}",
+                );
+                await _player.setSource(DeviceFileSource(tempFile.path));
+              } catch (e) {
+                LogService().log("LOCAL PLAYBACK ERROR: Decryption failed: $e");
+                // Do NOT rethrow immediately if we want to try something else?
+                // Actually, for encrypted files, if decryption fails, we CANNOT play the original.
+                // So we MUST fail here.
+                throw Exception("Failed to prepare encrypted file: $e");
+              }
+            } else {
+              LogService().log(
+                "LOCAL PLAYBACK: Setting DeviceFileSource: $filePath",
+              );
+              await _player.setSource(DeviceFileSource(filePath));
+            }
+          } catch (e) {
+            LogService().log("LOCAL PLAYBACK ERROR: Source setup failed ($e).");
+
+            // Only fallback to UrlSource if NOT encrypted, because UrlSource on encrypted file = strict fail = skip loop
+            if (!isEncrypted) {
+              LogService().log(
+                "LOCAL PLAYBACK: Retrying as UrlSource (non-encrypted)...",
+              );
+              await _player.setSource(UrlSource(url));
+            } else {
+              // Re-throw for encrypted files so we don't try to play garbage
+              rethrow;
+            }
           }
         } else {
           await _player.setSource(UrlSource(url));
@@ -1676,6 +1863,7 @@ class RadioAudioHandler extends BaseAudioHandler
           } catch (_) {}
         }
 
+        LogService().log("LOCAL PLAYBACK: Resuming player...");
         await _player.resume();
 
         if (_currentSessionId == sessionId) {
@@ -1780,6 +1968,11 @@ class RadioAudioHandler extends BaseAudioHandler
         await _playYoutubeSong(uri.toString(), extras);
       } else {
         // Otherwise, it's likely a video ID (from RadioProvider update), resolve it (checking cache)
+        final bool isLocal =
+            extras['isLocal'] == true ||
+            extras['isLocal'] == 'true' ||
+            extras['isLocal'] == 1;
+
         final song = SavedSong(
           id: extras['songId'] ?? 'unknown',
           title: extras['title'] ?? '',
@@ -1788,10 +1981,8 @@ class RadioAudioHandler extends BaseAudioHandler
           artUri: extras['artUri'],
           dateAdded: DateTime.now(),
           // Use URI as youtubeUrl normally, or localPath if local
-          youtubeUrl: extras['isLocal'] == true ? null : uri.toString(),
-          localPath: extras['isLocal'] == true
-              ? (extras['videoId'] ?? uri.toString())
-              : null,
+          youtubeUrl: isLocal ? null : uri.toString(),
+          localPath: isLocal ? (extras['videoId'] ?? uri.toString()) : null,
         );
         // Delegate to _playYoutubeVideo which handles caching and resolution
         await _playYoutubeVideo(
@@ -2255,8 +2446,13 @@ class RadioAudioHandler extends BaseAudioHandler
       if (realPos == null) return;
 
       final currentPos = realPos;
-      // Update cache to keep UI in sync if stream is lagging
       _currentPosition = realPos;
+
+      // FORCE UI UPDATE: If stream is silent but we are moving, broadcast!
+      final lastStatePos = playbackState.value.position;
+      if ((currentPos - lastStatePos).abs().inSeconds >= 1) {
+        _broadcastState(_player.state);
+      }
 
       // 2. Stuck Detection Logic
       // If position hasn't moved significantly (< 100ms)
@@ -2914,7 +3110,11 @@ class RadioAudioHandler extends BaseAudioHandler
             queue.add(_playlistQueue);
           }
 
-          if (s.youtubeUrl == null) {
+          // FIX: If we have a local path, we don't need to resolve YouTube URL, just play it!
+          if (s.localPath != null) {
+            finalUrl = s.youtubeUrl ?? "https://youtube.com/watch?v=local";
+            videoId = s.localPath!; // Use path as unique ID for caching
+          } else if (s.youtubeUrl == null) {
             // ... (resolution logic)
             try {
               final yt = YoutubeExplode();

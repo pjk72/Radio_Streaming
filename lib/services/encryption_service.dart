@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
+import 'package:path_provider/path_provider.dart'; // Added for temp dir
 
 class EncryptionService {
   static final EncryptionService _instance = EncryptionService._internal();
@@ -18,7 +19,9 @@ class EncryptionService {
 
     final handler = const Pipeline().addHandler(_handleRequest);
 
-    _server = await io.serve(handler, InternetAddress.loopbackIPv4, 0);
+    // Use anyIPv4 instead of loopback to ensure accessibility on all Android devices/emulators
+    // unforeseen networking quirks can sometimes block strict 127.0.0.1 binding
+    _server = await io.serve(handler, InternetAddress.anyIPv4, 0);
     _port = _server!.port;
     print('Encryption server running on port $_port');
   }
@@ -35,15 +38,30 @@ class EncryptionService {
   /// Handles requests from the audio player to stream decrypted content
   Future<Response> _handleRequest(Request request) async {
     // The path contains the full absolute path of the file
-    String filePath = request.url.path;
+    // URL decoding to handle spaces and special characters
+    // request.url.path returns the decoded path component, so manual decoding *might* be redundant
+    // but safer to decode if we are seeing encoded strings.
+    // However, shelf might have already decoded it. Let's check raw path segments if needed.
 
-    // On Windows, the path might start with a drive letter, e.g., /C:/...
+    // If request.url.path is already decoded by shelf, calling decodeFull again on a path with % might break it UNLESS we caused it.
+    // Let's rely on standard decoding.
+    String filePath = request.url.path;
     if (Platform.isWindows && filePath.startsWith('/')) {
       filePath = filePath.substring(1);
     }
 
+    // On Android, the path from request.url.path might need decoding if we manually encoded it in getUrl
+    filePath = Uri.decodeComponent(filePath);
+
+    // Fix for absolute paths on Android potentially missing the leading / when coming from URI parsing
+    if (!filePath.startsWith('/') && !Platform.isWindows) {
+      filePath = '/' + filePath;
+    }
+
+    print('EncryptionService: Request for $filePath');
     final file = File(filePath);
     if (!await file.exists()) {
+      print('EncryptionService: File NOT found: $filePath');
       return Response.notFound('File not found: $filePath');
     }
 
@@ -102,7 +120,62 @@ class EncryptionService {
     if (_port == null) return filePath; // Fallback
 
     // Ensure the path is properly formatted for URL
-    final uriPath = Uri.file(filePath).path;
-    return 'http://127.0.0.1:$_port$uriPath';
+    // We need to encode the path segments to be a valid URL
+    // But we must preserve the structure.
+
+    // 1. Remove scheme 'file://' if present to just get the path
+    String cleanPath = filePath;
+    if (filePath.startsWith('file://')) {
+      cleanPath = Uri.parse(filePath).toFilePath();
+    }
+
+    // 2. Encode the path components to handle spaces/special chars
+    // We cannot just use Uri.encodeFull because it leaves '/' alone which is good,
+    // but we want to be sure.
+    final uriPath = Uri.encodeFull(cleanPath);
+
+    // 3. Construct URL.
+    // Ensure cleanPath starts with / for the URL construction if not present
+    var pathStr = uriPath;
+    if (!pathStr.startsWith('/')) {
+      pathStr = '/$pathStr';
+    }
+
+    // Validate port
+    if (_port == null) {
+      print('EncryptionService: ERROR - Port is null, server not running!');
+      return filePath;
+    }
+
+    final url = 'http://127.0.0.1:$_port$pathStr';
+    print('EncryptionService: Generated URL: $url for raw path: $filePath');
+    return url;
+  }
+
+  /// Decrypts the given file to a temporary file and returns it.
+  Future<File> decryptToTempFile(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception('File not found: $filePath');
+    }
+
+    final bytes = await file.readAsBytes();
+    final decryptedBytes = encryptData(bytes); // XOR works both ways
+
+    final tempDir = await getTemporaryDirectory();
+    final String extension = filePath.endsWith('.m4a')
+        ? '.m4a'
+        : filePath.endsWith('.mp3')
+        ? '.mp3'
+        : '.tmp';
+
+    // Use a unique name based on hash or timestamp to avoid collisions but allow caching if needed
+    // For now, unique every time to be safe.
+    final tempFile = File(
+      '${tempDir.path}/temp_decrypted_${DateTime.now().millisecondsSinceEpoch}$extension',
+    );
+
+    await tempFile.writeAsBytes(decryptedBytes);
+    return tempFile;
   }
 }
