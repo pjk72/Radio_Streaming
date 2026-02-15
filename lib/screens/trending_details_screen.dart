@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import 'dart:convert';
 import 'dart:developer' as developer;
@@ -48,7 +49,10 @@ class TrendingDetailsScreen extends StatefulWidget {
 }
 
 class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
-  final ScrollController _scrollController = ScrollController();
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
+
   List<SavedSong> _songs = [];
   List<dynamic> _items = [];
   bool _isLoading = true;
@@ -67,7 +71,6 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
     _trendingService?.dispose();
     super.dispose();
   }
@@ -239,6 +242,20 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       subtitle = _albumData?['artistName'] ?? widget.artistName ?? "";
     }
 
+    // Determine Item Count
+    // Index 0 is ALWAYS Header.
+    // If loading: Index 1 is Loader. Total 2.
+    // If empty: Index 1 is "No tracks". Total 2.
+    // Else: Index 1..N are _items. Total _items.length + 1.
+    int itemCount = 1;
+    if (_isLoading) {
+      itemCount += 1;
+    } else if (_items.isEmpty) {
+      itemCount += 1;
+    } else {
+      itemCount += _items.length;
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -269,146 +286,56 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             ),
           ),
 
-          // 3. Content
+          // 3. Content List
           Positioned.fill(
-            child: CustomScrollView(
-              controller: _scrollController,
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                // Header
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).padding.top + 60,
-                      left: 24,
-                      right: 24,
-                      bottom: 24,
-                    ),
-                    child: Column(
-                      children: [
-                        // Artwork Shadowed
-                        Container(
-                          width: 200,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.5),
-                                blurRadius: 30,
-                                offset: const Offset(0, 15),
-                              ),
-                            ],
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: mainImage.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: mainImage,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => const Center(
-                                    child: Icon(
-                                      Icons.music_note,
-                                      size: 80,
-                                      color: Colors.white54,
-                                    ),
-                                  ),
-                                )
-                              : const Center(
-                                  child: Icon(
-                                    Icons.music_note,
-                                    size: 80,
-                                    color: Colors.white54,
-                                  ),
-                                ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          title,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+            child: Consumer<RadioProvider>(
+              builder: (context, provider, child) {
+                // Check auto-scroll
+                _checkAutoScroll(provider);
+
+                return ScrollablePositionedList.builder(
+                  itemCount: itemCount,
+                  itemScrollController: _itemScrollController,
+                  itemPositionsListener: _itemPositionsListener,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.only(
+                    bottom: 100,
+                  ), // Space for player/nav
+                  itemBuilder: (context, index) {
+                    // Header
+                    if (index == 0) {
+                      return _buildHeader(context, mainImage, title, subtitle);
+                    }
+
+                    // Content
+                    if (_isLoading) {
+                      return const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+
+                    if (_items.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 50),
+                        child: Center(
+                          child: Text(
+                            "No tracks found",
+                            style: TextStyle(color: Colors.white54),
                           ),
                         ),
-                        if (subtitle.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            subtitle,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 18,
-                            ),
-                          ),
-                        ],
+                      );
+                    }
 
-                        const SizedBox(height: 24),
+                    // Map index back to item index
+                    final itemIndex = index - 1;
+                    if (itemIndex >= _items.length)
+                      return const SizedBox.shrink();
 
-                        // Actions Row
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: _playRandom,
-                              icon: const Icon(Icons.shuffle, size: 18),
-                              label: const Text("Shuffle Play"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(context).primaryColor,
-                                foregroundColor:
-                                    Theme.of(
-                                          context,
-                                        ).primaryColor.computeLuminance() >
-                                        0.5
-                                    ? Colors.black
-                                    : Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(25),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
-                                  vertical: 12,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.stop_circle_outlined,
-                                color: Colors.redAccent,
-                                size: 30,
-                              ),
-                              onPressed: () {
-                                Provider.of<RadioProvider>(
-                                  context,
-                                  listen: false,
-                                ).stop();
-                              },
-                              tooltip: "Stop",
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.copy_all,
-                                color: _isLoading || _songs.isEmpty
-                                    ? Colors.white24
-                                    : Colors.orangeAccent,
-                                size: 30,
-                              ),
-                              onPressed: _isLoading || _songs.isEmpty
-                                  ? null
-                                  : _showCopyDialog,
-                              tooltip: "Copy List",
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Tracks List
-                _buildTrackSliver(context),
-              ],
+                    return _buildListItem(context, itemIndex, provider);
+                  },
+                );
+              },
             ),
           ),
 
@@ -436,187 +363,284 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     );
   }
 
-  Widget _buildTrackSliver(BuildContext context) {
-    if (_isLoading) {
-      return const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
+  void _checkAutoScroll(RadioProvider provider) {
+    final playingSongId =
+        provider.currentSongId ??
+        provider.audioHandler.mediaItem.value?.extras?['songId'];
+
+    // Auto-scroll logic
+    if (playingSongId != null &&
+        playingSongId != _lastScrollSongId &&
+        !_isLoading &&
+        _items.isNotEmpty) {
+      final index = _items.indexWhere((item) {
+        if (item is! SavedSong) return false;
+        if (item.id == playingSongId) return true;
+
+        // Fallback for unstable IDs
+        final currentItemTitle = provider.currentTrack;
+        if (currentItemTitle != "Live Broadcast" &&
+            item.title == currentItemTitle) {
+          return true;
+        }
+        return false;
+      });
+
+      if (index != -1) {
+        _lastScrollSongId = playingSongId;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          // Scroll to index + 1 (Header is 0)
+          // alignment: 0.5 centers the item
+          if (_itemScrollController.isAttached) {
+            _itemScrollController.scrollTo(
+              index: index + 1,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+              alignment: 0.5,
+            );
+          }
+        });
+      }
     }
-    if (_songs.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Center(
-          child: Text(
-            "No tracks found",
-            style: TextStyle(color: Colors.white54),
+  }
+
+  Widget _buildHeader(
+    BuildContext context,
+    String mainImage,
+    String title,
+    String subtitle,
+  ) {
+    return Padding(
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 60,
+        left: 24,
+        right: 24,
+        bottom: 24,
+      ),
+      child: Column(
+        children: [
+          // Artwork Shadowed
+          Container(
+            width: 200,
+            height: 200,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 30,
+                  offset: const Offset(0, 15),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: mainImage.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: mainImage,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const Center(
+                      child: Icon(
+                        Icons.music_note,
+                        size: 80,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  )
+                : const Center(
+                    child: Icon(
+                      Icons.music_note,
+                      size: 80,
+                      color: Colors.white54,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (subtitle.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 18),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+
+          // Actions Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _playRandom,
+                icon: const Icon(Icons.shuffle, size: 18),
+                label: const Text("Shuffle Play"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor:
+                      Theme.of(context).primaryColor.computeLuminance() > 0.5
+                      ? Colors.black
+                      : Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: const Icon(
+                  Icons.stop_circle_outlined,
+                  color: Colors.redAccent,
+                  size: 30,
+                ),
+                onPressed: () {
+                  Provider.of<RadioProvider>(context, listen: false).stop();
+                },
+                tooltip: "Stop",
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.copy_all,
+                  color: _isLoading || _songs.isEmpty
+                      ? Colors.white24
+                      : Colors.orangeAccent,
+                  size: 30,
+                ),
+                onPressed: _isLoading || _songs.isEmpty
+                    ? null
+                    : _showCopyDialog,
+                tooltip: "Copy List",
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListItem(
+    BuildContext context,
+    int index,
+    RadioProvider provider,
+  ) {
+    final item = _items[index];
+
+    if (item is _AdItem) {
+      return const NativeAdWidget();
+    }
+
+    final track = item as SavedSong;
+    final trackIndex = _songs.indexOf(track);
+    final trackId = track.id;
+
+    final playingSongId =
+        provider.currentSongId ??
+        provider.audioHandler.mediaItem.value?.extras?['songId'];
+
+    bool isPlaying = playingSongId == trackId;
+
+    // Fallback for unstable IDs: if playingSongId doesn't match, check title
+    if (!isPlaying && playingSongId != null) {
+      final currentItemTitle = provider.currentTrack;
+      if (currentItemTitle != "Live Broadcast" &&
+          track.title == currentItemTitle) {
+        isPlaying = true;
+      }
+    }
+
+    final theme = Theme.of(context);
+    final isPlayingState = provider.audioHandler.playbackState.value.playing;
+
+    // Pre-calculate saved songs for list performance
+    final savedIds = provider.allUniqueSongs.map((s) => s.id).toSet();
+    final savedKeys = provider.allUniqueSongs
+        .map((s) => "${_normalize(s.title)}|${_normalize(s.artist)}")
+        .toSet();
+
+    final trackTitle = track.title;
+    final trackArtist = track.artist;
+    final trackKey = "${_normalize(trackTitle)}|${_normalize(trackArtist)}";
+
+    final isSaved = savedIds.contains(trackId) || savedKeys.contains(trackKey);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isPlaying ? Colors.white.withOpacity(0.1) : Colors.transparent,
+        border: isPlaying
+            ? Border.all(color: theme.primaryColor, width: 2)
+            : null,
+      ),
+      child: ListTile(
+        leading: Text(
+          "${trackIndex + 1}",
+          style: TextStyle(
+            color: isPlaying ? Colors.white : Colors.white54,
+            fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
           ),
         ),
-      );
-    }
-
-    return Consumer<RadioProvider>(
-      builder: (context, provider, child) {
-        final playingSongId =
-            provider.currentSongId ??
-            provider.audioHandler.mediaItem.value?.extras?['songId'];
-        final theme = Theme.of(context);
-        final isPlayingState =
-            provider.audioHandler.playbackState.value.playing;
-
-        // Auto-scroll logic
-        if (playingSongId != null &&
-            playingSongId != _lastScrollSongId &&
-            _items.isNotEmpty) {
-          final index = _items.indexWhere((item) {
-            if (item is! SavedSong) return false;
-            if (item.id == playingSongId) return true;
-
-            // Fallback for unstable IDs (like lofi playlists): match by title
-            final currentItemTitle = provider.currentTrack;
-            if (currentItemTitle != "Live Broadcast" &&
-                item.title == currentItemTitle) {
-              return true;
-            }
-            return false;
-          });
-          if (index != -1) {
-            _lastScrollSongId = playingSongId;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_scrollController.hasClients) {
-                // Estimate offset: Header (~480) + Index * ItemHeight (~72)
-                // This is an approximation.
-                final double headerHeight = 480.0;
-                final double itemHeight = 72.0;
-                final double offset = headerHeight + (index * itemHeight);
-
-                // Center it: offset - screenHeight/2 + itemHeight/2
-                final double target =
-                    offset -
-                    (MediaQuery.of(context).size.height / 2) +
-                    (itemHeight / 2);
-
-                _scrollController.animateTo(
-                  target.clamp(0.0, _scrollController.position.maxScrollExtent),
-                  duration: const Duration(milliseconds: 500),
-                  curve: Curves.easeInOut,
-                );
-              }
-            });
-          }
-        }
-
-        // Pre-calculate saved songs for list performance
-        final savedIds = provider.allUniqueSongs.map((s) => s.id).toSet();
-        final savedKeys = provider.allUniqueSongs
-            .map((s) => "${_normalize(s.title)}|${_normalize(s.artist)}")
-            .toSet();
-
-        return SliverList(
-          delegate: SliverChildBuilderDelegate((ctx, index) {
-            final item = _items[index];
-
-            if (item is _AdItem) {
-              return const NativeAdWidget();
-            }
-
-            final track = item as SavedSong;
-            final trackIndex = _songs.indexOf(track);
-            final trackId = track.id;
-            bool isPlaying = playingSongId == trackId;
-
-            // Fallback for unstable IDs: if playingSongId doesn't match, check title
-            if (!isPlaying && playingSongId != null) {
-              final currentItemTitle = provider.currentTrack;
-              if (currentItemTitle != "Live Broadcast" &&
-                  track.title == currentItemTitle) {
-                isPlaying = true;
-              }
-            }
-
-            final trackTitle = track.title;
-            final trackArtist = track.artist;
-            final trackKey =
-                "${_normalize(trackTitle)}|${_normalize(trackArtist)}";
-
-            final isSaved =
-                savedIds.contains(trackId) || savedKeys.contains(trackKey);
-
-            return Container(
-              decoration: BoxDecoration(
-                color: isPlaying
-                    ? Colors.white.withOpacity(0.1)
-                    : Colors.transparent,
-                border: isPlaying
-                    ? Border.all(color: theme.primaryColor, width: 2)
-                    : null,
-              ),
-              child: ListTile(
-                leading: Text(
-                  "${trackIndex + 1}",
-                  style: TextStyle(
-                    color: isPlaying ? Colors.white : Colors.white54,
-                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-                title: Text(
-                  track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isPlaying ? theme.primaryColor : Colors.white,
-                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-                subtitle: Text(
-                  track.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white54),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isPlaying)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: provider.isLoading
-                            ? SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: theme.primaryColor,
-                                ),
-                              )
-                            : MiniVisualizer(
-                                color: theme.primaryColor,
-                                width: 20,
-                                height: 20,
-                                active: isPlayingState,
-                              ),
+        title: Text(
+          track.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: isPlaying ? theme.primaryColor : Colors.white,
+            fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        subtitle: Text(
+          track.artist,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white54),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isPlaying)
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: provider.isLoading
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: theme.primaryColor,
+                        ),
+                      )
+                    : MiniVisualizer(
+                        color: theme.primaryColor,
+                        width: 20,
+                        height: 20,
+                        active: isPlayingState,
                       ),
-                    IconButton(
-                      icon: Icon(
-                        isSaved
-                            ? Icons.playlist_add_check_rounded
-                            : Icons.add_circle_outline,
-                        color: isSaved ? theme.primaryColor : Colors.white54,
-                      ),
-                      onPressed: () => _showAddSongDialog(track),
-                      tooltip: isSaved
-                          ? "Already in Library"
-                          : "Add to Playlist",
-                    ),
-                  ],
-                ),
-                onTap: () => _playTrack(trackIndex),
               ),
-            );
-          }, childCount: _items.length),
-        );
-      },
+            IconButton(
+              icon: Icon(
+                isSaved
+                    ? Icons.playlist_add_check_rounded
+                    : Icons.add_circle_outline,
+                color: isSaved ? theme.primaryColor : Colors.white54,
+              ),
+              onPressed: () => _showAddSongDialog(track),
+              tooltip: isSaved ? "Already in Library" : "Add to Playlist",
+            ),
+          ],
+        ),
+        onTap: () => _playTrack(trackIndex),
+      ),
     );
   }
 

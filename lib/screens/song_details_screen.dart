@@ -983,77 +983,18 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
             child: SizedBox(
               height: 60,
-              child: Stack(
-                alignment: Alignment.center,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Main Controls (Centered)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        onPressed: () => provider.playPrevious(),
-                        icon: const Icon(
-                          Icons.skip_previous_rounded,
-                          color: Colors.white,
-                          size: 36,
-                        ),
-                      ),
-                      const SizedBox(width: 24),
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              blurRadius: 20,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
-                        ),
-                        child: IconButton(
-                          onPressed: () => provider.togglePlay(),
-                          icon: provider.isLoading
-                              ? const SizedBox(
-                                  width: 32,
-                                  height: 32,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.black,
-                                    strokeWidth: 3,
-                                  ),
-                                )
-                              : Icon(
-                                  provider.isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  color: Colors.black,
-                                  size: 32,
-                                ),
-                        ),
-                      ),
-                      const SizedBox(width: 24),
-                      IconButton(
-                        onPressed: () => provider.playNext(),
-                        icon: const Icon(
-                          Icons.skip_next_rounded,
-                          color: Colors.white,
-                          size: 36,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Left Side Controls (Shuffle / Add)
-                  Positioned(
-                    left: 20,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Shuffle
-                        if (provider.currentPlayingPlaylistId != null) ...[
-                          IconButton(
+                  // 1. Left Action (Shuffle or Add)
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Builder(
+                      builder: (context) {
+                        // Shuffle (Playlist Mode)
+                        if (provider.currentPlayingPlaylistId != null) {
+                          return IconButton(
                             onPressed: () {
                               provider.toggleShuffle();
                               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1080,16 +1021,16 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                   : Colors.white24,
                               size: 24,
                             ),
-                          ),
-                        ],
+                          );
+                        }
                         // Add to Genre Playlist Button (Radio Only)
                         if (provider.currentPlayingPlaylistId == null &&
                             provider.currentTrack.isNotEmpty &&
                             provider.currentTrack != "Live Broadcast" &&
                             provider.currentTrack != "Unknown Title" &&
                             provider.currentAlbumArt !=
-                                provider.currentStation?.logo)
-                          IconButton(
+                                provider.currentStation?.logo) {
+                          return IconButton(
                             icon: Icon(
                               provider.currentSongIsSaved
                                   ? Icons.check_circle
@@ -1138,61 +1079,122 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                       }
                                     }
                                   },
-                          ),
-                      ],
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
                     ),
                   ),
 
-                  // Right Side Controls (Local Device Indicator)
-                  if (provider.currentStation?.genre == "Local Device" ||
-                      provider.currentStation?.icon == "smartphone")
-                    Positioned(
-                      right: 20,
-                      child: IconButton(
-                        icon: Icon(
-                          isOffline
-                              ? Icons.file_download_done_rounded
-                              : Icons.smartphone_rounded,
-                          color: isOffline
-                              ? Colors.greenAccent.withValues(alpha: 0.8)
-                              : Colors.white54,
-                          size: 24,
-                        ),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              behavior: SnackBarBehavior.floating,
-                              backgroundColor: Colors.black87,
-                              content: Row(
-                                children: [
-                                  Icon(
-                                    isOffline
-                                        ? Icons.file_download_done_rounded
-                                        : Icons.smartphone_rounded,
-                                    color: isOffline
-                                        ? Colors.greenAccent
-                                        : Colors.white,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    isOffline
-                                        ? "Song is saved offline"
-                                        : "Song is on your device",
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                ],
-                              ),
-                              duration: const Duration(seconds: 3),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              margin: const EdgeInsets.all(20),
-                            ),
-                          );
-                        },
-                      ),
+                  // 2. Previous
+                  IconButton(
+                    onPressed: () => provider.playPrevious(),
+                    icon: const Icon(
+                      Icons.skip_previous_rounded,
+                      color: Colors.white,
+                      size: 36,
                     ),
+                  ),
+
+                  // 3. Play/Pause (Center)
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          blurRadius: 20,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      onPressed: () => provider.togglePlay(),
+                      icon: provider.isLoading
+                          ? const SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: CircularProgressIndicator(
+                                color: Colors.black,
+                                strokeWidth: 3,
+                              ),
+                            )
+                          : Icon(
+                              provider.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Colors.black,
+                              size: 32,
+                            ),
+                    ),
+                  ),
+
+                  // 4. Next
+                  IconButton(
+                    onPressed: () => provider.playNext(),
+                    icon: const Icon(
+                      Icons.skip_next_rounded,
+                      color: Colors.white,
+                      size: 36,
+                    ),
+                  ),
+
+                  // 5. Right Action (Device Indicator)
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: localPath != null
+                        ? IconButton(
+                            icon: Icon(
+                              isOffline
+                                  ? Icons.file_download_done_rounded
+                                  : Icons.smartphone_rounded,
+                              color: isOffline
+                                  ? Colors.greenAccent.withValues(alpha: 0.8)
+                                  : Colors.orangeAccent,
+                              size: 24,
+                            ),
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  behavior: SnackBarBehavior.floating,
+                                  backgroundColor: Colors.black87,
+                                  content: Row(
+                                    children: [
+                                      Icon(
+                                        isOffline
+                                            ? Icons.file_download_done_rounded
+                                            : Icons.smartphone_rounded,
+                                        color: isOffline
+                                            ? Colors.greenAccent
+                                            : Colors.orangeAccent,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        isOffline
+                                            ? "Song is saved offline"
+                                            : "Song is on your device",
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  duration: const Duration(seconds: 3),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  margin: const EdgeInsets.all(20),
+                                ),
+                              );
+                            },
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                 ],
               ),
             ),

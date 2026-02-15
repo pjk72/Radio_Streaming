@@ -2320,10 +2320,24 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               child: Material(
                 color: Colors.transparent,
                 child: PopupMenuButton<String>(
-                  icon: const Icon(
-                    Icons.more_vert_rounded,
-                    color: Colors.white70,
-                    size: 18,
+                  icon: Stack(
+                    children: [
+                      // Shadow
+                      Transform.translate(
+                        offset: const Offset(1, 1),
+                        child: const Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.black,
+                          size: 18,
+                        ),
+                      ),
+                      // Foreground
+                      const Icon(
+                        Icons.more_vert_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ],
                   ),
                   color: const Color(0xFF1e1e24),
                   shape: RoundedRectangleBorder(
