@@ -3802,19 +3802,19 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           hoverColor: accentColor.withValues(alpha: 0.1),
           splashColor: accentColor.withValues(alpha: 0.2),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: accentColor.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: FaIcon(icon, color: accentColor, size: 26),
+                  child: FaIcon(icon, color: accentColor, size: 24),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
                   title,
                   style: const TextStyle(

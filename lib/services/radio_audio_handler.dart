@@ -30,6 +30,7 @@ class RadioAudioHandler extends BaseAudioHandler
   AudioPlayer _nextPlayer = AudioPlayer(); // For Gapless transitions
   String? _nextPlayerSourceUrl; // Track what's preloaded in _nextPlayer
   bool _hasTriggeredEarlyStart = false; // Prevent multiple early triggers
+  bool _hasLoggedAndroidAutoStart = false;
   bool _isSwapping = false; // Flag for seamless transition state
 
   // ... (existing helper methods if any)
@@ -1099,6 +1100,7 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     } catch (_) {}
     // Manually update state so UI knows we paused immediately
+    _logAnalyticsEvent('toggle_play', {'action': 'pause'});
     _broadcastState(PlayerState.paused);
   }
 
@@ -1116,7 +1118,9 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   @override
-  Future<void> play() async {
+  Future<void> play() => _playInternal(true);
+
+  Future<void> _playInternal(bool logEvent) async {
     await _initializationComplete;
     _startupLock = false; // User Action unlocks
     // If paused, just resume without reloading
@@ -1124,6 +1128,9 @@ class RadioAudioHandler extends BaseAudioHandler
       _expectingStop = false;
       await _player.resume();
       // State will be updated by listener, but we can force it for responsiveness
+      if (logEvent) {
+        _logAnalyticsEvent('toggle_play', {'action': 'play'});
+      }
       _broadcastState(PlayerState.playing);
 
       // Restart Recognition Cycle if Radio Mode
@@ -1138,7 +1145,14 @@ class RadioAudioHandler extends BaseAudioHandler
     final currentItem = mediaItem.value;
     if (currentItem != null) {
       _expectingStop = false;
-      await playFromUri(Uri.parse(currentItem.id), currentItem.extras);
+      if (logEvent) {
+        _logAnalyticsEvent('toggle_play', {'action': 'play'});
+      }
+      await playFromUri(
+        Uri.parse(currentItem.id),
+        currentItem.extras,
+        logEvent,
+      );
     }
   }
 
@@ -1946,8 +1960,11 @@ class RadioAudioHandler extends BaseAudioHandler
     });
   }
 
-  @override
-  Future<void> playFromUri(Uri uri, [Map<String, dynamic>? extras]) async {
+  Future<void> playFromUri(
+    Uri uri, [
+    Map<String, dynamic>? extras,
+    bool logEvent = true,
+  ]) async {
     // STARTUP PROTECTION:
     // If we are in the startup lock period (first 3s), block auto-play.
     // UNLESS it is explicitly flagged as user-initiated.
@@ -1964,6 +1981,15 @@ class RadioAudioHandler extends BaseAudioHandler
       _stopRecognition(); // Stop ACRCloud if switching from radio to playlist
       // If it's already resolved (has stream URL), play it directly
       if (extras['is_resolved'] == true) {
+        if (logEvent) {
+          _logAnalyticsEvent('play_song', {
+            'title': extras['title'] ?? 'Unknown',
+            'artist': extras['artist'] ?? 'Unknown',
+            'album': extras['album'] ?? 'Unknown',
+            'id': extras['songId'] ?? uri.toString(),
+            'playlist_id': extras['playlistId'],
+          });
+        }
         _expectingStop = true; // Block events from old player
         await _playYoutubeSong(uri.toString(), extras);
       } else {
@@ -2052,6 +2078,14 @@ class RadioAudioHandler extends BaseAudioHandler
       playable: true,
       extras: finalExtras,
     );
+
+    if (logEvent) {
+      _logAnalyticsEvent('play_station', {
+        'station': title,
+        'station_id': finalExtras['stationId'] ?? '',
+        'url': url,
+      });
+    }
 
     // Sanitize Art URI for Android Auto (Must be HTTPS or Content URI)
     if (newItem.artUri != null) {
@@ -2646,11 +2680,19 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 1. Root Level
     if (parentMediaId == 'root') {
-      _logAnalyticsEvent('android_auto_usage', {
-        'action': 'browse_root',
-        'is_car': options?['android.service.media.extra.DEVICE_TYPE'] == 2,
-        'recent': options?['android.service.media.extra.RECENT'],
-      });
+      if (!_hasLoggedAndroidAutoStart) {
+        _logAnalyticsEvent('android_auto_usage', {
+          'action': 'browse_root',
+          'is_car': options?['android.service.media.extra.DEVICE_TYPE'] == 2,
+          'recent': options?['android.service.media.extra.RECENT'],
+        });
+        // Manually log screen view to ensure "Active User" count in GA4
+        FirebaseAnalytics.instance.logScreenView(
+          screenName: 'Android Auto',
+          screenClass: 'AutoService',
+        );
+        _hasLoggedAndroidAutoStart = true;
+      }
       // Auto-start logic for Android Auto (First Run only)
       if (!_hasTriggeredEarlyStart &&
           !playbackState.value.playing &&
@@ -2659,7 +2701,7 @@ class RadioAudioHandler extends BaseAudioHandler
         // Defer play to avoid blocking getChildren
         Future.delayed(const Duration(milliseconds: 500), () {
           if (!playbackState.value.playing) {
-            play();
+            _playInternal(false);
           }
         });
       }
@@ -2855,10 +2897,6 @@ class RadioAudioHandler extends BaseAudioHandler
     String mediaId, [
     Map<String, dynamic>? extras,
   ]) async {
-    _logAnalyticsEvent('android_auto_usage', {
-      'action': 'play_item',
-      'mediaId': mediaId,
-    });
     await _initializationComplete;
     // 1. Check Stations
     try {

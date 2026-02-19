@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
 
 import 'dart:convert';
 
@@ -3356,48 +3355,10 @@ class RadioProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
-    // Run in background to ensure it never blocks UI or playback logic
-    Future.microtask(() async {
-      try {
-        final Map<String, Object>? cleanParameters = parameters != null
-            ? Map<String, Object>.fromEntries(
-                parameters.entries.where((e) => e.value != null).map((e) {
-                  var val = e.value!;
-                  // 1. Convert bool to int (more compatible)
-                  if (val is bool) val = val ? 1 : 0;
-                  // 2. Ensure value is either num or String
-                  if (val is! num && val is! String) val = val.toString();
-                  // 3. Respect Firebase max length for parameter values (100 chars)
-                  // 3. Respect Firebase max length for parameter values (100 chars)
-                  if (val is String && val.length > 100) {
-                    val = val.substring(0, 100);
-                  }
-                  return MapEntry(e.key, val);
-                }),
-              )
-            : null;
-
-        LogService().log("Analytics Sending: $name Params: $cleanParameters");
-
-        await FirebaseAnalytics.instance
-            .logEvent(name: name, parameters: cleanParameters)
-            .timeout(const Duration(seconds: 5));
-
-        LogService().log("Analytics Success: $name");
-      } catch (e) {
-        LogService().log("Analytics Error: $e");
-      }
-    });
-  }
-
   void playStation(Station station) async {
     LogService().log("Analytics Result: $station");
-    _logAnalyticsEvent('play_station', {
-      'station_id': station.id,
-      'station_name': station.name,
-      'station_genre': station.genre,
-    });
+    LogService().log("Analytics Result: $station");
+
     // If we're playing from a playlist (YouTube), stop it first
     if (_hiddenAudioController != null) {
       clearYoutubeAudio();
@@ -3460,10 +3421,8 @@ class RadioProvider with ChangeNotifier {
 
   void togglePlay() {
     LogService().log("Analytics Result: toggle_play");
-    _logAnalyticsEvent('toggle_play', {
-      'is_playing': (!_isPlaying).toString(),
-      'mode': _currentPlayingPlaylistId != null ? 'playlist' : 'radio',
-    });
+    LogService().log("Analytics Result: toggle_play");
+
     if (_hiddenAudioController != null) {
       _ignoringPause = true; // Guard against notification echo and state loop
       final state = _hiddenAudioController!.value.playerState;
@@ -3778,13 +3737,7 @@ class RadioProvider with ChangeNotifier {
     await stopPreviousStream();
 
     LogService().log("Analytics Result: play_song");
-    _logAnalyticsEvent('play_song', {
-      'song_id': song.id,
-      'song_title': song.title,
-      'song_artist': song.artist,
-      'is_local': song.localPath != null,
-      'playlist_id': playlistId ?? 'none',
-    });
+
     // Prevent playback of invalid songs
     if (!song.isValid || _invalidSongIds.contains(song.id)) {
       LogService().log("Skipping invalid song request: ${song.title}");
