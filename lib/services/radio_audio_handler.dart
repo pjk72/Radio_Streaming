@@ -2686,11 +2686,12 @@ class RadioAudioHandler extends BaseAudioHandler
           'is_car': options?['android.service.media.extra.DEVICE_TYPE'] == 2,
           'recent': options?['android.service.media.extra.RECENT'],
         });
-        // Manually log screen view to ensure "Active User" count in GA4
+        // Manually log screen view and car_user event to ensure "Active User" count in GA4
         FirebaseAnalytics.instance.logScreenView(
           screenName: 'Android Auto',
           screenClass: 'AutoService',
         );
+        _logAnalyticsEvent('car_user');
         _hasLoggedAndroidAutoStart = true;
       }
       // Auto-start logic for Android Auto (First Run only)

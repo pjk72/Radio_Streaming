@@ -15,7 +15,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
   bool _isLoaded = false;
 
   final String _adUnitId = kReleaseMode
-      ? 'ca-app-pub-3351319116434923/7106061213'
+      ? 'ca-app-pub-3351319116434923/8986498334'
       : (Platform.isAndroid
             ? 'ca-app-pub-3940256099942544/2247696110'
             : 'ca-app-pub-3940256099942544/3986624511');
