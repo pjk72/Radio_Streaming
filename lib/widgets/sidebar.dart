@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 import '../services/entitlement_service.dart';
+import '../providers/language_provider.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -17,6 +18,7 @@ class Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
     final entitlements = Provider.of<EntitlementService>(context);
+    final langProvider = Provider.of<LanguageProvider>(context);
     final user = provider.backupService.currentUser;
 
     return Container(
@@ -104,7 +106,7 @@ class Sidebar extends StatelessWidget {
                               children: [
                                 Text(
                                   user?.displayName?.split(' ').first ??
-                                      "Guest",
+                                      langProvider.translate('guest'),
                                   style: TextStyle(
                                     color: Theme.of(
                                       context,
@@ -136,17 +138,32 @@ class Sidebar extends StatelessWidget {
 
                     const SizedBox(height: 48),
 
-                    _navItem(context, 0, Icons.radio, "MusicStream"),
+                    _navItem(
+                      context,
+                      0,
+                      Icons.radio,
+                      langProvider.translate('tab_radio'),
+                    ),
                     _navItem(
                       context,
                       1,
                       Icons.playlist_play_rounded,
-                      "Playlist",
+                      langProvider.translate('tab_library'),
                     ),
-                    _navItem(context, 2, Icons.whatshot, "Trending"),
+                    _navItem(
+                      context,
+                      2,
+                      Icons.whatshot,
+                      langProvider.translate('tab_trending'),
+                    ),
 
                     const Spacer(),
-                    _navItem(context, 3, Icons.settings, "Settings"),
+                    _navItem(
+                      context,
+                      3,
+                      Icons.settings,
+                      langProvider.translate('settings'),
+                    ),
                   ],
                 ),
               ),

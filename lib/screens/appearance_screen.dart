@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/language_provider.dart';
 
 class AppearanceScreen extends StatelessWidget {
   const AppearanceScreen({super.key});
@@ -8,12 +9,13 @@ class AppearanceScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final langProvider = Provider.of<LanguageProvider>(context);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        title: const Text("Appearance"),
+        title: Text(langProvider.translate('appearance')),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
@@ -26,11 +28,12 @@ class AppearanceScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // --- Manual Overrides (Moved to Top) ---
-            _buildSectionHeader("Manual Overrides"),
+            // --- Manual Overrides (Moved to Top) ---
+            _buildSectionHeader(langProvider.translate('manual_overrides')),
             const SizedBox(height: 8),
-            const Text(
-              "Modify specific colors of the current theme manually.",
-              style: TextStyle(color: Colors.grey, fontSize: 13),
+            Text(
+              langProvider.translate('manual_overrides_desc'),
+              style: const TextStyle(color: Colors.grey, fontSize: 13),
             ),
             const SizedBox(height: 16),
             _buildCustomColorSection(context, themeProvider),
@@ -41,7 +44,7 @@ class AppearanceScreen extends StatelessWidget {
                 child: TextButton.icon(
                   onPressed: () => themeProvider.resetCustomColors(),
                   icon: const Icon(Icons.refresh),
-                  label: const Text("Reset to Preset Defaults"),
+                  label: Text(langProvider.translate('reset_to_defaults')),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.redAccent,
                   ),
@@ -52,13 +55,13 @@ class AppearanceScreen extends StatelessWidget {
             const Divider(),
             const SizedBox(height: 32),
 
-            _buildSectionHeader("Dark Themes"),
+            _buildSectionHeader(langProvider.translate('dark_themes')),
             const SizedBox(height: 16),
             _buildGrid(context, themeProvider, themeProvider.darkPresets),
 
             const SizedBox(height: 32),
 
-            _buildSectionHeader("Light Themes"),
+            _buildSectionHeader(langProvider.translate('light_themes')),
             const SizedBox(height: 16),
             _buildGrid(context, themeProvider, themeProvider.lightPresets),
 
@@ -84,6 +87,7 @@ class AppearanceScreen extends StatelessWidget {
     BuildContext context,
     ThemeProvider provider,
   ) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
@@ -96,8 +100,8 @@ class AppearanceScreen extends StatelessWidget {
         children: [
           _buildColorTile(
             context,
-            "Primary Color",
-            "Main accent color",
+            langProvider.translate('primary_color'),
+            langProvider.translate('primary_color_desc'),
             provider.activePrimaryColor,
             (c) => provider.setCustomPrimaryColor(c),
             'primary',
@@ -106,8 +110,8 @@ class AppearanceScreen extends StatelessWidget {
           const Divider(height: 1, indent: 16, endIndent: 16),
           _buildColorTile(
             context,
-            "Background Color",
-            "Main app background",
+            langProvider.translate('background_color'),
+            langProvider.translate('background_color_desc'),
             provider.activeBackgroundColor,
             (c) => provider.setCustomBackgroundColor(c),
             'background',
@@ -116,8 +120,8 @@ class AppearanceScreen extends StatelessWidget {
           const Divider(height: 1, indent: 16, endIndent: 16),
           _buildColorTile(
             context,
-            "Card Color",
-            "Background for lists/cards",
+            langProvider.translate('card_color'),
+            langProvider.translate('card_color_desc'),
             provider.activeCardColor,
             (c) => provider.setCustomCardColor(c),
             'card',
@@ -126,8 +130,8 @@ class AppearanceScreen extends StatelessWidget {
           const Divider(height: 1, indent: 16, endIndent: 16),
           _buildColorTile(
             context,
-            "Surface / Header",
-            "App Bar, Nav Bar surface",
+            langProvider.translate('surface_header'),
+            langProvider.translate('surface_header_desc'),
             provider.activeSurfaceColor,
             (c) => provider.setCustomSurfaceColor(c),
             'surface',
@@ -457,6 +461,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
   }
 
   Widget _buildPreview() {
+    final langProvider = Provider.of<LanguageProvider>(context);
     final Color effectivePrimary = _draftColors['primary']!;
     final Color effectiveBg = _draftColors['background']!;
     final Color effectiveCard = _draftColors['card']!;
@@ -499,7 +504,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    "Preview",
+                    langProvider.translate('preview'),
                     style: TextStyle(
                       color: effectiveTextOnSurface,
                       fontWeight: FontWeight.bold,
@@ -517,7 +522,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Content Area",
+                  langProvider.translate('content_area'),
                   style: TextStyle(
                     color: effectiveTextOnBg.withValues(alpha: 0.7),
                     fontSize: 12,
@@ -548,7 +553,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "Song Title",
+                              langProvider.translate('song_title'),
                               style: TextStyle(
                                 color: effectiveTextOnCard,
                                 fontWeight: FontWeight.bold,
@@ -556,7 +561,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              "Artist Name",
+                              langProvider.translate('artist_name'),
                               style: TextStyle(
                                 color: effectiveTextOnCard.withValues(
                                   alpha: 0.6,
@@ -586,6 +591,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
   @override
   Widget build(BuildContext context) {
     final color = _hsv.toColor();
+    final langProvider = Provider.of<LanguageProvider>(context);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -611,9 +617,12 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    "Edit Theme Colors",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  Text(
+                    langProvider.translate('edit_theme_colors'),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   ElevatedButton(
                     onPressed: _saveAll,
@@ -633,9 +642,9 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                         vertical: 0,
                       ),
                     ),
-                    child: const Text(
-                      "Save",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    child: Text(
+                      langProvider.translate('save'),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -646,13 +655,33 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  Expanded(child: _buildTab("Primary", "primary")),
+                  Expanded(
+                    child: _buildTab(
+                      langProvider.translate('color_primary'),
+                      "primary",
+                    ),
+                  ),
                   const SizedBox(width: 6),
-                  Expanded(child: _buildTab("BG", "background")),
+                  Expanded(
+                    child: _buildTab(
+                      langProvider.translate('color_bg'),
+                      "background",
+                    ),
+                  ),
                   const SizedBox(width: 6),
-                  Expanded(child: _buildTab("Card", "card")),
+                  Expanded(
+                    child: _buildTab(
+                      langProvider.translate('color_card'),
+                      "card",
+                    ),
+                  ),
                   const SizedBox(width: 6),
-                  Expanded(child: _buildTab("Surface", "surface")),
+                  Expanded(
+                    child: _buildTab(
+                      langProvider.translate('color_surface'),
+                      "surface",
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -689,7 +718,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                           onSubmitted: _onHexSubmitted,
                           onChanged: _onHexChanged,
                           decoration: InputDecoration(
-                            labelText: "Hex Code",
+                            labelText: langProvider.translate('hex_code'),
                             prefixText: "#",
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -919,9 +948,9 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
 
                   const SizedBox(height: 24),
 
-                  const Text(
-                    "RGB Channels",
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  Text(
+                    langProvider.translate('rgb_channels'),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
 

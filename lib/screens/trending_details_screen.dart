@@ -17,6 +17,7 @@ import '../widgets/player_bar.dart';
 import '../widgets/native_ad_widget.dart';
 import '../widgets/mini_visualizer.dart';
 import '../services/log_service.dart';
+import '../providers/language_provider.dart';
 
 class _AdItem {
   const _AdItem();
@@ -223,6 +224,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     // Extract metadata
     String mainImage = "";
     String title = "";
@@ -304,7 +306,13 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                   itemBuilder: (context, index) {
                     // Header
                     if (index == 0) {
-                      return _buildHeader(context, mainImage, title, subtitle);
+                      return _buildHeader(
+                        context,
+                        mainImage,
+                        title,
+                        subtitle,
+                        langProvider,
+                      );
                     }
 
                     // Content
@@ -316,12 +324,12 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                     }
 
                     if (_items.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.only(top: 50),
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 50),
                         child: Center(
                           child: Text(
-                            "No tracks found",
-                            style: TextStyle(color: Colors.white54),
+                            langProvider.translate('no_tracks_found'),
+                            style: const TextStyle(color: Colors.white54),
                           ),
                         ),
                       );
@@ -332,7 +340,12 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                     if (itemIndex >= _items.length)
                       return const SizedBox.shrink();
 
-                    return _buildListItem(context, itemIndex, provider);
+                    return _buildListItem(
+                      context,
+                      itemIndex,
+                      provider,
+                      langProvider,
+                    );
                   },
                 );
               },
@@ -351,7 +364,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () => Navigator.of(context).pop(),
-                    tooltip: "Back",
+                    tooltip: langProvider.translate('back'),
                   ),
                 ),
               ),
@@ -409,6 +422,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     String mainImage,
     String title,
     String subtitle,
+    LanguageProvider langProvider,
   ) {
     return Padding(
       padding: EdgeInsets.only(
@@ -482,7 +496,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
               ElevatedButton.icon(
                 onPressed: _playRandom,
                 icon: const Icon(Icons.shuffle, size: 18),
-                label: const Text("Shuffle Play"),
+                label: Text(langProvider.translate('shuffle_play')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).primaryColor,
                   foregroundColor:
@@ -508,7 +522,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 onPressed: () {
                   Provider.of<RadioProvider>(context, listen: false).stop();
                 },
-                tooltip: "Stop",
+                tooltip: langProvider.translate('stop'),
               ),
               IconButton(
                 icon: Icon(
@@ -521,7 +535,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 onPressed: _isLoading || _songs.isEmpty
                     ? null
                     : _showCopyDialog,
-                tooltip: "Copy List",
+                tooltip: langProvider.translate('copy_list'),
               ),
             ],
           ),
@@ -534,6 +548,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     BuildContext context,
     int index,
     RadioProvider provider,
+    LanguageProvider langProvider,
   ) {
     final item = _items[index];
 
@@ -635,7 +650,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 color: isSaved ? theme.primaryColor : Colors.white54,
               ),
               onPressed: () => _showAddSongDialog(track),
-              tooltip: isSaved ? "Already in Library" : "Add to Playlist",
+              tooltip: isSaved
+                  ? langProvider.translate('already_in_library')
+                  : langProvider.translate('add_to_playlist'),
             ),
           ],
         ),
@@ -752,15 +769,23 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
   void _showCopyDialog() {
     if (_isLoading) {
-      ScaffoldMessenger.of(
+      final langProvider = Provider.of<LanguageProvider>(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Still loading tracks...")));
+        listen: false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(langProvider.translate('loading_tracks'))),
+      );
       return;
     }
     if (_songs.isEmpty) {
-      ScaffoldMessenger.of(
+      final langProvider = Provider.of<LanguageProvider>(
         context,
-      ).showSnackBar(const SnackBar(content: Text("No tracks to copy")));
+        listen: false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(langProvider.translate('no_tracks_to_copy'))),
+      );
       return;
     }
 
@@ -771,10 +796,14 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       builder: (context) {
         final playlists = provider.playlists;
 
+        final langProvider = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        );
         return AlertDialog(
           backgroundColor: Theme.of(context).cardColor,
           title: Text(
-            "Copy Playlist",
+            langProvider.translate('copy_playlist'),
             style: TextStyle(
               color: Theme.of(context).textTheme.titleLarge?.color,
             ),
@@ -788,7 +817,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16.0),
                   child: Text(
-                    "Copy all songs to:",
+                    langProvider.translate('copy_songs_to'),
                     style: TextStyle(
                       color: Theme.of(
                         context,
@@ -806,9 +835,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                             Icons.add,
                             color: Colors.blueAccent,
                           ),
-                          title: const Text(
-                            "Create New Playlist",
-                            style: TextStyle(color: Colors.blueAccent),
+                          title: Text(
+                            langProvider.translate('create_new_playlist'),
+                            style: const TextStyle(color: Colors.blueAccent),
                           ),
                           onTap: () {
                             Navigator.pop(context);
@@ -843,12 +872,13 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
   void _createNewPlaylist() {
     final controller = TextEditingController();
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
         title: Text(
-          "New Playlist",
+          langProvider.translate('new_playlist'),
           style: TextStyle(
             color: Theme.of(context).textTheme.titleLarge?.color,
           ),
@@ -858,7 +888,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           autofocus: true,
           style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
           decoration: InputDecoration(
-            labelText: "Playlist Name",
+            labelText: langProvider.translate('playlist_name'),
             labelStyle: TextStyle(
               color: Theme.of(
                 context,
@@ -875,14 +905,16 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
+            child: Text(langProvider.translate('cancel')),
           ),
           TextButton(
             onPressed: () async {
               if (controller.text.isNotEmpty) {
                 final name = controller.text;
                 Navigator.pop(ctx);
-                _showProcessingDialog("Creating playlist and copying songs...");
+                _showProcessingDialog(
+                  langProvider.translate('adding_to_playlist'),
+                );
 
                 final provider = Provider.of<RadioProvider>(
                   context,
@@ -904,13 +936,19 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 if (mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Copied ${songs.length} songs!")),
+                    SnackBar(
+                      content: Text(
+                        langProvider
+                            .translate('songs_copied')
+                            .replaceAll('{0}', songs.length.toString()),
+                      ),
+                    ),
                   );
                 }
               }
             },
             child: Text(
-              "Create",
+              langProvider.translate('create'),
               style: TextStyle(color: Theme.of(context).primaryColor),
             ),
           ),
@@ -929,9 +967,19 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     provider.resolvePlaylistLinksInBackground(playlistId, songs);
 
     if (mounted) {
-      ScaffoldMessenger.of(
+      final langProvider = Provider.of<LanguageProvider>(
         context,
-      ).showSnackBar(SnackBar(content: Text("Copied ${songs.length} songs!")));
+        listen: false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            langProvider
+                .translate('songs_copied')
+                .replaceAll('{0}', songs.length.toString()),
+          ),
+        ),
+      );
     }
   }
 
@@ -943,10 +991,14 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       builder: (context) {
         final playlists = provider.playlists;
 
+        final langProvider = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        );
         return AlertDialog(
           backgroundColor: Theme.of(context).cardColor,
           title: Text(
-            "Add to Playlist",
+            langProvider.translate('add_to_playlist'),
             style: TextStyle(
               color: Theme.of(context).textTheme.titleLarge?.color,
             ),
@@ -960,7 +1012,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16.0),
                   child: Text(
-                    "Add '${song.title}' to:",
+                    "${langProvider.translate('add_to_playlist')} '${song.title}' to:",
                     style: TextStyle(
                       color: Theme.of(
                         context,
@@ -980,9 +1032,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                             Icons.add,
                             color: Colors.blueAccent,
                           ),
-                          title: const Text(
-                            "Create New Playlist",
-                            style: TextStyle(color: Colors.blueAccent),
+                          title: Text(
+                            langProvider.translate('create_new_playlist'),
+                            style: const TextStyle(color: Colors.blueAccent),
                           ),
                           onTap: () {
                             Navigator.pop(context);
@@ -1017,12 +1069,14 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
   void _createNewPlaylistAndAddSong(SavedSong song) {
     final controller = TextEditingController();
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
         title: Text(
-          "New Playlist",
+          langProvider.translate('new_playlist'),
           style: TextStyle(
             color: Theme.of(context).textTheme.titleLarge?.color,
           ),
@@ -1032,7 +1086,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           autofocus: true,
           style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
           decoration: InputDecoration(
-            labelText: "Playlist Name",
+            labelText: langProvider.translate('playlist_name'),
             labelStyle: TextStyle(
               color: Theme.of(
                 context,
@@ -1049,14 +1103,16 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
+            child: Text(langProvider.translate('cancel')),
           ),
           TextButton(
             onPressed: () async {
               if (controller.text.isNotEmpty) {
                 final name = controller.text;
                 Navigator.pop(ctx);
-                _showProcessingDialog("Adding to new playlist...");
+                _showProcessingDialog(
+                  langProvider.translate('adding_to_playlist'),
+                );
 
                 final provider = Provider.of<RadioProvider>(
                   context,
@@ -1078,13 +1134,19 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 if (mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Added '${song.title}'!")),
+                    SnackBar(
+                      content: Text(
+                        langProvider
+                            .translate('song_added')
+                            .replaceAll('{0}', song.title),
+                      ),
+                    ),
                   );
                 }
               }
             },
             child: Text(
-              "Create",
+              langProvider.translate('create'),
               style: TextStyle(color: Theme.of(context).primaryColor),
             ),
           ),
@@ -1101,9 +1163,17 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     provider.resolvePlaylistLinksInBackground(playlistId, [song]);
 
     if (mounted) {
-      ScaffoldMessenger.of(
+      final langProvider = Provider.of<LanguageProvider>(
         context,
-      ).showSnackBar(SnackBar(content: Text("Added '${song.title}'!")));
+        listen: false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            langProvider.translate('song_added').replaceAll('{0}', song.title),
+          ),
+        ),
+      );
     }
   }
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 import 'package:audio_service/audio_service.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -18,6 +19,7 @@ class PlayerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
+    final langProvider = Provider.of<LanguageProvider>(context);
     final station = provider.currentStation;
     final bool isDesktop = MediaQuery.of(context).size.width > 600;
 
@@ -324,7 +326,10 @@ class PlayerBar extends StatelessWidget {
                                                                   .isNotEmpty
                                                               ? provider
                                                                     .currentArtist
-                                                              : "Unknown Artist",
+                                                              : langProvider
+                                                                    .translate(
+                                                                      'unknown_artist',
+                                                                    ),
                                                           style: TextStyle(
                                                             color: isLinkEnabled
                                                                 ? Theme.of(
@@ -442,7 +447,9 @@ class PlayerBar extends StatelessWidget {
                                           ],
                                         )
                                       : Text(
-                                          "Live Broadcast",
+                                          langProvider.translate(
+                                            'live_broadcast',
+                                          ),
                                           style: TextStyle(
                                             color: playerTheme
                                                 .textTheme
@@ -457,7 +464,7 @@ class PlayerBar extends StatelessWidget {
                             )
                           : Center(
                               child: Text(
-                                "Select a station",
+                                langProvider.translate('select_a_station'),
                                 style: TextStyle(
                                   color:
                                       playerTheme.textTheme.bodyMedium?.color,
@@ -753,6 +760,7 @@ class PlayerBar extends StatelessWidget {
     RadioProvider provider,
     bool isDesktop,
   ) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -768,7 +776,7 @@ class PlayerBar extends StatelessWidget {
                   : Theme.of(context).iconTheme.color?.withOpacity(0.5),
             ),
             iconSize: 20,
-            tooltip: "Shuffle",
+            tooltip: langProvider.translate('shuffle'),
             onPressed: () => provider.toggleShuffle(),
           ),
           const SizedBox(width: 4),
@@ -793,8 +801,8 @@ class PlayerBar extends StatelessWidget {
                 : Theme.of(context).iconTheme.color?.withOpacity(0.5),
             iconSize: 20,
             tooltip: provider.currentSongIsSaved
-                ? "Already saved"
-                : "Add to Genre Playlist",
+                ? langProvider.translate('already_saved')
+                : langProvider.translate('add_to_genre_playlist'),
             onPressed: provider.currentSongIsSaved
                 ? null // Disable if already saved
                 : () async {
@@ -808,14 +816,20 @@ class PlayerBar extends StatelessWidget {
                             backgroundColor: const Color(
                               0xFF1a4d2e,
                             ), // Dark Green
-                            content: Text("Added to $genre Playlist"),
+                            content: Text(
+                              langProvider
+                                  .translate('added_to_playlist')
+                                  .replaceAll('{0}', genre),
+                            ),
                             duration: const Duration(seconds: 2),
                           ),
                         );
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Could not identify song to save."),
+                          SnackBar(
+                            content: Text(
+                              langProvider.translate('could_not_identify_song'),
+                            ),
                           ),
                         );
                       }

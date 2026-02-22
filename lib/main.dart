@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-// import 'package:device_preview/device_preview.dart'; // Disabled for debugging
 import 'package:flutter/foundation.dart'; // For kReleaseMode
 
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'providers/radio_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/language_provider.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'services/backup_service.dart';
 import 'screens/login_screen.dart';
@@ -169,6 +169,7 @@ class _AppBootstrapperState extends State<AppBootstrapper> {
         ChangeNotifierProvider.value(value: _backupService),
         ChangeNotifierProvider.value(value: entitlementService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => LanguageProvider()),
         ChangeNotifierProvider(
           create: (_) =>
               RadioProvider(audioHandler, _backupService, entitlementService),

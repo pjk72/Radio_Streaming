@@ -12,6 +12,7 @@ import 'spotify_login_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'local_library_screen.dart';
 import '../services/entitlement_service.dart';
+import '../providers/language_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -78,6 +79,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final auth = Provider.of<BackupService>(context);
     final radio = Provider.of<RadioProvider>(context);
     final entitlements = Provider.of<EntitlementService>(context);
+    final langProvider = Provider.of<LanguageProvider>(context);
 
     final canUseRecognition = entitlements.isFeatureEnabled('song_recognition');
     final canUseSpotify = entitlements.isFeatureEnabled('spotify_integration');
@@ -87,6 +89,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canUseDebugLogs = entitlements.isFeatureEnabled('debug_logs');
 
     // Filter Logic
+    final bool showLanguage =
+        _searchQuery.isEmpty ||
+        _matches("Language") ||
+        _matches("Lingua") ||
+        _matches("Idioma");
+
     final bool showAppearance =
         _searchQuery.isEmpty ||
         _matches("Theme") ||
@@ -161,7 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      "Settings",
+                      langProvider.translate('settings'),
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
                             fontWeight: FontWeight.bold,
@@ -192,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           color: Theme.of(context).textTheme.bodyLarge?.color,
                         ),
                         decoration: InputDecoration(
-                          hintText: "Search...",
+                          hintText: langProvider.translate('search'),
                           hintStyle: TextStyle(
                             color: Theme.of(context).textTheme.bodyMedium?.color
                                 ?.withValues(alpha: 0.5),
@@ -238,12 +246,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
+                    if (showLanguage)
+                      _buildSettingsTile(
+                        context,
+                        icon: Icons.language,
+                        title: langProvider.translate('language'),
+                        subtitle: langProvider.translate('language_desc'),
+                        onTap: () {
+                          _showLanguagePicker(context, langProvider);
+                        },
+                      ),
                     if (showAppearance && canUseAppearance)
                       _buildSettingsTile(
                         context,
                         icon: Icons.palette_rounded,
-                        title: "Appearance",
-                        subtitle: "Themes, colors, and layout",
+                        title: langProvider.translate('appearance'),
+                        subtitle: langProvider.translate('appearance_desc'),
                         onTap: () {
                           Navigator.push(
                             context,
@@ -258,8 +276,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildSettingsTile(
                         context,
                         icon: Icons.radio,
-                        title: "Manage Stations",
-                        subtitle: "Add, edit, or remove radio stations",
+                        title: langProvider.translate('manage_stations'),
+                        subtitle: langProvider.translate(
+                          'manage_stations_desc',
+                        ),
                         onTap: () {
                           Navigator.push(
                             context,
@@ -274,8 +294,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildSettingsTile(
                         context,
                         icon: Icons.folder,
-                        title: "Local Music Library",
-                        subtitle: "Manage local folders and playlists",
+                        title: langProvider.translate('local_library'),
+                        subtitle: langProvider.translate('local_library_desc'),
                         onTap: () {
                           Navigator.push(
                             context,
@@ -289,8 +309,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildSettingsTile(
                         context,
                         icon: Icons.bug_report_rounded,
-                        title: "Logs",
-                        subtitle: "View API responses and app logs",
+                        title: langProvider.translate('logs'),
+                        subtitle: langProvider.translate('logs_desc'),
                         onTap: () {
                           showModalBottomSheet(
                             context: context,
@@ -304,8 +324,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildSettingsSwitchTile(
                         context,
                         icon: Icons.view_headline_rounded,
-                        title: "Compact View",
-                        subtitle: "Show more stations in less space",
+                        title: langProvider.translate('compact_view'),
+                        subtitle: langProvider.translate('compact_view_desc'),
                         value: radio.isCompactView,
                         onChanged: (val) => radio.setCompactView(val),
                       ),
@@ -314,8 +334,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _buildSettingsSwitchTile(
                           context,
                           icon: Icons.music_note_rounded,
-                          title: "Enable Song Recognition",
-                          subtitle: "Identify songs using ACRCloud",
+                          title: langProvider.translate('song_recognition'),
+                          subtitle: langProvider.translate(
+                            'song_recognition_desc',
+                          ),
                           value: radio.isACRCloudEnabled,
                           onChanged: (val) => radio.setACRCloudEnabled(val),
                         ),
@@ -326,7 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                     if (showBackup) ...[
                       Text(
-                        "Cloud Backup",
+                        langProvider.translate('cloud_backup'),
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -432,7 +454,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     }
                                   },
                                   child: Text(
-                                    auth.isSignedIn ? "Sign Out" : "Sign In",
+                                    auth.isSignedIn
+                                        ? langProvider.translate('sign_out')
+                                        : langProvider.translate('sign_in'),
                                   ),
                                 ),
                               ],
@@ -446,7 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    "Last Backup",
+                                    langProvider.translate('last_backup'),
                                     style: TextStyle(
                                       color: Theme.of(context)
                                           .textTheme
@@ -477,7 +501,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    "Backup Frequency",
+                                    langProvider.translate('backup_frequency'),
                                     style: TextStyle(
                                       color: Theme.of(context)
                                           .textTheme
@@ -530,7 +554,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    "Startup Playback",
+                                    langProvider.translate('startup_playback'),
                                     style: TextStyle(
                                       color: Theme.of(context)
                                           .textTheme
@@ -551,18 +575,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     iconEnabledColor: Theme.of(
                                       context,
                                     ).primaryColor,
-                                    items: const [
+                                    items: [
                                       DropdownMenuItem(
                                         value: 'none',
-                                        child: Text("None"),
+                                        child: Text(
+                                          langProvider.translate('none'),
+                                        ),
                                       ),
                                       DropdownMenuItem(
                                         value: 'last',
-                                        child: Text("Last Played"),
+                                        child: Text(
+                                          langProvider.translate('last_played'),
+                                        ),
                                       ),
                                       DropdownMenuItem(
                                         value: 'specific',
-                                        child: Text("Specific Station"),
+                                        child: Text(
+                                          langProvider.translate(
+                                            'specific_station',
+                                          ),
+                                        ),
                                       ),
                                     ],
                                     onChanged: (val) {
@@ -607,11 +639,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                     ), // Placeholder if list empty, handled by below check
                                               )
                                               .name
-                                        : "Select Station",
+                                        : langProvider.translate(
+                                            'select_station',
+                                          ),
                                     style: const TextStyle(color: Colors.white),
                                   ),
-                                  subtitle: const Text(
-                                    "Tap to choose",
+                                  subtitle: Text(
+                                    langProvider.translate('tap_to_choose'),
                                     style: const TextStyle(
                                       color: Colors.white38,
                                     ),
@@ -639,10 +673,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           builder: (ctx, scrollController) {
                                             return Column(
                                               children: [
-                                                const Padding(
-                                                  padding: EdgeInsets.all(16.0),
+                                                Padding(
+                                                  padding: const EdgeInsets.all(
+                                                    16.0,
+                                                  ),
                                                   child: Text(
-                                                    "Select Startup Station",
+                                                    langProvider.translate(
+                                                      'select_station',
+                                                    ),
                                                     style: TextStyle(
                                                       color: Colors.white,
                                                       fontSize: 18,
@@ -789,7 +827,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                   Icons.cloud_upload,
                                                   size: 16,
                                                 ),
-                                          label: const Text("Backup"),
+                                          label: Text(
+                                            langProvider.translate('backup'),
+                                          ),
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: const Color(
                                               0xFF6c5ce7,
@@ -1554,6 +1594,123 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showLanguagePicker(
+    BuildContext context,
+    LanguageProvider langProvider,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.5,
+          minChildSize: 0.3,
+          maxChildSize: 0.8,
+          expand: false,
+          builder: (ctx, scrollController) {
+            final options = [
+              {
+                'code': 'system',
+                'label': langProvider.translate('system'),
+                'flag': '🌐',
+              },
+              {
+                'code': 'en',
+                'label': langProvider.translate('english'),
+                'flag': '🇺🇸',
+              },
+              {
+                'code': 'it',
+                'label': langProvider.translate('italian'),
+                'flag': '🇮🇹',
+              },
+              {
+                'code': 'es',
+                'label': langProvider.translate('spanish'),
+                'flag': '🇪🇸',
+              },
+              {
+                'code': 'fr',
+                'label': langProvider.translate('french'),
+                'flag': '🇫🇷',
+              },
+              {
+                'code': 'de',
+                'label': langProvider.translate('german'),
+                'flag': '🇩🇪',
+              },
+            ];
+
+            return Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      langProvider.translate('language'),
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.titleLarge?.color,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      itemCount: options.length,
+                      itemBuilder: (ctx, index) {
+                        final option = options[index];
+                        final isSelected =
+                            langProvider.currentLanguageCode == option['code'];
+                        return ListTile(
+                          leading: Text(
+                            option['flag']!,
+                            style: const TextStyle(fontSize: 24),
+                          ),
+                          title: Text(
+                            option['label']!,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? Theme.of(context).primaryColor
+                                  : Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge?.color,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? Icon(
+                                  Icons.check,
+                                  color: Theme.of(context).primaryColor,
+                                )
+                              : null,
+                          onTap: () {
+                            langProvider.setLanguage(option['code']!);
+                            Navigator.pop(ctx);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

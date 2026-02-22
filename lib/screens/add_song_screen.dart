@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/radio_provider.dart';
 import '../services/music_metadata_service.dart';
+import '../providers/language_provider.dart';
 import 'trending_details_screen.dart';
 
 class AddSongScreen extends StatefulWidget {
@@ -51,9 +52,12 @@ class _AddSongScreenState extends State<AddSongScreen> {
         setState(() {
           _isLoading = false;
         });
+        final lang = Provider.of<LanguageProvider>(context, listen: false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Search error: $e"),
+            content: Text(
+              lang.translate('search_error').replaceAll('{0}', e.toString()),
+            ),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -64,15 +68,16 @@ class _AddSongScreenState extends State<AddSongScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          "Add New Song",
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Text(
+          lang.translate('add_new_song'),
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
           if (_selectedItems.isNotEmpty)
@@ -84,7 +89,11 @@ class _AddSongScreenState extends State<AddSongScreen> {
               child: ElevatedButton.icon(
                 onPressed: _saveSelectedSongs,
                 icon: const Icon(Icons.add, size: 18),
-                label: Text("Add (${_selectedItems.length})"),
+                label: Text(
+                  lang
+                      .translate('add_count')
+                      .replaceAll('{0}', _selectedItems.length.toString()),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: theme.primaryColor,
                   foregroundColor: Colors.white,
@@ -114,7 +123,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
                 autofocus: true,
                 style: const TextStyle(fontSize: 16),
                 decoration: InputDecoration(
-                  hintText: "Search song, artist, or album...",
+                  hintText: lang.translate('search_hint'),
                   hintStyle: TextStyle(
                     color: theme.hintColor.withValues(alpha: 0.5),
                   ),
@@ -160,6 +169,8 @@ class _AddSongScreenState extends State<AddSongScreen> {
   }
 
   Widget _buildResultsView(ThemeData theme) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -176,7 +187,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              "Start searching for music to add",
+              lang.translate('start_searching'),
               style: TextStyle(color: theme.hintColor.withValues(alpha: 0.6)),
             ),
           ],
@@ -195,13 +206,13 @@ class _AddSongScreenState extends State<AddSongScreen> {
               color: theme.dividerColor.withValues(alpha: 0.2),
             ),
             const SizedBox(height: 16),
-            const Text(
-              "No results found",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              lang.translate('no_results_found'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
-              "Try searching with different keywords",
+              lang.translate('try_searching_different'),
               style: TextStyle(color: theme.hintColor.withValues(alpha: 0.6)),
             ),
           ],
@@ -364,6 +375,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
 
   Future<void> _saveSelectedSongs() async {
     final provider = Provider.of<RadioProvider>(context, listen: false);
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
     final count = _selectedItems.length;
 
     // Show loading indicator
@@ -384,7 +396,15 @@ class _AddSongScreenState extends State<AddSongScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              "Successfully added $count ${count == 1 ? 'song' : 'songs'}",
+              lang
+                  .translate('successfully_added')
+                  .replaceAll('{0}', count.toString())
+                  .replaceAll(
+                    '{1}',
+                    count == 1
+                        ? lang.translate('song_singular')
+                        : lang.translate('songs_plural'),
+                  ),
             ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.green,
@@ -396,7 +416,11 @@ class _AddSongScreenState extends State<AddSongScreen> {
         Navigator.pop(context); // Pop loading
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Error adding songs: $e"),
+            content: Text(
+              lang
+                  .translate('error_adding_songs')
+                  .replaceAll('{0}', e.toString()),
+            ),
             backgroundColor: Colors.redAccent,
           ),
         );

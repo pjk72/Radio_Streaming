@@ -8,6 +8,7 @@ import '../services/playlist_service.dart';
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
+import '../providers/language_provider.dart';
 
 class LocalLibraryScreen extends StatefulWidget {
   const LocalLibraryScreen({super.key});
@@ -34,6 +35,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     final folders = await _localService.getLocalFolders();
     if (mounted) {
       final radio = Provider.of<RadioProvider>(context, listen: false);
+      final lang = Provider.of<LanguageProvider>(context, listen: false);
       bool anyUpdated = false;
 
       // 1. First, check all existing local playlists in RadioProvider
@@ -52,7 +54,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
           final deviceSongs = folders[path]!;
 
           final savedSongs = deviceSongs
-              .map((s) => _mapToSavedSong(s))
+              .map((s) => _mapToSavedSong(s, lang))
               .toList();
 
           bool contentChanged = savedSongs.length != existing.songs.length;
@@ -110,7 +112,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
             final migratedPlaylist = Playlist(
               id: newId,
               name: newName,
-              songs: deviceSongs.map((s) => _mapToSavedSong(s)).toList(),
+              songs: deviceSongs.map((s) => _mapToSavedSong(s, lang)).toList(),
               createdAt: existing.createdAt,
               creator: 'local',
             );
@@ -133,21 +135,21 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
 
       if (anyUpdated && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Synchronized local library & folder names"),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(lang.translate('sync_local_library')),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
     }
   }
 
-  SavedSong _mapToSavedSong(SongModel s) {
+  SavedSong _mapToSavedSong(SongModel s, LanguageProvider lang) {
     return SavedSong(
       id: 'local_${s.id}',
       title: s.title,
-      artist: s.artist ?? 'Unknown Artist',
-      album: s.album ?? 'Unknown Album',
+      artist: s.artist ?? lang.translate('unknown_artist'),
+      album: s.album ?? lang.translate('unknown_album'),
       duration: Duration(milliseconds: s.duration ?? 0),
       dateAdded: DateTime.now(),
       localPath: s.data,
@@ -175,6 +177,8 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     List<SongModel> songs,
     bool isAdded,
   ) async {
+    if (!mounted) return;
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
     final id = _generatePlaylistId(path);
 
     if (isAdded) {
@@ -182,7 +186,11 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
       await _playlistService.deletePlaylist(id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Removed '$name' from playlists")),
+          SnackBar(
+            content: Text(
+              lang.translate('removed_from_playlists').replaceAll('{0}', name),
+            ),
+          ),
         );
       }
     } else {
@@ -192,8 +200,8 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
             (s) => SavedSong(
               id: 'local_${s.id}',
               title: s.title,
-              artist: s.artist ?? 'Unknown Artist',
-              album: s.album ?? 'Unknown Album',
+              artist: s.artist ?? lang.translate('unknown_artist'),
+              album: s.album ?? lang.translate('unknown_album'),
               duration: Duration(milliseconds: s.duration ?? 0),
               dateAdded: DateTime.now(),
               localPath: s.data,
@@ -217,9 +225,13 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
       radio.enrichPlaylistMetadata(id);
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Added '$name' to playlists")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              lang.translate('added_to_playlists').replaceAll('{0}', name),
+            ),
+          ),
+        );
       }
     }
   }
@@ -227,6 +239,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final radio = Provider.of<RadioProvider>(context);
+    final lang = Provider.of<LanguageProvider>(context);
     final sortedKeys = _folders.keys.toList()
       ..sort((a, b) {
         final nameA = a.split(Platform.pathSeparator).last.toLowerCase();
@@ -239,7 +252,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text("Local Music Library"),
+        title: Text(lang.translate('local_library')),
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
       ),
@@ -275,7 +288,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          "No music folders found",
+                          lang.translate('no_music_folders'),
                           style: TextStyle(
                             color: Theme.of(context).textTheme.bodyMedium?.color
                                 ?.withValues(alpha: 0.54),
@@ -283,7 +296,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          "Swipe down to scan again",
+                          lang.translate('swipe_down_scan'),
                           style: TextStyle(
                             color: Theme.of(context).textTheme.bodySmall?.color
                                 ?.withValues(alpha: 0.24),
@@ -373,7 +386,9 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    "${songs.length} songs",
+                                    lang
+                                        .translate('songs_count')
+                                        .replaceAll('{0}', '${songs.length}'),
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
                                           color: Theme.of(context)

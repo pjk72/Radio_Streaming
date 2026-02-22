@@ -22,6 +22,7 @@ import '../providers/radio_provider.dart';
 import '../services/radio_audio_handler.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
+import '../providers/language_provider.dart';
 
 import '../services/backup_service.dart';
 import '../services/notification_service.dart';
@@ -224,7 +225,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     // Clear proposals so we don't ask again this session
                     provider.upgradeProposals.clear();
                   },
-                  child: const Text("Cancel"),
+                  child: Text(
+                    Provider.of<LanguageProvider>(
+                      context,
+                      listen: false,
+                    ).translate('cancel'),
+                  ),
                 ),
                 ElevatedButton(
                   onPressed: selectedProposalIds.isEmpty
@@ -241,7 +247,15 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                "Updated ${toApply.length} songs to use local files.",
+                                Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    )
+                                    .translate('updated_local_files')
+                                    .replaceAll(
+                                      '{0}',
+                                      toApply.length.toString(),
+                                    ),
                               ),
                             ),
                           );
@@ -290,6 +304,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       _selectedAlbum != null;
 
   String get headerTitle {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
     if (_selectedPlaylistId != null) {
       final provider = Provider.of<RadioProvider>(context, listen: false);
       try {
@@ -297,7 +312,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             .firstWhere((p) => p.id == _selectedPlaylistId)
             .name;
       } catch (_) {
-        return "Playlist";
+        return lang.translate('tab_playlists');
       }
     }
     if (_selectedArtist != null) {
@@ -306,7 +321,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     if (_selectedAlbum != null) {
       return _selectedAlbumDisplay ?? _selectedAlbum!;
     }
-    return "Library";
+    return lang.translate('tab_library');
   }
 
   /// Helper to access all songs across playlists (for creating ad-hoc playlists)
@@ -465,9 +480,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     _unlockTimer?.cancel();
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Keep holding to unlock..."),
-        duration: Duration(milliseconds: 2000),
+      SnackBar(
+        content: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('keep_holding_unlock'),
+        ),
+        duration: const Duration(milliseconds: 2000),
       ),
     );
 
@@ -475,9 +495,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Song unlocked!")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('song_unlocked'),
+            ),
+          ),
+        );
         HapticFeedback.mediumImpact();
       }
     });
@@ -572,7 +599,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   );
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Song unlocked!")),
+                      SnackBar(
+                        content: Text(
+                          Provider.of<LanguageProvider>(
+                            context,
+                            listen: false,
+                          ).translate('song_unlocked'),
+                        ),
+                      ),
                     );
                   }
                 },
@@ -615,7 +649,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text("Cancel"),
+                          child: Text(
+                            Provider.of<LanguageProvider>(
+                              context,
+                              listen: false,
+                            ).translate('cancel'),
+                          ),
                         ),
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, true),
@@ -644,9 +683,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     SavedSong song,
     String playlistId,
   ) async {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text("Testing track...")));
+    ).showSnackBar(SnackBar(content: Text(lang.translate('testing_track'))));
 
     try {
       bool isLocalPlaylist = false;
@@ -666,9 +706,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         await provider.unmarkSongAsInvalid(song.id, playlistId: playlistId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Success! Track verified and unlocked."),
-            ),
+            SnackBar(content: Text(lang.translate('test_success_unlocked'))),
           );
         }
       } else {
@@ -678,8 +716,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             SnackBar(
               content: Text(
                 isLocal
-                    ? "Verification failed: File not found."
-                    : "Verification failed: Link still problematic.",
+                    ? lang.translate('verification_failed_local')
+                    : lang.translate('verification_failed_link'),
               ),
             ),
           );
@@ -688,7 +726,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Test failed. Keeping as invalid.")),
+          SnackBar(content: Text(lang.translate('test_failed_invalid'))),
         );
       }
     }
@@ -804,7 +842,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Bulk Check Completed: $unlockedCount tracks fixed/unlocked.",
+            Provider.of<LanguageProvider>(context, listen: false)
+                .translate('bulk_check_completed')
+                .replaceAll('{0}', unlockedCount.toString()),
           ),
         ),
       );
@@ -840,7 +880,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Close", style: TextStyle(color: Colors.blue)),
+            child: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('close'),
+              style: const TextStyle(color: Colors.blue),
+            ),
           ),
         ],
       ),
@@ -888,6 +934,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   Widget build(BuildContext context) {
     super.build(context);
     final provider = Provider.of<RadioProvider>(context);
+    final lang = Provider.of<LanguageProvider>(context);
     // Use filtered playlists as the source of truth for the list view
     final allPlaylists = provider.filteredPlaylists;
 
@@ -1223,6 +1270,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               final primaryColor = Theme.of(
                                 context,
                               ).primaryColor;
+                              final lang = Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              );
 
                               return [
                                 PopupMenuItem(
@@ -1237,7 +1288,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
-                                        "Sort Alphabetically",
+                                        lang.translate('sort_alphabetically'),
                                         style: TextStyle(
                                           color: _sortAlphabetical
                                               ? primaryColor
@@ -1262,8 +1313,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       const SizedBox(width: 12),
                                       Text(
                                         _showPlaylistSearch
-                                            ? "Hide Find"
-                                            : "Find in Playlist",
+                                            ? lang.translate('hide_find')
+                                            : lang.translate(
+                                                'find_in_playlist',
+                                              ),
                                         style: TextStyle(
                                           color: _showPlaylistSearch
                                               ? primaryColor
@@ -1278,7 +1331,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   enabled: false,
                                   height: 32,
                                   child: Text(
-                                    "GROUP BY",
+                                    lang.translate('group_by').toUpperCase(),
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
@@ -1302,7 +1355,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
-                                        "Album",
+                                        lang.translate('label_album'),
                                         style: TextStyle(
                                           color:
                                               _groupingMode ==
@@ -1339,7 +1392,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
-                                        "Artist",
+                                        lang.translate('label_artist'),
                                         style: TextStyle(
                                           color:
                                               _groupingMode ==
@@ -1376,7 +1429,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
-                                        "None",
+                                        lang.translate('none'),
                                         style: TextStyle(
                                           color:
                                               _groupingMode ==
@@ -1410,7 +1463,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       ),
                                       const SizedBox(width: 12),
                                       Text(
-                                        "Shuffle",
+                                        lang.translate('shuffle'),
                                         style: TextStyle(
                                           color: provider.isShuffleMode
                                               ? Colors.redAccent
@@ -1431,7 +1484,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                         ),
                                         const SizedBox(width: 12),
                                         Text(
-                                          "Scan Duplicates",
+                                          lang.translate('scan_duplicates'),
                                           style: TextStyle(
                                             color: onSurfaceColor,
                                           ),
@@ -1464,8 +1517,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           const SizedBox(width: 12),
                                           Text(
                                             _isBulkChecking
-                                                ? "Processing..."
-                                                : "Try Again & Unlock All",
+                                                ? lang.translate('processing')
+                                                : lang.translate(
+                                                    'try_again_unlock_all',
+                                                  ),
                                             style: TextStyle(
                                               color: onSurfaceColor,
                                             ),
@@ -1609,13 +1664,19 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         child: Row(
                           children: [
                             buildModeBtn(
-                              "Playlist",
+                              lang.translate('tab_playlists'),
                               MetadataViewMode.playlists,
                             ),
                             const SizedBox(width: 8),
-                            buildModeBtn("Artists", MetadataViewMode.artists),
+                            buildModeBtn(
+                              lang.translate('tab_artists'),
+                              MetadataViewMode.artists,
+                            ),
                             const SizedBox(width: 8),
-                            buildModeBtn("Albums", MetadataViewMode.albums),
+                            buildModeBtn(
+                              lang.translate('tab_albums'),
+                              MetadataViewMode.albums,
+                            ),
                             const SizedBox(width: 8),
                             // Search Bar
                             Expanded(
@@ -1905,9 +1966,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
   void _playPlaylist(RadioProvider provider, Playlist playlist) {
     if (playlist.songs.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Playlist is empty")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('playlist_empty'),
+          ),
+        ),
+      );
       return;
     }
 
@@ -1931,6 +1999,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       (p) => p.id.startsWith('spotify_') || p.creator == 'spotify',
     );
     final hasAnyLocal = provider.playlists.any((p) => p.creator == 'local');
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
 
     final entitlements = Provider.of<EntitlementService>(context);
     final canUseSpotify = entitlements.isFeatureEnabled('spotify_integration');
@@ -1947,8 +2016,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       return Center(
         child: Text(
           _searchQuery.isEmpty
-              ? "No playlists"
-              : "No playlists match your search",
+              ? lang.translate('no_playlists')
+              : lang.translate('no_playlists_search'),
           style: const TextStyle(color: Colors.white54),
         ),
       );
@@ -2044,8 +2113,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   return _buildDirectAccessCard(
                     context,
                     provider,
-                    "Connect Spotify",
-                    "Import your favorite playlists",
+                    lang.translate('connect_spotify'),
+                    lang.translate('import_spotify_playlists'),
                     FontAwesomeIcons.spotify,
                     const Color(0xFF1DB954),
                     () => _handleSpotifyLogin(context, provider),
@@ -2055,8 +2124,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   return _buildDirectAccessCard(
                     context,
                     provider,
-                    "Local Music",
-                    "Add folders from your device",
+                    lang.translate('local_music'),
+                    lang.translate('add_folders_device'),
                     Icons.smartphone_rounded,
                     Colors.orangeAccent,
                     () => Navigator.push(
@@ -2100,8 +2169,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 return _buildDirectAccessCard(
                   context,
                   provider,
-                  "Connect Spotify",
-                  "Import your favorite playlists",
+                  lang.translate('connect_spotify'),
+                  lang.translate('import_spotify_playlists'),
                   FontAwesomeIcons.spotify,
                   const Color(0xFF1DB954),
                   () => _handleSpotifyLogin(context, provider),
@@ -2111,8 +2180,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 return _buildDirectAccessCard(
                   context,
                   provider,
-                  "Local Music",
-                  "Add folders from your device",
+                  lang.translate('local_music'),
+                  lang.translate('add_folders_device'),
                   Icons.smartphone_rounded,
                   Colors.orangeAccent,
                   () => Navigator.push(
@@ -2624,8 +2693,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     if (downloadLimit == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("You do not have permission to download songs."),
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('no_permission_download'),
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -3412,8 +3486,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         NotificationService().cancel(notificationId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Download Cancelled"),
+            SnackBar(
+              content: Text(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('download_cancelled'),
+              ),
               backgroundColor: Colors.orange,
             ),
           );
@@ -3544,7 +3623,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       selectedPlaylists.clear();
                                     });
                                   },
-                                  child: const Text("Clear Selection"),
+                                  child: Text(
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('clear_selection'),
+                                  ),
                                 ),
                             ],
                           ),
@@ -3927,7 +4011,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text("Copied songs to '${p.name}'"),
+                              content: Text(
+                                Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    )
+                                    .translate('copied_songs_to')
+                                    .replaceAll('{0}', p.name),
+                              ),
                             ),
                           );
                         },
@@ -3980,7 +4071,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 await provider.removeSongsFromPlaylist('favorites', songIds);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Favorites cleared.")),
+                    SnackBar(
+                      content: Text(
+                        Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('favorites_cleared'),
+                      ),
+                    ),
                   );
                 }
               }
@@ -4171,6 +4269,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               context,
               listen: false,
             );
+            final lang = Provider.of<LanguageProvider>(context, listen: false);
             final filters = provider.playlistCreatorFilter;
             final isApp = filters.contains('app');
             final isUser = filters.contains('user');
@@ -4184,7 +4283,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             return AlertDialog(
               backgroundColor: Theme.of(context).cardColor,
               title: Text(
-                "Filter Playlists",
+                lang.translate('filter_playlists'),
                 style: TextStyle(
                   color: Theme.of(context).textTheme.titleLarge?.color,
                 ),
@@ -4194,7 +4293,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 children: [
                   CheckboxListTile(
                     title: Text(
-                      "User Created",
+                      lang.translate('user_created'),
                       style: TextStyle(
                         color: Theme.of(context).textTheme.bodyLarge?.color,
                       ),
@@ -4210,7 +4309,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   ),
                   CheckboxListTile(
                     title: Text(
-                      "App Created (Favorites/Genres)",
+                      lang.translate('app_created'),
                       style: TextStyle(
                         color: Theme.of(context).textTheme.bodyLarge?.color,
                       ),
@@ -4225,13 +4324,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   if (canUseLocal)
                     CheckboxListTile(
                       title: Text(
-                        "Local Device",
+                        lang.translate('local_device'),
                         style: TextStyle(
                           color: Theme.of(context).textTheme.bodyLarge?.color,
                         ),
                       ),
                       subtitle: Text(
-                        "Folders from this device",
+                        lang.translate('folders_from_device'),
                         style: TextStyle(
                           color: Theme.of(
                             context,
@@ -4249,7 +4348,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   if (canUseSpotify)
                     CheckboxListTile(
                       title: Text(
-                        "Spotify Imported",
+                        lang.translate('spotify_imported'),
                         style: TextStyle(
                           color: Theme.of(context).textTheme.bodyLarge?.color,
                         ),
@@ -4269,9 +4368,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           provider.clearPlaylistCreatorFilter();
                           Navigator.pop(ctx);
                         },
-                        child: const Text(
-                          "Clear Filters (Show All)",
-                          style: TextStyle(color: Colors.blueAccent),
+                        child: Text(
+                          lang.translate('clear_filters'),
+                          style: const TextStyle(color: Colors.blueAccent),
                         ),
                       ),
                     ),
@@ -4280,7 +4379,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text("Done"),
+                  child: Text(lang.translate('done')),
                 ),
               ],
             );
@@ -4310,7 +4409,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             ),
             SizedBox(height: 16),
             Text(
-              "No songs found",
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('no_songs_found'),
               style: TextStyle(
                 color:
                     Theme.of(
@@ -4622,7 +4724,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           }
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Removed from Favorites")),
+              SnackBar(
+                content: Text(
+                  Provider.of<LanguageProvider>(
+                    context,
+                    listen: false,
+                  ).translate('removed_from_favorites'),
+                ),
+              ),
             );
           }
         } else {
@@ -4632,7 +4741,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             await provider.bulkToggleFavoriteSongs(toAdd, true);
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Added to Favorites")),
+                SnackBar(
+                  content: Text(
+                    Provider.of<LanguageProvider>(
+                      context,
+                      listen: false,
+                    ).translate('added_to_favorites'),
+                  ),
+                ),
               );
             }
           }
@@ -5125,8 +5241,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   }
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("YouTube link not found"),
+                                    SnackBar(
+                                      content: Text(
+                                        Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        ).translate('youtube_link_not_found'),
+                                      ),
                                     ),
                                   );
                                 }
@@ -5158,7 +5279,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                         backgroundColor: Theme.of(
                                           context,
                                         ).cardColor,
-                                        title: const Text("Delete File"),
+                                        title: Text(
+                                          Provider.of<LanguageProvider>(
+                                            context,
+                                            listen: false,
+                                          ).translate('delete_file'),
+                                        ),
                                         content: Text(
                                           "Delete '${song.title}' from device?",
                                         ),
@@ -5248,27 +5374,40 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             }
                           },
                           itemBuilder: (context) => [
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'video',
                               child: Row(
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     FontAwesomeIcons.youtube,
                                     color: Colors.red,
                                     size: 20,
                                   ),
-                                  SizedBox(width: 8),
-                                  Text("Watch Video"),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('watch_video'),
+                                  ),
                                 ],
                               ),
                             ),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'copy',
                               child: Row(
                                 children: [
-                                  Icon(Icons.content_copy_rounded, size: 20),
-                                  SizedBox(width: 8),
-                                  Text("Copy To"),
+                                  const Icon(
+                                    Icons.content_copy_rounded,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('copy_to'),
+                                  ),
                                 ],
                               ),
                             ),
@@ -5849,10 +5988,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
 
     if (groups.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          "No artists found",
-          style: TextStyle(color: Colors.white54),
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('no_artists_found'),
+          style: const TextStyle(color: Colors.white54),
         ),
       );
     }
@@ -6061,8 +6203,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         : -1;
 
     if (groups.isEmpty) {
-      return const Center(
-        child: Text("No albums found", style: TextStyle(color: Colors.white54)),
+      return Center(
+        child: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('no_albums_found'),
+          style: const TextStyle(color: Colors.white54),
+        ),
       );
     }
 
@@ -7165,7 +7313,13 @@ class _DuplicateResolutionDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text("Close", style: TextStyle(color: Colors.white54)),
+          child: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('close'),
+            style: const TextStyle(color: Colors.white54),
+          ),
         ),
         ElevatedButton.icon(
           onPressed: _selectedForRemoval.isEmpty
@@ -7176,24 +7330,37 @@ class _DuplicateResolutionDialogState
                     context: context,
                     builder: (c) => AlertDialog(
                       backgroundColor: const Color(0xFF222222),
-                      title: const Text(
-                        "Confirm Deletion",
-                        style: TextStyle(color: Colors.white),
+                      title: Text(
+                        Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('confirm_deletion'),
+                        style: const TextStyle(color: Colors.white),
                       ),
                       content: Text(
-                        "Remove $count selected songs from playlist?",
+                        Provider.of<LanguageProvider>(context, listen: false)
+                            .translate('remove_count_songs')
+                            .replaceAll('{0}', count.toString()),
                         style: const TextStyle(color: Colors.white70),
                       ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(c, false),
-                          child: const Text("Cancel"),
+                          child: Text(
+                            Provider.of<LanguageProvider>(
+                              context,
+                              listen: false,
+                            ).translate('cancel'),
+                          ),
                         ),
                         TextButton(
                           onPressed: () => Navigator.pop(c, true),
-                          child: const Text(
-                            "Delete",
-                            style: TextStyle(color: Colors.red),
+                          child: Text(
+                            Provider.of<LanguageProvider>(
+                              context,
+                              listen: false,
+                            ).translate('delete'),
+                            style: const TextStyle(color: Colors.red),
                           ),
                         ),
                       ],
@@ -7208,14 +7375,25 @@ class _DuplicateResolutionDialogState
                     if (context.mounted) {
                       Navigator.pop(context); // Close main dialog
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Removed $count songs.")),
+                        SnackBar(
+                          content: Text(
+                            Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                )
+                                .translate('removed_songs')
+                                .replaceAll('{0}', count.toString()),
+                          ),
+                        ),
                       );
                     }
                   }
                 },
           icon: const Icon(Icons.delete_outline, color: Colors.white),
           label: Text(
-            "Delete Selected (${_selectedForRemoval.length})",
+            Provider.of<LanguageProvider>(context, listen: false)
+                .translate('delete_selected')
+                .replaceAll('{0}', _selectedForRemoval.length.toString()),
             style: const TextStyle(color: Colors.white),
           ),
           style: ElevatedButton.styleFrom(

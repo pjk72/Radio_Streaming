@@ -7,6 +7,7 @@ import '../services/trending_service.dart';
 import '../services/spotify_service.dart';
 import '../providers/radio_provider.dart';
 import 'trending_details_screen.dart';
+import '../providers/language_provider.dart';
 
 class TrendingScreen extends StatefulWidget {
   const TrendingScreen({super.key});
@@ -30,40 +31,43 @@ class _TrendingScreenState extends State<TrendingScreen>
   List<TrendingPlaylist> _playlists = [];
   String? _errorMessage;
 
-  Map<String, String> get _countryMap => const {
-    "IT": "🇮🇹 Italy",
-    "US": "🇺🇸 USA",
-    "GB": "🇬🇧 UK",
-    "FR": "🇫🇷 France",
-    "DE": "🇩🇪 Germany",
-    "ES": "🇪🇸 Spain",
-    "CA": "🇨🇦 Canada",
-    "AU": "🇦🇺 Australia",
-    "BR": "🇧🇷 Brazil",
-    "JP": "🇯🇵 Japan",
-    "RU": "🇷🇺 Russia",
-    "CN": "🇨🇳 China",
-    "IN": "🇮🇳 India",
-    "MX": "🇲🇽 Mexico",
-    "AR": "🇦🇷 Argentina",
-    "NL": "🇳🇱 Netherlands",
-    "BE": "🇧🇪 Belgium",
-    "CH": "🇨🇭 Switzerland",
-    "SE": "🇸🇪 Sweden",
-    "NO": "🇳🇴 Norway",
-    "DK": "🇩🇰 Denmark",
-    "FI": "🇫🇮 Finland",
-    "PL": "🇵🇱 Poland",
-    "AT": "🇦🇹 Austria",
-    "PT": "🇵🇹 Portugal",
-    "GR": "🇬🇷 Greece",
-    "TR": "🇹🇷 Turkey",
-    "ZA": "🇿🇦 South Africa",
-    "KR": "🇰🇷 South Korea",
-    "IE": "🇮🇪 Ireland",
-    "NZ": "🇳🇿 New Zealand",
-    "MA": "🇲🇦 Morocco",
-  };
+  Map<String, String> get _countryMap {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    return {
+      "IT": "🇮🇹 ${langProvider.translate('country_IT')}",
+      "US": "🇺🇸 ${langProvider.translate('country_US')}",
+      "GB": "🇬🇧 ${langProvider.translate('country_GB')}",
+      "FR": "🇫🇷 ${langProvider.translate('country_FR')}",
+      "DE": "🇩🇪 ${langProvider.translate('country_DE')}",
+      "ES": "🇪🇸 ${langProvider.translate('country_ES')}",
+      "CA": "🇨🇦 ${langProvider.translate('country_CA')}",
+      "AU": "🇦🇺 ${langProvider.translate('country_AU')}",
+      "BR": "🇧🇷 ${langProvider.translate('country_BR')}",
+      "JP": "🇯🇵 ${langProvider.translate('country_JP')}",
+      "RU": "🇷🇺 ${langProvider.translate('country_RU')}",
+      "CN": "🇨🇳 ${langProvider.translate('country_CN')}",
+      "IN": "🇮🇳 ${langProvider.translate('country_IN')}",
+      "MX": "🇲🇽 ${langProvider.translate('country_MX')}",
+      "AR": "🇦🇷 ${langProvider.translate('country_AR')}",
+      "NL": "🇳🇱 ${langProvider.translate('country_NL')}",
+      "BE": "🇧🇪 ${langProvider.translate('country_BE')}",
+      "CH": "🇨🇭 ${langProvider.translate('country_CH')}",
+      "SE": "🇸🇪 ${langProvider.translate('country_SE')}",
+      "NO": "🇳🇴 ${langProvider.translate('country_NO')}",
+      "DK": "🇩🇰 ${langProvider.translate('country_DK')}",
+      "FI": "🇫🇮 ${langProvider.translate('country_FI')}",
+      "PL": "🇵🇱 ${langProvider.translate('country_PL')}",
+      "AT": "🇦🇹 ${langProvider.translate('country_AT')}",
+      "PT": "🇵🇹 ${langProvider.translate('country_PT')}",
+      "GR": "🇬🇷 ${langProvider.translate('country_GR')}",
+      "TR": "🇹🇷 ${langProvider.translate('country_TR')}",
+      "ZA": "🇿🇦 ${langProvider.translate('country_ZA')}",
+      "KR": "🇰🇷 ${langProvider.translate('country_KR')}",
+      "IE": "🇮🇪 ${langProvider.translate('country_IE')}",
+      "NZ": "🇳🇿 ${langProvider.translate('country_NZ')}",
+      "MA": "🇲🇦 ${langProvider.translate('country_MA')}",
+    };
+  }
 
   @override
   void initState() {
@@ -175,7 +179,9 @@ class _TrendingScreenState extends State<TrendingScreen>
                 : _errorMessage != null
                 ? Center(
                     child: Text(
-                      "Error: $_errorMessage",
+                      Provider.of<LanguageProvider>(context, listen: false)
+                          .translate('error_prefix')
+                          .replaceAll('{0}', _errorMessage!),
                       style: const TextStyle(color: Colors.red),
                     ),
                   )
@@ -265,7 +271,17 @@ class _TrendingScreenState extends State<TrendingScreen>
                   _useCustomQuery ? Icons.close : Icons.tune,
                   size: 16,
                 ),
-                label: Text(_useCustomQuery ? "Use Default" : "Custom Search"),
+                label: Text(
+                  _useCustomQuery
+                      ? Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('use_default')
+                      : Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('custom_search'),
+                ),
                 onPressed: () {
                   setState(() {
                     _useCustomQuery = !_useCustomQuery;
@@ -284,7 +300,10 @@ class _TrendingScreenState extends State<TrendingScreen>
             TextField(
               controller: _customQueryController,
               decoration: InputDecoration(
-                hintText: "Custom Search (e.g. Best Rock 2020)",
+                hintText: Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('custom_search_hint'),
                 filled: true,
                 fillColor: Theme.of(context).scaffoldBackgroundColor,
                 border: OutlineInputBorder(
@@ -305,8 +324,16 @@ class _TrendingScreenState extends State<TrendingScreen>
   }
 
   Widget _buildGrid(BuildContext context) {
-    if (_playlists.isEmpty)
-      return const Center(child: Text("No trending playlists found."));
+    if (_playlists.isEmpty) {
+      return Center(
+        child: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('no_trending_found'),
+        ),
+      );
+    }
 
     return Consumer<RadioProvider>(
       builder: (context, provider, child) {
@@ -445,7 +472,9 @@ class _TrendingScreenState extends State<TrendingScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      "${item.trackCount} songs",
+                      Provider.of<LanguageProvider>(context, listen: false)
+                          .translate('songs_count')
+                          .replaceAll('{0}', item.trackCount.toString()),
                       style: TextStyle(
                         fontSize: 10,
                         color: theme.textTheme.bodySmall?.color ?? Colors.grey,

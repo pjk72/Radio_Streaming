@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 import '../models/station.dart';
 import '../utils/genre_mapper.dart';
 
@@ -25,7 +26,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   int _step = 0; // 0: Country Selection, 1: Search & Select
   String? _selectedCountryCode;
-  String? _selectedCountryName;
   bool _isLoading = false;
   List<dynamic> _searchResults = [];
   String _searchQuery = '';
@@ -42,40 +42,44 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   final Map<int, bool> _favoriteIndices = {};
   final Map<int, String> _customLogos = {};
 
-  final Map<String, String> _countryMap = {
-    "IT": "Italy",
-    "US": "USA",
-    "GB": "UK",
-    "FR": "France",
-    "DE": "Germany",
-    "ES": "Spain",
-    "CA": "Canada",
-    "AU": "Australia",
-    "BR": "Brazil",
-    "JP": "Japan",
-    "RU": "Russia",
-    "CN": "China",
-    "IN": "India",
-    "MX": "Mexico",
-    "AR": "Argentina",
-    "NL": "Netherlands",
-    "BE": "Belgium",
-    "CH": "Switzerland",
-    "SE": "Sweden",
-    "NO": "Norway",
-    "DK": "Denmark",
-    "FI": "Finland",
-    "PL": "Poland",
-    "AT": "Austria",
-    "PT": "Portugal",
-    "GR": "Greece",
-    "TR": "Turkey",
-    "ZA": "South Africa",
-    "KR": "South Korea",
-    "IE": "Ireland",
-    "NZ": "New Zealand",
-    "MA": "Morocco",
-  };
+  Map<String, String> get _countryMap {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    return {
+      "ALL": langProvider.translate('country_ALL'),
+      "IT": langProvider.translate('country_IT'),
+      "US": langProvider.translate('country_US'),
+      "GB": langProvider.translate('country_GB'),
+      "FR": langProvider.translate('country_FR'),
+      "DE": langProvider.translate('country_DE'),
+      "ES": langProvider.translate('country_ES'),
+      "CA": langProvider.translate('country_CA'),
+      "AU": langProvider.translate('country_AU'),
+      "BR": langProvider.translate('country_BR'),
+      "JP": langProvider.translate('country_JP'),
+      "RU": langProvider.translate('country_RU'),
+      "CN": langProvider.translate('country_CN'),
+      "IN": langProvider.translate('country_IN'),
+      "MX": langProvider.translate('country_MX'),
+      "AR": langProvider.translate('country_AR'),
+      "NL": langProvider.translate('country_NL'),
+      "BE": langProvider.translate('country_BE'),
+      "CH": langProvider.translate('country_CH'),
+      "SE": langProvider.translate('country_SE'),
+      "NO": langProvider.translate('country_NO'),
+      "DK": langProvider.translate('country_DK'),
+      "FI": langProvider.translate('country_FI'),
+      "PL": langProvider.translate('country_PL'),
+      "AT": langProvider.translate('country_AT'),
+      "PT": langProvider.translate('country_PT'),
+      "GR": langProvider.translate('country_GR'),
+      "TR": langProvider.translate('country_TR'),
+      "ZA": langProvider.translate('country_ZA'),
+      "KR": langProvider.translate('country_KR'),
+      "IE": langProvider.translate('country_IE'),
+      "NZ": langProvider.translate('country_NZ'),
+      "MA": langProvider.translate('country_MA'),
+    };
+  }
 
   String _getFlag(String countryCode) {
     return countryCode.toUpperCase().replaceAllMapped(
@@ -85,6 +89,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   }
 
   void _scanRadios() async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     setState(() {
       _isLoading = true;
       _step = 1;
@@ -183,14 +188,21 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error searching radios: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              langProvider
+                  .translate('error_searching')
+                  .replaceAll('{0}', e.toString()),
+            ),
+          ),
+        );
       }
     }
   }
 
   Future<void> _searchAndShowLogos(int index, String query) async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     // Reusing logo search logic - simplified for this widget
     if (query.isEmpty) return;
 
@@ -263,17 +275,16 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         }),
       ]);
 
-      if (!mounted) {
-        if (Navigator.canPop(context)) Navigator.pop(context);
-        return;
-      }
+      if (!mounted) return;
       // Pop loading
-      Navigator.pop(context);
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
 
       if (imageUrls.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("No logos found")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(langProvider.translate('no_logos_found'))),
+        );
         return;
       }
 
@@ -283,7 +294,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         builder: (ctx) => AlertDialog(
           backgroundColor: Theme.of(context).cardColor,
           title: Text(
-            "Select Logo for $query",
+            langProvider.translate('select_logo_for').replaceAll('{0}', query),
             style: TextStyle(
               color: Theme.of(context).textTheme.titleLarge?.color,
             ),
@@ -316,12 +327,14 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         });
       }
     } catch (e) {
-      if (mounted && Navigator.canPop(context))
+      if (mounted && Navigator.canPop(context)) {
         Navigator.pop(context); // Pop loading if error
+      }
     }
   }
 
   Future<void> _testStream(String url) async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     if (_testingUrl == url) return; // Already testing
 
     setState(() {
@@ -342,10 +355,10 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
             _testResults[url] = true;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               backgroundColor: Colors.green,
-              content: Text("Success: Stream is valid!"),
-              duration: Duration(seconds: 2),
+              content: Text(langProvider.translate('stream_valid')),
+              duration: const Duration(seconds: 2),
             ),
           );
         }
@@ -360,7 +373,11 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.red,
-            content: Text("Stream verify failed: $e"),
+            content: Text(
+              langProvider
+                  .translate('stream_verify_failed')
+                  .replaceAll('{0}', e.toString()),
+            ),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -399,13 +416,14 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           palette.darkVibrantColor?.color;
 
       if (extracted != null) {
-        return '0xff${extracted.value.toRadixString(16).substring(2).toUpperCase()}';
+        return '0xff${extracted.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
       }
     } catch (_) {}
     return '0xFFFFFFFF';
   }
 
   void _finish() async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     final provider = Provider.of<RadioProvider>(context, listen: false);
 
     int count = 0;
@@ -455,7 +473,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
             url: url,
             genre: genre.isNotEmpty ? genre : 'Pop',
             logo: finalLogo,
-            category: _selectedCountryName ?? 'International',
+            category: _selectedCountryCode != null
+                ? (_countryMap[_selectedCountryCode] ?? 'International')
+                : 'International',
             color: finalColor,
             icon: 'radio',
           );
@@ -480,9 +500,15 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Processed $count stations!")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            langProvider
+                .translate('processed_count')
+                .replaceAll('{0}', count.toString()),
+          ),
+        ),
+      );
     }
   }
 
@@ -493,6 +519,8 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   }
 
   Widget _buildCountrySelection() {
+    final langProvider = Provider.of<LanguageProvider>(context);
+
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 600),
@@ -504,13 +532,13 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
             const Icon(Icons.public, size: 48, color: Colors.blueAccent),
             const SizedBox(height: 12),
             Text(
-              "Welcome! Let's set up your radio.",
+              langProvider.translate('wizard_welcome'),
               style: Theme.of(context).textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 4),
             Text(
-              "Allows you to choose your preferred region to find the best stations.",
+              langProvider.translate('wizard_desc'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(
                   context,
@@ -606,7 +634,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       onTap: () {
         setState(() {
           _selectedCountryCode = code;
-          _selectedCountryName = name;
         });
         _scanRadios();
       },
@@ -614,17 +641,19 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   }
 
   Widget _buildRadioSelection() {
+    final langProvider = Provider.of<LanguageProvider>(context);
+
     final selectedCount = _selectedIndices.values
         .where((selected) => selected)
         .length;
     if (_isLoading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text("Scanning frequencies..."),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(langProvider.translate('scanning_freq')),
           ],
         ),
       );
@@ -664,7 +693,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                         _searchQuery = '';
                       });
                     },
-                    tooltip: "Back",
+                    tooltip: langProvider.translate('back'),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                   ),
@@ -674,7 +703,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Results for $_selectedCountryName",
+                          "${langProvider.translate('results_for')} ${_countryMap[_selectedCountryCode] ?? ''}",
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -683,7 +712,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          "${filteredStations.length} stations found",
+                          "${filteredStations.length} ${langProvider.translate('stations_found')}",
                           style: TextStyle(
                             fontSize: 11,
                             color: Theme.of(context).textTheme.bodySmall?.color,
@@ -701,7 +730,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                   Expanded(
                     child: TextField(
                       decoration: InputDecoration(
-                        hintText: "Search station...",
+                        hintText: langProvider.translate('search_station'),
                         prefixIcon: const Icon(Icons.search, size: 20),
                         isDense: true,
                         contentPadding: const EdgeInsets.symmetric(
@@ -735,7 +764,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                               context,
                             ).iconTheme.color?.withValues(alpha: 0.54),
                     ),
-                    tooltip: "Show selected only",
+                    tooltip: langProvider.translate('show_selected'),
                     onPressed: () {
                       setState(() {
                         _showSelectedOnly = !_showSelectedOnly;
@@ -790,7 +819,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                           },
                         ),
                         title: Text(
-                          station['name'] ?? "Unknown",
+                          station['name'] ?? langProvider.translate('unknown'),
                           style: TextStyle(
                             color: isSelected
                                 ? Theme.of(context).primaryColor
@@ -806,11 +835,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                             Text(
                               "${station['bitrate'] ?? 0} Kbps",
                               style: TextStyle(
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.color
-                                    ?.withValues(alpha: 0.7),
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color?.withOpacity(0.7),
                                 fontSize: 11,
                               ),
                             ),
@@ -834,11 +861,12 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                                                 apiLogo.toString().isNotEmpty))
                                         ? Image.network(
                                             customLogo ?? apiLogo,
-                                            errorBuilder: (_, __, ___) =>
-                                                const Icon(
-                                                  Icons.radio,
-                                                  size: 12,
-                                                ),
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    const Icon(
+                                                      Icons.radio,
+                                                      size: 12,
+                                                    ),
                                           )
                                         : const Icon(Icons.radio, size: 12),
                                   ),
@@ -851,9 +879,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                                       Icons.image_search,
                                       size: 16,
                                     ),
-                                    label: const Text(
-                                      "Logo",
-                                      style: TextStyle(fontSize: 12),
+                                    label: Text(
+                                      langProvider.translate('logo'),
+                                      style: const TextStyle(fontSize: 12),
                                     ),
                                     style: TextButton.styleFrom(
                                       padding: EdgeInsets.zero,
@@ -928,7 +956,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                                     _testStream(url);
                                   }
                                 },
-                                tooltip: "Test Connection",
+                                tooltip: langProvider.translate(
+                                  'test_connection',
+                                ),
                               ),
                           ],
                         ),
@@ -950,11 +980,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                             (station['url_resolved'] ?? station['url'])
                                 .toString(),
                             style: TextStyle(
-                              color: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.color
-                                  ?.withValues(alpha: 0.5),
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color?.withOpacity(0.5),
                               fontSize: 10,
                               fontStyle: FontStyle.italic,
                             ),
@@ -977,6 +1005,8 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   }
 
   Widget _buildFooter(int selectedCount) {
+    final langProvider = Provider.of<LanguageProvider>(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.9),
@@ -988,8 +1018,10 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           icon: const Icon(Icons.check, size: 18),
           label: Text(
             selectedCount > 0
-                ? "Create $selectedCount Stations"
-                : "Create Stations",
+                ? langProvider
+                      .translate('create_n_stations')
+                      .replaceAll('{0}', selectedCount.toString())
+                : langProvider.translate('create_stations'),
           ),
           style: ElevatedButton.styleFrom(
             backgroundColor: Theme.of(context).primaryColor,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
 
 import '../providers/radio_provider.dart';
 
@@ -44,6 +45,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
+    final langProvider = Provider.of<LanguageProvider>(context);
     final allStations = provider.stations;
 
     final filteredStations =
@@ -65,7 +67,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                   color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
                 decoration: InputDecoration(
-                  hintText: "Search Stations...",
+                  hintText: langProvider.translate('search_stations'),
                   hintStyle: TextStyle(color: Theme.of(context).hintColor),
                   border: InputBorder.none,
                   suffixIcon: _searchController.text.isNotEmpty
@@ -83,7 +85,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                 autofocus: true,
               )
             : Text(
-                "Manage Stations",
+                langProvider.translate('manage_stations_title'),
                 style: TextStyle(
                   color: Theme.of(context).textTheme.titleLarge?.color,
                 ),
@@ -92,13 +94,15 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.auto_fix_high),
-            tooltip: 'Station Wizard',
+            tooltip: langProvider.translate('station_wizard'),
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => Scaffold(
-                    appBar: AppBar(title: const Text('Add Station Wizard')),
+                    appBar: AppBar(
+                      title: Text(langProvider.translate('add_station_wizard')),
+                    ),
                     body: const TutorialCreateRadioWizard(),
                   ),
                 ),
@@ -156,7 +160,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                   }
                 });
               },
-              tooltip: "Search",
+              tooltip: langProvider.translate('search'),
             ),
             IconButton(
               icon: Icon(
@@ -165,7 +169,9 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
               ),
               onPressed: () =>
                   provider.setManageGridView(!provider.isManageGridView),
-              tooltip: provider.isManageGridView ? "List View" : "Grid View",
+              tooltip: provider.isManageGridView
+                  ? langProvider.translate('list_view')
+                  : langProvider.translate('grid_view'),
             ),
             PopupMenuButton<GroupingMode>(
               icon: Icon(
@@ -177,19 +183,19 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                     : Theme.of(context).iconTheme.color,
               ),
               onSelected: (mode) => provider.setManageGroupingMode(mode.index),
-              tooltip: "Group by",
+              tooltip: langProvider.translate('group_by'),
               itemBuilder: (context) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: GroupingMode.none,
-                  child: Text("No Grouping"),
+                  child: Text(langProvider.translate('no_grouping')),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: GroupingMode.genre,
-                  child: Text("Group by Genre"),
+                  child: Text(langProvider.translate('group_by_genre')),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: GroupingMode.origin,
-                  child: Text("Group by Origin"),
+                  child: Text(langProvider.translate('group_by_origin')),
                 ),
               ],
             ),
@@ -205,6 +211,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
     List<dynamic> stations,
   ) {
     final groupingMode = GroupingMode.values[provider.manageGroupingMode];
+    final langProvider = Provider.of<LanguageProvider>(context);
     if (groupingMode == GroupingMode.none) {
       return _buildUngroupedContent(context, provider, stations);
     }
@@ -214,10 +221,10 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
       String key;
       if (groupingMode == GroupingMode.genre) {
         key = s.genre.split('|').first.trim();
-        if (key.isEmpty) key = "Unknown Genre";
+        if (key.isEmpty) key = langProvider.translate('unknown_genre');
       } else {
         key = s.category.trim();
-        if (key.isEmpty) key = "Unknown Origin";
+        if (key.isEmpty) key = langProvider.translate('unknown_origin');
       }
 
       if (!grouped.containsKey(key)) grouped[key] = [];
@@ -428,6 +435,10 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       color: Theme.of(context).cardColor,
       onSelected: (value) async {
+        final langProvider = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        );
         if (value == 'edit') {
           Navigator.push(
             context,
@@ -439,26 +450,28 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
             builder: (ctx) => AlertDialog(
               backgroundColor: Theme.of(context).cardColor,
               title: Text(
-                "Delete Station?",
+                langProvider.translate('delete_station_title'),
                 style: TextStyle(
                   color: Theme.of(context).textTheme.titleLarge?.color,
                 ),
               ),
               content: Text(
-                "Are you sure you want to delete '${s.name}'?",
+                langProvider
+                    .translate('delete_station_desc')
+                    .replaceAll('{0}', s.name),
                 style: TextStyle(
                   color: Theme.of(context).textTheme.bodyMedium?.color,
                 ),
               ),
               actions: [
                 TextButton(
-                  child: const Text("Cancel"),
+                  child: Text(langProvider.translate('cancel')),
                   onPressed: () => Navigator.of(ctx).pop(false),
                 ),
                 TextButton(
-                  child: const Text(
-                    "Delete",
-                    style: TextStyle(color: Colors.redAccent),
+                  child: Text(
+                    langProvider.translate('delete'),
+                    style: const TextStyle(color: Colors.redAccent),
                   ),
                   onPressed: () => Navigator.of(ctx).pop(true),
                 ),
@@ -471,38 +484,44 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
           }
         }
       },
-      itemBuilder: (BuildContext context) => [
-        PopupMenuItem(
-          value: 'edit',
-          child: Row(
-            children: [
-              Icon(Icons.edit, color: Theme.of(context).primaryColor),
-              SizedBox(width: 12),
-              Text(
-                "Edit",
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
+      itemBuilder: (BuildContext context) {
+        final langProvider = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        );
+        return [
+          PopupMenuItem(
+            value: 'edit',
+            child: Row(
+              children: [
+                Icon(Icons.edit, color: Theme.of(context).primaryColor),
+                const SizedBox(width: 12),
+                Text(
+                  langProvider.translate('edit'),
+                  style: TextStyle(
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        PopupMenuItem(
-          value: 'delete',
-          child: Row(
-            children: [
-              const Icon(Icons.delete_outline, color: Colors.redAccent),
-              const SizedBox(width: 12),
-              Text(
-                "Delete",
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
+          PopupMenuItem(
+            value: 'delete',
+            child: Row(
+              children: [
+                const Icon(Icons.delete_outline, color: Colors.redAccent),
+                const SizedBox(width: 12),
+                Text(
+                  langProvider.translate('delete'),
+                  style: TextStyle(
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ];
+      },
     );
   }
 

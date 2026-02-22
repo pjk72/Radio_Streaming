@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
@@ -19,6 +20,51 @@ class EditStationScreen extends StatefulWidget {
   State<EditStationScreen> createState() => _EditStationScreenState();
 }
 
+String _getFlag(String countryCode) {
+  if (countryCode == "ALL") return "🌍";
+  return countryCode.toUpperCase().replaceAllMapped(
+    RegExp(r'[A-Z]'),
+    (match) => String.fromCharCode(match.group(0)!.codeUnitAt(0) + 127397),
+  );
+}
+
+Map<String, String> _getCountryMap(LanguageProvider langProvider) {
+  return {
+    "IT": langProvider.translate('country_IT'),
+    "US": langProvider.translate('country_US'),
+    "GB": langProvider.translate('country_GB'),
+    "FR": langProvider.translate('country_FR'),
+    "DE": langProvider.translate('country_DE'),
+    "ES": langProvider.translate('country_ES'),
+    "CA": langProvider.translate('country_CA'),
+    "AU": langProvider.translate('country_AU'),
+    "BR": langProvider.translate('country_BR'),
+    "JP": langProvider.translate('country_JP'),
+    "RU": langProvider.translate('country_RU'),
+    "CN": langProvider.translate('country_CN'),
+    "IN": langProvider.translate('country_IN'),
+    "MX": langProvider.translate('country_MX'),
+    "AR": langProvider.translate('country_AR'),
+    "NL": langProvider.translate('country_NL'),
+    "BE": langProvider.translate('country_BE'),
+    "CH": langProvider.translate('country_CH'),
+    "SE": langProvider.translate('country_SE'),
+    "NO": langProvider.translate('country_NO'),
+    "DK": langProvider.translate('country_DK'),
+    "FI": langProvider.translate('country_FI'),
+    "PL": langProvider.translate('country_PL'),
+    "AT": langProvider.translate('country_AT'),
+    "PT": langProvider.translate('country_PT'),
+    "GR": langProvider.translate('country_GR'),
+    "TR": langProvider.translate('country_TR'),
+    "ZA": langProvider.translate('country_ZA'),
+    "KR": langProvider.translate('country_KR'),
+    "IE": langProvider.translate('country_IE'),
+    "NZ": langProvider.translate('country_NZ'),
+    "MA": langProvider.translate('country_MA'),
+  };
+}
+
 class _EditStationScreenState extends State<EditStationScreen> {
   final _formKey = GlobalKey<FormState>();
 
@@ -35,50 +81,20 @@ class _EditStationScreenState extends State<EditStationScreen> {
   bool _isSearching = false;
   bool _isTestingLink = false;
   String? _deviceCountryCode;
-
-  final Map<String, String> _countryMap = {
-    "IT": "Italy",
-    "US": "USA",
-    "GB": "UK",
-    "FR": "France",
-    "DE": "Germany",
-    "ES": "Spain",
-    "CA": "Canada",
-    "AU": "Australia",
-    "BR": "Brazil",
-    "JP": "Japan",
-    "RU": "Russia",
-    "CN": "China",
-    "IN": "India",
-    "MX": "Mexico",
-    "AR": "Argentina",
-    "NL": "Netherlands",
-    "BE": "Belgium",
-    "CH": "Switzerland",
-    "SE": "Sweden",
-    "NO": "Norway",
-    "DK": "Denmark",
-    "FI": "Finland",
-    "PL": "Poland",
-    "AT": "Austria",
-    "PT": "Portugal",
-    "GR": "Greece",
-    "TR": "Turkey",
-    "ZA": "South Africa",
-    "KR": "South Korea",
-    "IE": "Ireland",
-    "NZ": "New Zealand",
-    "MA": "Morocco",
-  };
+  Map<String, String> get _countryMap {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    return _getCountryMap(langProvider);
+  }
 
   bool? _lastTestResult;
 
   Future<void> _testStreamUrl() async {
     final url = _urlController.text.trim();
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     if (url.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please enter a URL first")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(langProvider.translate('please_enter_url'))),
+      );
       return;
     }
 
@@ -100,9 +116,9 @@ class _EditStationScreenState extends State<EditStationScreen> {
             _lastTestResult = true;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               backgroundColor: Colors.green,
-              content: Text("Success: Stream is valid!"),
+              content: Text(langProvider.translate('stream_valid')),
             ),
           );
         }
@@ -118,7 +134,11 @@ class _EditStationScreenState extends State<EditStationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.red,
-            content: Text("Error: Cannot connect to stream.\n$e"),
+            content: Text(
+              langProvider
+                  .translate('stream_invalid')
+                  .replaceAll('{0}', e.toString()),
+            ),
           ),
         );
       }
@@ -267,6 +287,10 @@ class _EditStationScreenState extends State<EditStationScreen> {
       extracted ??= palette.darkVibrantColor?.color;
 
       if (extracted != null && mounted) {
+        final langProvider = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        );
         // Convert to Hex
         final hex =
             '#${extracted.value.toRadixString(16).substring(2).toUpperCase()}';
@@ -275,7 +299,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Color updated from logo!"),
+            content: Text(langProvider.translate('color_updated')),
             backgroundColor: extracted,
             duration: const Duration(seconds: 1),
           ),
@@ -310,6 +334,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
+    final langProvider = Provider.of<LanguageProvider>(context);
 
     // Extract existing unique values for suggestions
     final Set<String> allGenres = {};
@@ -329,7 +354,9 @@ class _EditStationScreenState extends State<EditStationScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          widget.station == null ? "Add Station" : "Edit Station",
+          widget.station == null
+              ? langProvider.translate('add_station')
+              : langProvider.translate('edit_station'),
           style: TextStyle(
             color: Theme.of(context).textTheme.titleLarge?.color,
           ),
@@ -340,7 +367,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
           IconButton(
             icon: Icon(Icons.check, color: Theme.of(context).primaryColor),
             onPressed: () => _save(),
-            tooltip: 'Save Station',
+            tooltip: langProvider.translate('save_station'),
           ),
           const SizedBox(width: 8),
         ],
@@ -352,13 +379,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSectionTitle("General Info"),
+              _buildSectionTitle(langProvider.translate('general_info')),
               Row(
                 children: [
                   Expanded(
                     flex: 2,
                     child: _buildTextField(
-                      "Station Name",
+                      langProvider.translate('station_name'),
                       _nameController,
                       Icons.radio,
                       suffix: IconButton(
@@ -385,7 +412,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
                                   size: 20,
                                 ),
                               ),
-                        tooltip: "Auto-complete",
+                        tooltip: langProvider.translate('auto_complete'),
                         onPressed: _isSearching ? null : _autoCompleteStation,
                       ),
                     ),
@@ -428,16 +455,20 @@ class _EditStationScreenState extends State<EditStationScreen> {
                               items.add(
                                 DropdownMenuItem(
                                   value: _deviceCountryCode,
-                                  child: Text(_countryMap[_deviceCountryCode]!),
+                                  child: Text(
+                                    "${_getFlag(_deviceCountryCode!)} ${_countryMap[_deviceCountryCode]!}",
+                                  ),
                                 ),
                               );
                             }
 
                             // 2. Global
                             items.add(
-                              const DropdownMenuItem(
+                              DropdownMenuItem(
                                 value: "ALL",
-                                child: Text("Global"),
+                                child: Text(
+                                  "${_getFlag('ALL')} ${langProvider.translate('global')}",
+                                ),
                               ),
                             );
 
@@ -452,7 +483,9 @@ class _EditStationScreenState extends State<EditStationScreen> {
                               items.add(
                                 DropdownMenuItem(
                                   value: entry.key,
-                                  child: Text(entry.value),
+                                  child: Text(
+                                    "${_getFlag(entry.key)} ${entry.value}",
+                                  ),
                                 ),
                               );
                             }
@@ -471,7 +504,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
               ),
               const SizedBox(height: 16),
               _buildTextField(
-                "Stream URL",
+                langProvider.translate('stream_url'),
                 _urlController,
                 Icons.link,
                 suffix: Row(
@@ -484,7 +517,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
                             ? Theme.of(context).primaryColor
                             : Theme.of(context).disabledColor,
                       ),
-                      tooltip: "Search Default Logo",
+                      tooltip: langProvider.translate('search_default_logo'),
                       onPressed:
                           _nameController.text.trim().isNotEmpty &&
                               !_isSearching
@@ -516,7 +549,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
                                   ? Colors.red
                                   : Theme.of(context).primaryColor,
                             ),
-                      tooltip: "Test Link",
+                      tooltip: langProvider.translate('test_link'),
                       onPressed: _isTestingLink ? null : _testStreamUrl,
                     ),
                   ],
@@ -524,12 +557,12 @@ class _EditStationScreenState extends State<EditStationScreen> {
               ),
 
               const SizedBox(height: 32),
-              _buildSectionTitle("Classification"),
+              _buildSectionTitle(langProvider.translate('classification')),
 
               const SizedBox(height: 8),
               // Custom Genre Selector
               Text(
-                "Genres",
+                langProvider.translate('genres'),
                 style: TextStyle(
                   color: Theme.of(context).textTheme.bodyMedium?.color,
                   fontSize: 14,
@@ -542,7 +575,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
               // Custom Category Selector (Single Select)
               Text(
-                "Category",
+                langProvider.translate('category'),
                 style: TextStyle(
                   color: Theme.of(context).textTheme.bodyMedium?.color,
                   fontSize: 14,
@@ -552,14 +585,14 @@ class _EditStationScreenState extends State<EditStationScreen> {
               _buildCategorySelector(context, allCategories.toList()),
 
               const SizedBox(height: 32),
-              _buildSectionTitle("Appearance"),
+              _buildSectionTitle(langProvider.translate('appearance')),
 
               // Color Picker
               _buildColorSelector(context),
               const SizedBox(height: 24),
 
               _buildTextField(
-                "Logo URL",
+                langProvider.translate('logo_url'),
                 _logoController,
                 Icons.image,
                 isOptional: true,
@@ -666,6 +699,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
     BuildContext context,
     List<String> availableGenres,
   ) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -706,7 +740,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
                 ),
               ),
               ActionChip(
-                label: const Text("Add +"),
+                label: Text(langProvider.translate('add_genre')),
                 backgroundColor: Theme.of(context).cardColor,
                 labelStyle: TextStyle(
                   color: Theme.of(context).textTheme.bodyMedium?.color,
@@ -760,6 +794,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
     BuildContext context,
     List<String> availableCategories,
   ) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -775,7 +810,20 @@ class _EditStationScreenState extends State<EditStationScreen> {
             Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: Chip(
-                label: Text(_selectedCategory!),
+                label: Text(() {
+                  final countryMap = _getCountryMap(langProvider);
+                  final entry = countryMap.entries.firstWhere(
+                    (e) => e.value == _selectedCategory,
+                    orElse: () => const MapEntry('', ''),
+                  );
+                  if (entry.key.isNotEmpty) {
+                    return "${_getFlag(entry.key)} $_selectedCategory";
+                  }
+                  if (_selectedCategory == langProvider.translate('global')) {
+                    return "🌍 $_selectedCategory";
+                  }
+                  return _selectedCategory!;
+                }()),
                 backgroundColor: Theme.of(
                   context,
                 ).primaryColor.withValues(alpha: 0.2),
@@ -795,7 +843,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
             ),
           if (_selectedCategory == null)
             ActionChip(
-              label: const Text("Select Category"),
+              label: Text(langProvider.translate('select_category')),
               backgroundColor: Theme.of(context).cardColor,
               labelStyle: TextStyle(
                 color: Theme.of(context).textTheme.bodyMedium?.color,
@@ -971,9 +1019,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
     // If query is empty, we only proceed if a specific country is selected.
     if (query.isEmpty && _selectedSearchCountry == "ALL") {
+      final langProvider = Provider.of<LanguageProvider>(
+        context,
+        listen: false,
+      );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please enter a name or select a specific Country"),
+        SnackBar(
+          content: Text(langProvider.translate('please_enter_name_or_country')),
         ),
       );
       return;
@@ -1070,9 +1122,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
       } else {
         // No stations found -> Logos
         if (mounted) {
+          final langProvider = Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          );
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("No stations found. Searching for logos..."),
+            SnackBar(
+              content: Text(langProvider.translate('no_stations_found')),
             ),
           );
           await _searchAndShowLogos(context, query);
@@ -1089,6 +1145,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
   }
 
   void _populateStationData(Map<String, dynamic> selected) {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     setState(() {
       _urlController.text = selected['url_resolved'] ?? selected['url'] ?? '';
       final String favicon = selected['favicon'] ?? '';
@@ -1112,7 +1169,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
       }
 
       // Auto-set Category from Country
-      String category = 'Global';
+      String category = langProvider.translate('country_ALL');
       String apiCountry = selected['country'] ?? '';
       String apiCountryCode = selected['countrycode'] ?? '';
 
@@ -1132,7 +1189,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
         if (matchingEntry.key.isNotEmpty) {
           category = matchingEntry.value;
         } else {
-          category = 'Global';
+          category = langProvider.translate('country_ALL');
         }
       }
 
@@ -1142,9 +1199,15 @@ class _EditStationScreenState extends State<EditStationScreen> {
       _selectedCategory = category;
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text("Selected: ${selected['name']}")));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          langProvider
+              .translate('station_selected')
+              .replaceAll('{0}', selected['name']),
+        ),
+      ),
+    );
   }
 
   Future<void> _searchAndShowLogos(BuildContext context, String query) async {
@@ -1355,10 +1418,20 @@ class _EditStationScreenState extends State<EditStationScreen> {
       }
     } catch (e) {
       if (mounted) {
-        debugPrint("Logo search error: $e");
-        ScaffoldMessenger.of(
+        final langProvider = Provider.of<LanguageProvider>(
           context,
-        ).showSnackBar(SnackBar(content: Text("Error searching logos: $e")));
+          listen: false,
+        );
+        debugPrint("Logo search error: $e");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              langProvider
+                  .translate('logo_search_error')
+                  .replaceAll('{0}', e.toString()),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSearching = false);
@@ -1370,10 +1443,14 @@ class _EditStationScreenState extends State<EditStationScreen> {
       final provider = Provider.of<RadioProvider>(context, listen: false);
 
       // Validate Genres
+      final langProvider = Provider.of<LanguageProvider>(
+        context,
+        listen: false,
+      );
       if (_selectedGenres.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Please select at least one Genre"),
+          SnackBar(
+            content: Text(langProvider.translate('select_min_one_genre')),
             backgroundColor: Colors.red,
           ),
         );
@@ -1384,8 +1461,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
       // Validate Category
       if (_selectedCategory == null || _selectedCategory!.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Please select a Category"),
+          SnackBar(
+            content: Text(langProvider.translate('select_category_error')),
             backgroundColor: Colors.red,
           ),
         );
@@ -1393,8 +1470,8 @@ class _EditStationScreenState extends State<EditStationScreen> {
       }
       if (_selectedCategory!.length > 35) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Category must be 35 characters or less"),
+          SnackBar(
+            content: Text(langProvider.translate('category_too_long')),
             backgroundColor: Colors.red,
           ),
         );
@@ -1469,10 +1546,11 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     return AlertDialog(
       backgroundColor: Theme.of(context).cardColor,
       title: Text(
-        "Select Genres",
+        langProvider.translate('select_genres'),
         style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
       ),
       content: SizedBox(
@@ -1483,7 +1561,7 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
             // Search Bar
             TextField(
               decoration: InputDecoration(
-                hintText: "Search genres...",
+                hintText: langProvider.translate('search_genres'),
                 hintStyle: TextStyle(color: Theme.of(context).hintColor),
                 prefixIcon: Icon(
                   Icons.search,
@@ -1576,7 +1654,7 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Or add new:",
+                  langProvider.translate('or_add_new'),
                   style: TextStyle(
                     color: Theme.of(context).hintColor,
                     fontSize: 12,
@@ -1588,7 +1666,7 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
                       child: TextField(
                         controller: textController,
                         decoration: InputDecoration(
-                          hintText: "New Genre Name",
+                          hintText: langProvider.translate('new_genre_name'),
                           hintStyle: TextStyle(
                             color: Theme.of(context).hintColor,
                           ),
@@ -1641,7 +1719,7 @@ class _GenreSelectionDialogState extends State<_GenreSelectionDialog> {
             }
             Navigator.pop(context, tempSelected.toList());
           },
-          child: const Text("Done"),
+          child: Text(langProvider.translate('done')),
         ),
       ],
     );
@@ -1682,10 +1760,11 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     return AlertDialog(
       backgroundColor: Theme.of(context).cardColor,
       title: Text(
-        "Select Category",
+        langProvider.translate('select_category'),
         style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
       ),
       content: SizedBox(
@@ -1696,7 +1775,7 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
             // Search Bar
             TextField(
               decoration: InputDecoration(
-                hintText: "Search categories...",
+                hintText: langProvider.translate('search_categories'),
                 hintStyle: TextStyle(color: Theme.of(context).hintColor),
                 prefixIcon: Icon(
                   Icons.search,
@@ -1751,7 +1830,20 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
                       children: filteredOptions.map((c) {
                         final isSelected = tempSelected == c;
                         return ChoiceChip(
-                          label: Text(c),
+                          label: Text(() {
+                            final countryMap = _getCountryMap(langProvider);
+                            final entry = countryMap.entries.firstWhere(
+                              (e) => e.value == c,
+                              orElse: () => const MapEntry('', ''),
+                            );
+                            if (entry.key.isNotEmpty) {
+                              return "${_getFlag(entry.key)} $c";
+                            }
+                            if (c == langProvider.translate('global')) {
+                              return "🌍 $c";
+                            }
+                            return c;
+                          }()),
                           selected: isSelected,
                           onSelected: (selected) {
                             setState(() {
@@ -1788,7 +1880,7 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Or add new:",
+                  langProvider.translate('or_add_new'),
                   style: TextStyle(
                     color: Theme.of(context).hintColor,
                     fontSize: 12,
@@ -1800,7 +1892,7 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
                       child: TextField(
                         controller: textController,
                         decoration: InputDecoration(
-                          hintText: "New Category Name",
+                          hintText: langProvider.translate('new_category_name'),
                           hintStyle: TextStyle(
                             color: Theme.of(context).hintColor,
                           ),
@@ -1864,7 +1956,7 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
             }
             Navigator.pop(context, {'selection': tempSelected});
           },
-          child: const Text("Done"),
+          child: Text(langProvider.translate('done')),
         ),
       ],
     );
@@ -1878,10 +1970,11 @@ class _StationSelectionDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     return AlertDialog(
       backgroundColor: Theme.of(context).cardColor,
       title: Text(
-        "Select Station",
+        langProvider.translate('select_station'),
         style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
       ),
       content: SizedBox(
@@ -1954,7 +2047,7 @@ class _StationSelectionDialog extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              s['name'] ?? 'Unknown',
+                              s['name'] ?? langProvider.translate('unknown'),
                               style: TextStyle(
                                 color: Theme.of(
                                   context,
@@ -2006,7 +2099,7 @@ class _StationSelectionDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
+          child: Text(langProvider.translate('cancel')),
         ),
       ],
     );

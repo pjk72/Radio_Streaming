@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/sidebar.dart';
 
@@ -98,6 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildTopHeader(BuildContext context) {
     // Only for Mobile/Tablet (!isDesktop)
     final provider = Provider.of<RadioProvider>(context);
+    final langProvider = Provider.of<LanguageProvider>(context);
 
     return Container(
       padding: EdgeInsets.only(
@@ -152,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         provider.backupService.currentUser?.displayName
                                 ?.split(' ')
                                 .first ??
-                            "Guest",
+                            langProvider.translate('guest'),
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w500,
@@ -191,10 +193,26 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.all(4),
             child: Row(
               children: [
-                _buildTopNavItem(Icons.radio, "Radio", 0),
-                _buildTopNavItem(Icons.playlist_play_rounded, "Playlist", 1),
-                _buildTopNavItem(Icons.whatshot, "Trending", 2),
-                _buildTopNavItem(Icons.settings, "Settings", 3),
+                _buildTopNavItem(
+                  Icons.radio,
+                  langProvider.translate('tab_radio'),
+                  0,
+                ),
+                _buildTopNavItem(
+                  Icons.playlist_play_rounded,
+                  langProvider.translate('tab_library'),
+                  1,
+                ),
+                _buildTopNavItem(
+                  Icons.whatshot,
+                  langProvider.translate('tab_trending'),
+                  2,
+                ),
+                _buildTopNavItem(
+                  Icons.settings,
+                  langProvider.translate('settings'),
+                  3,
+                ),
               ],
             ),
           ),
