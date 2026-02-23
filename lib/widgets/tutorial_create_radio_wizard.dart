@@ -837,7 +837,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                               style: TextStyle(
                                 color: Theme.of(
                                   context,
-                                ).textTheme.bodySmall?.color?.withOpacity(0.7),
+                                ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                                 fontSize: 11,
                               ),
                             ),
@@ -982,7 +982,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                             style: TextStyle(
                               color: Theme.of(
                                 context,
-                              ).textTheme.bodySmall?.color?.withOpacity(0.5),
+                              ).textTheme.bodySmall?.color?.withValues(alpha: 0.5),
                               fontSize: 10,
                               fontStyle: FontStyle.italic,
                             ),
@@ -1041,3 +1041,4 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     );
   }
 }
+

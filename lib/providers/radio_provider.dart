@@ -4680,6 +4680,11 @@ class RadioProvider with ChangeNotifier {
       _hasPerformedRestore = true;
       await _saveHasPerformedRestore();
 
+      // Update last backup timestamp to current time to prevent immediate automatic backup
+      _lastBackupTs = DateTime.now().millisecondsSinceEpoch;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('last_backup_ts', _lastBackupTs);
+
       // Automatically set backup frequency to daily after first restore
       await setBackupFrequency('daily');
 

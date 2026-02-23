@@ -98,7 +98,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTopHeader(BuildContext context) {
     // Only for Mobile/Tablet (!isDesktop)
-    final provider = Provider.of<RadioProvider>(context);
     final langProvider = Provider.of<LanguageProvider>(context);
 
     return Container(
@@ -119,78 +118,10 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Row 1: Profile + Title
-          SizedBox(
-            height: 42,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: Colors.white24,
-                        backgroundImage:
-                            provider.backupService.currentUser?.photoUrl != null
-                            ? NetworkImage(
-                                provider.backupService.currentUser!.photoUrl!,
-                              )
-                            : null,
-                        child:
-                            provider.backupService.currentUser?.photoUrl == null
-                            ? Icon(
-                                Icons.person,
-                                size: 14,
-                                color: Theme.of(context).iconTheme.color,
-                              )
-                            : null,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        provider.backupService.currentUser?.displayName
-                                ?.split(' ')
-                                .first ??
-                            langProvider.translate('guest'),
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w500,
-                          color: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Center(
-                  child: Text(
-                    "MusicStream",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).textTheme.titleLarge?.color,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Row 2: Navigation Menu (Pill Style)
+          // Navigation Menu (Underline Style)
           Container(
             height: 40,
-            decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            padding: const EdgeInsets.all(4),
+            padding: EdgeInsets.zero,
             child: Row(
               children: [
                 _buildTopNavItem(
@@ -237,18 +168,14 @@ class _HomeScreenState extends State<HomeScreen> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
-            color: isSelected
-                ? Theme.of(context).primaryColor.withValues(alpha: 0.15)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
-            border: isSelected
-                ? Border.all(
-                    color: Theme.of(
-                      context,
-                    ).primaryColor.withValues(alpha: 0.3),
-                    width: 1,
-                  )
-                : null,
+            border: Border(
+              bottom: BorderSide(
+                color: isSelected
+                    ? Theme.of(context).primaryColor
+                    : Colors.transparent,
+                width: 3.0,
+              ),
+            ),
           ),
           alignment: Alignment.center,
           child: Row(

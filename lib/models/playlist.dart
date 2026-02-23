@@ -6,6 +6,7 @@ class Playlist {
   final List<SavedSong> songs;
   final DateTime createdAt;
   final String creator; // 'app', 'user', 'spotify', etc.
+  final String? customImageUrl;
 
   Playlist({
     required this.id,
@@ -13,6 +14,7 @@ class Playlist {
     required this.songs,
     required this.createdAt,
     this.creator = 'app',
+    this.customImageUrl,
   });
 
   Map<String, dynamic> toJson() {
@@ -22,6 +24,7 @@ class Playlist {
       'songs': songs.map((s) => s.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
       'creator': creator,
+      'customImageUrl': customImageUrl,
     };
   }
 
@@ -34,6 +37,7 @@ class Playlist {
           .toList(),
       createdAt: DateTime.parse(json['createdAt']),
       creator: json['creator'] ?? 'app',
+      customImageUrl: json['customImageUrl'],
     );
   }
   Playlist copyWith({
@@ -42,6 +46,7 @@ class Playlist {
     List<SavedSong>? songs,
     DateTime? createdAt,
     String? creator,
+    String? customImageUrl,
   }) {
     return Playlist(
       id: id ?? this.id,
@@ -49,6 +54,7 @@ class Playlist {
       songs: songs ?? this.songs,
       createdAt: createdAt ?? this.createdAt,
       creator: creator ?? this.creator,
+      customImageUrl: customImageUrl ?? this.customImageUrl,
     );
   }
 }

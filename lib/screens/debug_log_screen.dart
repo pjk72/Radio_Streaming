@@ -278,13 +278,13 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOut,
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.95),
+                      color: Colors.black.withValues(alpha: 0.95),
                       border: const Border(
                         bottom: BorderSide(color: Colors.white10, width: 1),
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.5),
+                          color: Colors.black.withValues(alpha: 0.5),
                           blurRadius: 10,
                           offset: const Offset(0, 5),
                         ),
@@ -350,7 +350,7 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
                   if (selected) setState(() => selectionSet.clear());
                 },
                 backgroundColor: Colors.white10,
-                selectedColor: Colors.blueAccent.withOpacity(0.3),
+                selectedColor: Colors.blueAccent.withValues(alpha: 0.3),
                 labelStyle: TextStyle(
                   color: isAllSelected ? Colors.blueAccent : Colors.white60,
                 ),
@@ -379,7 +379,7 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
                 });
               },
               backgroundColor: Colors.white10,
-              selectedColor: Colors.greenAccent.withOpacity(0.2),
+              selectedColor: Colors.greenAccent.withValues(alpha: 0.2),
               labelStyle: TextStyle(
                 color: isSelected ? Colors.greenAccent : Colors.white60,
               ),
@@ -437,10 +437,10 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
                       horizontal: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.04),
+                      color: Colors.white.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha: 0.1),
                         width: 1,
                       ),
                     ),
@@ -511,7 +511,7 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
                     color: Colors.black,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: Colors.greenAccent.withOpacity(0.2),
+                      color: Colors.greenAccent.withValues(alpha: 0.2),
                     ),
                   ),
                   child: Text(
@@ -615,7 +615,7 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.white.withOpacity(0.05), width: 0.5),
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05), width: 0.5),
         ),
       ),
       child: Row(
@@ -645,3 +645,4 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
     );
   }
 }
+

@@ -350,5 +350,13 @@ final Map<String, String> fr = {
   'duplicate_songs_found': 'Chansons en double trouvées',
   'no_duplicates_remaining': 'Aucun doublon restant.',
   'duration_label': 'Durée:',
+  'data_usage_warning': 'Avertissement sur l\'utilisation des données',
+  'data_usage_desc':
+      'Le téléchargement de musique consomme une quantité importante de données mobiles. Cela pourrait entraîner des frais supplémentaires sur votre forfait mobile.',
+  'remaining_downloads': 'Téléchargements restants : {0}',
+  'wifi_recommendation':
+      'Nous vous recommandons d\'utiliser une connexion WiFi pour éviter d\'éventuels frais d\'opérateur.',
+  'continue': 'Continuer',
+  'download_limit_reached':
+      'Limite de téléchargement atteinte ({0} chansons). Supprimez certains téléchargements pour continuer.',
 };
-

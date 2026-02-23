@@ -280,8 +280,8 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.6),
-                  Colors.black.withOpacity(0.9),
+                  Colors.black.withValues(alpha: 0.6),
+                  Colors.black.withValues(alpha: 0.9),
                   Colors.black,
                 ],
               ),
@@ -360,7 +360,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: CircleAvatar(
-                  backgroundColor: Colors.black.withOpacity(0.5),
+                  backgroundColor: Colors.black.withValues(alpha: 0.5),
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.white),
                     onPressed: () => Navigator.of(context).pop(),
@@ -441,7 +441,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
+                  color: Colors.black.withValues(alpha: 0.5),
                   blurRadius: 30,
                   offset: const Offset(0, 15),
                 ),
@@ -592,7 +592,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: isPlaying ? Colors.white.withOpacity(0.1) : Colors.transparent,
+        color: isPlaying ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
         border: isPlaying
             ? Border.all(color: theme.primaryColor, width: 2)
             : null,
@@ -1194,3 +1194,4 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     );
   }
 }
+

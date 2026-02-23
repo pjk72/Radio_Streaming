@@ -81,12 +81,12 @@ class _AdminDebugOverlayState extends State<AdminDebugOverlay> {
           color: _isOpen ? Colors.redAccent : Colors.black54,
           shape: BoxShape.circle,
           border: Border.all(
-            color: Colors.redAccent.withOpacity(0.5),
+            color: Colors.redAccent.withValues(alpha: 0.5),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 8,
               spreadRadius: 2,
             ),
@@ -108,12 +108,12 @@ class _AdminDebugOverlayState extends State<AdminDebugOverlay> {
       width: _size.width.clamp(200.0, screenSize.width),
       height: _size.height.clamp(200.0, screenSize.height),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
+        color: Colors.black.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.redAccent.withOpacity(0.3), width: 1),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.5),
+            color: Colors.black.withValues(alpha: 0.5),
             blurRadius: 20,
             spreadRadius: 5,
           ),
@@ -125,7 +125,7 @@ class _AdminDebugOverlayState extends State<AdminDebugOverlay> {
           ClipRRect(
             borderRadius: BorderRadius.circular(11),
             child: Material(
-              color: Colors.black.withOpacity(0.85),
+              color: Colors.black.withValues(alpha: 0.85),
               type: MaterialType.canvas,
               child: ScaffoldMessenger(
                 child: HeroControllerScope.none(
@@ -190,7 +190,7 @@ class _ResizeHandlePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.redAccent.withOpacity(0.5)
+      ..color = Colors.redAccent.withValues(alpha: 0.5)
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
 
@@ -209,3 +209,4 @@ class _ResizeHandlePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+

@@ -345,4 +345,13 @@ final Map<String, String> pt = {
   'duplicate_songs_found': 'Músicas duplicadas encontradas',
   'no_duplicates_remaining': 'Nenhuma duplicata restante.',
   'duration_label': 'Duração:',
+  'data_usage_warning': 'Aviso de uso de dados',
+  'data_usage_desc':
+      'O download de música consome uma quantidade significativa de dados móveis. Isso pode gerar cobranças extras em seu plano móvel.',
+  'remaining_downloads': 'Downloads restantes: {0}',
+  'wifi_recommendation':
+      'Recomendamos usar uma conexão WiFi para evitar possíveis custos da operadora.',
+  'continue': 'Continuar',
+  'download_limit_reached':
+      'Limite de download atingido ({0} músicas). Exclua alguns downloads para continuar.',
 };

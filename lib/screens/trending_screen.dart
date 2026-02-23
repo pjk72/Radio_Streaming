@@ -383,7 +383,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                 ), // Thinner border placeholder
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1), // Lighter shadow
+              color: Colors.black.withValues(alpha: 0.1), // Lighter shadow
               blurRadius: 4, // Reduced blur
               offset: const Offset(0, 2),
             ),
@@ -420,7 +420,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                     Positioned.fill(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.3),
+                          color: Colors.black.withValues(alpha: 0.3),
                           borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(10),
                           ),
@@ -525,7 +525,7 @@ class _TrendingScreenState extends State<TrendingScreen>
         color: Colors.white,
         shape: BoxShape.circle,
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4),
         ],
       ),
       child: Icon(icon, color: color, size: 14),
@@ -635,3 +635,4 @@ class _TrendingPlaylistCoverState extends State<_TrendingPlaylistCover> {
     );
   }
 }
+

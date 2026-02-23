@@ -348,5 +348,13 @@ final Map<String, String> de = {
   'duplicate_songs_found': 'Doppelte Lieder gefunden',
   'no_duplicates_remaining': 'Keine Duplikate verbleiben.',
   'duration_label': 'Dauer:',
+  'data_usage_warning': 'Datennutzungswarnung',
+  'data_usage_desc':
+      'Das Herunterladen von Musik verbraucht eine erhebliche Menge an mobilen Daten. Dies könnte zu zusätzlichen Kosten in Ihrem Mobilfunktarif führen.',
+  'remaining_downloads': 'Verbleibende Downloads: {0}',
+  'wifi_recommendation':
+      'Wir empfehlen die Verwendung einer WLAN-Verbindung, um potenzielle Mobilfunkkosten zu vermeiden.',
+  'continue': 'Weiter',
+  'download_limit_reached':
+      'Download-Limit erreicht ({0} Titel). Löschen Sie einige Downloads, um fortzufahren.',
 };
-

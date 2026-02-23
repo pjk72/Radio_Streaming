@@ -162,7 +162,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
       _lyricsOverlayEntry = OverlayEntry(
         builder: (context) => Positioned.fill(
           child: Material(
-            color: Colors.black.withOpacity(0.6),
+            color: Colors.black.withValues(alpha: 0.6),
             child: Stack(
               children: [
                 LyricsWidget(
@@ -367,7 +367,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
               Positioned.fill(
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
-                  child: Container(color: Colors.black.withOpacity(0.8)),
+                  child: Container(color: Colors.black.withValues(alpha: 0.8)),
                 ),
               ),
 
@@ -380,7 +380,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withValues(alpha: 0.5),
                       blurRadius: 10,
                     ),
                   ],
@@ -647,3 +647,4 @@ class _YouTubePopupState extends State<YouTubePopup> {
     );
   }
 }
+

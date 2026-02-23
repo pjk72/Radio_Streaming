@@ -83,10 +83,10 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
                               horizontal: 16,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.5),
+                              color: Colors.black.withValues(alpha: 0.5),
                               borderRadius: BorderRadius.circular(30),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withValues(alpha: 0.1),
                                 width: 0.5,
                               ),
                             ),
@@ -124,3 +124,4 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
     );
   }
 }
+

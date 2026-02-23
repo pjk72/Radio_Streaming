@@ -342,4 +342,10 @@ final Map<String, String> zh = {
   'duplicate_songs_found': '发现重复的歌曲',
   'no_duplicates_remaining': '没有剩余的重复项。',
   'duration_label': '时长：',
+  'data_usage_warning': '流量使用提示',
+  'data_usage_desc': '下载音乐会消耗大量移动数据流量。这可能会导致您的移动套餐产生额外费用。',
+  'remaining_downloads': '剩余下载次数：{0}',
+  'wifi_recommendation': '我们建议使用 WiFi 连接，以免产生移动运营商费用。',
+  'continue': '继续',
+  'download_limit_reached': '已达到下载限制（{0} 首歌曲）。请删除一些下载以继续。',
 };

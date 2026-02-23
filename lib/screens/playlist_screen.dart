@@ -29,7 +29,6 @@ import '../services/notification_service.dart';
 import 'trending_details_screen.dart';
 import 'artist_details_screen.dart';
 import '../widgets/youtube_popup.dart';
-import '../utils/genre_mapper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'spotify_login_screen.dart';
 import 'local_library_screen.dart';
@@ -262,7 +261,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).primaryColor,
-                    disabledBackgroundColor: Colors.grey.withValues(alpha: 0.3),
+                    disabledBackgroundColor: Colors.grey.withValues(alpha: 0.5),
                   ),
                   child: Text(
                     "Update Selected (${selectedProposalIds.length})",
@@ -1032,12 +1031,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           decoration: BoxDecoration(
             color: selected
                 ? Theme.of(context).primaryColor
-                : headerContrastColor.withValues(alpha: 0.1),
+                : headerContrastColor.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected
                   ? Colors.transparent
-                  : headerContrastColor.withValues(alpha: 0.24),
+                  : headerContrastColor.withValues(alpha: 0.5),
             ),
           ),
           child: Text(
@@ -1047,7 +1046,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   ? (Theme.of(context).primaryColor.computeLuminance() > 0.5
                         ? Colors.black
                         : Colors.white)
-                  : headerContrastColor.withValues(alpha: 0.7),
+                  : headerContrastColor.withValues(alpha: 0.5),
               fontSize: 12,
               fontWeight: FontWeight.bold,
             ),
@@ -1060,7 +1059,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.2),
+            color: Colors.black.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(0),
           ),
           clipBehavior: Clip.hardEdge,
@@ -1136,7 +1135,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   backgroundColor: _showOnlyLocal
                                       ? Theme.of(
                                           context,
-                                        ).primaryColor.withValues(alpha: 0.15)
+                                        ).primaryColor.withValues(alpha: 0.2)
                                       : null,
                                   padding: const EdgeInsets.all(8),
                                   minimumSize: const Size(36, 36),
@@ -1270,7 +1269,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               ).colorScheme.onSurface;
                               final iconColor =
                                   Theme.of(context).iconTheme.color ??
-                                  onSurfaceColor.withOpacity(0.7);
+                                  onSurfaceColor.withValues(alpha: 0.7);
                               final primaryColor = Theme.of(
                                 context,
                               ).primaryColor;
@@ -1641,7 +1640,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     : Theme.of(context)
                                           .appBarTheme
                                           .foregroundColor
-                                          ?.withValues(alpha: 0.7),
+                                          ?.withValues(alpha: 0.5),
                                 size: 24,
                               ),
                               tooltip: _showFollowedAlbumsOnly
@@ -1694,7 +1693,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   border: Border.all(
                                     color: Theme.of(
                                       context,
-                                    ).dividerColor.withValues(alpha: 0.1),
+                                    ).dividerColor.withValues(alpha: 0.5),
                                   ),
                                 ),
                                 child: TextField(
@@ -1775,7 +1774,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             border: Border.all(
                               color: Theme.of(
                                 context,
-                              ).dividerColor.withValues(alpha: 0.1),
+                              ).dividerColor.withValues(alpha: 0.5),
                             ),
                           ),
                           child: TextField(
@@ -1795,7 +1794,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     .textTheme
                                     .bodyMedium
                                     ?.color
-                                    ?.withValues(alpha: 0.5),
+                                    ?.withValues(alpha: 0.7),
                                 fontSize: 12,
                               ),
                               isDense: true,
@@ -2246,16 +2245,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       if (covers.length >= 4) break;
     }
 
-    // 2. Fallback if 0 covers: Pollinations AI via GenreMapper
-    String? fallbackImage;
-    if (covers.isEmpty) {
-      if (playlist.id == 'favorites') {
-        fallbackImage = GenreMapper.getGenreImage("Favorites");
-      } else {
-        fallbackImage = GenreMapper.getGenreImage(playlist.name);
-      }
-    }
-
     // Check if this playlist is currently playing
     bool isPlaylistPlaying =
         provider.isPlaying &&
@@ -2318,7 +2307,20 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             Positioned.fill(
               child: covers.isNotEmpty
                   ? _buildCollage(covers)
-                  : _buildSingleCover(fallbackImage ?? ''),
+                  : Image.asset(
+                      'assets/empty_playlist.png',
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        child: const Center(
+                          child: Icon(
+                            Icons.broken_image,
+                            color: Colors.white54,
+                            size: 40,
+                          ),
+                        ),
+                      ),
+                    ),
             ),
 
             // GRADIENT OVERLAY
@@ -2609,7 +2611,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         .translate('songs_count')
                         .replaceAll('{0}', playlist.songs.length.toString()),
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 11,
                       shadows: const [
                         Shadow(
@@ -2696,10 +2698,35 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         fit: BoxFit.cover,
         width: double.infinity,
         height: double.infinity,
-        errorWidget: (_, __, ___) =>
-            Container(color: Colors.white.withValues(alpha: 0.1)),
-        placeholder: (_, __) =>
-            Container(color: Colors.white.withValues(alpha: 0.1)),
+        httpHeaders: const {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        errorWidget: (_, __, ___) => Container(
+          color: Colors.white.withValues(alpha: 0.1),
+          child: const Center(
+            child: Icon(Icons.broken_image, color: Colors.white54, size: 40),
+          ),
+        ),
+        placeholder: (_, __) => Container(
+          color: Colors.white.withValues(alpha: 0.1),
+          child: const Center(
+            child: CircularProgressIndicator(color: Colors.white24),
+          ),
+        ),
+      );
+    } else if (uri.startsWith('assets/')) {
+      return Image.asset(
+        uri,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (_, __, ___) => Container(
+          color: Colors.white.withValues(alpha: 0.1),
+          child: const Center(
+            child: Icon(Icons.broken_image, color: Colors.white54, size: 40),
+          ),
+        ),
       );
     } else {
       return Image.file(
@@ -2707,8 +2734,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         fit: BoxFit.cover,
         width: double.infinity,
         height: double.infinity,
-        errorBuilder: (_, __, ___) =>
-            Container(color: Colors.white.withValues(alpha: 0.1)),
+        errorBuilder: (_, __, ___) => Container(
+          color: Colors.white.withValues(alpha: 0.1),
+          child: const Center(
+            child: Icon(Icons.broken_image, color: Colors.white54, size: 40),
+          ),
+        ),
       );
     }
   }
@@ -2740,12 +2771,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       return;
     }
 
-    // Check if limit already reached before starting
     if (downloadLimit != -1 && provider.totalDownloadedSongs >= downloadLimit) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Download limit reached ($downloadLimit songs). Delete some downloads to continue.",
+            Provider.of<LanguageProvider>(context, listen: false)
+                .translate('download_limit_reached')
+                .replaceAll('{0}', downloadLimit.toString()),
           ),
           backgroundColor: Colors.orangeAccent,
         ),
@@ -2764,7 +2796,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
               side: BorderSide(
-                color: Colors.white.withValues(alpha: 0.1),
+                color: Colors.white.withValues(alpha: 0.7),
                 width: 1,
               ),
             ),
@@ -2773,7 +2805,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.orangeAccent.withValues(alpha: 0.1),
+                    color: Colors.orangeAccent.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -2783,10 +2815,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
-                  "Data Usage Warning",
+                Text(
+                  Provider.of<LanguageProvider>(
+                    context,
+                    listen: false,
+                  ).translate('data_usage_warning'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 22,
@@ -2798,10 +2833,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  "Downloading music consumes a significant amount of mobile data. This could lead to extra charges on your mobile plan.",
+                  Provider.of<LanguageProvider>(
+                    context,
+                    listen: false,
+                  ).translate('data_usage_desc'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 16,
                     height: 1.4,
                   ),
@@ -2811,7 +2849,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16.0),
                     child: Text(
-                      "Remaining downloads: ${downloadLimit - provider.totalDownloadedSongs}",
+                      Provider.of<LanguageProvider>(context, listen: false)
+                          .translate('remaining_downloads')
+                          .replaceAll(
+                            '{0}',
+                            (downloadLimit - provider.totalDownloadedSongs)
+                                .toString(),
+                          ),
                       style: const TextStyle(
                         color: Colors.greenAccent,
                         fontWeight: FontWeight.bold,
@@ -2822,24 +2866,30 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.05),
+                    color: Colors.blueAccent.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Colors.blueAccent.withValues(alpha: 0.1),
+                      color: Colors.blueAccent.withValues(alpha: 0.5),
                     ),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.info_outline_rounded,
                         color: Colors.blueAccent,
                         size: 20,
                       ),
-                      SizedBox(width: 12),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          "We recommend using a WiFi connection to avoid potential carrier costs.",
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                          Provider.of<LanguageProvider>(
+                            context,
+                            listen: false,
+                          ).translate('wifi_recommendation'),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -2861,9 +2911,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         ),
                       ),
                       child: Text(
-                        "Cancel",
+                        Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('cancel'),
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withValues(alpha: 0.7),
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
                         ),
@@ -2883,9 +2936,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text(
-                        "Continue",
-                        style: TextStyle(
+                      child: Text(
+                        Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('continue'),
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -3713,9 +3769,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       Positioned.fill(
                                         child: Container(
                                           decoration: BoxDecoration(
-                                            color: Theme.of(
-                                              context,
-                                            ).primaryColor.withOpacity(0.5),
+                                            color: Theme.of(context)
+                                                .primaryColor
+                                                .withValues(alpha: 0.2),
                                             borderRadius: BorderRadius.circular(
                                               8,
                                             ),
@@ -3896,17 +3952,17 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            accentColor.withValues(alpha: 0.15),
-            accentColor.withValues(alpha: 0.02),
+            accentColor.withValues(alpha: 0.2),
+            accentColor.withValues(alpha: 0.1),
           ],
         ),
         border: Border.all(
-          color: accentColor.withValues(alpha: 0.4),
+          color: accentColor.withValues(alpha: 0.3),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: accentColor.withValues(alpha: 0.05),
+            color: accentColor.withValues(alpha: 0.2),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -3927,7 +3983,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.2),
+                    color: accentColor.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: FaIcon(icon, color: accentColor, size: 24),
@@ -3948,7 +4004,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 Text(
                   subtitle,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 11,
                   ),
                   textAlign: TextAlign.center,
@@ -4164,10 +4220,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 padding: const EdgeInsets.all(12),
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: Colors.orangeAccent.withValues(alpha: 0.1),
+                  color: Colors.orangeAccent.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Colors.orangeAccent.withValues(alpha: 0.3),
+                    color: Colors.orangeAccent.withValues(alpha: 0.5),
                   ),
                 ),
                 child: Row(
@@ -4200,7 +4256,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 hintStyle: TextStyle(
                   color: Theme.of(
                     context,
-                  ).textTheme.bodySmall?.color?.withValues(alpha: 0.38),
+                  ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                 ),
                 enabledBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: Theme.of(context).dividerColor),
@@ -4221,7 +4277,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               style: TextStyle(
                 color: Theme.of(
                   context,
-                ).textTheme.bodySmall?.color?.withValues(alpha: 0.54),
+                ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -4264,7 +4320,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             labelStyle: TextStyle(
               color: Theme.of(
                 context,
-              ).textTheme.bodyLarge?.color?.withValues(alpha: 0.6),
+              ).textTheme.bodyLarge?.color?.withValues(alpha: 0.7),
             ),
             enabledBorder: UnderlineInputBorder(
               borderSide: BorderSide(color: Theme.of(context).dividerColor),
@@ -4383,7 +4439,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         style: TextStyle(
                           color: Theme.of(
                             context,
-                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.54),
+                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                           fontSize: 12,
                         ),
                       ),
@@ -4453,7 +4509,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               Icons.music_off_rounded,
               size: 64,
               color:
-                  Theme.of(context).iconTheme.color?.withValues(alpha: 0.24) ??
+                  Theme.of(context).iconTheme.color?.withValues(alpha: 0.5) ??
                   Colors.white24,
             ),
             SizedBox(height: 16),
@@ -4466,7 +4522,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 color:
                     Theme.of(
                       context,
-                    ).textTheme.bodySmall?.color?.withValues(alpha: 0.54) ??
+                    ).textTheme.bodySmall?.color?.withValues(alpha: 0.7) ??
                     Colors.white54,
               ),
             ),
@@ -4969,8 +5025,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         color: isInvalid
             ? Theme.of(
                     context,
-                  ).textTheme.bodyLarge?.color?.withValues(alpha: 0.02) ??
-                  Colors.white.withValues(alpha: 0.02)
+                  ).textTheme.bodyLarge?.color?.withValues(alpha: 0.7) ??
+                  Colors.white.withValues(alpha: 0.7)
             : isThisSongPlaying
             ? Theme.of(context).primaryColor.withValues(
                 alpha: 0.25,
@@ -4981,7 +5037,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         borderRadius: BorderRadius.zero,
         border: isThisSongPlaying
             ? Border.all(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
                 width: 1.5,
               )
             : null,
@@ -5155,7 +5211,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             child: Text(
                               song.artist,
                               style: TextStyle(
-                                color: contrastColor.withValues(alpha: 0.7),
+                                color: contrastColor.withValues(alpha: 0.5),
                                 fontWeight: FontWeight.normal,
                                 fontSize: 13,
                               ),
@@ -5226,7 +5282,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             isFavorite ? Icons.favorite : Icons.favorite_border,
                             color: isFavorite
                                 ? Colors.pinkAccent
-                                : contrastColor.withValues(alpha: 0.54),
+                                : contrastColor.withValues(alpha: 0.5),
                             size: 18,
                           ),
                         ),
@@ -5885,7 +5941,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 color:
                     Theme.of(
                       context,
-                    ).textTheme.bodySmall?.color?.withValues(alpha: 0.54) ??
+                    ).textTheme.bodySmall?.color?.withValues(alpha: 0.7) ??
                     Colors.white54,
               ),
             ),
@@ -5937,7 +5993,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   border: Border.all(
                     color: Theme.of(
                       context,
-                    ).dividerColor.withValues(alpha: 0.1),
+                    ).dividerColor.withValues(alpha: 0.5),
                   ),
                 ),
                 child: ListTile(
@@ -6020,7 +6076,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           .textTheme
                                           .bodySmall
                                           ?.color
-                                          ?.withValues(alpha: 0.54),
+                                          ?.withValues(alpha: 0.5),
                                 fontSize: 11,
                               ),
                               maxLines: 1,
@@ -6447,20 +6503,20 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       ? Border.all(
                           color: Theme.of(
                             context,
-                          ).primaryColor.withValues(alpha: 0.8),
+                          ).primaryColor.withValues(alpha: 0.2),
                           width: 2,
                         )
                       : null,
                 ),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor.withValues(alpha: 0.1),
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: isPlaying
                       ? [
                           BoxShadow(
                             color: Theme.of(
                               context,
-                            ).primaryColor.withValues(alpha: 0.3),
+                            ).primaryColor.withValues(alpha: 0.2),
                             blurRadius: 12,
                             spreadRadius: 2,
                           ),
@@ -6506,7 +6562,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               Colors.transparent,
                               Colors.transparent,
                               Colors.black.withValues(alpha: 0.5),
-                              Colors.black.withValues(alpha: 0.9),
+                              Colors.black.withValues(alpha: 0.5),
                             ],
                             stops: const [0.0, 0.4, 0.7, 1.0],
                           ),
@@ -6535,7 +6591,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.3),
+                            color: Colors.black.withValues(alpha: 0.5),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -6556,7 +6612,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.3),
+                            color: Colors.black.withValues(alpha: 0.5),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
@@ -6600,7 +6656,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           Text(
                             displaySong.artist,
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.9),
+                              color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 11,
                               shadows: const [
                                 Shadow(
@@ -6746,15 +6802,15 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isPlayingAlbum
-            ? Theme.of(context).primaryColor.withValues(alpha: 0.05)
+            ? Theme.of(context).primaryColor.withValues(alpha: 0.2)
             : cardColor.withValues(alpha: 0.5),
         borderRadius: BorderRadius.zero,
         border: isPlayingAlbum
             ? Border.all(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.6),
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
                 width: 1.5,
               )
-            : Border.all(color: contrastColor.withValues(alpha: 0.1)),
+            : Border.all(color: contrastColor.withValues(alpha: 0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6814,7 +6870,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                 : Container(
                                     width: 60,
                                     height: 60,
-                                    color: contrastColor.withValues(alpha: 0.1),
+                                    color: contrastColor.withValues(alpha: 0.5),
                                     child: Icon(
                                       Icons.album,
                                       color: contrastColor.withValues(
@@ -6831,7 +6887,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                               child: Container(
                                 padding: const EdgeInsets.all(2),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.6),
+                                  color: Colors.black.withValues(alpha: 0.5),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -6866,7 +6922,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                           Text(
                             artistName,
                             style: TextStyle(
-                              color: contrastColor.withValues(alpha: 0.7),
+                              color: contrastColor.withValues(alpha: 0.5),
                               fontSize: 14,
                             ),
                             maxLines: 1,
@@ -6903,7 +6959,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                     PopupMenuButton<String>(
                       icon: Icon(
                         Icons.more_vert_rounded,
-                        color: contrastColor.withValues(alpha: 0.54),
+                        color: contrastColor.withValues(alpha: 0.5),
                       ),
                       onSelected: (value) async {
                         if (value == 'copy') {
@@ -6952,7 +7008,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                       _isExpanded
                           ? Icons.keyboard_arrow_up_rounded
                           : Icons.keyboard_arrow_down_rounded,
-                      color: contrastColor.withValues(alpha: 0.54),
+                      color: contrastColor.withValues(alpha: 0.5),
                     ),
                   ],
                 ),
@@ -7069,7 +7125,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                           BoxShadow(
                             color: Theme.of(
                               context,
-                            ).primaryColor.withValues(alpha: 0.4),
+                            ).primaryColor.withValues(alpha: 0.2),
                             blurRadius: 16,
                             spreadRadius: 2,
                             offset: const Offset(0, 4),
@@ -7077,7 +7133,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                         ]
                       : [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
+                            color: Colors.black.withValues(alpha: 0.5),
                             blurRadius: 8,
                             offset: const Offset(0, 4),
                           ),
@@ -7095,7 +7151,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                                   width: 3,
                                 )
                               : Border.all(
-                                  color: Colors.white.withValues(alpha: 0.1),
+                                  color: Colors.white.withValues(alpha: 0.7),
                                   width: 1,
                                 ),
                         ),
@@ -7136,7 +7192,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                               Colors.transparent,
                               Colors.transparent,
                               Colors.black.withValues(alpha: 0.5),
-                              Colors.black.withValues(alpha: 0.9),
+                              Colors.black.withValues(alpha: 0.5),
                             ],
                             stops: const [0.0, 0.4, 0.7, 1.0],
                           ),
@@ -7175,7 +7231,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                             "${widget.songCount} Songs",
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.9),
+                              color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 10,
                               shadows: const [
                                 Shadow(
@@ -7223,7 +7279,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.3),
+                            color: Colors.black.withValues(alpha: 0.5),
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: Colors.white24,
@@ -7247,7 +7303,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.black.withValues(alpha: 0.3),
+                            color: Colors.black.withValues(alpha: 0.5),
                             border: Border.all(
                               color: Colors.white24,
                               width: 0.5,
