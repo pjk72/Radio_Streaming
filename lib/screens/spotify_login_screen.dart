@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
 
 class SpotifyLoginScreen extends StatefulWidget {
   final String loginUrl;
@@ -46,7 +48,7 @@ class _SpotifyLoginScreenState extends State<SpotifyLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Spotify Login"),
+        title: Text(Provider.of<LanguageProvider>(context).translate('spotify_login')),
         backgroundColor: const Color(0xFF1db954),
       ),
       body: WebViewWidget(controller: _controller),

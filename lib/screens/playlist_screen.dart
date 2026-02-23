@@ -805,7 +805,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     setState(() => _isBulkChecking = true);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text("Checking ${invalidSongs.length} invalid tracks..."),
+        content: Text(
+          Provider.of<LanguageProvider>(context, listen: false)
+              .translate('checking_invalid_tracks')
+              .replaceAll('{0}', invalidSongs.length.toString()),
+        ),
       ),
     );
 
@@ -2419,51 +2423,68 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             listen: false,
                           ).getFeatureLimit('download_songs') !=
                           0)
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'download',
                           child: Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.download_rounded,
                                 size: 18,
                                 color: Colors.greenAccent,
                               ),
-                              SizedBox(width: 8),
+                              const SizedBox(width: 8),
                               Text(
-                                "Download",
-                                style: TextStyle(color: Colors.greenAccent),
+                                Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('download'),
+                                style: const TextStyle(
+                                  color: Colors.greenAccent,
+                                ),
                               ),
                             ],
                           ),
                         ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'clean_all',
                         child: Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.delete_sweep_rounded,
                               size: 18,
                               color: Colors.orangeAccent,
                             ),
-                            SizedBox(width: 8),
+                            const SizedBox(width: 8),
                             Text(
-                              "Clean All",
-                              style: TextStyle(color: Colors.orangeAccent),
+                              Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              ).translate('clean_all'),
+                              style: const TextStyle(
+                                color: Colors.orangeAccent,
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ] else ...[
                       if (playlist.creator != 'local')
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'rename',
                           child: Row(
                             children: [
-                              Icon(Icons.edit, size: 18, color: Colors.white),
-                              SizedBox(width: 8),
+                              const Icon(
+                                Icons.edit,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 8),
                               Text(
-                                "Rename",
-                                style: TextStyle(color: Colors.white),
+                                Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('rename'),
+                                style: const TextStyle(color: Colors.white),
                               ),
                             ],
                           ),
@@ -2474,53 +2495,64 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 listen: false,
                               ).getFeatureLimit('download_songs') !=
                               0)
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'download',
                           child: Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.download_rounded,
                                 size: 18,
                                 color: Colors.greenAccent,
                               ),
-                              SizedBox(width: 8),
+                              const SizedBox(width: 8),
                               Text(
-                                "Download",
-                                style: TextStyle(color: Colors.greenAccent),
+                                Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('download'),
+                                style: const TextStyle(
+                                  color: Colors.greenAccent,
+                                ),
                               ),
                             ],
                           ),
                         ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'copy',
                         child: Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.copy,
                               size: 18,
                               color: Colors.blueAccent,
                             ),
-                            SizedBox(width: 8),
+                            const SizedBox(width: 8),
                             Text(
-                              "Copy to...",
-                              style: TextStyle(color: Colors.blueAccent),
+                              Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              ).translate('copy_to_ellipsis'),
+                              style: const TextStyle(color: Colors.blueAccent),
                             ),
                           ],
                         ),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'delete',
                         child: Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.delete_outline,
                               size: 18,
                               color: Colors.redAccent,
                             ),
-                            SizedBox(width: 8),
+                            const SizedBox(width: 8),
                             Text(
-                              "Delete",
-                              style: TextStyle(color: Colors.redAccent),
+                              Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              ).translate('delete'),
+                              style: const TextStyle(color: Colors.redAccent),
                             ),
                           ],
                         ),
@@ -2573,7 +2605,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    "${playlist.songs.length} songs",
+                    Provider.of<LanguageProvider>(context, listen: false)
+                        .translate('songs_count')
+                        .replaceAll('{0}', playlist.songs.length.toString()),
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.8),
                       fontSize: 11,
@@ -4032,7 +4066,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
+              child: Text(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('cancel'),
+              ),
             ),
           ],
         );
@@ -4056,7 +4095,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
+            child: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('cancel'),
+            ),
           ),
           TextButton(
             onPressed: () async {
@@ -4233,7 +4277,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
+            child: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('cancel'),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -4831,7 +4880,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text("Removed '${groupSongs.first.album}'"),
+                  content: Text(
+                    Provider.of<LanguageProvider>(context, listen: false)
+                        .translate('removed_album')
+                        .replaceAll('{0}', groupSongs.first.album),
+                  ),
                   action: SnackBarAction(
                     label: "Undo",
                     onPressed: () {
@@ -5128,8 +5181,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).clearSnackBars();
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Removed from Favorites"),
+                                  SnackBar(
+                                    content: Text(
+                                      Provider.of<LanguageProvider>(
+                                        context,
+                                        listen: false,
+                                      ).translate('removed_from_favorites'),
+                                    ),
                                     duration: Duration(seconds: 1),
                                   ),
                                 );
@@ -5151,8 +5209,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).clearSnackBars();
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Added to Favorites"),
+                                  SnackBar(
+                                    content: Text(
+                                      Provider.of<LanguageProvider>(
+                                        context,
+                                        listen: false,
+                                      ).translate('added_to_favorites'),
+                                    ),
                                     duration: Duration(seconds: 1),
                                   ),
                                 );
@@ -5258,7 +5321,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     rootNavigator: true,
                                   ).pop();
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text("Error: $e")),
+                                    SnackBar(
+                                      content: Text(
+                                        Provider.of<LanguageProvider>(
+                                              context,
+                                              listen: false,
+                                            )
+                                            .translate('error_generic')
+                                            .replaceAll('{0}', e.toString()),
+                                      ),
+                                    ),
                                   );
                                 }
                               }
@@ -5292,7 +5364,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(ctx, false),
-                                            child: const Text("Cancel"),
+                                            child: Text(
+                                              Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              ).translate('cancel'),
+                                            ),
                                           ),
                                           TextButton(
                                             onPressed: () =>
@@ -5411,7 +5488,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 ],
                               ),
                             ),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'delete',
                               child: Row(
                                 children: [
@@ -5506,7 +5583,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         ),
         actions: [
           TextButton(
-            child: const Text("Cancel"),
+            child: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('cancel'),
+            ),
             onPressed: () => Navigator.pop(ctx),
           ),
           TextButton(
@@ -5578,7 +5660,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         .toList();
     if (others.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No other playlists to copy to.")),
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('no_other_playlists'),
+          ),
+        ),
       );
       return false;
     }
@@ -5628,7 +5717,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             Navigator.pop(ctx, true);
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Copied to ${p.name}")),
+                                SnackBar(
+                                  content: Text(
+                                    Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        )
+                                        .translate('copied_to')
+                                        .replaceAll('{0}', p.name),
+                                  ),
+                                ),
                               );
                             }
                           },
@@ -5657,7 +5755,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         .toList();
     if (others.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No other playlists to copy to.")),
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('no_other_playlists'),
+          ),
+        ),
       );
       return false;
     }
@@ -5715,7 +5820,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text("Copied album to ${p.name}"),
+                                  content: Text(
+                                    Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        )
+                                        .translate('copied_album_to')
+                                        .replaceAll('{0}', p.name),
+                                  ),
                                 ),
                               );
                             }
@@ -6801,17 +6913,22 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                         }
                       },
                       itemBuilder: (context) => [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'copy',
                           child: Row(
                             children: [
                               Icon(Icons.content_copy_rounded, size: 20),
                               SizedBox(width: 8),
-                              Text("Copy To"),
+                              Text(
+                                Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('copy_to'),
+                              ),
                             ],
                           ),
                         ),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'delete',
                           child: Row(
                             children: [
@@ -7218,7 +7335,13 @@ class _DuplicateResolutionDialogState
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Duplicate Songs", style: TextStyle(color: Colors.white)),
+          Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('duplicate_songs'),
+            style: TextStyle(color: Colors.white),
+          ),
           const SizedBox(height: 4),
           Text(
             "Found ${widget.duplicates.length} sets of duplicates",
@@ -7426,7 +7549,7 @@ Widget invalidSongIndicatorPreview() {
             children: [
               _InvalidSongIndicator(songId: 'test_1', isStaticInvalid: true),
               SizedBox(width: 16),
-              Text("Invalid Song Indicator !!!"),
+              Text('Invalid Song Indicator !!!'),
             ],
           ),
         ),

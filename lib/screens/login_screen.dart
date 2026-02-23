@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -84,7 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text("Login Failed: $e")));
+        ).showSnackBar(SnackBar(content: Text(Provider.of<LanguageProvider>(context, listen: false).translate('login_failed').replaceAll('{0}', e.toString()))));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

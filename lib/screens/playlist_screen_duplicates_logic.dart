@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
 import '../providers/radio_provider.dart';
+import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
 
 void scanForDuplicates(
   BuildContext context,
@@ -28,9 +30,16 @@ void scanForDuplicates(
   });
 
   if (duplicates.isEmpty) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("No duplicates found.")));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('no_duplicates_found'),
+        ),
+      ),
+    );
     return;
   }
 
@@ -71,14 +80,20 @@ class _DuplicateResolutionDialogState
     return AlertDialog(
       backgroundColor: Theme.of(context).cardColor,
       title: Text(
-        "Duplicate Songs Found",
+        Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        ).translate('duplicate_songs_found'),
         style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color),
       ),
       content: SizedBox(
         width: double.maxFinite,
         child: widget.duplicates.isEmpty
             ? Text(
-                "No duplicates remaining.",
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('no_duplicates_remaining'),
                 style: TextStyle(
                   color: Theme.of(
                     context,
@@ -149,7 +164,7 @@ class _DuplicateResolutionDialogState
                                     },
                                   ),
                                   title: Text(
-                                    "Duration: ${song.duration?.toString().split('.').first ?? '--:--'}",
+                                    "${Provider.of<LanguageProvider>(context, listen: false).translate('duration_label')} ${song.duration?.toString().split('.').first ?? '--:--'}",
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Theme.of(context)
@@ -191,7 +206,10 @@ class _DuplicateResolutionDialogState
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(
-            "Cancel",
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('cancel'),
             style: TextStyle(
               color: Theme.of(context).textTheme.bodySmall?.color,
             ),
@@ -205,7 +223,11 @@ class _DuplicateResolutionDialogState
                   Navigator.of(context).pop();
                 },
           style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-          child: Text("Remove Selected (${_songsToRemove.length})"),
+          child: Text(
+            Provider.of<LanguageProvider>(context, listen: false)
+                .translate('remove_selected_count')
+                .replaceAll('{0}', _songsToRemove.length.toString()),
+          ),
         ),
       ],
     );
@@ -217,7 +239,13 @@ class _DuplicateResolutionDialogState
       _songsToRemove.toList(),
     );
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Removed ${_songsToRemove.length} duplicates.")),
+      SnackBar(
+        content: Text(
+          Provider.of<LanguageProvider>(context, listen: false)
+              .translate('removed_duplicates_count')
+              .replaceAll('{0}', _songsToRemove.length.toString()),
+        ),
+      ),
     );
   }
 }

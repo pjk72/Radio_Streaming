@@ -448,7 +448,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
-                                          SnackBar(content: Text("Error: $e")),
+                                          SnackBar(
+                                            content: Text(
+                                              langProvider
+                                                  .translate('error_generic')
+                                                  .replaceAll(
+                                                    '{0}',
+                                                    e.toString(),
+                                                  ),
+                                            ),
+                                          ),
                                         );
                                       }
                                     }
@@ -522,18 +531,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     iconEnabledColor: Theme.of(
                                       context,
                                     ).primaryColor,
-                                    items: const [
+                                    items: [
                                       DropdownMenuItem(
                                         value: 'manual',
-                                        child: Text("Manual"),
+                                        child: Text(
+                                          langProvider.translate('manual'),
+                                        ),
                                       ),
                                       DropdownMenuItem(
                                         value: 'daily',
-                                        child: Text("Daily"),
+                                        child: Text(
+                                          langProvider.translate('daily'),
+                                        ),
                                       ),
                                       DropdownMenuItem(
                                         value: 'weekly',
-                                        child: Text("Weekly"),
+                                        child: Text(
+                                          langProvider.translate('weekly'),
+                                        ),
                                       ),
                                     ],
                                     onChanged: !radio.canInitiateBackup
@@ -956,7 +971,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                               Icons.cloud_download,
                                               size: 16,
                                             ),
-                                      label: const Text("Restore"),
+                                      label: Text(
+                                        langProvider.translate('restore'),
+                                      ),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.orange.shade800,
                                         foregroundColor: Colors.white,
@@ -1169,7 +1186,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const Divider(color: Colors.white10, height: 32),
                               ElevatedButton.icon(
                                 icon: const Icon(Icons.playlist_add_rounded),
-                                label: const Text("Import Spotify Playlist"),
+                                label: Text(
+                                  langProvider.translate(
+                                    'import_spotify_playlist',
+                                  ),
+                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF1db954),
                                   foregroundColor: Colors.black,
@@ -1383,8 +1404,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 if (context.mounted) {
                                   if (success) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text("Import Complete!"),
+                                      SnackBar(
+                                        content: Text(
+                                          Provider.of<LanguageProvider>(
+                                            context,
+                                            listen: false,
+                                          ).translate('import_complete'),
+                                        ),
                                         backgroundColor: Colors.green,
                                       ),
                                     );
@@ -1403,7 +1429,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text("Import Failed: $e"),
+                                      content: Text(
+                                        Provider.of<LanguageProvider>(
+                                              context,
+                                              listen: false,
+                                            )
+                                            .translate('import_failed')
+                                            .replaceAll('{0}', e.toString()),
+                                      ),
                                       backgroundColor: Colors.red,
                                     ),
                                   );
@@ -1642,6 +1675,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'code': 'de',
                 'label': langProvider.translate('german'),
                 'flag': '🇩🇪',
+              },
+              {
+                'code': 'ru',
+                'label': langProvider.translate('russian'),
+                'flag': '🇷🇺',
+              },
+              {
+                'code': 'pt',
+                'label': langProvider.translate('portuguese'),
+                'flag': '🇵🇹',
+              },
+              {
+                'code': 'zh',
+                'label': langProvider.translate('chinese'),
+                'flag': '🇨🇳',
               },
             ];
 

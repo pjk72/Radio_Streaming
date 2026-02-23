@@ -52,7 +52,7 @@ class LanguageProvider with ChangeNotifier {
   }
 
   bool _isSupported(String code) {
-    return ['en', 'it', 'es', 'fr', 'de'].contains(code);
+    return ['en', 'it', 'es', 'fr', 'de', 'ru', 'pt', 'zh'].contains(code);
   }
 
   Future<void> setLanguage(String languageCode) async {

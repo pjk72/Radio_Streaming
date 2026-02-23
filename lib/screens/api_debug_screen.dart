@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 
 class ApiDebugScreen extends StatelessWidget {
   const ApiDebugScreen({super.key});
@@ -30,16 +31,16 @@ class ApiDebugScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: const Color(0xFF1a1a2e),
         appBar: AppBar(
-          title: const Text("API Debug", style: TextStyle(color: Colors.white)),
+          title: Text(Provider.of<LanguageProvider>(context).translate('api_debug'), style: TextStyle(color: Colors.white)),
           iconTheme: const IconThemeData(color: Colors.white),
           backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-          bottom: const TabBar(
+          bottom: TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.grey,
             indicatorColor: Colors.greenAccent,
             tabs: [
-              Tab(text: "Recognition (ACR)"),
-              Tab(text: "Song Links (Odesli)"),
+              Tab(text: Provider.of<LanguageProvider>(context).translate('api_debug_recognition')),
+              Tab(text: Provider.of<LanguageProvider>(context).translate('api_debug_song_links')),
             ],
           ),
         ),

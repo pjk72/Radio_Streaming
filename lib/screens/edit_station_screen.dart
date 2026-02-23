@@ -1334,7 +1334,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
       if (verifiedImages.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("No valid logo suggestions found.")),
+            SnackBar(content: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_valid_logo_suggestions'))),
           );
         }
         return;
@@ -1405,7 +1405,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
+              child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('cancel')),
             ),
           ],
         ),
