@@ -1004,9 +1004,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         displayPlaylists = allPlaylists;
       }
     }
-    final appBarBgColor =
-        Theme.of(context).appBarTheme.backgroundColor ??
-        Theme.of(context).primaryColor;
+    final appBarBgColor = Theme.of(context).cardColor.withValues(alpha: 0.5);
     final headerContrastColor = appBarBgColor.computeLuminance() > 0.5
         ? Colors.black
         : Colors.white;
@@ -1059,7 +1057,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.5),
+            color: Colors.transparent,
             borderRadius: BorderRadius.circular(0),
           ),
           clipBehavior: Clip.hardEdge,
@@ -1930,7 +1928,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           child: ListView(
                             controller: _playlistsScrollController,
                             key: const PageStorageKey('playlists_list'),
-                            padding: const EdgeInsets.only(bottom: 80),
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
                             children: [
                               _buildPlaylistsGrid(
                                 context,
@@ -2072,10 +2070,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               if (_playlistsScrollController.hasClients) {
                 final double maxScroll =
                     _playlistsScrollController.position.maxScrollExtent;
-                final double targetOffset = centeredOffset.clamp(
-                  0.0,
-                  maxScroll > 0 ? maxScroll : centeredOffset,
-                );
+                final double safeMax = maxScroll > 0
+                    ? maxScroll
+                    : (centeredOffset > 0 ? centeredOffset : 0.0);
+                final double targetOffset = centeredOffset.clamp(0.0, safeMax);
 
                 _playlistsScrollController.animateTo(
                   targetOffset,
@@ -2091,7 +2089,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         if (_searchQuery.isNotEmpty ||
             _sortMode == PlaylistSortMode.alphabetical) {
           return GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -2146,7 +2144,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         }
 
         return ReorderableGridView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -4676,7 +4674,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     if (scrollIndex == -1) {
       return ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: listItems.length,
         itemBuilder: (context, index) {
@@ -4701,7 +4699,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
 
     return ScrollablePositionedList.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: listItems.length,
       itemScrollController: _itemScrollController,
@@ -5414,7 +5412,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           ).translate('delete_file'),
                                         ),
                                         content: Text(
-                                          "Delete '${song.title}' from device?",
+                                          Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              )
+                                              .translate(
+                                                'delete_from_device_confirm',
+                                              )
+                                              .replaceAll('{0}', song.title),
                                         ),
                                         actions: [
                                           TextButton(
@@ -5430,9 +5435,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(ctx, true),
-                                            child: const Text(
-                                              "Delete",
-                                              style: TextStyle(
+                                            child: Text(
+                                              Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              ).translate('delete'),
+                                              style: const TextStyle(
                                                 color: Colors.red,
                                               ),
                                             ),
@@ -5452,11 +5460,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       context,
                                     ).clearSnackBars();
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          "Song removed from library",
+                                          Provider.of<LanguageProvider>(
+                                            context,
+                                            listen: false,
+                                          ).translate(
+                                            'song_removed_from_library',
+                                          ),
                                         ),
-                                        duration: Duration(seconds: 2),
+                                        duration: const Duration(seconds: 2),
                                       ),
                                     );
                                   }
@@ -5481,12 +5494,22 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                         backgroundColor: const Color(
                                           0xFF333333,
                                         ),
-                                        content: const Text(
-                                          "Song removed from playlist",
-                                          style: TextStyle(color: Colors.white),
+                                        content: Text(
+                                          Provider.of<LanguageProvider>(
+                                            context,
+                                            listen: false,
+                                          ).translate(
+                                            'song_removed_from_playlist',
+                                          ),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                          ),
                                         ),
                                         action: SnackBarAction(
-                                          label: 'Undo',
+                                          label: Provider.of<LanguageProvider>(
+                                            context,
+                                            listen: false,
+                                          ).translate('undo'),
                                           textColor: Theme.of(
                                             context,
                                           ).primaryColorLight,
@@ -5497,7 +5520,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                             );
                                           },
                                         ),
-
                                         duration: const Duration(seconds: 5),
                                       ),
                                     );
@@ -5555,8 +5577,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   ),
                                   SizedBox(width: 8),
                                   Text(
-                                    "Delete",
-                                    style: TextStyle(color: Colors.red),
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('delete'),
+                                    style: const TextStyle(color: Colors.red),
                                   ),
                                 ],
                               ),
@@ -5629,12 +5654,18 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
-        title: const Text(
-          "Delete Playlist",
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('delete_playlist_title'),
+          style: const TextStyle(color: Colors.white),
         ),
         content: Text(
-          "Delete '${playlist.name}'? Songs inside will be lost.",
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('delete_playlist_desc').replaceAll('{0}', playlist.name),
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -5648,9 +5679,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             onPressed: () => Navigator.pop(ctx),
           ),
           TextButton(
-            child: const Text(
-              "Delete",
-              style: TextStyle(color: Colors.redAccent),
+            child: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('delete'),
+              style: const TextStyle(color: Colors.redAccent),
             ),
             onPressed: () {
               provider.deletePlaylist(playlist.id);
@@ -5745,7 +5779,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                "Copy to...",
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('copy_to_title'),
                 style: TextStyle(
                   color: Theme.of(context).textTheme.titleLarge?.color,
                   fontSize: 18,
@@ -6222,9 +6259,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   // Safe to access position here
                   final double maxScroll =
                       _artistsScrollController.position.maxScrollExtent;
+                  final double safeMax = maxScroll > 0
+                      ? maxScroll
+                      : (centeredOffset > 0 ? centeredOffset : 0.0);
                   final double targetOffset = centeredOffset.clamp(
                     0.0,
-                    maxScroll > 0 ? maxScroll : centeredOffset,
+                    safeMax,
                   );
 
                   _artistsScrollController.animateTo(
@@ -6411,9 +6451,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   // Re-calculate maxScroll here to be safe after layout
                   final double maxScroll =
                       _albumsScrollController.position.maxScrollExtent;
+                  final double safeMax = maxScroll > 0
+                      ? maxScroll
+                      : (centeredOffset > 0 ? centeredOffset : 0.0);
                   final double targetOffset = centeredOffset.clamp(
                     0.0,
-                    maxScroll > 0 ? maxScroll : centeredOffset,
+                    safeMax,
                   );
 
                   _albumsScrollController.animateTo(

@@ -55,8 +55,8 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
         child: Stack(
           children: [
             Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              left: 60,
+              top: MediaQuery.of(context).padding.top - 25,
+              left: 100,
               child: Visibility(
                 visible: _isOffline,
                 child: Consumer<RadioProvider>(
@@ -124,4 +124,3 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
     );
   }
 }
-

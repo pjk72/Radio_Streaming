@@ -310,7 +310,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
               )
             : ListView.builder(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
                 itemCount: sortedKeys.length,
                 itemBuilder: (ctx, index) {
                   final path = sortedKeys[index];

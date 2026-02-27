@@ -36,8 +36,15 @@ Future<void> main() async {
   // Ensure Analytics is active and log the first event
   final analytics = FirebaseAnalytics.instance;
   await analytics.setAnalyticsCollectionEnabled(true);
+
+  if (kDebugMode) {
+    debugPrint(
+      "📊 Firebase Analytics [DEBUG]: Session started. Ensure DebugView is active on device.",
+    );
+  }
+
   await analytics.logAppOpen();
-  debugPrint("Firebase Analytics: App Open Event Logged");
+  debugPrint("✅ Firebase Analytics: App Open Event Logged");
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   debugPrint("App Entry Point");

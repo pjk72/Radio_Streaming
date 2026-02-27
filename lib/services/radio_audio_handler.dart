@@ -32,6 +32,7 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _hasTriggeredEarlyStart = false; // Prevent multiple early triggers
   bool _hasLoggedAndroidAutoStart = false;
   bool _isSwapping = false; // Flag for seamless transition state
+  bool _isInAndroidAutoMode = false;
 
   // ... (existing helper methods if any)
 
@@ -64,6 +65,11 @@ class RadioAudioHandler extends BaseAudioHandler
   Map<String, dynamic>? _cachedNextSongExtras;
   DateTime? _lastSkipRequestTime;
 
+  // History Tracking Section
+  Timer? _historyTimer;
+  String? _historySongId;
+  int _historySecondsAccumulated = 0;
+
   // Recognition
   bool _isACRCloudEnabled = true;
   bool _isDevUser = false; // Strict Guard
@@ -72,6 +78,11 @@ class RadioAudioHandler extends BaseAudioHandler
   Timer? _recognitionTimer;
 
   void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
+    if (kDebugMode) {
+      debugPrint(
+        "📊 Firebase Analytics [DEBUG]: Logging event '$name' with params: $parameters",
+      );
+    }
     Future.microtask(() async {
       try {
         final Map<String, Object>? cleanParameters = parameters != null
@@ -87,10 +98,23 @@ class RadioAudioHandler extends BaseAudioHandler
                 }),
               )
             : null;
+
         await FirebaseAnalytics.instance
             .logEvent(name: name, parameters: cleanParameters)
             .timeout(const Duration(seconds: 5));
-      } catch (_) {}
+
+        if (kDebugMode) {
+          debugPrint(
+            "✅ Firebase Analytics [DEBUG]: Event '$name' sent successfully.",
+          );
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint(
+            "❌ Firebase Analytics [DEBUG]: Error sending event '$name': $e",
+          );
+        }
+      }
     });
   }
 
@@ -377,6 +401,19 @@ class RadioAudioHandler extends BaseAudioHandler
     _stations = [];
     // Don't wait for future in constructor, but start it
     _initializePlayer();
+
+    // Monitor media item changes for history tracking
+    mediaItem.listen((item) {
+      if (item != null) {
+        final songId = item.extras?['songId'];
+        if (songId != null) {
+          _startHistoryTimer(songId);
+        } else {
+          _historyTimer?.cancel();
+          _historySongId = null;
+        }
+      }
+    });
 
     // Release lock after 1 second (reduced from 3s for better AA responsiveness)
     Future.delayed(const Duration(seconds: 1), () {
@@ -2680,10 +2717,14 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 1. Root Level
     if (parentMediaId == 'root') {
+      final bool isCar =
+          options?['android.service.media.extra.DEVICE_TYPE'] == 2;
+      _isInAndroidAutoMode = isCar;
+
       if (!_hasLoggedAndroidAutoStart) {
         _logAnalyticsEvent('android_auto_usage', {
           'action': 'browse_root',
-          'is_car': options?['android.service.media.extra.DEVICE_TYPE'] == 2,
+          'is_car': isCar,
           'recent': options?['android.service.media.extra.RECENT'],
         });
         // Manually log screen view and car_user event to ensure "Active User" count in GA4
@@ -2708,28 +2749,56 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       return [
-        const MediaItem(
+        MediaItem(
           id: 'favorites_radio',
           title: '❤️ Favorites',
           playable: false,
-          extras: {'style': 'list_item'},
+          artUri: Uri.parse("https://img.icons8.com/fluency/240/heart.png"),
+          extras: {
+            'style': 'list_item',
+            'android.media.metadata.DISPLAY_ICON_URI':
+                "https://img.icons8.com/fluency/240/heart.png",
+            'android.media.metadata.ART_URI':
+                "https://img.icons8.com/fluency/240/heart.png",
+          },
         ),
-        const MediaItem(
+        MediaItem(
           id: 'live_radio',
           title: 'All Stations',
           playable: false,
-          extras: {'style': 'list_item'},
+          artUri: Uri.parse("https://img.icons8.com/fluency/240/radio.png"),
+          extras: {
+            'style': 'list_item',
+            'android.media.metadata.DISPLAY_ICON_URI':
+                "https://img.icons8.com/fluency/240/radio.png",
+            'android.media.metadata.ART_URI':
+                "https://img.icons8.com/fluency/240/radio.png",
+          },
         ),
-        const MediaItem(
+        MediaItem(
           id: 'playlists_root',
           title: 'Playlists',
           playable: false,
+          artUri: Uri.parse("https://img.icons8.com/fluency/240/playlist.png"),
+          extras: {
+            'android.media.metadata.DISPLAY_ICON_URI':
+                "https://img.icons8.com/fluency/240/playlist.png",
+            'android.media.metadata.ART_URI':
+                "https://img.icons8.com/fluency/240/playlist.png",
+          },
         ),
-        const MediaItem(
+        MediaItem(
           id: 'downloads_root',
           title: '📥 Downloads',
           playable: false,
-          extras: {'style': 'list_item'},
+          artUri: Uri.parse("https://img.icons8.com/fluency/240/download.png"),
+          extras: {
+            'style': 'list_item',
+            'android.media.metadata.DISPLAY_ICON_URI':
+                "https://img.icons8.com/fluency/240/download.png",
+            'android.media.metadata.ART_URI':
+                "https://img.icons8.com/fluency/240/download.png",
+          },
         ),
       ];
     }
@@ -2781,14 +2850,13 @@ class RadioAudioHandler extends BaseAudioHandler
           }
         }
 
-        // 2. Fallback to Genre/Name generation
+        // 2. Fallback to a stable network icon for Android Auto (Fix for asset visibility issues)
         if (artUri == null) {
-          String? baseImage = (p.id == 'favorites')
-              ? GenreMapper.getGenreImage("Favorites")
-              : GenreMapper.getGenreImage(p.name);
-          if (baseImage != null) {
-            artUri = Uri.tryParse(baseImage);
-          }
+          // Use heart for favorites, generic playlist badge for others
+          final String iconName = (p.id == 'favorites') ? 'heart' : 'playlist';
+          artUri = Uri.parse(
+            "https://img.icons8.com/fluency/240/$iconName.png",
+          );
         }
 
         final isSpotify = p.id.startsWith('spotify_');
@@ -3256,6 +3324,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'youtubeUrl': s.youtubeUrl,
         'isLocal': s.localPath != null,
         'localPath': s.localPath,
+        'isCar': _isInAndroidAutoMode,
         'android.media.metadata.extras.DOWNLOAD_STATUS': s.localPath != null
             ? 2
             : 0,
@@ -3493,11 +3562,129 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Uri? _sanitizeArtUri(dynamic art, String fallback) {
     if (art == null || (art is String && art.isEmpty)) {
+      // Skip AI generation for Android Auto to save data/prevent load delays
+      // Use a stable network icon for Android Auto to ensure it is always visible
+      if (_isInAndroidAutoMode) {
+        return Uri.parse("https://img.icons8.com/fluency/240/playlist.png");
+      }
+
       final img = GenreMapper.getGenreImage(fallback);
       return img != null ? Uri.tryParse(img) : null;
     }
     if (art is Uri) return art;
-    if (art is String) return Uri.tryParse(art);
+    if (art is String) {
+      if (art.startsWith('assets/')) {
+        return Uri.parse('file:///android_asset/flutter_assets/$art');
+      }
+      return Uri.tryParse(art);
+    }
     return null;
+  }
+
+  // --- Background History Tracking ---
+  void _startHistoryTimer(String songId) {
+    if (_historySongId == songId) return; // already tracking
+    _historyTimer?.cancel();
+    _historySongId = songId;
+    _historySecondsAccumulated = 0;
+
+    _historyTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      // 1. Guard: Song changed or stopped?
+      if (_historySongId != songId) {
+        timer.cancel();
+        return;
+      }
+
+      // 2. Cumulative tracking: only increment if playing
+      if (playbackState.value.playing) {
+        _historySecondsAccumulated++;
+      }
+
+      // 3. Threshold check: 30 seconds of REAL playback
+      if (_historySecondsAccumulated >= 30) {
+        timer.cancel();
+        await _recordSongInHistory(songId);
+      }
+    });
+  }
+
+  Future<void> _recordSongInHistory(String songId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final bool isCar = _isInAndroidAutoMode;
+
+      // 1. Load latest state from Prefs (to be safe across isolates)
+      Map<String, int> phoneHistory = {};
+      Map<String, int> aaHistory = {};
+      Map<String, SavedSong> metadata = {};
+      List<String> phoneOrder = [];
+      List<String> aaOrder = [];
+      Map<String, String> sourceMap = {};
+
+      final pStr = prefs.getString('user_play_history');
+      if (pStr != null) {
+        phoneHistory = Map<String, int>.from(jsonDecode(pStr));
+      }
+      final aaStr = prefs.getString('aa_user_play_history');
+      if (aaStr != null) {
+        aaHistory = Map<String, int>.from(jsonDecode(aaStr));
+      }
+      final mStr = prefs.getString('history_metadata');
+      if (mStr != null) {
+        final Map<String, dynamic> decoded = jsonDecode(mStr);
+        metadata = decoded.map((k, v) => MapEntry(k, SavedSong.fromJson(v)));
+      }
+      phoneOrder = prefs.getStringList('recent_songs_order') ?? [];
+      aaOrder = prefs.getStringList('aa_recent_songs_order') ?? [];
+      final sStr = prefs.getString('last_source_map');
+      if (sStr != null) {
+        sourceMap = Map<String, String>.from(jsonDecode(sStr));
+      }
+
+      // 2. Update logic
+      if (isCar) {
+        aaHistory[songId] = (aaHistory[songId] ?? 0) + 1;
+        aaOrder.remove(songId);
+        aaOrder.add(songId);
+        if (aaOrder.length > 50) aaOrder.removeAt(0);
+        sourceMap[songId] = 'car';
+      } else {
+        phoneHistory[songId] = (phoneHistory[songId] ?? 0) + 1;
+        phoneOrder.remove(songId);
+        phoneOrder.add(songId);
+        if (phoneOrder.length > 50) phoneOrder.removeAt(0);
+        sourceMap[songId] = 'phone';
+      }
+
+      final current = mediaItem.value;
+      if (current != null) {
+        metadata[songId] = SavedSong(
+          id: songId,
+          title: current.title,
+          artist: current.artist ?? '',
+          album: current.album ?? 'Unknown Album',
+          artUri: current.artUri?.toString(),
+          dateAdded: DateTime.now(),
+        );
+      }
+
+      // 3. Save back
+      await prefs.setString('user_play_history', jsonEncode(phoneHistory));
+      await prefs.setString('aa_user_play_history', jsonEncode(aaHistory));
+      final metadataEncoded = metadata.map((k, v) => MapEntry(k, v.toJson()));
+      await prefs.setString('history_metadata', jsonEncode(metadataEncoded));
+      await prefs.setStringList('recent_songs_order', phoneOrder);
+      await prefs.setStringList('aa_recent_songs_order', aaOrder);
+      await prefs.setString('last_source_map', jsonEncode(sourceMap));
+
+      // 4. Notify UI Isolate
+      customEvent.add({'type': 'history_updated'});
+
+      LogService().log("Background History Recorded: $songId (isCar: $isCar)");
+    } catch (e) {
+      LogService().log("Error recording background history: $e");
+    }
+
+    _historyTimer = null;
   }
 }

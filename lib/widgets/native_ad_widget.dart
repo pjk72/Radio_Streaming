@@ -60,7 +60,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
 
     final cardColor = Theme.of(context).cardColor;
     return Container(
-      height: 70,
+      height: 90,
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: cardColor.withValues(alpha: 0.5),

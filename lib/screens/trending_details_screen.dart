@@ -31,6 +31,7 @@ class TrendingDetailsScreen extends StatefulWidget {
   final String? artworkUrl;
   final String? appleMusicUrl;
   final String? songName;
+  final SavedSong? originalSong;
 
   const TrendingDetailsScreen({
     super.key,
@@ -40,6 +41,7 @@ class TrendingDetailsScreen extends StatefulWidget {
     this.artworkUrl,
     this.appleMusicUrl,
     this.songName,
+    this.originalSong,
   }) : assert(
          playlist != null || albumName != null,
          'Either playlist or albumName must be provided',
@@ -110,8 +112,52 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     // Fetch tracks if we have collection ID
     if (_albumData != null && _albumData!['collectionId'] != null) {
-      final albumTracks = await _fetchAlbumTracks(_albumData!['collectionId']);
+      final albumTracks = await _fetchAlbumTracks(
+        _albumData!['collectionId'],
+        artist: _albumData!['artistName'] ?? widget.artistName,
+        album: _albumData!['collectionName'] ?? widget.albumName,
+      );
       _songs = albumTracks.map((t) => _trackToSavedSong(t)).toList();
+
+      // Inject the original song to preserve its YouTube ID and URL
+      if (widget.originalSong != null) {
+        int matchIndex = _songs.indexWhere((s) {
+          final n1 = _normalize(s.title);
+          final n2 = _normalize(widget.originalSong!.title);
+          // Check for significant overlap or exact match
+          return n1 == n2 ||
+              (n1.length > 5 && n2.contains(n1)) ||
+              (n2.length > 5 && n1.contains(n2));
+        });
+        if (matchIndex != -1) {
+          _songs[matchIndex] = widget.originalSong!;
+        } else {
+          _songs.insert(0, widget.originalSong!);
+        }
+      }
+    } else if (widget.originalSong != null || widget.songName != null) {
+      // Fallback: If album not found but we have a specific song name, try to find just that song's "album"
+      if (_songs.isEmpty && widget.songName != null) {
+        final query = "${widget.artistName} ${widget.songName}";
+        final uri = Uri.parse(
+          "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=1",
+        );
+        try {
+          final res = await http.get(uri);
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            if (data['resultCount'] > 0) {
+              final track = data['results'][0];
+              _songs = [_trackToSavedSong(track)];
+              if (_albumData == null) _albumData = track;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (_songs.isEmpty && widget.originalSong != null) {
+        _songs = [widget.originalSong!];
+      }
     }
 
     if (mounted) {
@@ -146,18 +192,39 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     // 2. Fallback to search query
     try {
-      final query =
-          "${widget.artistName} ${widget.songName ?? widget.albumName}";
-      final entityParam = widget.songName != null ? "song" : "album";
+      // Clean names: remove suffixes like (feat. ...), [Deluxe Edition], etc.
+      String cleanArtist = widget.artistName ?? "";
+      String cleanAlbum = widget.albumName ?? "";
+      String cleanSong = widget.songName ?? "";
 
-      final uri = Uri.parse(
-        "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=$entityParam&limit=5",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['resultCount'] > 0) {
-          return data['results'][0];
+      final cleanupRegex = RegExp(r'\(.*?\)|\[.*?\]| - .*');
+      cleanArtist = cleanArtist.replaceAll(cleanupRegex, '').trim();
+      cleanAlbum = cleanAlbum.replaceAll(cleanupRegex, '').trim();
+      cleanSong = cleanSong.replaceAll(cleanupRegex, '').trim();
+
+      // Priority 1: Exact Artist + Album
+      if (cleanArtist.isNotEmpty && cleanAlbum.isNotEmpty) {
+        final query = "$cleanArtist $cleanAlbum";
+        final uri = Uri.parse(
+          "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=album&limit=1",
+        );
+        final response = await http.get(uri);
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (data['resultCount'] > 0) return data['results'][0];
+        }
+      }
+
+      // Priority 2: Artist + Song (finding the album containing the song)
+      if (cleanArtist.isNotEmpty && cleanSong.isNotEmpty) {
+        final query = "$cleanArtist $cleanSong";
+        final uri = Uri.parse(
+          "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=1",
+        );
+        final response = await http.get(uri);
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (data['resultCount'] > 0) return data['results'][0];
         }
       }
     } catch (e) {
@@ -176,12 +243,17 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     return s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '').trim();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchAlbumTracks(int collectionId) async {
+  Future<List<Map<String, dynamic>>> _fetchAlbumTracks(
+    int collectionId, {
+    String? artist,
+    String? album,
+  }) async {
     try {
-      final uri = Uri.parse(
+      // 1. Try lookup by ID (accurate track ordering)
+      final lookupUri = Uri.parse(
         "https://itunes.apple.com/lookup?id=$collectionId&entity=song&limit=200",
       );
-      final response = await http.get(uri);
+      final response = await http.get(lookupUri);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final results = List<Map<String, dynamic>>.from(data['results']);
@@ -190,17 +262,83 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             .where((item) => item['wrapperType'] == 'track')
             .toList();
 
-        tracks.sort((a, b) {
-          int discA = a['discNumber'] ?? 1;
-          int discB = b['discNumber'] ?? 1;
-          if (discA != discB) return discA.compareTo(discB);
+        if (tracks.isNotEmpty) {
+          tracks.sort((a, b) {
+            int discA = a['discNumber'] ?? 1;
+            int discB = b['discNumber'] ?? 1;
+            if (discA != discB) return discA.compareTo(discB);
 
-          int trackA = a['trackNumber'] ?? 0;
-          int trackB = b['trackNumber'] ?? 0;
-          return trackA.compareTo(trackB);
-        });
+            int trackA = a['trackNumber'] ?? 0;
+            int trackB = b['trackNumber'] ?? 0;
+            return trackA.compareTo(trackB);
+          });
+          return tracks;
+        }
+      }
 
-        return tracks;
+      // 2. Fallback to name-based search if lookup returned no tracks
+      // (Common for non-US content in US storefront)
+      if (artist != null && album != null) {
+        final query = "$artist $album";
+        final searchUri = Uri.parse(
+          "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=100",
+        );
+        final searchRes = await http.get(searchUri);
+        if (searchRes.statusCode == 200) {
+          final sData = jsonDecode(searchRes.body);
+          final sResults = List<Map<String, dynamic>>.from(sData['results']);
+
+          // Filter tracks belonging to this album (by name or ID)
+          // AND ensure the artist name matches to avoid covers/tributes
+          var sTracks = sResults.where((item) {
+            if (item['wrapperType'] != 'track') return false;
+
+            // 1. Check Artist Match (CRITICAL for covers/tributes)
+            final String? tArtist = item['artistName'];
+            final String normTargetArtist = _normalize(artist);
+            final String normTrackArtist = _normalize(tArtist ?? '');
+
+            // Only allow if the track artist contains the target artist or vice versa
+            if (!normTrackArtist.contains(normTargetArtist) &&
+                !normTargetArtist.contains(normTrackArtist)) {
+              return false;
+            }
+
+            // 2. Check Album Match
+            if (item['collectionId'] == collectionId) return true;
+
+            final String? cName = item['collectionName'];
+            if (cName != null) {
+              final String normA = _normalize(album);
+              final String normB = _normalize(cName);
+              return normA == normB || normB.contains(normA);
+            }
+            return false;
+          }).toList();
+
+          if (sTracks.isNotEmpty) {
+            // DE-DUPLICATE: Sometimes search returns the same song from different sources
+            final Map<String, Map<String, dynamic>> uniqueTracks = {};
+            for (var t in sTracks) {
+              final key = _normalize(t['trackName'] ?? '');
+              // Keep the one with trackId if available, or just the first one found
+              if (!uniqueTracks.containsKey(key)) {
+                uniqueTracks[key] = t;
+              }
+            }
+
+            final finalTracks = uniqueTracks.values.toList();
+            finalTracks.sort((a, b) {
+              int discA = a['discNumber'] ?? 1;
+              int discB = b['discNumber'] ?? 1;
+              if (discA != discB) return discA.compareTo(discB);
+              int trackA = a['trackNumber'] ?? 0;
+              int trackB = b['trackNumber'] ?? 0;
+              return trackA.compareTo(trackB);
+            });
+            return finalTracks;
+          }
+        }
       }
     } catch (e) {
       developer.log("Error fetching tracks: $e");
@@ -237,8 +375,8 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       title = widget.playlist!.title;
     } else {
       mainImage =
-          _albumData?['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
           widget.artworkUrl ??
+          _albumData?['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
           "";
       title = _albumData?['collectionName'] ?? widget.albumName ?? "";
       subtitle = _albumData?['artistName'] ?? widget.artistName ?? "";
@@ -377,6 +515,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   }
 
   void _checkAutoScroll(RadioProvider provider) {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     final playingSongId =
         provider.currentSongId ??
         provider.audioHandler.mediaItem.value?.extras?['songId'];
@@ -392,7 +531,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
         // Fallback for unstable IDs
         final currentItemTitle = provider.currentTrack;
-        if (currentItemTitle != "Live Broadcast" &&
+        if (currentItemTitle != langProvider.translate('live_broadcast') &&
             item.title == currentItemTitle) {
           return true;
         }
@@ -569,7 +708,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     // Fallback for unstable IDs: if playingSongId doesn't match, check title
     if (!isPlaying && playingSongId != null) {
       final currentItemTitle = provider.currentTrack;
-      if (currentItemTitle != "Live Broadcast" &&
+      if (currentItemTitle != langProvider.translate('live_broadcast') &&
           track.title == currentItemTitle) {
         isPlaying = true;
       }
@@ -592,7 +731,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: isPlaying ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+        color: isPlaying
+            ? Colors.white.withValues(alpha: 0.1)
+            : Colors.transparent,
         border: isPlaying
             ? Border.all(color: theme.primaryColor, width: 2)
             : null,
@@ -666,6 +807,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     final provider = Provider.of<RadioProvider>(context, listen: false);
     final song = _songs[index];
 
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     String playlistId;
     String playlistName;
 
@@ -674,7 +816,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       playlistName = widget.playlist!.title;
     } else {
       playlistId = 'album_${widget.albumName.hashCode}';
-      playlistName = widget.albumName ?? "Album";
+      playlistName = widget.albumName ?? langProvider.translate('tab_albums');
     }
 
     LogService().log(
@@ -698,6 +840,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     // Copy and Shuffle
     final shuffledSongs = List<SavedSong>.from(_songs)..shuffle();
 
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     String playlistId;
     String playlistName;
 
@@ -706,7 +849,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       playlistName = widget.playlist!.title;
     } else {
       playlistId = 'album_${widget.albumName.hashCode}';
-      playlistName = widget.albumName ?? "Album";
+      playlistName = widget.albumName ?? langProvider.translate('tab_albums');
     }
 
     final tempPlaylist = Playlist(
@@ -727,11 +870,12 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             "hash_${_normalize(t['title'] ?? '')}_${_normalize(t['artist'] ?? '')}";
       }
 
+      final lang = Provider.of<LanguageProvider>(context, listen: false);
       return SavedSong(
         id: songId,
-        title: t['title'] ?? 'Unknown',
-        artist: t['artist'] ?? 'Unknown',
-        album: t['album'] ?? 'Unknown',
+        title: t['title'] ?? lang.translate('unknown'),
+        artist: t['artist'] ?? lang.translate('unknown_artist'),
+        album: t['album'] ?? lang.translate('unknown_album'),
         artUri: t['image'],
         youtubeUrl: t['provider'] == 'YouTube'
             ? "https://youtube.com/watch?v=${t['id']}"
@@ -746,8 +890,12 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         dateAdded: DateTime.now(),
       );
     } else {
-      final trackArtist = t['artistName'] ?? widget.artistName ?? "Unknown";
-      final trackName = t['trackName'] ?? "Unknown Track";
+      final lang = Provider.of<LanguageProvider>(context, listen: false);
+      final trackArtist =
+          t['artistName'] ??
+          widget.artistName ??
+          lang.translate('unknown_artist');
+      final trackName = t['trackName'] ?? lang.translate('unknown_track');
 
       return SavedSong(
         id:
@@ -755,7 +903,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             "${DateTime.now().millisecondsSinceEpoch}_${t['trackNumber'] ?? 0}",
         title: trackName,
         artist: trackArtist,
-        album: widget.albumName ?? "Unknown Album",
+        album: widget.albumName ?? lang.translate('unknown_album'),
         artUri:
             t['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
             widget.artworkUrl ??
@@ -1194,4 +1342,3 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     );
   }
 }
-

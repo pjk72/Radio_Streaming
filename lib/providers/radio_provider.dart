@@ -6,6 +6,7 @@ import 'package:audio_service/audio_service.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart'; // For AppLifecycleState
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -40,7 +41,7 @@ import '../services/local_playlist_service.dart';
 
 // ...
 
-class RadioProvider with ChangeNotifier {
+class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   List<Station> stations = [];
   static const String _keySavedStations = 'saved_stations';
   Timer? _metadataTimer;
@@ -77,9 +78,290 @@ class RadioProvider with ChangeNotifier {
   static const String _keyFollowedArtists = 'followed_artists';
   static const String _keyFollowedAlbums = 'followed_albums';
   static const String _keyArtistImagesCache = 'artist_images_cache';
+  static const String _keyCategoryCompactViews = 'category_compact_views';
 
   final Set<String> _followedArtists = {};
   final Set<String> _followedAlbums = {};
+
+  static const String _keyUserPlayHistory = 'user_play_history';
+  static const String _keyHistoryMetadata = 'history_metadata';
+  static const String _keyRecentSongsOrder = 'recent_songs_order';
+  static const String _keyAAUserPlayHistory = 'aa_user_play_history';
+  static const String _keyAARecentSongsOrder = 'aa_recent_songs_order';
+  static const String _keyLastSourceMap = 'last_source_map';
+
+  Map<String, int> _userPlayHistory = {};
+  Map<String, SavedSong> _historyMetadata = {};
+  List<String> _recentSongsOrder = [];
+
+  Map<String, int> _aaUserPlayHistory = {};
+  List<String> _aaRecentSongsOrder = [];
+  Map<String, String> _lastSourceMap = {}; // songId -> 'car' or 'phone'
+
+  Map<String, int> get userPlayHistory => _userPlayHistory;
+  Map<String, int> get aaUserPlayHistory => _aaUserPlayHistory;
+
+  List<SavedSong> getMostPlayedSongs() {
+    if (_recentSongsOrder.isEmpty) return [];
+
+    List<SavedSong> result = [];
+    // Display in Recently Played order (FIFO behavior: newest first)
+    for (var id in _recentSongsOrder.reversed) {
+      if (_historyMetadata.containsKey(id)) {
+        result.add(_historyMetadata[id]!);
+      } else {
+        SavedSong? fallback;
+        for (var s in _allUniqueSongs) {
+          if (s.id == id) {
+            fallback = s;
+            break;
+          }
+        }
+        if (fallback != null) result.add(fallback);
+      }
+    }
+
+    return result;
+  }
+
+  /// Merged Pareto: Top Songs from both Phone and AA
+  List<Map<String, dynamic>> getUnifiedTopSongs() {
+    final Set<String> allIds = {
+      ..._userPlayHistory.keys,
+      ..._aaUserPlayHistory.keys,
+    };
+    if (allIds.isEmpty) return [];
+
+    final List<Map<String, dynamic>> result = [];
+    for (var id in allIds) {
+      if (!_historyMetadata.containsKey(id)) continue;
+      final phoneCount = _userPlayHistory[id] ?? 0;
+      final aaCount = _aaUserPlayHistory[id] ?? 0;
+      if (phoneCount + aaCount == 0) continue;
+
+      result.add({
+        'song': _historyMetadata[id]!,
+        'phoneCount': phoneCount,
+        'aaCount': aaCount,
+        'isAAMajority': aaCount > phoneCount,
+      });
+    }
+
+    result.sort((a, b) {
+      final totalA = (a['phoneCount'] as int) + (a['aaCount'] as int);
+      final totalB = (b['phoneCount'] as int) + (b['aaCount'] as int);
+      return totalB.compareTo(totalA);
+    });
+
+    return result;
+  }
+
+  /// Merged FIFO: Recently Played from both Phone and AA
+  List<Map<String, dynamic>> getUnifiedRecentSongs() {
+    // Combine IDs maintaining uniqueness, priority to the one most recently updated globaly
+    // Since we don't have global timestamps, we use the _lastSourceMap as an indicator
+    final Set<String> allIds = {..._recentSongsOrder, ..._aaRecentSongsOrder};
+    if (allIds.isEmpty) return [];
+
+    final List<Map<String, dynamic>> result = [];
+
+    // We need a stable unified order. Let's create one based on the fact that
+    // the last item in either list is likely the newest.
+    // For simplicity, we'll collect all unique IDs and sort them by their appearance in the history timer if we had it,
+    // but here we will just take the union and represent the source.
+    // Greedy merge: take from both and the one appearing later in either list stays last
+    // Actually, a simpler way is to just follow the _recentSongsOrder and _aaRecentSongsOrder union.
+    for (var id in allIds) {
+      if (!_historyMetadata.containsKey(id)) continue;
+      result.add({
+        'song': _historyMetadata[id]!,
+        'isLastFromAA': _lastSourceMap[id] == 'car',
+      });
+    }
+
+    // Sort by "Freshness" - since we don't have timestamps, we use the index in recent lists.
+    // We'll give higher weights to items that appear later in either list.
+    result.sort((a, b) {
+      final songA = a['song'] as SavedSong;
+      final songB = b['song'] as SavedSong;
+      final idxA_p = _recentSongsOrder.indexOf(songA.id);
+      final idxA_c = _aaRecentSongsOrder.indexOf(songA.id);
+      final maxA = idxA_p > idxA_c ? idxA_p : idxA_c;
+
+      final idxB_p = _recentSongsOrder.indexOf(songB.id);
+      final idxB_c = _aaRecentSongsOrder.indexOf(songB.id);
+      final maxB = idxB_p > idxB_c ? idxB_p : idxB_c;
+
+      return maxB.compareTo(maxA);
+    });
+
+    return result;
+  }
+
+  List<Map<String, String>> getTopArtists() {
+    final songArtMap = <String, String>{};
+    final artistPlayCountsPhone = <String, int>{};
+    final artistPlayCountsAA = <String, int>{};
+
+    void aggregate(
+      String? artistStr, {
+      String? artUri,
+      int? phoneCount,
+      int? aaCount,
+    }) {
+      if (artistStr == null) return;
+      final pieces = artistStr
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty);
+      for (var p in pieces) {
+        if (artUri != null && artUri.isNotEmpty) {
+          songArtMap.putIfAbsent(p, () => artUri);
+        }
+        if (phoneCount != null) {
+          artistPlayCountsPhone[p] =
+              (artistPlayCountsPhone[p] ?? 0) + phoneCount;
+        }
+        if (aaCount != null) {
+          artistPlayCountsAA[p] = (artistPlayCountsAA[p] ?? 0) + aaCount;
+        }
+      }
+    }
+
+    // 1. Collect Art
+    for (var p in _playlists) {
+      for (var s in p.songs) {
+        aggregate(s.artist, artUri: s.artUri);
+      }
+    }
+    for (var s in _historyMetadata.values) {
+      aggregate(s.artist, artUri: s.artUri);
+    }
+
+    // 2. Aggregate Phone Plays
+    _userPlayHistory.forEach((id, count) {
+      if (count > 0) {
+        String? artist = _historyMetadata[id]?.artist;
+        if (artist == null) {
+          for (var s in _allUniqueSongs) {
+            if (s.id == id) {
+              artist = s.artist;
+              break;
+            }
+          }
+        }
+        aggregate(artist, phoneCount: count);
+      }
+    });
+
+    // 3. Aggregate AA Plays
+    _aaUserPlayHistory.forEach((id, count) {
+      if (count > 0) {
+        String? artist = _historyMetadata[id]?.artist;
+        if (artist == null) {
+          for (var s in _allUniqueSongs) {
+            if (s.id == id) {
+              artist = s.artist;
+              break;
+            }
+          }
+        }
+        aggregate(artist, aaCount: count);
+      }
+    });
+
+    final Set<String> allArtists = {
+      ...artistPlayCountsPhone.keys,
+      ...artistPlayCountsAA.keys,
+      ..._followedArtists,
+    };
+
+    final List<Map<String, String>> result = [];
+    final Set<String> processed = {};
+
+    // 1. Followed Artists
+    for (var artist in _followedArtists) {
+      if (!processed.contains(artist)) {
+        final ph = artistPlayCountsPhone[artist] ?? 0;
+        final aa = artistPlayCountsAA[artist] ?? 0;
+        result.add({
+          'name': artist,
+          'image': songArtMap[artist] ?? '',
+          'isFavorite': 'true',
+          'isAAMajority': (aa > ph).toString(),
+        });
+        processed.add(artist);
+      }
+    }
+
+    // 2. Rank Others by Total Play Count and Recency
+    final artistLastSeenIndex = <String, int>{};
+    final unifiedRecentList = [..._recentSongsOrder, ..._aaRecentSongsOrder];
+
+    for (int i = 0; i < unifiedRecentList.length; i++) {
+      final id = unifiedRecentList[i];
+      final artistStr = _historyMetadata[id]?.artist;
+      if (artistStr != null) {
+        final pieces = artistStr
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty);
+        for (var p in pieces) {
+          artistLastSeenIndex[p] = i;
+        }
+      }
+    }
+
+    final otherArtists = allArtists
+        .where((a) => !processed.contains(a))
+        .toList();
+    otherArtists.sort((a, b) {
+      final totalA =
+          (artistPlayCountsPhone[a] ?? 0) + (artistPlayCountsAA[a] ?? 0);
+      final totalB =
+          (artistPlayCountsPhone[b] ?? 0) + (artistPlayCountsAA[b] ?? 0);
+      int cmp = totalB.compareTo(totalA);
+      if (cmp == 0) {
+        final idxA = artistLastSeenIndex[a] ?? -1;
+        final idxB = artistLastSeenIndex[b] ?? -1;
+        return idxB.compareTo(idxA);
+      }
+      return cmp;
+    });
+
+    for (var artist in otherArtists) {
+      final ph = artistPlayCountsPhone[artist] ?? 0;
+      final aa = artistPlayCountsAA[artist] ?? 0;
+      if (ph + aa == 0 && !allArtists.contains(artist)) continue;
+
+      // Now that artists are individual, we can do a simpler favorite check
+      bool isFollowed = false;
+      final String lowerArtist = artist.toLowerCase();
+      for (var f in _followedArtists) {
+        if (f.toLowerCase().trim() == lowerArtist) {
+          isFollowed = true;
+          break;
+        }
+      }
+
+      result.add({
+        'name': artist,
+        'image': songArtMap[artist] ?? '',
+        'isFavorite': isFollowed.toString(),
+        'isAAMajority': (aa > ph).toString(),
+      });
+    }
+
+    return result;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh UI when app comes to foreground to sync any background tracking changes
+      notifyListeners();
+    }
+  }
 
   bool _currentSongIsSaved = false;
   bool get currentSongIsSaved => _currentSongIsSaved;
@@ -434,7 +716,15 @@ class RadioProvider with ChangeNotifier {
 
   @override
   void notifyListeners() {
+    // Basic guard to ensure we don't notify if the binding is in a weird state
+    // but usually ChangeNotifier handle this.
     super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   // --- Auto-Skip Circuit Breaker ---
@@ -503,6 +793,12 @@ class RadioProvider with ChangeNotifier {
   bool _isCompactView = false;
   bool get isCompactView => _isCompactView;
 
+  final Map<String, bool> _categoryCompactViews = {};
+
+  bool isCategoryCompact(String category) {
+    return _categoryCompactViews[category] ?? _isCompactView;
+  }
+
   bool _isManageGridView = false;
   bool get isManageGridView => _isManageGridView;
 
@@ -550,6 +846,60 @@ class RadioProvider with ChangeNotifier {
     await prefs.setStringList(_keyFollowedArtists, _followedArtists.toList());
   }
 
+  Future<void> resetArtistHistory(String artistName) async {
+    // 1. Remove artist from followed list if present
+    _followedArtists.remove(artistName);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyFollowedArtists, _followedArtists.toList());
+
+    // 2. Clear play counts for all songs by this artist
+    final List<String> toRemoveIds = [];
+    final String searchName = artistName.toLowerCase().trim();
+
+    _historyMetadata.forEach((id, song) {
+      final songArtist = song.artist.toLowerCase();
+      if (songArtist == searchName ||
+          songArtist.contains("$searchName,") ||
+          songArtist.contains(", $searchName") ||
+          songArtist.endsWith(",$searchName")) {
+        toRemoveIds.add(id);
+      }
+    });
+
+    // Also remove from _userPlayHistory/aaHistory even if not in metadata (legacy or other sources)
+    final allHistoryKeys = {
+      ..._userPlayHistory.keys,
+      ..._aaUserPlayHistory.keys,
+    };
+
+    for (var id in allHistoryKeys) {
+      if (!toRemoveIds.contains(id)) {
+        for (var s in _allUniqueSongs) {
+          if (s.id == id) {
+            final songArtist = s.artist.toLowerCase();
+            if (songArtist == searchName ||
+                songArtist.contains("$searchName,") ||
+                songArtist.contains(", $searchName") ||
+                songArtist.endsWith(",$searchName")) {
+              toRemoveIds.add(id);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    for (var id in toRemoveIds) {
+      _userPlayHistory.remove(id);
+      _recentSongsOrder.remove(id);
+      _aaUserPlayHistory.remove(id);
+      _aaRecentSongsOrder.remove(id);
+    }
+
+    await _saveUserPlayHistory();
+    notifyListeners();
+  }
+
   Future<void> toggleFollowAlbum(String album) async {
     if (_followedAlbums.contains(album)) {
       _followedAlbums.remove(album);
@@ -582,6 +932,7 @@ class RadioProvider with ChangeNotifier {
     this._backupService,
     this._entitlementService,
   ) {
+    WidgetsBinding.instance.addObserver(this);
     // connectivity_plus listener
     Connectivity().onConnectivityChanged.listen((results) {
       final bool isNowOffline = results.contains(ConnectivityResult.none);
@@ -692,6 +1043,13 @@ class RadioProvider with ChangeNotifier {
       }
     });
 
+    // Sync background history updates from RadioAudioHandler
+    _audioHandler.customEvent.listen((event) {
+      if (event is Map && event['type'] == 'history_updated') {
+        _loadUserPlayHistory();
+      }
+    });
+
     // Listen to media item updates to capture duration
     _audioHandler.mediaItem.listen((item) {
       if (item != null &&
@@ -753,8 +1111,19 @@ class RadioProvider with ChangeNotifier {
         // Trigger lyrics fetch and other updates
         fetchLyrics();
         checkIfCurrentSongIsSaved(); // Update save status for the new track
-        notifyListeners();
+
+        // USER REQUEST: Avoid listing/updating phone UI if in car and background
+        final bool isCar = item.extras?['isCar'] == true;
+        final bool appIsActive =
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+
+        if (!isCar || appIsActive) {
+          notifyListeners();
+        }
       }
+
+      // --- User Play History Tracking ---
+      // Removed from Provider logic: RadioAudioHandler now manages this in all isolates.
 
       // 2. Handle Station/Source Change
       if (_currentStation?.url != item.id) {
@@ -853,6 +1222,8 @@ class RadioProvider with ChangeNotifier {
     _loadPlaylists().then((_) {
       // Start background scan for local duplicates after data is ready
       Future.delayed(const Duration(seconds: 3), _scanForLocalUpgrades);
+      // Check and request permissions if local content is present
+      ensureLocalPermissions();
     });
   }
 
@@ -2271,6 +2642,13 @@ class RadioProvider with ChangeNotifier {
     }
 
     if (songToPlay != null) {
+      // If the requested song is already playing, skip restarting the stream to avoid stutter.
+      // E.g. when seamlessly transitioning into an album playlist view.
+      if (songToPlay.id == _audioOnlySongId) {
+        _generateShuffleList();
+        notifyListeners();
+        return;
+      }
       await playPlaylistSong(songToPlay, playlist.id);
     }
   }
@@ -3276,6 +3654,54 @@ class RadioProvider with ChangeNotifier {
     await prefs.setBool(_keyHasPerformedRestore, _hasPerformedRestore);
   }
 
+  Future<void> _loadUserPlayHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Load User Play History
+    final playHistoryStr = prefs.getString(_keyUserPlayHistory);
+    if (playHistoryStr != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(playHistoryStr);
+        _userPlayHistory = decoded.map(
+          (key, value) => MapEntry(key, value as int),
+        );
+      } catch (_) {}
+    }
+
+    // Load Android Auto History
+    final aaPlayHistoryStr = prefs.getString(_keyAAUserPlayHistory);
+    if (aaPlayHistoryStr != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(aaPlayHistoryStr);
+        _aaUserPlayHistory = decoded.map(
+          (key, value) => MapEntry(key, value as int),
+        );
+      } catch (_) {}
+    }
+
+    final metadataStr = prefs.getString(_keyHistoryMetadata);
+    if (metadataStr != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(metadataStr);
+        _historyMetadata = decoded.map(
+          (key, value) => MapEntry(key, SavedSong.fromJson(value)),
+        );
+      } catch (_) {}
+    }
+
+    _recentSongsOrder = prefs.getStringList(_keyRecentSongsOrder) ?? [];
+    _aaRecentSongsOrder = prefs.getStringList(_keyAARecentSongsOrder) ?? [];
+
+    final lastSourceStr = prefs.getString(_keyLastSourceMap);
+    if (lastSourceStr != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(lastSourceStr);
+        _lastSourceMap = decoded.map((k, v) => MapEntry(k, v as String));
+      } catch (_) {}
+    }
+    notifyListeners();
+  }
+
   Future<void> _loadStartupSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _startOption = prefs.getString(_keyStartOption) ?? 'none';
@@ -3283,6 +3709,17 @@ class RadioProvider with ChangeNotifier {
     _startupStationId = prefs.getInt(_keyStartupStationId);
     _isACRCloudEnabled = prefs.getBool(_keyEnableACRCloud) ?? false;
     _isCompactView = prefs.getBool(_keyCompactView) ?? false;
+
+    final catViewsStr = prefs.getString(_keyCategoryCompactViews);
+    if (catViewsStr != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(catViewsStr);
+        _categoryCompactViews.clear();
+        _categoryCompactViews.addAll(
+          decoded.map((k, v) => MapEntry(k, v as bool)),
+        );
+      } catch (_) {}
+    }
     _isShuffleMode = prefs.getBool(_keyShuffleMode) ?? false;
     // Sync initial state to AudioHandler
     if (_isShuffleMode) {
@@ -3297,7 +3734,25 @@ class RadioProvider with ChangeNotifier {
       _invalidSongIds.clear();
       _invalidSongIds.addAll(invalidList);
     }
-    notifyListeners();
+
+    await _loadUserPlayHistory();
+  }
+
+  Future<void> _saveUserPlayHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyUserPlayHistory, jsonEncode(_userPlayHistory));
+    await prefs.setString(
+      _keyAAUserPlayHistory,
+      jsonEncode(_aaUserPlayHistory),
+    );
+
+    final metadataEncoded = _historyMetadata.map(
+      (k, v) => MapEntry(k, v.toJson()),
+    );
+    await prefs.setString(_keyHistoryMetadata, jsonEncode(metadataEncoded));
+    await prefs.setStringList(_keyRecentSongsOrder, _recentSongsOrder);
+    await prefs.setStringList(_keyAARecentSongsOrder, _aaRecentSongsOrder);
+    await prefs.setString(_keyLastSourceMap, jsonEncode(_lastSourceMap));
   }
 
   Future<void> setStartOption(String option) async {
@@ -4543,8 +4998,15 @@ class RadioProvider with ChangeNotifier {
         'category_order': _categoryOrder,
         'invalid_song_ids': _invalidSongIds,
         'playlists': _playlists.map((p) => p.toJson()).toList(),
+        'user_play_history': _userPlayHistory,
+        'history_metadata': _historyMetadata.map(
+          (k, v) => MapEntry(k, v.toJson()),
+        ),
+        'recent_songs_order': _recentSongsOrder,
+        'followed_artists': _followedArtists.toList(),
+        'followed_albums': _followedAlbums.toList(),
         'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'version': 1,
+        'version': 2,
         'type': isAuto ? 'auto' : 'manual',
       };
 
@@ -4653,6 +5115,45 @@ class RadioProvider with ChangeNotifier {
         await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
       }
 
+      // Restore Play History & Metadata
+      if (data['user_play_history'] != null) {
+        final Map<String, dynamic> history = data['user_play_history'];
+        _userPlayHistory = history.map((k, v) => MapEntry(k, v as int));
+      }
+      if (data['history_metadata'] != null) {
+        final Map<String, dynamic> meta = data['history_metadata'];
+        _historyMetadata = meta.map(
+          (k, v) => MapEntry(k, SavedSong.fromJson(v)),
+        );
+      }
+      if (data['recent_songs_order'] != null) {
+        _recentSongsOrder = (data['recent_songs_order'] as List)
+            .map((e) => e as String)
+            .toList();
+      }
+      await _saveUserPlayHistory();
+
+      // Restore Followed Artists & Albums
+      if (data['followed_artists'] != null) {
+        _followedArtists.clear();
+        _followedArtists.addAll(
+          (data['followed_artists'] as List).map((e) => e as String),
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(
+          _keyFollowedArtists,
+          _followedArtists.toList(),
+        );
+      }
+      if (data['followed_albums'] != null) {
+        _followedAlbums.clear();
+        _followedAlbums.addAll(
+          (data['followed_albums'] as List).map((e) => e as String),
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(_keyFollowedAlbums, _followedAlbums.toList());
+      }
+
       // Playlists
       if (data['playlists'] != null) {
         final List<dynamic> pList = data['playlists'];
@@ -4688,17 +5189,56 @@ class RadioProvider with ChangeNotifier {
       // Automatically set backup frequency to daily after first restore
       await setBackupFrequency('daily');
 
+      await _loadPlaylists(); // Refresh state
+      await ensureLocalPermissions();
+
+      _isRestoring = false;
       notifyListeners();
     } catch (e) {
+      _isRestoring = false;
+      notifyListeners();
       if (e.toString().contains("No backup found")) {
         _hasPerformedRestore = true;
         await _saveHasPerformedRestore();
       }
       _addLog("Restore Failed: $e");
       rethrow;
-    } finally {
-      _isRestoring = false;
-      notifyListeners();
+    }
+  }
+
+  Future<void> ensureLocalPermissions() async {
+    if (kIsWeb) return;
+
+    // Check if any playlist is local or contains local songs
+    bool hasLocalContent =
+        _playlists.any((p) => p.id.startsWith('local_')) ||
+        _playlists.any(
+          (p) => p.songs.any(
+            (s) => s.localPath != null && s.localPath!.isNotEmpty,
+          ),
+        );
+
+    if (!hasLocalContent) {
+      // Also check unique songs
+      hasLocalContent = _allUniqueSongs.any(
+        (s) => s.localPath != null && s.localPath!.isNotEmpty,
+      );
+    }
+
+    if (hasLocalContent) {
+      if (Platform.isAndroid) {
+        // For Android 13+ (API 33+) we need Permission.audio
+        // For older, Permission.storage
+        final statusAudio = await Permission.audio.request();
+        if (statusAudio.isPermanentlyDenied) {
+          // Permanently denied, could show a snackbar or similar if needed.
+        } else if (statusAudio.isDenied) {
+          // Try legacy storage permission for older Androids
+          await Permission.storage.request();
+        }
+      } else if (Platform.isIOS) {
+        await Permission.mediaLibrary.request();
+      }
     }
   }
 
@@ -4822,6 +5362,16 @@ class RadioProvider with ChangeNotifier {
     _isCompactView = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyCompactView, value);
+    notifyListeners();
+  }
+
+  Future<void> setCategoryCompact(String category, bool value) async {
+    _categoryCompactViews[category] = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _keyCategoryCompactViews,
+      jsonEncode(_categoryCompactViews),
+    );
     notifyListeners();
   }
 

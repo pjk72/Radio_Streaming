@@ -55,10 +55,32 @@ class TrendingService {
       _searchDeezer(customQuery ?? "Top $country"),
     ]);
 
-    final finalResults = results
-        .expand((x) => x)
-        .where((p) => p.trackCount > 0)
-        .toList();
+    final Set<String> seenImages = {};
+    final finalResults = <TrendingPlaylist>[];
+
+    for (var sublist in results) {
+      int countForThisSource = 0;
+      final String? sourceName = sublist.isNotEmpty
+          ? sublist.first.provider
+          : null;
+      final int maxForSource = (sourceName == 'Spotify') ? 20 : 10;
+
+      for (var p in sublist) {
+        if (p.trackCount <= 0) continue;
+
+        final imageUrl = p.imageUrls.isNotEmpty ? p.imageUrls.first : null;
+        if (imageUrl != null) {
+          if (seenImages.contains(imageUrl)) continue;
+        }
+
+        if (countForThisSource < maxForSource) {
+          if (imageUrl != null) seenImages.add(imageUrl);
+          finalResults.add(p);
+          countForThisSource++;
+        }
+      }
+    }
+
     _cache[cacheKey] = finalResults;
     return finalResults;
   }
@@ -108,7 +130,7 @@ class TrendingService {
         query,
         filter: TypeFilters.playlist,
       );
-      return searchList.take(10).map((result) {
+      return searchList.take(25).map((result) {
         final p = result as SearchPlaylist;
         // YouTube provides thumbnails.
         return TrendingPlaylist(
@@ -140,7 +162,7 @@ class TrendingService {
         final data = jsonDecode(response.body);
         final dataList = data['data'] as List?;
         if (dataList != null) {
-          return dataList.take(10).map((item) {
+          return dataList.take(25).map((item) {
             final artwork = item['artwork']; // Map of sizes
             String? imgUrl;
             if (artwork != null && artwork is Map) {
@@ -172,7 +194,7 @@ class TrendingService {
   Future<List<TrendingPlaylist>> _searchDeezer(String query) async {
     try {
       final url =
-          "https://api.deezer.com/search/playlist?q=${Uri.encodeComponent(query)}&limit=10";
+          "https://api.deezer.com/search/playlist?q=${Uri.encodeComponent(query)}&limit=25";
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {

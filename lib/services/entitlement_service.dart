@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'backup_service.dart';
 import 'log_service.dart';
 
@@ -16,10 +17,26 @@ class EntitlementService extends ChangeNotifier {
   bool _isLoading = false;
   bool _isUsingLocalConfig = false;
   StreamSubscription? _remoteConfigSubscription;
+  StreamSubscription? _connectivitySubscription;
 
   EntitlementService(this._backupService) {
     _backupService.addListener(_onAuthChanged);
     _initializeRemoteConfig();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      results,
+    ) {
+      final hasConnection = !results.contains(ConnectivityResult.none);
+      if (hasConnection && _isUsingLocalConfig && !_isLoading) {
+        LogService().log(
+          "EntitlementService: Connection restored. Forcing remote config refresh...",
+        );
+        refreshConfig();
+      }
+    });
   }
 
   Future<void> _initializeRemoteConfig() async {
@@ -256,6 +273,7 @@ class EntitlementService extends ChangeNotifier {
   void dispose() {
     _backupService.removeListener(_onAuthChanged);
     _remoteConfigSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 }

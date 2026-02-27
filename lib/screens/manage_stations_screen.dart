@@ -234,7 +234,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
     final sortedKeys = grouped.keys.toList()..sort();
 
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 80),
+      padding: const EdgeInsets.only(bottom: 90),
       itemCount: sortedKeys.length,
       itemBuilder: (context, index) {
         final key = sortedKeys[index];
@@ -311,7 +311,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
   ) {
     if (provider.isManageGridView) {
       return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 12,
@@ -326,7 +326,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
       );
     } else {
       return ListView.builder(
-        padding: const EdgeInsets.only(bottom: 80),
+        padding: const EdgeInsets.only(bottom: 90),
         itemCount: stations.length,
         itemBuilder: (context, index) {
           final s = stations[index];

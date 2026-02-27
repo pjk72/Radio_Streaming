@@ -6,6 +6,7 @@ import '../services/lyrics_service.dart';
 import '../widgets/lyrics_components.dart';
 import 'package:flutter/services.dart';
 import '../services/entitlement_service.dart';
+import '../providers/language_provider.dart';
 import 'package:provider/provider.dart';
 
 class YouTubePopup extends StatefulWidget {
@@ -181,12 +182,18 @@ class _YouTubePopupState extends State<YouTubePopup> {
                       IconButton(
                         icon: const Icon(Icons.tune, color: Colors.white54),
                         onPressed: () => _openSyncOverlay(context),
-                        tooltip: "Sync Lyrics",
+                        tooltip: Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('sync_lyrics'),
                       ),
                       IconButton(
                         icon: const Icon(Icons.refresh, color: Colors.white54),
                         onPressed: () => _fetchLyrics(force: true),
-                        tooltip: "Retry Search",
+                        tooltip: Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('retry_search'),
                       ),
                       if (_lyrics != null && _lyrics!.lines.isNotEmpty)
                         IconButton(
@@ -197,18 +204,29 @@ class _YouTubePopupState extends State<YouTubePopup> {
                                 .join('\n');
                             Clipboard.setData(ClipboardData(text: text));
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Lyrics copied to clipboard'),
+                              SnackBar(
+                                content: Text(
+                                  Provider.of<LanguageProvider>(
+                                    context,
+                                    listen: false,
+                                  ).translate('lyrics_copied'),
+                                ),
                               ),
                             );
                           },
-                          tooltip: "Copy Lyrics",
+                          tooltip: Provider.of<LanguageProvider>(
+                            context,
+                            listen: false,
+                          ).translate('copy_lyrics'),
                         ),
                       const SizedBox(width: 8),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.white54),
                         onPressed: () => _toggleLyrics(context),
-                        tooltip: "Close Lyrics",
+                        tooltip: Provider.of<LanguageProvider>(
+                          context,
+                          listen: false,
+                        ).translate('close_lyrics'),
                       ),
                     ],
                   ),
@@ -269,9 +287,16 @@ class _YouTubePopupState extends State<YouTubePopup> {
     } catch (e) {
       debugPrint("Failed to enter PiP: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("PiP Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('pip_error').replaceAll('{0}', e.toString()),
+            ),
+          ),
+        );
       }
     }
   }
@@ -419,7 +444,10 @@ class _YouTubePopupState extends State<YouTubePopup> {
                               color: Colors.white70,
                             ),
                             onPressed: () => Navigator.of(context).pop(),
-                            tooltip: "Close",
+                            tooltip: Provider.of<LanguageProvider>(
+                              context,
+                              listen: false,
+                            ).translate('close_lyrics'),
                           ),
                         ],
                       ),
@@ -629,8 +657,14 @@ class _YouTubePopupState extends State<YouTubePopup> {
                             ),
                             label: Text(
                               _isAudioOnly
-                                  ? "Switch to Video"
-                                  : "Switch to Audio Only",
+                                  ? Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('switch_to_video')
+                                  : Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('switch_to_audio_only'),
                               style: const TextStyle(color: Colors.white),
                             ),
                           ),
@@ -647,4 +681,3 @@ class _YouTubePopupState extends State<YouTubePopup> {
     );
   }
 }
-

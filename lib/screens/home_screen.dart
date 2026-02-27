@@ -45,52 +45,55 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Column(
+      body: Stack(
         children: [
-          // Unified Top Header (Title + Nav)
-          if (!isDesktop) _buildTopHeader(context),
+          Column(
+            children: [
+              // Unified Top Header (Title + Nav)
+              if (!isDesktop) _buildTopHeader(context),
 
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (isDesktop)
-                  SizedBox(
-                    width: 240,
-                    child: Sidebar(
-                      selectedIndex: _navIndex,
-                      onItemSelected: (index) {
-                        setState(() => _navIndex = index);
-                        _pageController.animateToPage(
-                          index,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      },
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (isDesktop)
+                      SizedBox(
+                        width: 240,
+                        child: Sidebar(
+                          selectedIndex: _navIndex,
+                          onItemSelected: (index) {
+                            setState(() => _navIndex = index);
+                            _pageController.animateToPage(
+                              index,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                            );
+                          },
+                        ),
+                      ),
+
+                    // Main Content Area
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        onPageChanged: (index) {
+                          setState(() => _navIndex = index);
+                        },
+                        children: [
+                          const MusicStreamHome(),
+                          const PlaylistScreen(),
+                          const TrendingScreen(),
+                          const SettingsScreen(),
+                        ],
+                      ),
                     ),
-                  ),
-
-                // Main Content Area
-                Expanded(
-                  child: PageView(
-                    controller: _pageController,
-                    onPageChanged: (index) {
-                      setState(() => _navIndex = index);
-                    },
-                    children: [
-                      const MusicStreamHome(),
-                      const PlaylistScreen(),
-                      const TrendingScreen(),
-                      const SettingsScreen(),
-                    ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-
-          // Player Bar
-          const PlayerBar(),
+          // Floating Glass Player Bar
+          const Positioned(left: 0, right: 0, bottom: 0, child: PlayerBar()),
         ],
       ),
     );
@@ -103,9 +106,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 8,
-        bottom: 12,
-        left: 16,
-        right: 16,
+        bottom: 8,
+        left: 8,
+        right: 8,
       ),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
@@ -119,32 +122,35 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Navigation Menu (Underline Style)
-          Container(
+          SizedBox(
             height: 40,
-            padding: EdgeInsets.zero,
-            child: Row(
-              children: [
-                _buildTopNavItem(
-                  Icons.radio,
-                  langProvider.translate('tab_radio'),
-                  0,
-                ),
-                _buildTopNavItem(
-                  Icons.playlist_play_rounded,
-                  langProvider.translate('tab_library'),
-                  1,
-                ),
-                _buildTopNavItem(
-                  Icons.whatshot,
-                  langProvider.translate('tab_trending'),
-                  2,
-                ),
-                _buildTopNavItem(
-                  Icons.settings,
-                  langProvider.translate('settings'),
-                  3,
-                ),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _buildTopNavItem(
+                    Icons.radio,
+                    langProvider.translate('tab_radio'),
+                    0,
+                  ),
+                  _buildTopNavItem(
+                    Icons.playlist_play_rounded,
+                    langProvider.translate('tab_library'),
+                    1,
+                  ),
+                  _buildTopNavItem(
+                    Icons.whatshot,
+                    langProvider.translate('tab_trending'),
+                    2,
+                  ),
+                  _buildTopNavItem(
+                    Icons.settings,
+                    langProvider.translate('settings'),
+                    3,
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -154,56 +160,55 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTopNavItem(IconData icon, String label, int index) {
     final isSelected = _navIndex == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() => _navIndex = index);
-          _pageController.animateToPage(
-            index,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-          );
-        },
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: isSelected
-                    ? Theme.of(context).primaryColor
-                    : Colors.transparent,
-                width: 3.0,
-              ),
+    return GestureDetector(
+      onTap: () {
+        setState(() => _navIndex = index);
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      },
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: isSelected
+                  ? Theme.of(context).primaryColor
+                  : Colors.transparent,
+              width: 3.0,
             ),
           ),
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSelected
+                  ? Theme.of(context).primaryColor
+                  : Theme.of(context).unselectedWidgetColor,
+              size: 14,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
                 color: isSelected
                     ? Theme.of(context).primaryColor
-                    : Theme.of(context).unselectedWidgetColor,
-                size: 14,
+                    : Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 13,
+                letterSpacing: 0.5,
               ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isSelected
-                      ? Theme.of(context).primaryColor
-                      : Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  fontSize: 13,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

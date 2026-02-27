@@ -46,8 +46,8 @@ class _StationCardState extends State<StationCard> {
           decoration: BoxDecoration(
             // Gradient background for premium feel
             gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
               colors: [
                 Color(int.parse(widget.station.color)).withValues(alpha: 0.15),
                 Theme.of(context).colorScheme.surface.withValues(alpha: 0.05),
@@ -56,7 +56,9 @@ class _StationCardState extends State<StationCard> {
             borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
             border: Border.all(
               color: _isHovering
-                  ? Color(int.parse(widget.station.color)).withValues(alpha: 0.8)
+                  ? Color(
+                      int.parse(widget.station.color),
+                    ).withValues(alpha: 0.8)
                   : Theme.of(context).dividerColor.withValues(alpha: 0.1),
               width: _isHovering ? 1.5 : 1,
             ),
@@ -120,8 +122,8 @@ class _StationCardState extends State<StationCard> {
                             ).withValues(alpha: 0.3),
                             Colors.transparent,
                           ],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
+                          begin: Alignment.centerRight,
+                          end: Alignment.centerLeft,
                         ),
                       ),
                       child: Align(
@@ -362,4 +364,3 @@ class _LiveBadge extends StatelessWidget {
     );
   }
 }
-

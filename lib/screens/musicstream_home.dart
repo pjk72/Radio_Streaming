@@ -157,13 +157,15 @@ class MusicStreamHome extends StatelessWidget {
                         category: cat,
                         stations: grouped[cat]!,
                         index: index,
-                        isCompactView: provider.isCompactView,
+                        isCompactView: provider.isCategoryCompact(cat),
                         isDesktop: isDesktop,
                         provider: provider,
                       );
                     },
                   ),
                 ),
+                // Padding to allow content to scroll behind the floating PlayerBar
+                const SliverToBoxAdapter(child: SizedBox(height: 90)),
               ],
             );
           },
@@ -260,9 +262,31 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
                         fontSize: widget.isDesktop ? 24 : 20,
                       ),
                     ),
-                    trailing: Icon(
-                      _isExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: localTheme.iconTheme.color,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            widget.isCompactView
+                                ? Icons.view_headline_rounded
+                                : Icons.grid_view_rounded,
+                            size: 20,
+                            color: localTheme.iconTheme.color?.withValues(
+                              alpha: 0.7,
+                            ),
+                          ),
+                          onPressed: () {
+                            widget.provider.setCategoryCompact(
+                              widget.category,
+                              !widget.isCompactView,
+                            );
+                          },
+                        ),
+                        Icon(
+                          _isExpanded ? Icons.expand_less : Icons.expand_more,
+                          color: localTheme.iconTheme.color,
+                        ),
+                      ],
                     ),
                     onTap: () {
                       setState(() {

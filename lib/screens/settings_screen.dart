@@ -22,55 +22,52 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
   Timer? _backupUnlockTimer;
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.toLowerCase();
-      });
-    });
   }
 
   @override
   void dispose() {
     _backupUnlockTimer?.cancel();
-    _searchController.dispose();
     super.dispose();
   }
 
-  bool _matches(String text) {
-    return text.toLowerCase().contains(_searchQuery);
-  }
-
-  String _getLastBackupText(int timestamp, String type) {
-    if (timestamp == 0) return "Never";
+  String _getLastBackupText(int timestamp, String type, LanguageProvider lang) {
+    if (timestamp == 0) return lang.translate('never');
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final now = DateTime.now();
     final diff = now.difference(date);
-    String typeStr = " (${type == 'auto' ? 'Auto' : 'Manual'})";
+    String typeStr =
+        " (${lang.translate(type == 'auto' ? 'auto_type' : 'manual_type')})";
+
     if (diff.inDays >= 365) {
       final years = (diff.inDays / 365).floor();
-      return "$years year${years > 1 ? 's' : ''} ago$typeStr";
+      if (years == 1) return "${lang.translate('year_ago')}$typeStr";
+      return "${lang.translate('years_ago').replaceAll('{0}', years.toString())}$typeStr";
     } else if (diff.inDays >= 30) {
       final months = (diff.inDays / 30).floor();
       final days = diff.inDays % 30;
       if (days > 0) {
-        return "$months month${months > 1 ? 's' : ''} and $days day${days > 1 ? 's' : ''} ago$typeStr";
+        final monthStr = months == 1
+            ? lang.translate('month_ago')
+            : lang.translate('months_ago').replaceAll('{0}', months.toString());
+        final dayStr = days == 1
+            ? lang.translate('day_ago')
+            : lang.translate('days_ago').replaceAll('{0}', days.toString());
+        return "$monthStr${lang.translate('and_separator')}$dayStr$typeStr";
       }
-      return "$months month${months > 1 ? 's' : ''} ago$typeStr";
+      return "${months == 1 ? lang.translate('month_ago') : lang.translate('months_ago').replaceAll('{0}', months.toString())}$typeStr";
     } else if (diff.inDays >= 1) {
-      return "${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago$typeStr";
+      return "${diff.inDays == 1 ? lang.translate('day_ago') : lang.translate('days_ago').replaceAll('{0}', diff.inDays.toString())}$typeStr";
     } else if (diff.inHours >= 1) {
-      return "${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago$typeStr";
+      return "${diff.inHours == 1 ? lang.translate('hour_ago') : lang.translate('hours_ago').replaceAll('{0}', diff.inHours.toString())}$typeStr";
     } else if (diff.inMinutes >= 1) {
-      return "${diff.inMinutes} minute${diff.inMinutes > 1 ? 's' : ''} ago$typeStr";
+      return "${diff.inMinutes == 1 ? lang.translate('minute_ago') : lang.translate('minutes_ago').replaceAll('{0}', diff.inMinutes.toString())}$typeStr";
     } else {
-      return "Just now$typeStr";
+      return "${lang.translate('just_now')}$typeStr";
     }
   }
 
@@ -88,62 +85,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canUseAppearance = entitlements.isFeatureEnabled('appearance');
     final canUseDebugLogs = entitlements.isFeatureEnabled('debug_logs');
 
-    // Filter Logic
-    final bool showLanguage =
-        _searchQuery.isEmpty ||
-        _matches("Language") ||
-        _matches("Lingua") ||
-        _matches("Idioma");
-
-    final bool showAppearance =
-        _searchQuery.isEmpty ||
-        _matches("Theme") ||
-        _matches("Color") ||
-        _matches("Dark") ||
-        _matches("Light") ||
-        _matches("Appearance");
-
-    final bool showManageStations =
-        _searchQuery.isEmpty ||
-        _matches("Manage Stations") ||
-        _matches("Stations") ||
-        _matches("Add") ||
-        _matches("Edit");
-
-    final bool showGeneral =
-        _searchQuery.isEmpty ||
-        _matches("Compact View") ||
-        _matches("Display") ||
-        _matches("Density");
-
-    final bool showBackup =
-        _searchQuery.isEmpty ||
-        _matches("Cloud Backup") ||
-        _matches("Backup") ||
-        _matches("Restore") ||
-        _matches("Sign In") ||
-        _matches("Google") ||
-        _matches("Frequency");
-
-    final bool showSpotify =
-        _searchQuery.isEmpty ||
-        _matches("Spotify") ||
-        _matches("Playlist") ||
-        _matches("Import");
-
-    final bool showLocalMedia =
-        _searchQuery.isEmpty ||
-        _matches("Local") ||
-        _matches("Media") ||
-        _matches("File") ||
-        _matches("Device");
-
-    final bool showLogs =
-        _searchQuery.isEmpty ||
-        _matches("Logs") ||
-        _matches("Debug") ||
-        _matches("API");
-
     return Stack(
       children: [
         Container(
@@ -157,106 +98,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(8.0),
-                color: Theme.of(context).canvasColor.withValues(alpha: 1),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.settings_rounded,
-                      color: Theme.of(context).appBarTheme.foregroundColor,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      langProvider.translate('settings'),
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(
-                              context,
-                            ).appBarTheme.foregroundColor,
-                          ),
-                    ),
-                    const Spacer(),
-                    // Search Bar
-                    Container(
-                      width: 160,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).scaffoldBackgroundColor.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).dividerColor.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: langProvider.translate('search'),
-                          hintStyle: TextStyle(
-                            color: Theme.of(context).textTheme.bodyMedium?.color
-                                ?.withValues(alpha: 0.5),
-                            fontSize: 13,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: Theme.of(
-                              context,
-                            ).iconTheme.color?.withValues(alpha: 0.5),
-                            size: 16,
-                          ),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: Icon(
-                                    Icons.close,
-                                    color: Theme.of(
-                                      context,
-                                    ).iconTheme.color?.withValues(alpha: 0.5),
-                                    size: 16,
-                                  ),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 32,
-                                    minHeight: 32,
-                                  ),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                  },
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.only(
-                            top: 2,
-                          ), // vertically center
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
                   children: [
-                    if (showLanguage)
-                      _buildSettingsTile(
-                        context,
-                        icon: Icons.language,
-                        title: langProvider.translate('language'),
-                        subtitle: langProvider.translate('language_desc'),
-                        onTap: () {
-                          _showLanguagePicker(context, langProvider);
-                        },
-                      ),
-                    if (showAppearance && canUseAppearance)
+                    _buildSettingsTile(
+                      context,
+                      icon: Icons.language,
+                      title: langProvider.translate('language'),
+                      subtitle: langProvider.translate('language_desc'),
+                      onTap: () {
+                        _showLanguagePicker(context, langProvider);
+                      },
+                    ),
+                    if (canUseAppearance)
                       _buildSettingsTile(
                         context,
                         icon: Icons.palette_rounded,
@@ -272,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                    if (showManageStations && canManageStations)
+                    if (canManageStations)
                       _buildSettingsTile(
                         context,
                         icon: Icons.radio,
@@ -290,7 +145,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                    if (showLocalMedia && canUseLocal)
+                    if (canUseLocal)
                       _buildSettingsTile(
                         context,
                         icon: Icons.folder,
@@ -305,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                    if (showLogs && canUseDebugLogs)
+                    if (canUseDebugLogs)
                       _buildSettingsTile(
                         context,
                         icon: Icons.bug_report_rounded,
@@ -320,760 +175,765 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                    if (showGeneral)
+                    if (canUseRecognition)
                       _buildSettingsSwitchTile(
                         context,
-                        icon: Icons.view_headline_rounded,
-                        title: langProvider.translate('compact_view'),
-                        subtitle: langProvider.translate('compact_view_desc'),
-                        value: radio.isCompactView,
-                        onChanged: (val) => radio.setCompactView(val),
-                      ),
-                    if (showGeneral) ...[
-                      if (canUseRecognition)
-                        _buildSettingsSwitchTile(
-                          context,
-                          icon: Icons.music_note_rounded,
-                          title: langProvider.translate('song_recognition'),
-                          subtitle: langProvider.translate(
-                            'song_recognition_desc',
-                          ),
-                          value: radio.isACRCloudEnabled,
-                          onChanged: (val) => radio.setACRCloudEnabled(val),
+                        icon: Icons.music_note_rounded,
+                        title: langProvider.translate('song_recognition'),
+                        subtitle: langProvider.translate(
+                          'song_recognition_desc',
                         ),
-                    ],
+                        value: radio.isACRCloudEnabled,
+                        onChanged: (val) => radio.setACRCloudEnabled(val),
+                      ),
 
-                    if (showManageStations && showBackup)
-                      const SizedBox(height: 32),
+                    const SizedBox(height: 32),
 
-                    if (showBackup) ...[
-                      Text(
-                        langProvider.translate('cloud_backup'),
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).textTheme.titleLarge?.color,
+                    Text(
+                      langProvider.translate('cloud_backup'),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).textTheme.titleLarge?.color,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.05),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).cardColor,
-                          border: Border.all(
-                            color: Theme.of(
-                              context,
-                            ).dividerColor.withValues(alpha: 0.05),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: entitlements.isUsingLocalConfig
-                                        ? Border.all(
-                                            color: Theme.of(
-                                              context,
-                                            ).primaryColor,
-                                            width: 2,
-                                          )
-                                        : null,
-                                  ),
-                                  child: CircleAvatar(
-                                    backgroundImage:
-                                        auth.currentUser?.photoUrl != null
-                                        ? NetworkImage(
-                                            auth.currentUser!.photoUrl!,
-                                          )
-                                        : null,
-                                    backgroundColor: Theme.of(
-                                      context,
-                                    ).dividerColor.withValues(alpha: 0.1),
-                                    child: auth.currentUser?.photoUrl == null
-                                        ? Icon(
-                                            Icons.person,
-                                            color: Theme.of(
-                                              context,
-                                            ).iconTheme.color,
-                                          )
-                                        : null,
-                                  ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: entitlements.isUsingLocalConfig
+                                      ? Border.all(
+                                          color: Theme.of(context).primaryColor,
+                                          width: 2,
+                                        )
+                                      : null,
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
+                                child: CircleAvatar(
+                                  backgroundImage:
+                                      auth.currentUser?.photoUrl != null
+                                      ? NetworkImage(
+                                          auth.currentUser!.photoUrl!,
+                                        )
+                                      : null,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.1),
+                                  child: auth.currentUser?.photoUrl == null
+                                      ? Icon(
+                                          Icons.person,
+                                          color: Theme.of(
+                                            context,
+                                          ).iconTheme.color,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      auth.isSignedIn
+                                          ? (auth.currentUser?.displayName
+                                                    ?.split(' ')
+                                                    .first ??
+                                                langProvider.translate(
+                                                  'user_default',
+                                                ))
+                                          : langProvider.translate(
+                                              'not_signed_in',
+                                            ),
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).textTheme.bodyLarge?.color,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    if (auth.isSignedIn)
                                       Text(
-                                        auth.isSignedIn
-                                            ? (auth.currentUser?.displayName
-                                                      ?.split(' ')
-                                                      .first ??
-                                                  "User")
-                                            : "Not Signed In",
+                                        auth.currentUser?.email ?? "",
                                         style: TextStyle(
                                           color: Theme.of(
                                             context,
-                                          ).textTheme.bodyLarge?.color,
-                                          fontWeight: FontWeight.bold,
+                                          ).textTheme.bodySmall?.color,
+                                          fontSize: 12,
                                         ),
                                       ),
-                                      if (auth.isSignedIn)
-                                        Text(
-                                          auth.currentUser?.email ?? "",
-                                          style: TextStyle(
-                                            color: Theme.of(
-                                              context,
-                                            ).textTheme.bodySmall?.color,
-                                            fontSize: 12,
+                                  ],
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  if (auth.isSignedIn) {
+                                    await auth.signOut();
+                                  } else {
+                                    try {
+                                      await auth.signIn();
+                                    } catch (e) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            langProvider
+                                                .translate('error_generic')
+                                                .replaceAll(
+                                                  '{0}',
+                                                  e.toString(),
+                                                ),
                                           ),
                                         ),
-                                    ],
+                                      );
+                                    }
+                                  }
+                                },
+                                child: Text(
+                                  auth.isSignedIn
+                                      ? langProvider.translate('sign_out')
+                                      : langProvider.translate('sign_in'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (auth.isSignedIn) ...[
+                            const Divider(color: Colors.white10, height: 32),
+
+                            // Last Backup
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  langProvider.translate('last_backup'),
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color
+                                        ?.withValues(alpha: 0.7),
                                   ),
                                 ),
-                                TextButton(
-                                  onPressed: () async {
-                                    if (auth.isSignedIn) {
-                                      await auth.signOut();
-                                    } else {
-                                      try {
-                                        await auth.signIn();
-                                      } catch (e) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              langProvider
-                                                  .translate('error_generic')
-                                                  .replaceAll(
-                                                    '{0}',
-                                                    e.toString(),
-                                                  ),
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    }
-                                  },
-                                  child: Text(
-                                    auth.isSignedIn
-                                        ? langProvider.translate('sign_out')
-                                        : langProvider.translate('sign_in'),
+                                Text(
+                                  _getLastBackupText(
+                                    radio.lastBackupTs,
+                                    radio.lastBackupType,
+                                    langProvider,
+                                  ),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge?.color,
                                   ),
                                 ),
                               ],
                             ),
-                            if (auth.isSignedIn) ...[
-                              const Divider(color: Colors.white10, height: 32),
+                            const SizedBox(height: 16),
 
-                              // Last Backup
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    langProvider.translate('last_backup'),
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.color
-                                          ?.withValues(alpha: 0.7),
-                                    ),
+                            // Frequency Config
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  langProvider.translate('backup_frequency'),
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color
+                                        ?.withValues(alpha: 0.7),
                                   ),
-                                  Text(
-                                    _getLastBackupText(
-                                      radio.lastBackupTs,
-                                      radio.lastBackupType,
-                                    ),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodyLarge?.color,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Frequency Config
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    langProvider.translate('backup_frequency'),
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.color
-                                          ?.withValues(alpha: 0.7),
-                                    ),
-                                  ),
-                                  DropdownButton<String>(
-                                    value: radio.backupFrequency,
-                                    dropdownColor: Theme.of(context).cardColor,
-                                    underline: Container(), // Hide underline
-                                    style: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.color,
-                                    ),
-                                    iconEnabledColor: Theme.of(
+                                ),
+                                DropdownButton<String>(
+                                  value: radio.backupFrequency,
+                                  dropdownColor: Theme.of(context).cardColor,
+                                  underline: Container(), // Hide underline
+                                  style: TextStyle(
+                                    color: Theme.of(
                                       context,
-                                    ).primaryColor,
-                                    items: [
-                                      DropdownMenuItem(
-                                        value: 'manual',
-                                        child: Text(
-                                          langProvider.translate('manual'),
-                                        ),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'daily',
-                                        child: Text(
-                                          langProvider.translate('daily'),
-                                        ),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'weekly',
-                                        child: Text(
-                                          langProvider.translate('weekly'),
-                                        ),
-                                      ),
-                                    ],
-                                    onChanged: !radio.canInitiateBackup
-                                        ? null
-                                        : (val) {
-                                            if (val != null) {
-                                              radio.setBackupFrequency(val);
-                                            }
-                                          },
+                                    ).textTheme.bodyMedium?.color,
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
+                                  iconEnabledColor: Theme.of(
+                                    context,
+                                  ).primaryColor,
+                                  items: [
+                                    DropdownMenuItem(
+                                      value: 'manual',
+                                      child: Text(
+                                        langProvider.translate('manual'),
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'daily',
+                                      child: Text(
+                                        langProvider.translate('daily'),
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'weekly',
+                                      child: Text(
+                                        langProvider.translate('weekly'),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: !radio.canInitiateBackup
+                                      ? null
+                                      : (val) {
+                                          if (val != null) {
+                                            radio.setBackupFrequency(val);
+                                          }
+                                        },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
 
-                              // Startup Playback
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    langProvider.translate('startup_playback'),
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.color
-                                          ?.withValues(alpha: 0.7),
-                                    ),
+                            // Startup Playback
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  langProvider.translate('startup_playback'),
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color
+                                        ?.withValues(alpha: 0.7),
                                   ),
-                                  DropdownButton<String>(
-                                    value: radio.startOption,
-                                    dropdownColor: Theme.of(context).cardColor,
-                                    underline: Container(),
-                                    style: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.color,
-                                    ),
-                                    iconEnabledColor: Theme.of(
+                                ),
+                                DropdownButton<String>(
+                                  value: radio.startOption,
+                                  dropdownColor: Theme.of(context).cardColor,
+                                  underline: Container(),
+                                  style: TextStyle(
+                                    color: Theme.of(
                                       context,
-                                    ).primaryColor,
-                                    items: [
-                                      DropdownMenuItem(
-                                        value: 'none',
-                                        child: Text(
-                                          langProvider.translate('none'),
-                                        ),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'last',
-                                        child: Text(
-                                          langProvider.translate('last_played'),
-                                        ),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'specific',
-                                        child: Text(
-                                          langProvider.translate(
-                                            'specific_station',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                    onChanged: (val) {
-                                      if (val != null) {
-                                        radio.setStartOption(val);
-                                      }
-                                    },
+                                    ).textTheme.bodyMedium?.color,
                                   ),
-                                ],
-                              ),
-                              if (radio.startOption == 'specific') ...[
-                                const SizedBox(height: 8),
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white10,
-                                      shape: BoxShape.circle,
+                                  iconEnabledColor: Theme.of(
+                                    context,
+                                  ).primaryColor,
+                                  items: [
+                                    DropdownMenuItem(
+                                      value: 'none',
+                                      child: Text(
+                                        langProvider.translate('none'),
+                                      ),
                                     ),
-                                    child: const Icon(
-                                      Icons.radio,
-                                      color: Colors.white70,
-                                      size: 20,
+                                    DropdownMenuItem(
+                                      value: 'last',
+                                      child: Text(
+                                        langProvider.translate('last_played'),
+                                      ),
                                     ),
-                                  ),
-                                  title: Text(
-                                    radio.startupStationId != null
-                                        ? radio.stations
-                                              .firstWhere(
-                                                (s) =>
-                                                    s.id ==
-                                                    radio.startupStationId,
-                                                orElse: () =>
-                                                    radio.stations.firstWhere(
-                                                      (s) => true,
-                                                      orElse: () =>
-                                                          // ignore: missing_return
-                                                          throw Exception(
-                                                            "No stations",
-                                                          ),
-                                                    ), // Placeholder if list empty, handled by below check
-                                              )
-                                              .name
-                                        : langProvider.translate(
-                                            'select_station',
-                                          ),
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                  subtitle: Text(
-                                    langProvider.translate('tap_to_choose'),
-                                    style: const TextStyle(
-                                      color: Colors.white38,
-                                    ),
-                                  ),
-                                  trailing: const Icon(
-                                    Icons.chevron_right,
-                                    color: Colors.white38,
-                                  ),
-                                  onTap: () async {
-                                    final selectedId = await showModalBottomSheet<int>(
-                                      context: context,
-                                      backgroundColor: const Color(0xFF16213e),
-                                      isScrollControlled: true,
-                                      shape: const RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.vertical(
-                                          top: Radius.circular(16),
+                                    DropdownMenuItem(
+                                      value: 'specific',
+                                      child: Text(
+                                        langProvider.translate(
+                                          'specific_station',
                                         ),
                                       ),
-                                      builder: (ctx) {
-                                        return DraggableScrollableSheet(
-                                          initialChildSize: 0.7,
-                                          minChildSize: 0.5,
-                                          maxChildSize: 0.9,
-                                          expand: false,
-                                          builder: (ctx, scrollController) {
-                                            return Column(
-                                              children: [
-                                                Padding(
-                                                  padding: const EdgeInsets.all(
-                                                    16.0,
-                                                  ),
-                                                  child: Text(
-                                                    langProvider.translate(
-                                                      'select_station',
-                                                    ),
-                                                    style: TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 18,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                                Expanded(
-                                                  child: ListView.builder(
-                                                    controller:
-                                                        scrollController,
-                                                    itemCount:
-                                                        radio.stations.length,
-                                                    itemBuilder: (ctx, index) {
-                                                      final s =
-                                                          radio.stations[index];
-                                                      final isSelected =
-                                                          s.id ==
-                                                          radio
-                                                              .startupStationId;
-                                                      return ListTile(
-                                                        leading: CircleAvatar(
-                                                          backgroundImage:
-                                                              s.logo != null &&
-                                                                  s
-                                                                      .logo!
-                                                                      .isNotEmpty
-                                                              ? (s.logo!.startsWith(
-                                                                      'http',
-                                                                    )
-                                                                    ? NetworkImage(
-                                                                        s.logo!,
-                                                                      )
-                                                                    : AssetImage(
-                                                                            s.logo!,
-                                                                          )
-                                                                          as ImageProvider)
-                                                              : null,
-                                                          child: s.logo == null
-                                                              ? const Icon(
-                                                                  Icons.radio,
-                                                                )
-                                                              : null,
-                                                        ),
-                                                        title: Text(
-                                                          s.name,
-                                                          style: TextStyle(
-                                                            color: isSelected
-                                                                ? Theme.of(
-                                                                    context,
-                                                                  ).primaryColor
-                                                                : Colors.white,
-                                                            fontWeight:
-                                                                isSelected
-                                                                ? FontWeight
-                                                                      .bold
-                                                                : FontWeight
-                                                                      .normal,
-                                                          ),
-                                                        ),
-                                                        onTap: () {
-                                                          Navigator.pop(
-                                                            ctx,
-                                                            s.id,
-                                                          );
-                                                        },
-                                                        trailing: isSelected
-                                                            ? Icon(
-                                                                Icons.check,
-                                                                color: Theme.of(
-                                                                  context,
-                                                                ).primaryColor,
-                                                              )
-                                                            : null,
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        );
-                                      },
-                                    );
-                                    if (selectedId != null) {
-                                      radio.setStartupStationId(selectedId);
+                                    ),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      radio.setStartOption(val);
                                     }
                                   },
                                 ),
                               ],
-
-                              const SizedBox(height: 16),
-
-                              // Actions
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTapDown: (_) {
-                                        if (!radio.canInitiateBackup) {
-                                          _backupUnlockTimer?.cancel();
-                                          _backupUnlockTimer = Timer(
-                                            const Duration(seconds: 3),
-                                            () {
-                                              radio.enableBackupOverride();
-                                              if (context.mounted) {
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      "Backup Force Enabled",
-                                                    ),
-                                                    duration: Duration(
-                                                      seconds: 1,
-                                                    ),
-                                                  ),
-                                                );
-                                              }
-                                            },
-                                          );
-                                        }
-                                      },
-                                      onTapUp: (_) =>
-                                          _backupUnlockTimer?.cancel(),
-                                      onTapCancel: () =>
-                                          _backupUnlockTimer?.cancel(),
-                                      child: AbsorbPointer(
-                                        absorbing: !radio.canInitiateBackup,
-                                        child: ElevatedButton.icon(
-                                          icon: radio.isBackingUp
-                                              ? const SizedBox(
-                                                  width: 16,
-                                                  height: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Colors.white,
-                                                      ),
-                                                )
-                                              : const Icon(
-                                                  Icons.cloud_upload,
-                                                  size: 16,
-                                                ),
-                                          label: Text(
-                                            langProvider.translate('backup'),
-                                          ),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(
-                                              0xFF6c5ce7,
-                                            ),
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 12,
-                                            ),
-                                            // Visual feedback for disabled state
-                                            disabledBackgroundColor:
-                                                const Color(
-                                                  0xFF6c5ce7,
-                                                ).withValues(alpha: 0.5),
-                                            disabledForegroundColor:
-                                                Colors.white38,
-                                          ),
-                                          onPressed: !radio.canInitiateBackup
-                                              ? null
-                                              : () async {
-                                                  // ... (Same backup Logic) ...
-                                                  final confirm = await showDialog<bool>(
-                                                    context: context,
-                                                    builder: (ctx) => AlertDialog(
-                                                      backgroundColor:
-                                                          const Color(
-                                                            0xFF16213e,
-                                                          ),
-                                                      title: const Text(
-                                                        "Overwrite Backup?",
-                                                        style: TextStyle(
-                                                          color: Colors.white,
-                                                        ),
-                                                      ),
-                                                      content: const Text(
-                                                        "This will overwrite your existing cloud backup with the current app data. Are you sure?",
-                                                        style: TextStyle(
-                                                          color: Colors.white70,
-                                                        ),
-                                                      ),
-                                                      actions: [
-                                                        TextButton(
-                                                          onPressed: () =>
-                                                              Navigator.pop(
-                                                                ctx,
-                                                                false,
-                                                              ),
-                                                          child: const Text(
-                                                            "Cancel",
-                                                          ),
-                                                        ),
-                                                        TextButton(
-                                                          onPressed: () =>
-                                                              Navigator.pop(
-                                                                ctx,
-                                                                true,
-                                                              ),
-                                                          child: const Text(
-                                                            "Backup",
-                                                            style: TextStyle(
-                                                              color: Color(
-                                                                0xFF6c5ce7,
-                                                              ),
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  );
-                                                  if (confirm == true &&
-                                                      context.mounted) {
-                                                    try {
-                                                      await radio
-                                                          .performBackup();
-                                                      if (context.mounted) {
-                                                        ScaffoldMessenger.of(
-                                                          context,
-                                                        ).showSnackBar(
-                                                          const SnackBar(
-                                                            content: Text(
-                                                              "Backup Successful!",
-                                                            ),
-                                                            backgroundColor:
-                                                                Colors.green,
-                                                          ),
-                                                        );
-                                                      }
-                                                    } catch (e) {
-                                                      if (context.mounted) {
-                                                        ScaffoldMessenger.of(
-                                                          context,
-                                                        ).showSnackBar(
-                                                          SnackBar(
-                                                            content: Text(
-                                                              "Backup Failed: $e",
-                                                            ),
-                                                            backgroundColor:
-                                                                Colors.red,
-                                                          ),
-                                                        );
-                                                      }
-                                                    }
-                                                  }
-                                                },
-                                        ),
-                                      ),
-                                    ),
+                            ),
+                            if (radio.startOption == 'specific') ...[
+                              const SizedBox(height: 8),
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white10,
+                                    shape: BoxShape.circle,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      icon: radio.isRestoring
-                                          ? const SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: Colors.white,
-                                              ),
+                                  child: const Icon(
+                                    Icons.radio,
+                                    color: Colors.white70,
+                                    size: 20,
+                                  ),
+                                ),
+                                title: Text(
+                                  radio.startupStationId != null
+                                      ? radio.stations
+                                            .firstWhere(
+                                              (s) =>
+                                                  s.id ==
+                                                  radio.startupStationId,
+                                              orElse: () =>
+                                                  radio.stations.firstWhere(
+                                                    (s) => true,
+                                                    orElse: () =>
+                                                        // ignore: missing_return
+                                                        throw Exception(
+                                                          "No stations",
+                                                        ),
+                                                  ), // Placeholder if list empty, handled by below check
                                             )
-                                          : const Icon(
-                                              Icons.cloud_download,
-                                              size: 16,
-                                            ),
-                                      label: Text(
-                                        langProvider.translate('restore'),
-                                      ),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.orange.shade800,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 12,
+                                            .name
+                                      : langProvider.translate(
+                                          'select_station',
                                         ),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                subtitle: Text(
+                                  langProvider.translate('tap_to_choose'),
+                                  style: const TextStyle(color: Colors.white38),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right,
+                                  color: Colors.white38,
+                                ),
+                                onTap: () async {
+                                  final selectedId = await showModalBottomSheet<int>(
+                                    context: context,
+                                    backgroundColor: const Color(0xFF16213e),
+                                    isScrollControlled: true,
+                                    shape: const RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.vertical(
+                                        top: Radius.circular(16),
                                       ),
-                                      onPressed:
-                                          (radio.isBackingUp ||
-                                              radio.isRestoring)
-                                          ? null
-                                          : () async {
-                                              final confirm = await showDialog<bool>(
-                                                context: context,
-                                                builder: (ctx) => AlertDialog(
-                                                  backgroundColor: const Color(
-                                                    0xFF16213e,
-                                                  ),
-                                                  title: const Text(
-                                                    "Restore Backup?",
-                                                  ),
-                                                  content: const Text(
-                                                    "This will overwrite your current stations and settings. Are you sure?",
-                                                    style: TextStyle(
-                                                      color: Colors.white70,
-                                                    ),
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          Navigator.pop(
-                                                            ctx,
-                                                            false,
-                                                          ),
-                                                      child: const Text(
-                                                        "Cancel",
-                                                      ),
-                                                    ),
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          Navigator.pop(
-                                                            ctx,
-                                                            true,
-                                                          ),
-                                                      child: const Text(
-                                                        "Restore",
-                                                        style: TextStyle(
-                                                          color:
-                                                              Colors.redAccent,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                              if (confirm == true &&
-                                                  context.mounted) {
-                                                try {
-                                                  await radio.restoreBackup();
-                                                  if (context.mounted) {
-                                                    ScaffoldMessenger.of(
-                                                      context,
-                                                    ).showSnackBar(
-                                                      const SnackBar(
-                                                        content: Text(
-                                                          "Restore Successful!",
-                                                        ),
-                                                        backgroundColor:
-                                                            Colors.green,
-                                                        // ignore: use_build_context_synchronously
-                                                      ),
-                                                    );
-                                                  }
-                                                } catch (e) {
-                                                  if (context.mounted) {
-                                                    ScaffoldMessenger.of(
-                                                      context,
-                                                    ).showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(
-                                                          "Restore Failed: $e",
-                                                        ),
-                                                        backgroundColor:
-                                                            Colors.red,
-                                                      ),
-                                                    );
-                                                  }
-                                                }
-                                              }
-                                            },
                                     ),
-                                  ),
-                                ],
+                                    builder: (ctx) {
+                                      return DraggableScrollableSheet(
+                                        initialChildSize: 0.7,
+                                        minChildSize: 0.5,
+                                        maxChildSize: 0.9,
+                                        expand: false,
+                                        builder: (ctx, scrollController) {
+                                          return Column(
+                                            children: [
+                                              Padding(
+                                                padding: const EdgeInsets.all(
+                                                  16.0,
+                                                ),
+                                                child: Text(
+                                                  langProvider.translate(
+                                                    'select_station',
+                                                  ),
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                              Expanded(
+                                                child: ListView.builder(
+                                                  controller: scrollController,
+                                                  itemCount:
+                                                      radio.stations.length,
+                                                  itemBuilder: (ctx, index) {
+                                                    final s =
+                                                        radio.stations[index];
+                                                    final isSelected =
+                                                        s.id ==
+                                                        radio.startupStationId;
+                                                    return ListTile(
+                                                      leading: CircleAvatar(
+                                                        backgroundImage:
+                                                            s.logo != null &&
+                                                                s
+                                                                    .logo!
+                                                                    .isNotEmpty
+                                                            ? (s.logo!.startsWith(
+                                                                    'http',
+                                                                  )
+                                                                  ? NetworkImage(
+                                                                      s.logo!,
+                                                                    )
+                                                                  : AssetImage(
+                                                                          s.logo!,
+                                                                        )
+                                                                        as ImageProvider)
+                                                            : null,
+                                                        child: s.logo == null
+                                                            ? const Icon(
+                                                                Icons.radio,
+                                                              )
+                                                            : null,
+                                                      ),
+                                                      title: Text(
+                                                        s.name,
+                                                        style: TextStyle(
+                                                          color: isSelected
+                                                              ? Theme.of(
+                                                                  context,
+                                                                ).primaryColor
+                                                              : Colors.white,
+                                                          fontWeight: isSelected
+                                                              ? FontWeight.bold
+                                                              : FontWeight
+                                                                    .normal,
+                                                        ),
+                                                      ),
+                                                      onTap: () {
+                                                        Navigator.pop(
+                                                          ctx,
+                                                          s.id,
+                                                        );
+                                                      },
+                                                      trailing: isSelected
+                                                          ? Icon(
+                                                              Icons.check,
+                                                              color: Theme.of(
+                                                                context,
+                                                              ).primaryColor,
+                                                            )
+                                                          : null,
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    },
+                                  );
+                                  if (selectedId != null) {
+                                    radio.setStartupStationId(selectedId);
+                                  }
+                                },
                               ),
                             ],
+
+                            const SizedBox(height: 16),
+
+                            // Actions
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTapDown: (_) {
+                                      if (!radio.canInitiateBackup) {
+                                        _backupUnlockTimer?.cancel();
+                                        _backupUnlockTimer = Timer(
+                                          const Duration(seconds: 3),
+                                          () {
+                                            radio.enableBackupOverride();
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    langProvider.translate(
+                                                      'backup_force_enabled',
+                                                    ),
+                                                  ),
+                                                  duration: Duration(
+                                                    seconds: 1,
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        );
+                                      }
+                                    },
+                                    onTapUp: (_) =>
+                                        _backupUnlockTimer?.cancel(),
+                                    onTapCancel: () =>
+                                        _backupUnlockTimer?.cancel(),
+                                    child: AbsorbPointer(
+                                      absorbing: !radio.canInitiateBackup,
+                                      child: ElevatedButton.icon(
+                                        icon: radio.isBackingUp
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: Colors.white,
+                                                    ),
+                                              )
+                                            : const Icon(
+                                                Icons.cloud_upload,
+                                                size: 16,
+                                              ),
+                                        label: Text(
+                                          langProvider.translate('backup'),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(
+                                            0xFF6c5ce7,
+                                          ),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                          // Visual feedback for disabled state
+                                          disabledBackgroundColor: const Color(
+                                            0xFF6c5ce7,
+                                          ).withValues(alpha: 0.5),
+                                          disabledForegroundColor:
+                                              Colors.white38,
+                                        ),
+                                        onPressed: !radio.canInitiateBackup
+                                            ? null
+                                            : () async {
+                                                // ... (Same backup Logic) ...
+                                                final confirm = await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (ctx) => AlertDialog(
+                                                    backgroundColor:
+                                                        const Color(0xFF16213e),
+                                                    title: Text(
+                                                      langProvider.translate(
+                                                        'overwrite_backup_title',
+                                                      ),
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                    content: Text(
+                                                      langProvider.translate(
+                                                        'overwrite_backup_desc',
+                                                      ),
+                                                      style: TextStyle(
+                                                        color: Colors.white70,
+                                                      ),
+                                                    ),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                              ctx,
+                                                              false,
+                                                            ),
+                                                        child: Text(
+                                                          langProvider
+                                                              .translate(
+                                                                'cancel',
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                              ctx,
+                                                              true,
+                                                            ),
+                                                        child: Text(
+                                                          langProvider
+                                                              .translate(
+                                                                'backup',
+                                                              ),
+                                                          style: TextStyle(
+                                                            color: Color(
+                                                              0xFF6c5ce7,
+                                                            ),
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                                if (confirm == true &&
+                                                    context.mounted) {
+                                                  try {
+                                                    await radio.performBackup();
+                                                    if (context.mounted) {
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            langProvider.translate(
+                                                              'backup_successful',
+                                                            ),
+                                                          ),
+                                                          backgroundColor:
+                                                              Colors.green,
+                                                        ),
+                                                      );
+                                                    }
+                                                  } catch (e) {
+                                                    if (context.mounted) {
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            "${langProvider.translate('backup_failed')}: $e",
+                                                          ),
+                                                          backgroundColor:
+                                                              Colors.red,
+                                                        ),
+                                                      );
+                                                    }
+                                                  }
+                                                }
+                                              },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    icon: radio.isRestoring
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.cloud_download,
+                                            size: 16,
+                                          ),
+                                    label: Text(
+                                      langProvider.translate('restore'),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.orange.shade800,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                    onPressed:
+                                        (radio.isBackingUp || radio.isRestoring)
+                                        ? null
+                                        : () async {
+                                            final confirm =
+                                                await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (ctx) => AlertDialog(
+                                                    backgroundColor:
+                                                        const Color(0xFF16213e),
+                                                    title: Text(
+                                                      langProvider.translate(
+                                                        'restore_backup_title',
+                                                      ),
+                                                    ),
+                                                    content: Text(
+                                                      langProvider.translate(
+                                                        'restore_backup_desc',
+                                                      ),
+                                                      style: const TextStyle(
+                                                        color: Colors.white70,
+                                                      ),
+                                                    ),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                              ctx,
+                                                              false,
+                                                            ),
+                                                        child: Text(
+                                                          langProvider
+                                                              .translate(
+                                                                'cancel',
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                              ctx,
+                                                              true,
+                                                            ),
+                                                        child: Text(
+                                                          langProvider
+                                                              .translate(
+                                                                'restore',
+                                                              ),
+                                                          style:
+                                                              const TextStyle(
+                                                                color: Colors
+                                                                    .redAccent,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                            if (confirm == true &&
+                                                context.mounted) {
+                                              try {
+                                                await radio.restoreBackup();
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        langProvider.translate(
+                                                          'restore_successful',
+                                                        ),
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.green,
+                                                    ),
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        langProvider
+                                                            .translate(
+                                                              'restore_failed',
+                                                            )
+                                                            .replaceAll(
+                                                              '{0}',
+                                                              e.toString(),
+                                                            ),
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            }
+                                          },
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
-                        ),
+                        ],
                       ),
-                    ],
-                    if (showSpotify && canUseSpotify) ...[
+                    ),
+                    if (canUseSpotify) ...[
                       const SizedBox(height: 32),
                       const Text(
                         "Spotify Integration",
@@ -1113,8 +973,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     children: [
                                       Text(
                                         radio.spotifyService.isUserConnected
-                                            ? "Connected to Spotify"
-                                            : "Spotify Not Connected",
+                                            ? langProvider.translate(
+                                                'connected_to_spotify',
+                                              )
+                                            : langProvider.translate(
+                                                'spotify_not_connected',
+                                              ),
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,
@@ -1122,8 +986,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       ),
                                       Text(
                                         radio.spotifyService.isUserConnected
-                                            ? "Now you can import your playlists"
-                                            : "Login to import your playlists",
+                                            ? langProvider.translate(
+                                                'now_can_import',
+                                              )
+                                            : langProvider.translate(
+                                                'login_to_import',
+                                              ),
                                         style: const TextStyle(
                                           color: Colors.white54,
                                           fontSize: 12,
@@ -1158,11 +1026,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
-                                            const SnackBar(
+                                            SnackBar(
                                               content: Text(
-                                                "Spotify Connected!",
+                                                langProvider.translate(
+                                                  'spotify_connected',
+                                                ),
                                               ),
-                                              backgroundColor: Color(
+                                              backgroundColor: const Color(
                                                 0xFF1db954,
                                               ),
                                             ),
@@ -1173,8 +1043,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   },
                                   child: Text(
                                     radio.spotifyService.isUserConnected
-                                        ? "Logout"
-                                        : "Connect",
+                                        ? langProvider.translate('sign_out')
+                                        : langProvider.translate('sign_in'),
                                     style: const TextStyle(
                                       color: Color(0xFF1db954),
                                     ),
@@ -1219,6 +1089,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildImportOverlay(BuildContext context, RadioProvider radio) {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     return Container(
       color: Colors.black54,
       child: Center(
@@ -1263,8 +1134,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 24),
               Text(
                 radio.spotifyImportProgress > 0.8
-                    ? "Finalizing..."
-                    : "Importing '${radio.spotifyImportName}'",
+                    ? langProvider.translate('finalizing')
+                    : langProvider
+                          .translate('importing_playlist')
+                          .replaceAll('{0}', radio.spotifyImportName ?? ''),
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -1272,9 +1145,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
-              const Text(
-                "This may take a few moments for large playlists",
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+              Text(
+                langProvider.translate('import_take_moments'),
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1288,6 +1161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     RadioProvider radio,
   ) async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF16213e),
@@ -1308,12 +1182,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (snapshot.hasError ||
                 !snapshot.hasData ||
                 snapshot.data!.isEmpty) {
-              return const SizedBox(
+              return SizedBox(
                 height: 200,
                 child: Center(
                   child: Text(
-                    "No playlists found",
-                    style: TextStyle(color: Colors.white),
+                    langProvider.translate('no_playlists_found'),
+                    style: const TextStyle(color: Colors.white),
                   ),
                 ),
               );
@@ -1331,7 +1205,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        "Import Playlist (${playlists.length} found)",
+                        langProvider
+                            .translate('import_playlist_title')
+                            .replaceAll('{0}', playlists.length.toString()),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -1382,7 +1258,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               style: const TextStyle(color: Colors.white),
                             ),
                             subtitle: Text(
-                              "${p['tracks']['total']} tracks",
+                              langProvider
+                                  .translate('songs_count')
+                                  .replaceAll(
+                                    '{0}',
+                                    p['tracks']['total'].toString(),
+                                  ),
                               style: const TextStyle(color: Colors.white54),
                             ),
                             onTap: () async {
@@ -1416,9 +1297,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     );
                                   } else {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          "No tracks found in this playlist.",
+                                          langProvider.translate(
+                                            'no_tracks_in_playlist',
+                                          ),
                                         ),
                                         backgroundColor: Colors.orange,
                                       ),
@@ -1458,6 +1341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildLogsSubMenu(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
@@ -1480,7 +1364,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
           Text(
-            "System Logs",
+            langProvider.translate('system_logs'),
             style: Theme.of(
               context,
             ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
@@ -1489,8 +1373,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSettingsTile(
             context,
             icon: Icons.code,
-            title: "API Debug",
-            subtitle: "View raw JSON responses",
+            title: langProvider.translate('api_debug_title'),
+            subtitle: langProvider.translate('api_debug_desc'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
@@ -1502,8 +1386,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSettingsTile(
             context,
             icon: Icons.bug_report,
-            title: "Debug Logs",
-            subtitle: "View application logs",
+            title: langProvider.translate('debug_logs_title'),
+            subtitle: langProvider.translate('debug_logs_desc'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(

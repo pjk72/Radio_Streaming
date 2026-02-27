@@ -6,6 +6,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/icon_library.dart';
 
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 import '../screens/artist_details_screen.dart';
 import 'realistic_visualizer.dart';
 
@@ -99,6 +100,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         : 1.0;
 
     final provider = Provider.of<RadioProvider>(context);
+    final lang = Provider.of<LanguageProvider>(context);
     final station = provider.currentStation;
     final artist = provider.currentArtist;
 
@@ -116,7 +118,11 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                 (artist == station.genre || artist == station.name));
 
             if (artist.isNotEmpty &&
-                artist != "Unknown Artist" &&
+                artist !=
+                    Provider.of<LanguageProvider>(
+                      context,
+                      listen: false,
+                    ).translate('unknown_artist') &&
                 !isPlaceholder) {
               _fetchArtistImage(artist);
             } else {
@@ -144,8 +150,8 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     final bool isLinkEnabled =
         station != null &&
         provider.currentArtist.isNotEmpty &&
-        provider.currentArtist != "Unknown Artist" &&
-        provider.currentTrack != "Live Broadcast" &&
+        provider.currentArtist != lang.translate('unknown_artist') &&
+        provider.currentTrack != lang.translate('live_broadcast') &&
         hasEnrichedImage;
 
     final double titleSize = 16.0 + (10.0 * t); // 16 to 30
@@ -355,7 +361,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                           ),
                                           const SizedBox(width: 16),
                                           Text(
-                                            "Discover Radio",
+                                            lang.translate('discover_radio'),
                                             style: Theme.of(context)
                                                 .textTheme
                                                 .headlineSmall
@@ -371,9 +377,9 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                       ),
                                       if (t > 0.2) ...[
                                         const SizedBox(height: 8),
-                                        const Text(
-                                          "Tune in to the world's best stations.",
-                                          style: TextStyle(
+                                        Text(
+                                          lang.translate('discover_radio_desc'),
+                                          style: const TextStyle(
                                             fontSize: 14,
                                             color: Colors.white70,
                                           ),
@@ -383,9 +389,13 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                       // Check if we have valid artist info to highlight
                                       if (provider.currentArtist.isNotEmpty &&
                                           provider.currentArtist !=
-                                              "Unknown Artist" &&
+                                              lang.translate(
+                                                'unknown_artist',
+                                              ) &&
                                           provider.currentTrack !=
-                                              "Live Broadcast") ...[
+                                              lang.translate(
+                                                'live_broadcast',
+                                              )) ...[
                                         if (t > 0.3)
                                           SizedBox(
                                             height: 20 * t,
@@ -465,7 +475,13 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                               ),
                                               const SizedBox(width: 8),
                                               Text(
-                                                "ON ${station.name.toUpperCase()}",
+                                                lang
+                                                    .translate('on_station')
+                                                    .replaceAll(
+                                                      '{0}',
+                                                      station.name
+                                                          .toUpperCase(),
+                                                    ),
                                                 style: const TextStyle(
                                                   fontSize: 12.0,
                                                   color: Colors.white60,
@@ -522,9 +538,11 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                                                 provider.volume,
                                                           ),
                                                     ),
-                                                    const Text(
-                                                      "NOW PLAYING",
-                                                      style: TextStyle(
+                                                    Text(
+                                                      lang.translate(
+                                                        'now_playing',
+                                                      ),
+                                                      style: const TextStyle(
                                                         fontSize: 9,
                                                         fontWeight:
                                                             FontWeight.bold,
@@ -633,8 +651,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                                                   .volume,
                                                             ),
                                                       ),
-                                                      const Text(
-                                                        "NOW PLAYING",
+                                                      Text(
+                                                        lang.translate(
+                                                          'now_playing',
+                                                        ),
                                                         style: TextStyle(
                                                           fontSize: 9,
                                                           fontWeight:
@@ -683,7 +703,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                   color: Colors.white,
                   size: 22,
                 ),
-                tooltip: "Find New Music",
+                tooltip: lang.translate('find_new_music'),
                 onPressed: () {
                   Navigator.push(
                     context,

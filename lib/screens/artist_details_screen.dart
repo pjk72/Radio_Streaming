@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'trending_details_screen.dart';
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 import 'package:provider/provider.dart';
 
 class ArtistDetailsScreen extends StatefulWidget {
@@ -254,7 +255,10 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                     artistInfo?['strGenre'] ??
                                     artistInfo?['primaryGenreName'] ??
                                     widget.genre ??
-                                    "Music";
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('music');
 
                                 // Find latest release logic (removed)
 
@@ -273,7 +277,12 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                           if (style != null) _buildBadge(style),
                                           if (formed != null)
                                             _buildBadge(
-                                              "Est. $formed",
+                                              Provider.of<LanguageProvider>(
+                                                    context,
+                                                    listen: false,
+                                                  )
+                                                  .translate('est_year')
+                                                  .replaceAll('{0}', formed),
                                               icon: Icons.calendar_today,
                                             ),
                                           _buildBadge(
@@ -300,7 +309,10 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                "Biography",
+                                                Provider.of<LanguageProvider>(
+                                                  context,
+                                                  listen: false,
+                                                ).translate('biography'),
                                                 style: TextStyle(
                                                   color: Colors.white
                                                       .withValues(alpha: 0.9),
@@ -329,7 +341,10 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                 vertical: 8.0,
                               ),
                               child: Text(
-                                "Important Discography",
+                                Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('important_discography'),
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.9),
                                   fontSize: 22,
@@ -356,13 +371,18 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                               }
 
                               if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                                return const SliverToBoxAdapter(
+                                return SliverToBoxAdapter(
                                   child: Padding(
-                                    padding: EdgeInsets.all(32.0),
+                                    padding: const EdgeInsets.all(32.0),
                                     child: Center(
                                       child: Text(
-                                        "No albums found.",
-                                        style: TextStyle(color: Colors.white54),
+                                        Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        ).translate('no_albums_found'),
+                                        style: const TextStyle(
+                                          color: Colors.white54,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -476,7 +496,10 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                             const SizedBox(height: 8),
                                             Text(
                                               album['collectionName'] ??
-                                                  "Unknown Album",
+                                                  Provider.of<LanguageProvider>(
+                                                    context,
+                                                    listen: false,
+                                                  ).translate('unknown_album'),
                                               style: const TextStyle(
                                                 color: Colors.white,
                                                 fontWeight: FontWeight.bold,
@@ -487,7 +510,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              "${album['releaseDate']?.substring(0, 4) ?? '-'} • ${album['primaryGenreName'] ?? 'Music'}",
+                                              "${album['releaseDate']?.substring(0, 4) ?? '-'} • ${album['primaryGenreName'] ?? Provider.of<LanguageProvider>(context, listen: false).translate('music')}",
                                               style: const TextStyle(
                                                 color: Colors.white54,
                                                 fontSize: 11,
@@ -496,7 +519,16 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                             Text(
-                                              "${album['trackCount'] ?? '?'} tracks",
+                                              Provider.of<LanguageProvider>(
+                                                    context,
+                                                    listen: false,
+                                                  )
+                                                  .translate('tracks_count')
+                                                  .replaceAll(
+                                                    '{0}',
+                                                    (album['trackCount'] ?? '?')
+                                                        .toString(),
+                                                  ),
                                               style: TextStyle(
                                                 color: Colors.white.withValues(
                                                   alpha: 0.3,
@@ -592,7 +624,15 @@ class _ExternalBioTextState extends State<ExternalBioText> {
                 });
               },
               child: Text(
-                _expanded ? "Show Less" : "Read More",
+                _expanded
+                    ? Provider.of<LanguageProvider>(
+                        context,
+                        listen: false,
+                      ).translate('show_less')
+                    : Provider.of<LanguageProvider>(
+                        context,
+                        listen: false,
+                      ).translate('read_more'),
                 style: const TextStyle(
                   color: Colors.blueAccent,
                   fontWeight: FontWeight.bold,

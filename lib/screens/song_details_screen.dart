@@ -12,8 +12,9 @@ import 'package:palette_generator/palette_generator.dart';
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
 
-import 'artist_details_screen.dart';
+import '../providers/language_provider.dart';
 import 'trending_details_screen.dart';
+import 'artist_details_screen.dart';
 import '../services/lyrics_service.dart';
 import '../services/entitlement_service.dart';
 
@@ -160,12 +161,15 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     _lastOrientation = currentOrientation;
 
     if (station == null) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
           child: Text(
-            "No station selected",
-            style: TextStyle(color: Colors.white),
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('no_station_selected'),
+            style: const TextStyle(color: Colors.white),
           ),
         ),
       );
@@ -316,8 +320,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                     const SizedBox(height: 8),
                                     Text(
                                       provider.isFetchingLyrics
-                                          ? "Loading lyrics..."
-                                          : "No lyrics found",
+                                          ? Provider.of<LanguageProvider>(
+                                              context,
+                                              listen: false,
+                                            ).translate('loading_lyrics')
+                                          : Provider.of<LanguageProvider>(
+                                              context,
+                                              listen: false,
+                                            ).translate('no_lyrics_found'),
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         color: Colors.white54,
@@ -333,9 +343,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                           Icons.refresh_rounded,
                                           color: Colors.white,
                                         ),
-                                        label: const Text(
-                                          "Retry Search",
-                                          style: TextStyle(color: Colors.white),
+                                        label: Text(
+                                          Provider.of<LanguageProvider>(
+                                            context,
+                                            listen: false,
+                                          ).translate('retry_search'),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                          ),
                                         ),
                                         style: TextButton.styleFrom(
                                           backgroundColor: Colors.white10,
@@ -435,9 +450,12 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                     size: 20,
                                   ),
                                   const SizedBox(width: 10),
-                                  const Text(
-                                    "Lyrics",
-                                    style: TextStyle(
+                                  Text(
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('lyrics'),
+                                    style: const TextStyle(
                                       color: Colors.white30,
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -492,7 +510,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         color: Colors.white54,
                                         size: 20,
                                       ),
-                                      tooltip: 'Sync Lyrics',
+                                      tooltip: Provider.of<LanguageProvider>(
+                                        context,
+                                        listen: false,
+                                      ).translate('sync_lyrics'),
                                       onPressed: () {
                                         _openSyncOverlay(context, provider);
                                       },
@@ -503,7 +524,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                       color: Colors.white54,
                                       size: 20,
                                     ),
-                                    tooltip: 'Retry Search',
+                                    tooltip: Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('retry_search'),
                                     onPressed: () {
                                       provider.fetchLyrics(force: true);
                                     },
@@ -515,7 +539,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         color: Colors.white54,
                                         size: 20,
                                       ),
-                                      tooltip: 'Copy Lyrics',
+                                      tooltip: Provider.of<LanguageProvider>(
+                                        context,
+                                        listen: false,
+                                      ).translate('copy_lyrics'),
                                       onPressed: () {
                                         final text = provider
                                             .currentLyrics
@@ -528,11 +555,16 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
-                                          const SnackBar(
+                                          SnackBar(
                                             content: Text(
-                                              'Lyrics copied to clipboard',
+                                              Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              ).translate('lyrics_copied'),
                                             ),
-                                            duration: Duration(seconds: 2),
+                                            duration: const Duration(
+                                              seconds: 2,
+                                            ),
                                           ),
                                         );
                                       },
@@ -869,7 +901,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                               ? provider.currentTrack
                                     .replaceFirst("⬇️ ", "")
                                     .replaceFirst("📱 ", "")
-                              : "Live Broadcast",
+                              : Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('live_broadcast'),
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -887,7 +922,11 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     cursor:
                         (provider.currentArtist.isNotEmpty &&
                             (provider.currentPlayingPlaylistId != null ||
-                                (provider.currentTrack != "Live Broadcast" &&
+                                (provider.currentTrack !=
+                                        Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        ).translate('live_broadcast') &&
                                     !isDefaultLogo)))
                         ? SystemMouseCursors.click
                         : SystemMouseCursors.basic,
@@ -895,7 +934,11 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       onTap:
                           (provider.currentArtist.isNotEmpty &&
                               (provider.currentPlayingPlaylistId != null ||
-                                  (provider.currentTrack != "Live Broadcast" &&
+                                  (provider.currentTrack !=
+                                          Provider.of<LanguageProvider>(
+                                            context,
+                                            listen: false,
+                                          ).translate('live_broadcast') &&
                                       !isDefaultLogo)))
                           ? () {
                               Navigator.of(context).push(
@@ -924,7 +967,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                               (provider.currentArtist.isNotEmpty &&
                                   (provider.currentPlayingPlaylistId != null ||
                                       (provider.currentTrack !=
-                                              "Live Broadcast" &&
+                                              Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              ).translate('live_broadcast') &&
                                           !isDefaultLogo)))
                               ? TextDecoration.underline
                               : null,
@@ -1041,8 +1087,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                 : Colors.white54,
                             iconSize: 28,
                             tooltip: provider.currentSongIsSaved
-                                ? "Already saved"
-                                : "Add to Genre Playlist",
+                                ? Provider.of<LanguageProvider>(
+                                    context,
+                                    listen: false,
+                                  ).translate('already_saved')
+                                : Provider.of<LanguageProvider>(
+                                    context,
+                                    listen: false,
+                                  ).translate('add_to_genre_playlist'),
                             onPressed: provider.currentSongIsSaved
                                 ? null
                                 : () async {
@@ -1059,7 +1111,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                               0xFF1a4d2e,
                                             ),
                                             content: Text(
-                                              "Added to $genre Playlist",
+                                              Provider.of<LanguageProvider>(
+                                                    context,
+                                                    listen: false,
+                                                  )
+                                                  .translate(
+                                                    'added_to_playlist',
+                                                  )
+                                                  .replaceAll('{0}', genre),
                                             ),
                                             duration: const Duration(
                                               seconds: 2,
@@ -1070,9 +1129,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
-                                          const SnackBar(
+                                          SnackBar(
                                             content: Text(
-                                              "Could not identify song to save.",
+                                              Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              ).translate(
+                                                'could_not_identify_song',
+                                              ),
                                             ),
                                           ),
                                         );
@@ -1176,8 +1240,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                       const SizedBox(width: 12),
                                       Text(
                                         isOffline
-                                            ? "Song is saved offline"
-                                            : "Song is on your device",
+                                            ? Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              ).translate('song_saved_offline')
+                                            : Provider.of<LanguageProvider>(
+                                                context,
+                                                listen: false,
+                                              ).translate('song_on_device'),
                                         style: const TextStyle(
                                           color: Colors.white,
                                         ),
@@ -1938,9 +2008,12 @@ class _DraggableSyncOverlayState extends State<_DraggableSyncOverlay> {
                             color: Colors.white38,
                             size: 20,
                           ),
-                          const Text(
-                            "Sync Lyrics",
-                            style: TextStyle(
+                          Text(
+                            Provider.of<LanguageProvider>(
+                              context,
+                              listen: false,
+                            ).translate('sync_lyrics'),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1962,7 +2035,12 @@ class _DraggableSyncOverlayState extends State<_DraggableSyncOverlay> {
                     child: Column(
                       children: [
                         Text(
-                          'Offset: ${currentOffsetSecs.toStringAsFixed(2)}s',
+                          Provider.of<LanguageProvider>(context, listen: false)
+                              .translate('offset_secs')
+                              .replaceAll(
+                                '{0}',
+                                currentOffsetSecs.toStringAsFixed(2),
+                              ),
                           style: const TextStyle(
                             color: Colors.white70,
                             fontWeight: FontWeight.bold,
@@ -2036,9 +2114,12 @@ class _DraggableSyncOverlayState extends State<_DraggableSyncOverlay> {
                             widget.provider.setLyricsOffset(Duration.zero);
                             setState(() {});
                           },
-                          child: const Text(
-                            "Reset",
-                            style: TextStyle(
+                          child: Text(
+                            Provider.of<LanguageProvider>(
+                              context,
+                              listen: false,
+                            ).translate('reset'),
+                            style: const TextStyle(
                               color: Colors.white54,
                               fontSize: 12,
                             ),

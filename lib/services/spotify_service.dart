@@ -460,7 +460,7 @@ class SpotifyService {
     try {
       final encodedQuery = Uri.encodeComponent(query);
       final url =
-          "https://api.spotify.com/v1/search?q=$encodedQuery&type=playlist&limit=20";
+          "https://api.spotify.com/v1/search?q=$encodedQuery&type=playlist&limit=50";
 
       final response = await http.get(
         Uri.parse(url),
