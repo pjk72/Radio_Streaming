@@ -407,4 +407,7 @@ final Map<String, String> zh = {
   'now_playing': '正在播放',
   'find_new_music': '寻找新音乐',
   'unknown_title': '未知标题',
+  'share': '分享',
+  'share_song_text':
+      '🎵 来自 *MusicStream* 的分享 - {1} 的 {0}:\n{2}\n\n📱 下载 MusicStream 应用:\n{3}',
 };

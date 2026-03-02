@@ -416,4 +416,7 @@ final Map<String, String> es = {
   'now_playing': 'REPRODUCIENDO AHORA',
   'find_new_music': 'Buscar nueva música',
   'unknown_title': 'Título desconocido',
+  'share': 'Compartir',
+  'share_song_text':
+      '🎵 Compartido desde *MusicStream* - {0} de {1}:\n{2}\n\n📱 Descarga la aplicación MusicStream:\n{3}',
 };

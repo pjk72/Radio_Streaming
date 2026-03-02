@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widget_previews.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -1211,6 +1212,32 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               }
                             },
                           ),
+                          if (effectivePlaylist != null &&
+                              (effectivePlaylist!.id == 'favorites' ||
+                                  effectivePlaylist!.creator != 'local') &&
+                              Provider.of<EntitlementService>(
+                                    context,
+                                    listen: false,
+                                  ).getFeatureLimit('download_songs') !=
+                                  0)
+                            IconButton(
+                              icon: Icon(
+                                Icons.download_rounded,
+                                size: 32,
+                                color: headerContrastColor,
+                              ),
+                              tooltip: Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              ).translate('download'),
+                              onPressed: () {
+                                _downloadPlaylist(
+                                  context,
+                                  provider,
+                                  effectivePlaylist!,
+                                );
+                              },
+                            ),
                           PopupMenuButton<String>(
                             icon: Icon(
                               Icons.more_vert_rounded,
@@ -5526,9 +5553,94 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   }
                                 }
                               }
+                            } else if (value == 'share') {
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (ctx) => const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.redAccent,
+                                  ),
+                                ),
+                              );
+
+                              try {
+                                final links = await provider
+                                    .resolveLinks(
+                                      title: song.title,
+                                      artist: song.artist,
+                                      spotifyUrl: song.spotifyUrl,
+                                      youtubeUrl: song.youtubeUrl,
+                                    )
+                                    .timeout(
+                                      const Duration(seconds: 10),
+                                      onTimeout: () {
+                                        return <String, String>{};
+                                      },
+                                    );
+
+                                if (!mounted) return;
+                                Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                ).pop();
+
+                                String youtubeStr = '';
+                                final youtubeLink =
+                                    links['youtube'] ?? song.youtubeUrl;
+                                if (youtubeLink != null) {
+                                  final videoId = YoutubePlayer.convertUrlToId(
+                                    youtubeLink,
+                                  );
+                                  if (videoId != null) {
+                                    youtubeStr = 'https://youtu.be/$videoId';
+                                  } else {
+                                    youtubeStr = youtubeLink;
+                                  }
+                                }
+
+                                final appLink =
+                                    'https://play.google.com/store/apps/details?id=com.fazio.musicstream';
+
+                                final rawText = Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('share_song_text');
+
+                                final String text = rawText
+                                    .replaceAll('{0}', song.title)
+                                    .replaceAll('{1}', song.artist)
+                                    .replaceAll('{2}', youtubeStr.trim())
+                                    .replaceAll('{3}', appLink);
+
+                                await Share.share(text);
+                              } catch (e) {
+                                if (mounted) {
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).pop();
+                                }
+                                debugPrint('Error sharing: $e');
+                              }
                             }
                           },
                           itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.share_rounded, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('share'),
+                                  ),
+                                ],
+                              ),
+                            ),
                             PopupMenuItem(
                               value: 'video',
                               child: Row(

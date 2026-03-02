@@ -414,4 +414,7 @@ final Map<String, String> ru = {
   'now_playing': 'СЕЙЧАС ИГРАЕТ',
   'find_new_music': 'Найти новую музыку',
   'unknown_title': 'Неизвестное название',
+  'share': 'Поделиться',
+  'share_song_text':
+      '🎵 Поделились из *MusicStream* - {0} от {1}:\n{2}\n\n📱 Скачать приложение MusicStream:\n{3}',
 };

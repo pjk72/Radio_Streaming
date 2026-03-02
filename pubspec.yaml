@@ -74,6 +74,7 @@ dependencies:
   on_audio_query: ^2.9.0
   shelf: ^1.4.1
   flutter_local_notifications: ^20.0.0
+  share_plus: ^12.0.1
 
 
 dev_dependencies:

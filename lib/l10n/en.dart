@@ -441,4 +441,7 @@ final Map<String, String> en = {
   'now_playing': 'NOW PLAYING',
   'find_new_music': 'Find New Music',
   'unknown_title': 'Unknown Title',
+  'share': 'Share',
+  'share_song_text':
+      '🎵 Shared from *MusicStream* - {0} by {1}:\n{2}\n\n📱 Download the MusicStream app:\n{3}',
 };
