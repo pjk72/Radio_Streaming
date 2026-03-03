@@ -795,6 +795,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   final Map<String, bool> _categoryCompactViews = {};
 
+  double _currentSpeed = 1.0;
+  double get currentSpeed => _currentSpeed;
+
+  Future<void> setAudioSpeed(double speed) async {
+    _currentSpeed = speed;
+    if (_audioHandler is RadioAudioHandler) {
+      await _audioHandler.setSpeed(speed);
+    }
+    notifyListeners();
+  }
+
   bool isCategoryCompact(String category) {
     return _categoryCompactViews[category] ?? _isCompactView;
   }
@@ -2376,7 +2387,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   String? _currentLocalPath;
 
   LyricsData _currentLyrics = LyricsData.empty();
-  LyricsData get currentLyrics => _currentLyrics;
+  LyricsData get currentLyrics =>
+      _currentLyrics; // This will hold translated or original
+
+  LyricsData? _originalLyrics;
+  bool _isLyricsTranslated = false;
+  bool get isLyricsTranslated => _isLyricsTranslated;
+
+  bool _isTranslatingLyrics = false;
+  bool get isTranslatingLyrics => _isTranslatingLyrics;
+
   bool _isFetchingLyrics = false;
   bool get isFetchingLyrics => _isFetchingLyrics;
   DateTime? _currentTrackStartTime;
@@ -4651,6 +4671,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // 1. Auto-Clear Logic: Always clear if song changed
     if (force || _lastLyricsSearch != searchKey) {
       _currentLyrics = LyricsData.empty();
+      _originalLyrics = null;
+      _isLyricsTranslated = false;
       _lyricsOffset = Duration.zero;
       notifyListeners();
     }
@@ -4701,6 +4723,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       if (_lastLyricsSearch == searchKey) {
         if (results.lines.isNotEmpty) {
           _currentLyrics = results;
+          _originalLyrics = results;
+          _isLyricsTranslated = false;
         }
       }
     } catch (e) {
@@ -4712,6 +4736,42 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         _isFetchingLyrics = false;
         notifyListeners();
       }
+    }
+  }
+
+  Future<void> toggleLyricsTranslation(String langCode) async {
+    if (_currentLyrics.lines.isEmpty && _originalLyrics == null) return;
+
+    // If already translated, revert to original
+    if (_isLyricsTranslated && _originalLyrics != null) {
+      _currentLyrics = _originalLyrics!;
+      _isLyricsTranslated = false;
+      notifyListeners();
+      return;
+    }
+
+    // Begin translation
+    _isTranslatingLyrics = true;
+    notifyListeners();
+
+    try {
+      final baseLyrics = _originalLyrics ?? _currentLyrics;
+      // Use language code for translation (e.g. 'it', 'es', 'zh')
+      // Map basic locale string directly
+      String targetLang = langCode.split('_').first;
+
+      final translated = await _lyricsService.translateLyrics(
+        baseLyrics,
+        targetLang,
+      );
+
+      _currentLyrics = translated;
+      _isLyricsTranslated = true;
+    } catch (e) {
+      LogService().log("Error in toggleLyricsTranslation: $e");
+    } finally {
+      _isTranslatingLyrics = false;
+      notifyListeners();
     }
   }
 

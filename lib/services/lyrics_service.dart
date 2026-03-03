@@ -298,4 +298,73 @@ class LyricsService {
 
     return clean.trim();
   }
+
+  Future<LyricsData> translateLyrics(
+    LyricsData original,
+    String targetLang,
+  ) async {
+    if (original.lines.isEmpty) return original;
+
+    try {
+      LogService().log("Translating lyrics to $targetLang...");
+
+      // We process lines in chunks if they are too long, but for lyrics,
+      // it's usually safe to join with a unique separator.
+      // E.g., a special character combination:  "  |||  "
+      final textToTranslate = original.lines.map((l) => l.text).join(' \n ');
+
+      final uri = Uri.parse(
+        'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetLang&dt=t',
+      );
+
+      final response = await http
+          .post(uri, body: {'q': textToTranslate})
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final translatedLinesData = data[0] as List;
+        String fullTranslation = '';
+
+        for (var part in translatedLinesData) {
+          if (part[0] != null) {
+            fullTranslation += part[0].toString();
+          }
+        }
+
+        final translatedTextLines = fullTranslation.split('\n');
+
+        List<LyricLine> newLines = [];
+        for (int i = 0; i < original.lines.length; i++) {
+          final originalLine = original.lines[i];
+          final translatedText = i < translatedTextLines.length
+              ? translatedTextLines[i].trim()
+              : '';
+
+          String combinedText = originalLine.text;
+          if (translatedText.isNotEmpty &&
+              translatedText.toLowerCase() != originalLine.text.toLowerCase()) {
+            combinedText = "${originalLine.text}\n$translatedText";
+          }
+
+          newLines.add(LyricLine(time: originalLine.time, text: combinedText));
+        }
+
+        LogService().log("Lyrics successfully translated to $targetLang.");
+        return LyricsData(
+          lines: newLines,
+          source: '${original.source} (Translated)',
+          isSynced: original.isSynced,
+        );
+      } else {
+        LogService().log(
+          "Translation API Error: ${response.statusCode} - ${response.body}",
+        );
+      }
+    } catch (e) {
+      LogService().log("Translation error: $e");
+    }
+
+    return original;
+  }
 }

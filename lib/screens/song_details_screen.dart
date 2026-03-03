@@ -449,19 +449,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                     color: accentColor.withValues(alpha: 0.7),
                                     size: 20,
                                   ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    Provider.of<LanguageProvider>(
-                                      context,
-                                      listen: false,
-                                    ).translate('lyrics'),
-                                    style: const TextStyle(
-                                      color: Colors.white30,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
                                   const SizedBox(width: 12),
                                   if (provider.currentTrack != "Live Broadcast")
                                     Expanded(
@@ -502,6 +489,42 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                         strokeWidth: 2,
                                         color: Colors.white70,
                                       ),
+                                    ),
+                                  if (provider.currentLyrics.lines.isNotEmpty)
+                                    IconButton(
+                                      icon: provider.isTranslatingLyrics
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white70,
+                                              ),
+                                            )
+                                          : Icon(
+                                              Icons.g_translate_rounded,
+                                              color: provider.isLyricsTranslated
+                                                  ? Theme.of(
+                                                      context,
+                                                    ).primaryColor
+                                                  : Colors.white54,
+                                              size: 20,
+                                            ),
+                                      tooltip: provider.isLyricsTranslated
+                                          ? 'Show Original'
+                                          : 'Translate (Live)',
+                                      onPressed: provider.isTranslatingLyrics
+                                          ? null
+                                          : () {
+                                              final langCode =
+                                                  Provider.of<LanguageProvider>(
+                                                    context,
+                                                    listen: false,
+                                                  ).resolvedLanguageCode;
+                                              provider.toggleLyricsTranslation(
+                                                langCode,
+                                              );
+                                            },
                                     ),
                                   if (provider.currentLyrics.isSynced)
                                     IconButton(
@@ -716,6 +739,95 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                 fontSize: 18,
               ),
             ),
+          ),
+          // Audio Effects Menu
+          PopupMenuButton<double>(
+            icon: Icon(
+              Icons.graphic_eq_rounded,
+              color: provider.currentSpeed != 1.0
+                  ? Theme.of(context).primaryColor
+                  : Colors.white70,
+              size: 24,
+            ),
+            tooltip: 'Audio Effects',
+            color: Colors.grey[900],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            onSelected: (speed) {
+              provider.setAudioSpeed(speed);
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<double>>[
+              PopupMenuItem<double>(
+                value: 0.85,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.speed_rounded,
+                      color: provider.currentSpeed == 0.85
+                          ? Theme.of(context).primaryColor
+                          : Colors.white,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Slowed + Reverb',
+                      style: TextStyle(
+                        color: provider.currentSpeed == 0.85
+                            ? Theme.of(context).primaryColor
+                            : Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<double>(
+                value: 1.0,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.play_circle_outline_rounded,
+                      color: provider.currentSpeed == 1.0
+                          ? Theme.of(context).primaryColor
+                          : Colors.white,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Normal',
+                      style: TextStyle(
+                        color: provider.currentSpeed == 1.0
+                            ? Theme.of(context).primaryColor
+                            : Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<double>(
+                value: 1.15,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.fast_forward_rounded,
+                      color: provider.currentSpeed == 1.15
+                          ? Theme.of(context).primaryColor
+                          : Colors.white,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Sped Up (Nightcore)',
+                      style: TextStyle(
+                        color: provider.currentSpeed == 1.15
+                            ? Theme.of(context).primaryColor
+                            : Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           _buildVolumeControl(),
         ],
@@ -1775,13 +1887,15 @@ class _LyricsWidgetState extends State<_LyricsWidget> {
                   // Ensure key exists
                   _lineKeys[i] ??= GlobalKey();
 
+                  final parts = line.text.split('\n');
+
                   return Padding(
                     key: _lineKeys[i],
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: AnimatedDefaultTextStyle(
                       duration: const Duration(milliseconds: 300),
                       style: TextStyle(
-                        color: isCurrent ? Colors.white : Colors.white24,
+                        color: isCurrent ? Colors.white : Colors.white54,
                         fontSize: isSynced
                             ? (isCurrent ? 20 : 17)
                             : 22, // Larger font for non-synced lyrics
@@ -1789,18 +1903,46 @@ class _LyricsWidgetState extends State<_LyricsWidget> {
                         fontWeight: (isSynced && isCurrent) || !isSynced
                             ? FontWeight.bold
                             : FontWeight.normal,
-                        shadows: isCurrent && isSynced
-                            ? [
-                                Shadow(
-                                  color: widget.accentColor.withValues(
-                                    alpha: 0.6,
-                                  ),
-                                  blurRadius: 12,
-                                ),
-                              ]
-                            : null,
+                        shadows: [
+                          const Shadow(
+                            color: Colors.black,
+                            blurRadius: 10,
+                            offset: Offset(0, 2),
+                          ),
+                          const Shadow(
+                            color: Colors.black87,
+                            blurRadius: 4,
+                            offset: Offset(1, 1),
+                          ),
+                          if (isCurrent && isSynced)
+                            Shadow(
+                              color: widget.accentColor.withValues(alpha: 0.8),
+                              blurRadius: 16,
+                            ),
+                        ],
                       ),
-                      child: Text(line.text, textAlign: TextAlign.center),
+                      child: parts.length > 1
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(parts.first, textAlign: TextAlign.center),
+                                const SizedBox(height: 6),
+                                Text(
+                                  parts.sublist(1).join('\n'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: isCurrent
+                                        ? Colors.white.withValues(alpha: 0.8)
+                                        : Colors.white.withValues(alpha: 0.4),
+                                    fontSize: isSynced
+                                        ? (isCurrent ? 18 : 15)
+                                        : 20,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(line.text, textAlign: TextAlign.center),
                     ),
                   );
                 }, childCount: widget.lyrics.lines.length),

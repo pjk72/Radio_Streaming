@@ -3684,7 +3684,18 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (e) {
       LogService().log("Error recording background history: $e");
     }
+  }
 
-    _historyTimer = null;
+  @override
+  Future<void> setSpeed(double speed) async {
+    LogService().log("Setting playback speed to $speed");
+    try {
+      await _player.setPlaybackRate(speed);
+      await _nextPlayer.setPlaybackRate(speed);
+
+      playbackState.add(playbackState.value.copyWith(speed: speed));
+    } catch (e) {
+      LogService().log("Error setting playback speed: $e");
+    }
   }
 }

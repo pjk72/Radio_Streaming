@@ -133,7 +133,7 @@ class _LyricsWidgetState extends State<LyricsWidget> {
                           child: AnimatedDefaultTextStyle(
                             duration: const Duration(milliseconds: 300),
                             style: TextStyle(
-                              color: isCurrent ? Colors.white : Colors.white24,
+                              color: isCurrent ? Colors.white : Colors.white54,
                               fontSize: isSynced
                                   ? (isCurrent ? 24 : 18)
                                   : 20, // Larger font for readability
@@ -141,19 +141,65 @@ class _LyricsWidgetState extends State<LyricsWidget> {
                               fontWeight: (isSynced && isCurrent) || !isSynced
                                   ? FontWeight.bold
                                   : FontWeight.normal,
-                              shadows: isCurrent && isSynced
-                                  ? [
-                                      Shadow(
-                                        color: widget.accentColor.withValues(
-                                          alpha: 0.6,
-                                        ),
-                                        blurRadius: 12,
-                                      ),
-                                    ]
-                                  : null,
+                              shadows: [
+                                const Shadow(
+                                  color: Colors.black,
+                                  blurRadius: 10,
+                                  offset: Offset(0, 2),
+                                ),
+                                const Shadow(
+                                  color: Colors.black87,
+                                  blurRadius: 4,
+                                  offset: Offset(1, 1),
+                                ),
+                                if (isCurrent && isSynced)
+                                  Shadow(
+                                    color: widget.accentColor.withValues(
+                                      alpha: 0.8,
+                                    ),
+                                    blurRadius: 16,
+                                  ),
+                              ],
                             ),
                             textAlign: TextAlign.center,
-                            child: Text(line.text),
+                            child: Builder(
+                              builder: (context) {
+                                final style = DefaultTextStyle.of(
+                                  context,
+                                ).style;
+                                if (!line.text.contains('\n')) {
+                                  return Text(line.text);
+                                }
+                                final parts = line.text.split('\n');
+                                final original = parts[0];
+                                final translation = parts.sublist(1).join('\n');
+                                return RichText(
+                                  textAlign: TextAlign.center,
+                                  text: TextSpan(
+                                    style: style,
+                                    children: [
+                                      TextSpan(text: '$original\n'),
+                                      TextSpan(
+                                        text: translation,
+                                        style: TextStyle(
+                                          color: isCurrent
+                                              ? Colors.white.withValues(
+                                                  alpha: 0.8,
+                                                )
+                                              : Colors.white.withValues(
+                                                  alpha: 0.4,
+                                                ),
+                                          fontSize: style.fontSize != null
+                                              ? style.fontSize! * 0.85
+                                              : null,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                         );
                       }, childCount: widget.lyrics.lines.length),
