@@ -23,7 +23,7 @@ class _StationCardState extends State<StationCard> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
-    final isCompact = provider.isCompactView;
+    final isCompact = provider.isCategoryCompact(widget.station.category);
 
     final isPlaying =
         provider.currentStation?.id == widget.station.id &&
@@ -44,23 +44,31 @@ class _StationCardState extends State<StationCard> {
             0.0,
           ),
           decoration: BoxDecoration(
-            // Gradient background for premium feel
+            // Gradient background for premium feel using the station color
             gradient: LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
+              begin: Alignment.centerRight,
+              end: Alignment.centerLeft,
               colors: [
-                Color(int.parse(widget.station.color)).withValues(alpha: 0.15),
-                Theme.of(context).colorScheme.surface.withValues(alpha: 0.05),
+                Color(
+                  int.parse(widget.station.color),
+                ).withValues(alpha: 0.05), // Light under the photo
+                Color(int.parse(widget.station.color)).withValues(
+                  alpha: 0.4,
+                ), // Less intense color at the edge of the photo
+                Color(int.parse(widget.station.color)).withValues(
+                  alpha: 0.02,
+                ), // Very smooth, almost transparent fade towards the far left
               ],
+              stops: const [0.3, 0.55, 1.0],
             ),
             borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
             border: Border.all(
-              color: _isHovering
+              color: isPlaying || _isHovering
                   ? Color(
                       int.parse(widget.station.color),
                     ).withValues(alpha: 0.8)
                   : Theme.of(context).dividerColor.withValues(alpha: 0.1),
-              width: _isHovering ? 1.5 : 1,
+              width: isPlaying ? 2.0 : (_isHovering ? 1.5 : 1.0),
             ),
             boxShadow: _isHovering
                 ? [
@@ -79,189 +87,273 @@ class _StationCardState extends State<StationCard> {
             borderRadius: BorderRadius.circular(isCompact ? 16 : 24),
             child: Stack(
               children: [
-                // Background Artist Image if Playing
-                // Background Artist Image if Playing
-                if (isPlaying && provider.currentArtistImage != null)
+                if (isCompact) ...[
                   Positioned.fill(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: FractionallySizedBox(
-                        widthFactor: 0.65, // Occupy only 65% of width
-                        child: Opacity(
-                          opacity: 0.5, // More transparent
-                          child: ShaderMask(
-                            shaderCallback: (rect) {
-                              return const LinearGradient(
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                                colors: [Colors.transparent, Colors.white],
-                                stops: [0.0, 1.0], // Fade from left to right
-                              ).createShader(rect);
-                            },
-                            blendMode: BlendMode.dstIn,
-                            child: Image.network(
-                              provider.currentArtistImage!,
-                              fit: BoxFit.cover,
-                              alignment: Alignment.topCenter,
-                              errorBuilder: (_, __, ___) => const SizedBox(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    child: _buildVisual(widget.station, isBackground: true),
                   ),
-
-                if (isCompact && isPlaying)
                   Positioned.fill(
                     child: Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            Color(
-                              int.parse(widget.station.color),
-                            ).withValues(alpha: 0.3),
-                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.1),
+                            Colors.black.withValues(alpha: 0.9),
                           ],
-                          begin: Alignment.centerRight,
-                          end: Alignment.centerLeft,
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
                         ),
                       ),
-                      child: Align(
-                        alignment: Alignment.bottomRight,
+                    ),
+                  ),
+                  if (isPlaying)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surface.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                         child: Row(
-                          mainAxisSize: MainAxisSize.max,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Flexible(
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  right: 8,
-                                  bottom: 0,
-                                ),
-                                child: ShaderMask(
-                                  shaderCallback: (bounds) => LinearGradient(
-                                    colors: [
-                                      Theme.of(context).colorScheme.surface
-                                          .withValues(alpha: 0.6),
-                                      Theme.of(context).colorScheme.surface
-                                          .withValues(alpha: 0.1),
-                                    ],
-                                    begin: Alignment.bottomCenter,
-                                    end: Alignment.topCenter,
-                                  ).createShader(bounds),
-                                  blendMode: BlendMode.dstIn,
-                                  child: RealisticVisualizer(
-                                    color: Color(
-                                      int.parse(widget.station.color),
-                                    ),
-                                    barCount: 20,
-                                    isBackground: true,
-                                    volume: provider.volume,
-                                  ),
-                                ),
+                            SizedBox(
+                              width: 16,
+                              height: 10,
+                              child: RealisticVisualizer(
+                                color: Colors.white,
+                                barCount: 5,
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ),
-
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isCompact ? 12.0 : 20.0,
-                    vertical: isCompact ? 8.0 : 12.0,
-                  ),
-                  child: Row(
-                    children: [
-                      // Icon / Logo
-                      Container(
-                        width: isCompact ? 40 : 56,
-                        height: isCompact ? 40 : 56,
-                        padding: EdgeInsets.all(isCompact ? 6 : 10),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).canvasColor.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(
-                            isCompact ? 10 : 14,
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.station.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                            color: Colors.white,
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Theme.of(
-                                context,
-                              ).shadowColor.withValues(alpha: 0.2),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        child: Center(child: _buildVisual(widget.station)),
-                      ),
-
-                      SizedBox(width: isCompact ? 12 : 20),
-
-                      // Info
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.station.name,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: isCompact ? 15 : 18,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.titleMedium?.color,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.station.genre.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.0,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  // Right-aligned Station Image Background
+                  Positioned.fill(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: FractionallySizedBox(
+                        widthFactor: 0.45, // Occupy right 45% and fade out
+                        child: ShaderMask(
+                          shaderCallback: (rect) {
+                            return const LinearGradient(
+                              begin: Alignment.centerRight,
+                              end: Alignment.centerLeft,
+                              colors: [Colors.white, Colors.transparent],
+                              stops: [0.4, 1.0], // Starts fading at 40%
+                            ).createShader(rect);
+                          },
+                          blendMode: BlendMode.dstIn,
+                          child: Opacity(
+                            opacity: 0.8, // More visible than before
+                            child: _buildVisual(
+                              widget.station,
+                              isBackground: true,
                             ),
-                            SizedBox(height: isCompact ? 2 : 4),
-                            Text(
-                              widget.station.genre.toUpperCase(),
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.color
-                                    ?.withValues(alpha: 0.7),
-                                fontSize: isCompact ? 9 : 11,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1.0,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                          ),
                         ),
                       ),
+                    ),
+                  ),
+                  // Background Artist Image if Playing
+                  if (isPlaying && provider.currentArtistImage != null)
+                    Positioned.fill(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: FractionallySizedBox(
+                          widthFactor: 0.65, // Occupy only 65% of width
+                          child: Opacity(
+                            opacity: 0.5, // More transparent
+                            child: ShaderMask(
+                              shaderCallback: (rect) {
+                                return const LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [Colors.transparent, Colors.white],
+                                  stops: [0.0, 1.0], // Fade from left to right
+                                ).createShader(rect);
+                              },
+                              blendMode: BlendMode.dstIn,
+                              child: Image.network(
+                                provider.currentArtistImage!,
+                                fit: BoxFit.cover,
+                                alignment: Alignment.topCenter,
+                                errorBuilder: (_, __, ___) => const SizedBox(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
 
-                      // Favorite & Live Status (Hidden in Compact View if Playing)
-                      if (!isCompact)
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (isPlaying) ...[
-                              const SizedBox(height: 4),
-                              _LiveBadge(
-                                color:
-                                    Theme.of(context).textTheme.bodySmall?.color
-                                        ?.withValues(alpha: 0.7) ??
-                                    Colors.white70,
-                                isRecognizing: provider.isRecognizing,
-                                isCompact: isCompact,
+                  if (isCompact && isPlaying)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(
+                                int.parse(widget.station.color),
+                              ).withValues(alpha: 0.3),
+                              Colors.transparent,
+                            ],
+                            begin: Alignment.centerRight,
+                            end: Alignment.centerLeft,
+                          ),
+                        ),
+                        child: Align(
+                          alignment: Alignment.bottomRight,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.max,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Flexible(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: 8,
+                                    bottom: 0,
+                                  ),
+                                  child: ShaderMask(
+                                    shaderCallback: (bounds) => LinearGradient(
+                                      colors: [
+                                        Theme.of(context).colorScheme.surface
+                                            .withValues(alpha: 0.6),
+                                        Theme.of(context).colorScheme.surface
+                                            .withValues(alpha: 0.1),
+                                      ],
+                                      begin: Alignment.bottomCenter,
+                                      end: Alignment.topCenter,
+                                    ).createShader(bounds),
+                                    blendMode: BlendMode.dstIn,
+                                    child: RealisticVisualizer(
+                                      color: Color(
+                                        int.parse(widget.station.color),
+                                      ),
+                                      barCount: 20,
+                                      isBackground: true,
+                                      volume: provider.volume,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
-                          ],
+                          ),
                         ),
-                    ],
+                      ),
+                    ),
+
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isCompact ? 12.0 : 20.0,
+                      vertical: isCompact ? 8.0 : 12.0,
+                    ),
+                    child: Row(
+                      children: [
+                        // Info
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      widget.station.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: isCompact ? 15 : 18,
+                                        color: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium?.color,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (!isCompact && isPlaying) ...[
+                                    const SizedBox(width: 8),
+                                    _LiveBadge(
+                                      color:
+                                          Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.color
+                                              ?.withValues(alpha: 0.7) ??
+                                          Colors.white70,
+                                      isRecognizing: provider.isRecognizing,
+                                      isCompact: isCompact,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              SizedBox(height: isCompact ? 2 : 4),
+                              Text(
+                                widget.station.genre.toUpperCase(),
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.color
+                                      ?.withValues(alpha: 0.7),
+                                  fontSize: isCompact ? 9 : 11,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.0,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Live status was relocated next to the radio name
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -272,19 +364,25 @@ class _StationCardState extends State<StationCard> {
 
   // _buildVisual and _buildIcon methods remain the same...
 
-  Widget _buildVisual(Station station) {
+  Widget _buildVisual(Station station, {bool isBackground = false}) {
     if (station.logo != null && station.logo!.isNotEmpty) {
       if (station.logo!.startsWith('assets/')) {
         return Image.asset(
           station.logo!,
           fit: BoxFit.cover,
-          errorBuilder: (c, e, s) => _buildIcon(station.icon),
+          width: isBackground ? double.infinity : null,
+          height: isBackground ? double.infinity : null,
+          errorBuilder: (c, e, s) =>
+              _buildIcon(station.icon, isBackground: isBackground),
         );
       }
       return Image.network(
         station.logo!,
         fit: BoxFit.cover,
-        errorBuilder: (c, e, s) => _buildIcon(station.icon),
+        width: isBackground ? double.infinity : null,
+        height: isBackground ? double.infinity : null,
+        errorBuilder: (c, e, s) =>
+            _buildIcon(station.icon, isBackground: isBackground),
       );
     }
 
@@ -296,27 +394,31 @@ class _StationCardState extends State<StationCard> {
         return Image.network(
           defaultImg,
           fit: BoxFit.cover,
-          errorBuilder: (c, e, s) => _buildIcon(station.icon),
+          errorBuilder: (c, e, s) => _buildIcon(station.icon, isBackground: isBackground),
         );
       }
       return Image.asset(
         defaultImg,
         fit: BoxFit.cover,
-        errorBuilder: (c, e, s) => _buildIcon(station.icon),
+        errorBuilder: (c, e, s) => _buildIcon(station.icon, isBackground: isBackground),
       );
     }
     */
 
-    return _buildIcon(station.icon);
+    return _buildIcon(station.icon, isBackground: isBackground);
   }
 
-  Widget _buildIcon(String? iconName) {
+  Widget _buildIcon(String? iconName, {bool isBackground = false}) {
     IconData iconData = IconLibrary.getIcon(iconName);
 
-    return FaIcon(
-      iconData,
-      size: 32,
-      color: Color(int.parse(widget.station.color)),
+    return Center(
+      child: FaIcon(
+        iconData,
+        size: isBackground ? 70 : 32,
+        color: Color(
+          int.parse(widget.station.color),
+        ).withValues(alpha: isBackground ? 0.3 : 1.0),
+      ),
     );
   }
 }

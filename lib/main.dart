@@ -25,6 +25,7 @@ import 'widgets/admob_banner_widget.dart';
 import 'services/encryption_service.dart';
 import 'services/entitlement_service.dart';
 import 'widgets/admin_debug_overlay.dart';
+import 'services/app_open_ad_manager.dart';
 
 late AudioHandler audioHandler;
 
@@ -200,6 +201,13 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final entitlements = Provider.of<EntitlementService>(
+        context,
+        listen: false,
+      );
+      AppOpenAdManager().init(entitlements);
+    });
   }
 
   @override
@@ -210,6 +218,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      AppOpenAdManager().showAdIfAvailable();
+    }
     // Attempt to stop the service if the app is being detached (closed)
     // and we are not currently playing (streaming).
     if (state == AppLifecycleState.detached) {
