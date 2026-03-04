@@ -221,14 +221,6 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       AppOpenAdManager().showAdIfAvailable();
     }
-    // Attempt to stop the service if the app is being detached (closed)
-    // and we are not currently playing (streaming).
-    if (state == AppLifecycleState.detached) {
-      if (audioHandler.playbackState.value.playing == false) {
-        // audioHandler.stop(); // Don't stop here, let the system manage the service lifecycle
-        // exit(0); // REMOVED: exit(0) kills the background service too, breaking Android Auto
-      }
-    }
   }
 
   @override

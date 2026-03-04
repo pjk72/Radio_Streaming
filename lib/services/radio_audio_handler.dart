@@ -1,4 +1,3 @@
-// import 'dart:developer' as developer;
 import 'package:http/http.dart' as http; // Added import
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:flutter/foundation.dart';
@@ -33,8 +32,6 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _hasLoggedAndroidAutoStart = false;
   bool _isSwapping = false; // Flag for seamless transition state
   bool _isInAndroidAutoMode = false;
-
-  // ... (existing helper methods if any)
 
   bool _isRetryPending = false;
   bool _internalRetry = false;
@@ -1148,7 +1145,6 @@ class RadioAudioHandler extends BaseAudioHandler
     _expectingStop = false;
     try {
       await _player.stop();
-      // await _player.release();
     } catch (_) {}
     _broadcastState(PlayerState.stopped);
     await super.stop();
@@ -2485,8 +2481,6 @@ class RadioAudioHandler extends BaseAudioHandler
     customAction: CustomMediaAction(name: 'toggle_shuffle'),
   );
 
-  // ... (existing helper methods if any)
-
   void _startStuckMonitor() {
     if (_stuckCheckTimer != null && _stuckCheckTimer!.isActive) return;
 
@@ -3130,7 +3124,6 @@ class RadioAudioHandler extends BaseAudioHandler
 
             if (song.id.isNotEmpty) {
               // Determine Video ID / URL
-              // ... (reuse logic)
               String videoId;
               String finalUrl;
 
@@ -3164,7 +3157,6 @@ class RadioAudioHandler extends BaseAudioHandler
 
               // Resolve URL
               if (song.youtubeUrl == null) {
-                // ... Search Logic ...
                 final yt = YoutubeExplode();
                 final query = "${song.artist} - ${song.title}";
                 try {
@@ -3214,14 +3206,12 @@ class RadioAudioHandler extends BaseAudioHandler
           final bool queueIsReady = extras?['queue_ready'] == true;
 
           if (!queueIsReady && _currentPlayingPlaylistId != p.id) {
-            // ... existing logic ...
             // We need to match the queue IDs to what we just defined in getChildren
             // If we use ctx_ IDs in getChildren, we should probably use them in queue too?
             // YES. If Android Auto sees ctx_ IDs, the queue must have ctx_ IDs for highlighting.
 
             _currentPlayingPlaylistId = p.id;
             // Respect existing Shuffle Mode
-            // _isShuffleMode = false; // REMOVED
 
             _playlistQueue = p.songs.map((ps) {
               final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
@@ -3244,7 +3234,6 @@ class RadioAudioHandler extends BaseAudioHandler
             finalUrl = s.youtubeUrl ?? "https://youtube.com/watch?v=local";
             videoId = s.localPath!; // Use path as unique ID for caching
           } else if (s.youtubeUrl == null) {
-            // ... (resolution logic)
             try {
               final yt = YoutubeExplode();
               final query = "${s.artist} - ${s.title}";
@@ -3396,7 +3385,6 @@ class RadioAudioHandler extends BaseAudioHandler
         final title = trackInfo['title'];
         final artists = trackInfo['artists']?.map((a) => a['name']).join(', ');
         final album = trackInfo['album']?['name'];
-        // final releaseDate = trackInfo['release_date'];
 
         LogService().log("ACRCloud: Match found: $title - $artists");
 

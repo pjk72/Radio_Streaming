@@ -337,7 +337,6 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                     if (t < 0.3) const SizedBox(height: 0),
 
                                     if (station == null) ...[
-                                      // ... existing default view ...
                                       SizedBox(
                                         height: 40 * t,
                                       ), // spacer replacement

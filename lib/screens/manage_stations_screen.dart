@@ -23,9 +23,6 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
   String _searchQuery = '';
 
   bool _isSearching = false;
-  // bool _isGridView = false; - Now in Provider
-  // GroupingMode _groupingMode = GroupingMode.none; - Now in Provider
-
   @override
   void initState() {
     super.initState();

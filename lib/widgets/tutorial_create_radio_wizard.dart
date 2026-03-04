@@ -160,8 +160,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         // Synchronize with existing stations
         final provider = Provider.of<RadioProvider>(context, listen: false);
         final existingStations = provider.stations;
-        // final favorites = provider.favorites; // No longer needed if we exclude them
-
         // Remove stations that are already present in the provider
         stations.removeWhere((s) {
           final sName = (s['name']?.toString() ?? '').toLowerCase();
@@ -171,12 +169,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         // We no longer need to sync selection for existing ones because they are removed.
         // We only show NEW stations.
 
-        /* 
-        // OLD LOGIC: Mark existing as selected
-        for (int i = 0; i < stations.length; i++) {
-           ...
-        }
-        */
+        // We only show NEW stations.
 
         setState(() {
           _searchResults = stations;
@@ -835,9 +828,11 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                             Text(
                               "${station['bitrate'] ?? 0} Kbps",
                               style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withValues(alpha: 0.7),
                                 fontSize: 11,
                               ),
                             ),
@@ -980,9 +975,11 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                             (station['url_resolved'] ?? station['url'])
                                 .toString(),
                             style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.color?.withValues(alpha: 0.5),
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.color
+                                  ?.withValues(alpha: 0.5),
                               fontSize: 10,
                               fontStyle: FontStyle.italic,
                             ),
@@ -1041,4 +1038,3 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     );
   }
 }
-

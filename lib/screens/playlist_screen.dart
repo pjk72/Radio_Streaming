@@ -2333,7 +2333,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               child: covers.isNotEmpty
                   ? _buildCollage(covers)
                   : Image.asset(
-                      'assets/empty_playlist.png',
+                      'assets/empty_playlist.webp',
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Container(
                         color: Colors.white.withValues(alpha: 0.1),

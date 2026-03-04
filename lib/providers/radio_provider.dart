@@ -39,8 +39,6 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/upgrade_proposal.dart';
 import '../services/local_playlist_service.dart';
 
-// ...
-
 class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   List<Station> stations = [];
   static const String _keySavedStations = 'saved_stations';
@@ -770,8 +768,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   DateTime? _lastProcessingTime;
   Duration? _lastMonitoredPosition;
   DateTime? _lastMonitoredPositionTime;
-
-  // ... existing members
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -2363,8 +2359,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   // ... rest of class
-  // final AudioPlayer _audioPlayer = AudioPlayer(); // Removed
-
   Station? _currentStation;
   bool _isPlaying = false;
   double _volume = 0.8;
@@ -2426,7 +2420,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Station? get currentStation => _currentStation;
   bool get isPlaying => _isPlaying;
 
-  //   bool get isLoading => _isLoading; // duplicate removed
   double get volume => _volume;
   List<int> get favorites => _favorites;
   List<String> get metadataLog => _metadataLog;
@@ -3292,9 +3285,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           LogService().log(
             "Playback Processing Timeout (>12s in $state). Skipping (no invalid).",
           );
-          // final idToInvalidate = _audioOnlySongId;
           playNext(false);
-          // _markCurrentSongAsInvalid(songId: idToInvalidate); // RIMOSSO
           _lastProcessingTime = null;
           return;
         }
@@ -3349,9 +3340,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                 debugPrint(
                   "Song has had Zero Duration for >12s in Playing State. Skipping.",
                 );
-                // final idToInvalidate = _audioOnlySongId;
                 playNext(false);
-                // _markCurrentSongAsInvalid(songId: idToInvalidate); // RIMOSSO
                 _zeroDurationStartTime = null;
               }
             }
@@ -4507,30 +4496,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             LogService().log(
               "No Video ID found for: ${song.title}. Skipping (not invalidating).",
             );
-            // DON'T INVALIDATE GLOBALLY TO PREVENT EXCESSIVE REMOVALS
-            // await _playlistService.markSongAsInvalidGlobally(song.id);
-            /*
-            if (!_invalidSongIds.contains(song.id)) {
-              _invalidSongIds.add(song.id);
-              // Persist locally
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
-            }
-            */
           }
-
-          /*
-          // Also mark invalid in temp playlist if active
-          if (_tempPlaylist != null) {
-            final index = _tempPlaylist!.songs.indexWhere(
-              (s) => s.id == song.id,
-            );
-            if (index != -1) {
-              _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index]
-                  .copyWith(isValid: false);
-            }
-          }
-          */
 
           await Future.delayed(const Duration(seconds: 1));
           playNext(false);
@@ -4541,38 +4507,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       notifyListeners();
 
       LogService().log("Error in playPlaylistSong: $e");
-
-      /*
-      // Check if error is network related
-      final errStr = e.toString().toLowerCase();
-      final isNetwork =
-          errStr.contains('socket') ||
-          errStr.contains('timeout') ||
-          errStr.contains('handshake') ||
-          errStr.contains('network') ||
-          errStr.contains('lookup');
-
-      if (!isNetwork && playlistId != null && song.localPath == null) {
-        LogService().log("Marking song as invalid (Playback Error): $e");
-        await _playlistService.markSongAsInvalidGlobally(song.id);
-        if (!_invalidSongIds.contains(song.id)) {
-          _invalidSongIds.add(song.id);
-          // Persist locally
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
-        }
-
-        // Also mark invalid in temp playlist if active
-        if (_tempPlaylist != null) {
-          final index = _tempPlaylist!.songs.indexWhere((s) => s.id == song.id);
-          if (index != -1) {
-            _tempPlaylist!.songs[index] = _tempPlaylist!.songs[index].copyWith(
-              isValid: false,
-            );
-          }
-        }
-      }
-      */
 
       if (playlistId != null) {
         await Future.delayed(const Duration(seconds: 1));
@@ -5182,9 +5116,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
       if (data['history_metadata'] != null) {
         final Map<String, dynamic> meta = data['history_metadata'];
-        _historyMetadata = meta.map(
-          (k, v) => MapEntry(k, SavedSong.fromJson(v)),
-        );
+        _historyMetadata = {};
+        for (var entry in meta.entries) {
+          var s = SavedSong.fromJson(entry.value);
+          if (s.localPath != null && s.localPath!.isNotEmpty) {
+            final file = File(s.localPath!);
+            if (!await file.exists()) {
+              s = s.copyWith(forceClearLocalPath: true);
+            }
+          }
+          _historyMetadata[entry.key] = s;
+        }
       }
       if (data['recent_songs_order'] != null) {
         _recentSongsOrder = (data['recent_songs_order'] as List)
@@ -5220,6 +5162,25 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         final List<Playlist> backupPlaylists = pList
             .map((e) => Playlist.fromJson(e))
             .toList();
+
+        // Check for missing local files and restore online links
+        for (int i = 0; i < backupPlaylists.length; i++) {
+          final p = backupPlaylists[i];
+          final updatedSongs = <SavedSong>[];
+          for (var song in p.songs) {
+            if (song.localPath != null && song.localPath!.isNotEmpty) {
+              final file = File(song.localPath!);
+              if (!await file.exists()) {
+                updatedSongs.add(song.copyWith(forceClearLocalPath: true));
+              } else {
+                updatedSongs.add(song);
+              }
+            } else {
+              updatedSongs.add(song);
+            }
+          }
+          backupPlaylists[i] = p.copyWith(songs: updatedSongs);
+        }
 
         // Merge Logic: Keep local "new" playlists that aren't in backup
         // 1. Create Map of current local playlists
