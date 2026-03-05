@@ -17,7 +17,7 @@ import '../services/playlist_service.dart';
 import '../models/playlist.dart' as model;
 import 'log_service.dart';
 import '../utils/genre_mapper.dart';
-import 'acr_cloud_service.dart';
+import 'shazam_api_service.dart';
 import 'song_link_service.dart';
 import 'encryption_service.dart';
 
@@ -68,9 +68,10 @@ class RadioAudioHandler extends BaseAudioHandler
   int _historySecondsAccumulated = 0;
 
   // Recognition
-  bool _isACRCloudEnabled = true;
+  bool _isACRCloudEnabled =
+      true; // Kept flag name to avoid breaking external calls
   bool _isDevUser = false; // Strict Guard
-  final ACRCloudService _acrCloudService = ACRCloudService();
+  final ShazamApiService _shazamApiService = ShazamApiService();
   final SongLinkService _songLinkService = SongLinkService();
   Timer? _recognitionTimer;
 
@@ -135,7 +136,21 @@ class RadioAudioHandler extends BaseAudioHandler
 
   void _stopRecognition() {
     _recognitionTimer?.cancel();
-    _acrCloudService.cancel();
+    _shazamApiService.cancel();
+
+    // Revert identifying text if it was showing
+    final currentItem = mediaItem.value;
+    if (currentItem != null && currentItem.artist == "Identifying song...") {
+      Station? station;
+      try {
+        station = _stations.firstWhere((s) => s.url == currentItem.id);
+      } catch (_) {}
+      if (station != null) {
+        mediaItem.add(
+          currentItem.copyWith(title: station.name, artist: station.genre),
+        );
+      }
+    }
   }
 
   // Skip context
@@ -3374,19 +3389,29 @@ class RadioAudioHandler extends BaseAudioHandler
       );
     }
 
-    final result = await _acrCloudService.identifyStream(streamUrl);
+    final result = await _shazamApiService.identifyStream(streamUrl);
 
-    if (result != null &&
-        result['status']['code'] == 0 &&
-        result['metadata'] != null) {
-      final music = result['metadata']['music'];
-      if (music != null && music.isNotEmpty) {
-        final trackInfo = music[0];
+    if (result != null && result.containsKey('track')) {
+      final trackInfo = result['track'];
+      if (trackInfo != null) {
         final title = trackInfo['title'];
-        final artists = trackInfo['artists']?.map((a) => a['name']).join(', ');
-        final album = trackInfo['album']?['name'];
+        final artists = trackInfo['subtitle'];
 
-        LogService().log("ACRCloud: Match found: $title - $artists");
+        String? album;
+        if (trackInfo['sections'] != null && trackInfo['sections'] is List) {
+          try {
+            final metadata =
+                (trackInfo['sections'] as List).firstWhere(
+                      (s) => s['type'] == 'SONG',
+                    )['metadata']
+                    as List;
+            try {
+              album = metadata.firstWhere((m) => m['title'] == 'Album')['text'];
+            } catch (_) {}
+          } catch (_) {}
+        }
+
+        LogService().log("ShazamAPI: Match found: $title - $artists");
 
         // Lookup station to preserve radio identity on Android Auto
         Station? station;
@@ -3397,7 +3422,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
         // Update MediaItem immediately with basic info
         final newMediaItem = currentItem.copyWith(
-          title: title,
+          title: title ?? "Unknown Title",
           artist: artists ?? "Unknown Artist",
           // Include station name in album field for context (Android Auto reference)
           album: (album != null && album.isNotEmpty)
@@ -3408,37 +3433,26 @@ class RadioAudioHandler extends BaseAudioHandler
         );
         mediaItem.add(newMediaItem);
 
-        // Try to find artwork from ACRCloud
-        String? acrArtwork;
-        if (trackInfo['album'] != null && trackInfo['album']['cover'] != null) {
-          acrArtwork = trackInfo['album']['cover'];
+        // Try to find artwork from Shazam
+        String? shazamArtwork;
+        if (trackInfo['images'] != null &&
+            trackInfo['images']['coverart'] != null) {
+          shazamArtwork = trackInfo['images']['coverart'];
         }
 
         // Start Smart Link Resolution (Album Art Recovery)
-        _resolveAndApplyMetadata(title, artists ?? "", acrArtwork);
+        _resolveAndApplyMetadata(title ?? "", artists ?? "", shazamArtwork);
 
         // Schedule Next Check
-        int durationMs = trackInfo['duration_ms'] ?? 0;
-        int offsetMs = trackInfo['play_offset_ms'] ?? 0;
+        int nextCheckDelay = 60000; // 60s default
+        LogService().log("ShazamAPI: Next check in ${nextCheckDelay ~/ 1000}s");
 
-        if (durationMs > 0 && offsetMs > 0) {
-          int remainingMs = durationMs - offsetMs;
-          int nextCheckDelay = remainingMs + 10000; // +10s buffer
-          if (nextCheckDelay < 10000) nextCheckDelay = 10000;
-
-          LogService().log(
-            "ACRCloud: Next check in ${nextCheckDelay ~/ 1000}s",
-          );
-
-          _recognitionTimer?.cancel();
-          LogService().log("Attempting Recognition...8");
-          _recognitionTimer = Timer(
-            Duration(milliseconds: nextCheckDelay),
-            _attemptRecognition,
-          );
-        } else {
-          _scheduleRetry(60);
-        }
+        _recognitionTimer?.cancel();
+        LogService().log("Attempting Recognition...8");
+        _recognitionTimer = Timer(
+          Duration(milliseconds: nextCheckDelay),
+          _attemptRecognition,
+        );
       } else {
         _handleNoMatch();
       }

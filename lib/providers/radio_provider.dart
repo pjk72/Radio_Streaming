@@ -21,7 +21,7 @@ import '../services/radio_audio_handler.dart'; // Import for casting
 import 'package:workmanager/workmanager.dart';
 import '../services/background_tasks.dart';
 import '../services/backup_service.dart';
-import '../services/acr_cloud_service.dart';
+import '../services/shazam_api_service.dart';
 import '../utils/genre_mapper.dart';
 import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
@@ -729,7 +729,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   final LyricsService _lyricsService = LyricsService();
   final SpotifyService _spotifyService = SpotifyService();
   SpotifyService get spotifyService => _spotifyService;
-  final ACRCloudService _acrCloudService = ACRCloudService();
+  final ShazamApiService _shazamApiService = ShazamApiService();
   final LocalPlaylistService _localPlaylistService = LocalPlaylistService();
 
   List<Playlist> _playlists = [];
@@ -5699,30 +5699,46 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     );
     notifyListeners();
 
-    final result = await _acrCloudService.identifyStream(_currentStation!.url);
+    final result = await _shazamApiService.identifyStream(_currentStation!.url);
     _isRecognizing = false; // Stop loading state
     notifyListeners();
 
-    if (result != null &&
-        result['status']['code'] == 0 &&
-        result['metadata'] != null) {
-      final music = result['metadata']['music'];
-      if (music != null && music.isNotEmpty) {
-        final trackInfo = music[0];
+    if (result != null && result.containsKey('track')) {
+      final trackInfo = result['track'];
+      if (trackInfo != null) {
         final title = trackInfo['title'];
-        final artists = trackInfo['artists']?.map((a) => a['name']).join(', ');
-        final album = trackInfo['album']?['name'];
-        final releaseDate = trackInfo['release_date'];
+        final artists = trackInfo['subtitle'];
+
+        String? album;
+        String? releaseDate;
+
+        if (trackInfo['sections'] != null && trackInfo['sections'] is List) {
+          try {
+            final metadata =
+                (trackInfo['sections'] as List).firstWhere(
+                      (s) => s['type'] == 'SONG',
+                    )['metadata']
+                    as List;
+            try {
+              album = metadata.firstWhere((m) => m['title'] == 'Album')['text'];
+            } catch (_) {}
+            try {
+              releaseDate = metadata.firstWhere(
+                (m) => m['title'] == 'Released',
+              )['text'];
+            } catch (_) {}
+          } catch (_) {}
+        }
 
         // Log raw response for debug
         _lastApiResponse = jsonEncode(result);
 
         // Update Metadata
         if (title != _currentTrack || artists != _currentArtist) {
-          LogService().log("ACRCloud: Match found: $title - $artists");
+          LogService().log("ShazamAPI: Match found: $title - $artists");
 
           final stationName = _currentStation?.name ?? "Radio";
-          _currentTrack = title;
+          _currentTrack = title ?? "Unknown Title";
           _currentArtist = artists ?? "Unknown Artist";
           // Include station name in album field for context
           _currentAlbum = (album != null && album.isNotEmpty)
@@ -5733,9 +5749,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           // Extract Genre
           String? genre;
           if (trackInfo['genres'] != null &&
-              trackInfo['genres'] is List &&
-              trackInfo['genres'].isNotEmpty) {
-            genre = trackInfo['genres'][0]['name'];
+              trackInfo['genres']['primary'] != null) {
+            genre = trackInfo['genres']['primary'];
           }
           _currentGenre = genre;
 
@@ -5758,51 +5773,33 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           _initialSongOffset = null;
           _songSyncTime = null;
 
-          // --- Set New Duration Info ---
-          int durationMs = trackInfo['duration_ms'] ?? 0;
-          int offsetMs = trackInfo['play_offset_ms'] ?? 0;
-          if (durationMs > 0) {
-            _currentSongDuration = Duration(milliseconds: durationMs);
-            _initialSongOffset = Duration(milliseconds: offsetMs);
-            _songSyncTime = DateTime.now();
-          }
-
           checkIfCurrentSongIsSaved(); // Check if this new song is already saved
 
-          // Try to find artwork in ACRCloud response
-          String? acrArtwork;
-          if (trackInfo['album'] != null &&
-              trackInfo['album']['cover'] != null) {
-            acrArtwork = trackInfo['album']['cover'];
+          // Try to find artwork from Shazam
+          String? shazamArtwork;
+          if (trackInfo['images'] != null &&
+              trackInfo['images']['coverart'] != null) {
+            shazamArtwork = trackInfo['images']['coverart'];
           }
 
-          if (acrArtwork != null) {
-            _currentAlbumArt = acrArtwork;
+          if (shazamArtwork != null) {
+            _currentAlbumArt = shazamArtwork;
           }
 
           notifyListeners();
 
           // Trigger fetchSmartLinks (which does SongLink search and updates artwork/links)
-          await fetchSmartLinks(keepExistingArtwork: acrArtwork != null);
+          await fetchSmartLinks(keepExistingArtwork: shazamArtwork != null);
           fetchLyrics(fromRecognition: true);
         } else {
-          LogService().log("ACRCloud: Same song detected.");
+          LogService().log("ShazamAPI: Same song detected.");
           _lastApiResponse = "Same song: $title";
-          // Update offset for better accuracy even if same song
-          int durationMs = trackInfo['duration_ms'] ?? 0;
-          int offsetMs = trackInfo['play_offset_ms'] ?? 0;
-          if (durationMs > 0) {
-            _currentSongDuration = Duration(milliseconds: durationMs);
-            _initialSongOffset = Duration(milliseconds: offsetMs);
-            _songSyncTime = DateTime.now();
-          }
 
           // Ensure genre is updated even if song is same (in case it wasn't caught before)
           String? genre;
           if (trackInfo['genres'] != null &&
-              trackInfo['genres'] is List &&
-              trackInfo['genres'].isNotEmpty) {
-            genre = trackInfo['genres'][0]['name'];
+              trackInfo['genres']['primary'] != null) {
+            genre = trackInfo['genres']['primary'];
           }
           if (genre != null) _currentGenre = genre;
 
@@ -5812,32 +5809,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         }
 
         // --- INTELLIGENT SCHEDULING ---
-        // Calculate when this song ends to schedule next check
-        int durationMs = trackInfo['duration_ms'] ?? 0;
-        int offsetMs = trackInfo['play_offset_ms'] ?? 0;
+        // Shazam usually doesn't provide precise offsets, we'll schedule a fixed delay check.
+        int nextCheckDelay = 60000; // 60s default
+        LogService().log("ShazamAPI: Next check in ${nextCheckDelay ~/ 1000}s");
 
-        if (durationMs > 0 && offsetMs > 0) {
-          int remainingMs = durationMs - offsetMs;
-          // Add a buffer of 10 seconds to ensure next song has started
-          int nextCheckDelay = remainingMs + 10000;
-
-          // Safety limits (e.g. if offset is wrong or song is effectively over)
-          if (nextCheckDelay < 10000) nextCheckDelay = 10000;
-
-          LogService().log(
-            "ACRCloud: Next check in ${nextCheckDelay ~/ 1000}s (Song ends in ${remainingMs ~/ 1000}s)",
-          );
-
-          _metadataTimer?.cancel();
-          LogService().log("Attempting Recognition...3");
-          _metadataTimer = Timer(
-            Duration(milliseconds: nextCheckDelay),
-            _attemptRecognition,
-          );
-        } else {
-          // Fallback if no duration info
-          _scheduleRetry(60);
-        }
+        _metadataTimer?.cancel();
+        LogService().log("Attempting Recognition...3");
+        _metadataTimer = Timer(
+          Duration(milliseconds: nextCheckDelay),
+          _attemptRecognition,
+        );
       } else {
         _lastApiResponse = "No music found in stream sample.";
         _restoreDefaultRadioState();
@@ -5889,7 +5870,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   void _scheduleRetry(int seconds) {
-    LogService().log("ACRCloud: Retrying in ${seconds}s");
+    LogService().log("ShazamAPI: Retrying in ${seconds}s");
     _metadataTimer?.cancel();
     LogService().log("Attempting Recognition...4");
     _metadataTimer = Timer(Duration(seconds: seconds), _attemptRecognition);

@@ -695,8 +695,7 @@ class PlayerBar extends StatelessWidget {
 
         // Add to Genre Playlist Button (Radio Only)
         // Moved to the left of controls
-        if (provider.currentSongDuration != null &&
-            provider.currentPlayingPlaylistId == null &&
+        if (provider.currentPlayingPlaylistId == null &&
             provider.currentTrack.isNotEmpty &&
             provider.currentTrack != langProvider.translate('live_broadcast') &&
             provider.currentTrack != langProvider.translate('unknown_title') &&
