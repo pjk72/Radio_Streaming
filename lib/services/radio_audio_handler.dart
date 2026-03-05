@@ -525,7 +525,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    _isACRCloudEnabled = prefs.getBool('enable_acrcloud') ?? false;
+
     final email = prefs.getString('user_email');
     _isDevUser =
         email == utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));

@@ -78,7 +78,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final entitlements = Provider.of<EntitlementService>(context);
     final langProvider = Provider.of<LanguageProvider>(context);
 
-    final canUseRecognition = entitlements.isFeatureEnabled('song_recognition');
     final canUseSpotify = entitlements.isFeatureEnabled('spotify_integration');
     final canUseLocal = entitlements.isFeatureEnabled('local_library');
     final canManageStations = entitlements.isFeatureEnabled('manage_stations');
@@ -174,17 +173,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             builder: (context) => _buildLogsSubMenu(context),
                           );
                         },
-                      ),
-                    if (canUseRecognition)
-                      _buildSettingsSwitchTile(
-                        context,
-                        icon: Icons.music_note_rounded,
-                        title: langProvider.translate('song_recognition'),
-                        subtitle: langProvider.translate(
-                          'song_recognition_desc',
-                        ),
-                        value: radio.isACRCloudEnabled,
-                        onChanged: (val) => radio.setACRCloudEnabled(val),
                       ),
 
                     const SizedBox(height: 32),
@@ -1449,66 +1437,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         onTap: onTap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-    );
-  }
-
-  Widget _buildSettingsSwitchTile(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    bool value = false,
-    bool enabled = true,
-    required ValueChanged<bool> onChanged,
-  }) {
-    final cardColor = Theme.of(context).cardColor;
-    final contrastColor = cardColor.computeLuminance() > 0.5
-        ? Colors.black
-        : Colors.white;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor.withValues(alpha: 0.20),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: contrastColor.withValues(alpha: enabled ? 0.20 : 0.05),
-        ),
-      ),
-      child: Opacity(
-        opacity: enabled ? 1.0 : 0.5,
-        child: SwitchListTile(
-          secondary: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Theme.of(context).primaryColor),
-          ),
-          title: Text(
-            title,
-            style: TextStyle(
-              color: Theme.of(context).textTheme.titleMedium?.color,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: TextStyle(
-              color: Theme.of(
-                context,
-              ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-            ),
-          ),
-          value: value,
-          onChanged: enabled ? onChanged : null,
-          activeColor: Theme.of(context).primaryColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
       ),
     );
   }

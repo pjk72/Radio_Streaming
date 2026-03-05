@@ -196,36 +196,6 @@ class _StationCardState extends State<StationCard> {
                       ),
                     ),
                   ),
-                  // Background Artist Image if Playing
-                  if (isPlaying && provider.currentArtistImage != null)
-                    Positioned.fill(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: FractionallySizedBox(
-                          widthFactor: 0.65, // Occupy only 65% of width
-                          child: Opacity(
-                            opacity: 0.5, // More transparent
-                            child: ShaderMask(
-                              shaderCallback: (rect) {
-                                return const LinearGradient(
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
-                                  colors: [Colors.transparent, Colors.white],
-                                  stops: [0.0, 1.0], // Fade from left to right
-                                ).createShader(rect);
-                              },
-                              blendMode: BlendMode.dstIn,
-                              child: Image.network(
-                                provider.currentArtistImage!,
-                                fit: BoxFit.cover,
-                                alignment: Alignment.topCenter,
-                                errorBuilder: (_, __, ___) => const SizedBox(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
 
                   if (isCompact && isPlaying)
                     Positioned.fill(

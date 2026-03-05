@@ -401,14 +401,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     SharedPreferences.getInstance().then((prefs) {
       if (email != null) {
         prefs.setString('user_email', email);
-        // Force reset ONLY for authenticated non-dev users
-        if (!isDevUser) {
-          _isACRCloudEnabled = false;
-          prefs.setBool(_keyEnableACRCloud, false);
-          if (_audioHandler is RadioAudioHandler) {
-            _audioHandler.setACRCloudEnabled(false);
-          }
-        }
+        // No longer forcing reset, strictly following entitlements.
       } else {
         prefs.remove('user_email');
       }
@@ -416,9 +409,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     if (_audioHandler is RadioAudioHandler) {
       _audioHandler.setDevUser(isDevUser);
-      if (email != null && !isDevUser) {
-        _audioHandler.setACRCloudEnabled(false);
-      }
+      _audioHandler.setACRCloudEnabled(isACRCloudEnabled);
     }
     notifyListeners();
   }
@@ -958,6 +949,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _backupService.addListener(_onUserStatusChanged);
     _onUserStatusChanged(); // Initial sync
 
+    _entitlementService.addListener(_onEntitlementChanged);
+
     _playlistService.onPlaylistsUpdated.listen((_) => reloadPlaylists());
     _checkAutoBackup(); // Start check
     // Listen to playback state from AudioService
@@ -1037,9 +1030,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               if (_isPlaying &&
                   !_isLoading &&
                   _currentPlayingPlaylistId == null) {
-                // Double check if ACRCloud is enabled
-                if (_isACRCloudEnabled &&
-                    _entitlementService.isFeatureEnabled('song_recognition')) {
+                // Double check if ACRCloud is enabled via entitlements
+                if (isACRCloudEnabled) {
                   LogService().log("Attempting Recognition...1");
                   _attemptRecognition();
                 }
@@ -3409,9 +3401,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   bool get preferYouTubeAudioOnly => _preferYouTubeAudioOnly;
 
-  static const String _keyEnableACRCloud = 'enable_acrcloud';
-  bool _isACRCloudEnabled = false;
-  bool get isACRCloudEnabled => _isACRCloudEnabled;
+  bool get isACRCloudEnabled =>
+      _entitlementService.isFeatureEnabled('song_recognition');
 
   List<String> _genreOrder = [];
   List<String> get genreOrder => _genreOrder;
@@ -3716,7 +3707,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _startOption = prefs.getString(_keyStartOption) ?? 'none';
     _hasPerformedRestore = prefs.getBool(_keyHasPerformedRestore) ?? false;
     _startupStationId = prefs.getInt(_keyStartupStationId);
-    _isACRCloudEnabled = prefs.getBool(_keyEnableACRCloud) ?? false;
+    // _isACRCloudEnabled is now dynamically derived.
     _isCompactView = prefs.getBool(_keyCompactView) ?? false;
 
     final catViewsStr = prefs.getString(_keyCategoryCompactViews);
@@ -4616,7 +4607,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         _currentPlayingPlaylistId == null && _currentStation != null;
     if (!force) {
       if (isRadio) {
-        if (!_isACRCloudEnabled) {
+        if (!isACRCloudEnabled) {
           _lastLyricsSearch = searchKey;
           _isFetchingLyrics = false;
           notifyListeners();
@@ -5396,27 +5387,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<void> setACRCloudEnabled(bool value) async {
-    _isACRCloudEnabled = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyEnableACRCloud, value);
-    notifyListeners();
-
-    // Sync with AudioHandler
+  void _onEntitlementChanged() {
     if (_audioHandler is RadioAudioHandler) {
-      _audioHandler.setACRCloudEnabled(value);
+      _audioHandler.setACRCloudEnabled(isACRCloudEnabled);
     }
+    notifyListeners();
+  }
 
-    if (_isACRCloudEnabled &&
-        _entitlementService.isFeatureEnabled('song_recognition')) {
-      _metadataTimer?.cancel();
-      LogService().log("Attempting Recognition...2");
-      _attemptRecognition();
-    } else {
-      _metadataTimer?.cancel();
-      _isRecognizing = false;
-      notifyListeners();
-    }
+  Future<void> setACRCloudEnabled(bool value) async {
+    // Deprecated: UI no longer toggles this.
+    // Kept as no-op or to allow external overrides if absolutely needed.
   }
 
   Future<void> setManageGridView(bool value) async {
@@ -5686,7 +5666,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       return;
     }
 
-    if (!_isACRCloudEnabled) return;
+    if (!isACRCloudEnabled) return;
 
     // Strict Input Guard: Must be playing a station to recognize
     if (!_isPlaying ||

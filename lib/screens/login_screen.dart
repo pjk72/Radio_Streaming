@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -72,20 +73,26 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await auth.signIn();
       if (auth.isSignedIn && mounted) {
-        // Reset ACRCloud flag for new login
-        Provider.of<RadioProvider>(
-          context,
-          listen: false,
-        ).setACRCloudEnabled(false);
+        // Login successful
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('was_guest', false);
+
+        await FirebaseAnalytics.instance.logEvent(name: 'login_google');
+
         _goToHome();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(Provider.of<LanguageProvider>(context, listen: false).translate('login_failed').replaceAll('{0}', e.toString()))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('login_failed').replaceAll('{0}', e.toString()),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -263,16 +270,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             listen: false,
                           );
                           await auth.signOut();
-                          // Reset ACRCloud flag for guest session
-                          if (context.mounted) {
-                            Provider.of<RadioProvider>(
-                              context,
-                              listen: false,
-                            ).setACRCloudEnabled(false);
-                          }
 
                           final prefs = await SharedPreferences.getInstance();
                           await prefs.setBool('was_guest', true);
+
+                          await FirebaseAnalytics.instance.logEvent(
+                            name: 'login_guest',
+                          );
 
                           _goToHome();
                         },

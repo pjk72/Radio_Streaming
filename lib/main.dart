@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart'; // For kReleaseMode
@@ -208,6 +209,22 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       );
       AppOpenAdManager().init(entitlements);
     });
+    _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        final info = await InAppUpdate.checkForUpdate();
+        if (info.updateAvailability == UpdateAvailability.updateAvailable) {
+          if (info.immediateUpdateAllowed) {
+            await InAppUpdate.performImmediateUpdate();
+          }
+        }
+      } catch (e) {
+        debugPrint('Error checking for updates: $e');
+      }
+    }
   }
 
   @override
