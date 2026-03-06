@@ -66,6 +66,76 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   // Album specific data
   Map<String, dynamic>? _albumData;
 
+  List<Color> _generateGradient(String text) {
+    final int hash = text.hashCode;
+    final List<List<Color>> palettes = [
+      [const Color(0xFFff9a9e), const Color(0xFFfecfef)],
+      [const Color(0xFFa18cd1), const Color(0xFFfbc2eb)],
+      [const Color(0xFF84fab0), const Color(0xFF8fd3f4)],
+      [const Color(0xFFfccb90), const Color(0xFFd57eeb)],
+      [const Color(0xFFe0c3fc), const Color(0xFF8ec5fc)],
+      [const Color(0xFF4facfe), const Color(0xFF00f2fe)],
+      [const Color(0xFF43e97b), const Color(0xFF38f9d7)],
+      [const Color(0xFFfa709a), const Color(0xFFfee140)],
+      [const Color(0xFF667eea), const Color(0xFF764ba2)],
+      [const Color(0xFFff0844), const Color(0xFFffb199)],
+      [const Color(0xFFb224ef), const Color(0xFF7579ff)],
+      [const Color(0xFF0ba360), const Color(0xFF3cba92)],
+      [const Color(0xFFff758c), const Color(0xFFff7eb3)],
+      [const Color(0xFFf12711), const Color(0xFFf5af19)],
+    ];
+    return palettes[hash.abs() % palettes.length];
+  }
+
+  IconData _getGenreIcon(String title) {
+    final String t = title.toLowerCase();
+    if (t.contains('rock') || t.contains('metal') || t.contains('punk')) {
+      return Icons
+          .music_note; // guitarra not standard but music_note or guitar if from fontawesome
+    }
+    if (t.contains('workout') ||
+        t.contains('gym') ||
+        t.contains('running') ||
+        t.contains('fitness')) {
+      return Icons.fitness_center;
+    }
+    if (t.contains('pop') || t.contains('disco') || t.contains('party')) {
+      return Icons.wb_sunny_outlined;
+    }
+    if (t.contains('chill') ||
+        t.contains('ambient') ||
+        t.contains('sleep') ||
+        t.contains('lofi') ||
+        t.contains('focus')) {
+      return Icons.nights_stay_outlined;
+    }
+    if (t.contains('jazz') || t.contains('blues') || t.contains('soul')) {
+      return Icons.music_video_outlined;
+    }
+    if (t.contains('hip hop') || t.contains('r&b') || t.contains('rap')) {
+      return Icons.mic_external_on;
+    }
+    if (t.contains('classical') || t.contains('piano')) {
+      return Icons.piano;
+    }
+    if (t.contains('edm') ||
+        t.contains('techno') ||
+        t.contains('house') ||
+        t.contains('trance')) {
+      return Icons.speaker_group_outlined;
+    }
+    if (t.contains('gaming')) {
+      return Icons.videogame_asset_outlined;
+    }
+    if (t.contains('romance')) {
+      return Icons.favorite_outline;
+    }
+    if (t.contains('80s') || t.contains('90s') || t.contains('70s')) {
+      return Icons.vibration_outlined; // Retro feel
+    }
+    return Icons.music_note_outlined;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -401,8 +471,31 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Background Image
-          if (mainImage.isNotEmpty)
+          // 1. Background Image or Gradient for AI
+          if (widget.playlist?.provider == 'AI')
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _generateGradient(title),
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    right: -50,
+                    bottom: -50,
+                    child: Icon(
+                      _getGenreIcon(title),
+                      size: 300,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (mainImage.isNotEmpty)
             CachedNetworkImage(
               imageUrl: mainImage,
               fit: BoxFit.cover,
@@ -587,7 +680,53 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
               ],
             ),
             clipBehavior: Clip.antiAlias,
-            child: mainImage.isNotEmpty
+            child: widget.playlist?.provider == 'AI'
+                ? Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: _generateGradient(title),
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          right: -20,
+                          bottom: -20,
+                          child: Icon(
+                            _getGenreIcon(title),
+                            size: 140,
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                            ),
+                            child: Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black45,
+                                    offset: Offset(2, 2),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : mainImage.isNotEmpty
                 ? CachedNetworkImage(
                     imageUrl: mainImage,
                     fit: BoxFit.cover,

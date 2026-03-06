@@ -148,6 +148,7 @@ final Map<String, String> de = {
   'guest': 'Gast',
   'unknown_artist': 'Unbekannter Künstler',
   'live_broadcast': 'Live-Übertragung',
+  'for_you': 'Für Dich',
   'select_a_station': 'Wähle einen Sender',
   'shuffle': 'Zufallswiedergabe',
   'already_saved': 'Bereits gespeichert',

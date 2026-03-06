@@ -18,6 +18,8 @@ import '../services/playlist_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/radio_audio_handler.dart'; // Import for casting
+import '../services/ai_recommendation_service.dart';
+import '../services/trending_service.dart';
 import 'package:workmanager/workmanager.dart';
 import '../services/background_tasks.dart';
 import '../services/backup_service.dart';
@@ -98,6 +100,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   Map<String, int> get userPlayHistory => _userPlayHistory;
   Map<String, int> get aaUserPlayHistory => _aaUserPlayHistory;
+  Map<String, SavedSong> get historyMetadata => _historyMetadata;
 
   List<SavedSong> getMostPlayedSongs() {
     if (_recentSongsOrder.isEmpty) return [];
@@ -505,6 +508,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _updateAudioHandler();
     _setupAudioHandlerCallbacks(); // Ensure callbacks are set
     notifyListeners();
+
+    // Trigger AI pre-fetch in background after minimal delay to not block UI startup
+    Future.delayed(const Duration(milliseconds: 500), () {
+      final code = _detectCountryCode();
+      preFetchForYou(_getCountryName(code));
+    });
+
     // Defer startup playback slightly to ensure UI is ready if needed, or just run it.
     // However, we shouldn't block.
     // _handleStartupPlayback(); // Removed automatic call
@@ -831,6 +841,59 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       return _playlistCreatorFilter.contains(type);
     }).toList();
+  }
+
+  // --- AI Recommendations Support ---
+  final AIRecommendationService _aiService = AIRecommendationService();
+  Future<List<TrendingPlaylist>>? _forYouFuture;
+  Future<List<TrendingPlaylist>>? get forYouFuture => _forYouFuture;
+
+  void preFetchForYou(String countryName) {
+    if (_forYouFuture != null) return;
+    _forYouFuture = _aiService.generateDiscoverWeekly(
+      phoneHistory: _userPlayHistory,
+      aaHistory: _aaUserPlayHistory,
+      historyMetadata: _historyMetadata,
+      targetCount: 15,
+      countryName: countryName,
+    );
+    notifyListeners();
+  }
+
+  void resetForYou() {
+    _forYouFuture = null;
+    notifyListeners();
+  }
+
+  String _detectCountryCode() {
+    try {
+      final String systemLocale = Platform.localeName;
+      final String normalized = systemLocale.replaceAll('-', '_');
+      if (normalized.contains('_')) {
+        final parts = normalized.split('_');
+        if (parts.length > 1) {
+          return parts[1].toUpperCase();
+        }
+      }
+    } catch (_) {}
+    return 'US';
+  }
+
+  String _getCountryName(String code) {
+    // Minimal mapping for AI seeding if LanguageProvider not handy
+    final Map<String, String> map = {
+      'IT': 'Italy',
+      'US': 'USA',
+      'GB': 'United Kingdom',
+      'FR': 'France',
+      'DE': 'Germany',
+      'ES': 'Spain',
+      'CA': 'Canada',
+      'AU': 'Australia',
+      'BR': 'Brazil',
+      'JP': 'Japan',
+    };
+    return map[code] ?? 'International';
   }
 
   Future<void> toggleFollowArtist(String artist) async {

@@ -11,6 +11,7 @@ class TrendingPlaylist {
   final String? externalUrl;
   final int trackCount;
   final String? owner;
+  final List<Map<String, dynamic>>? predefinedTracks;
 
   TrendingPlaylist({
     required this.id,
@@ -20,6 +21,7 @@ class TrendingPlaylist {
     this.externalUrl,
     this.trackCount = 0,
     this.owner,
+    this.predefinedTracks,
   });
 }
 
@@ -226,7 +228,11 @@ class TrendingService {
     TrendingPlaylist playlist,
   ) async {
     try {
-      if (playlist.provider == 'Spotify') {
+      if (playlist.provider == 'AI' && playlist.predefinedTracks != null) {
+        return playlist.predefinedTracks!
+            .map((t) => t.map((k, v) => MapEntry(k, v.toString())))
+            .toList();
+      } else if (playlist.provider == 'Spotify') {
         // We use SpotifyService.getPlaylistTracks but it returns SavedSong.
         // We can map it or stick to standard Map/SavedSong.
         // Let's use SavedSong if possible or return a generic simpler object?

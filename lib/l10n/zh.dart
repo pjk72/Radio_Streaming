@@ -147,6 +147,7 @@ final Map<String, String> zh = {
   'guest': '游客',
   'unknown_artist': '未知艺术家',
   'live_broadcast': '现场直播',
+  'for_you': '为你推荐',
   'select_a_station': '选择一个电台',
   'shuffle': '随机播放',
   'already_saved': '已保存',

@@ -12,6 +12,7 @@ import '../models/saved_song.dart';
 import 'artist_details_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class TrendingScreen extends StatefulWidget {
   const TrendingScreen({super.key});
@@ -38,6 +39,9 @@ class _TrendingScreenState extends State<TrendingScreen>
   // Speech to Text variables
   late stt.SpeechToText _speech;
   bool _isListening = false;
+
+  // Scrolling
+  final GlobalKey _providersKey = GlobalKey();
 
   Map<String, String> _getCountryMap(LanguageProvider langProvider) {
     return {
@@ -130,6 +134,18 @@ class _TrendingScreenState extends State<TrendingScreen>
       );
       final countryMap = _getCountryMap(langProvider);
 
+      // Lazily setup the intelligent recommendations
+      final provider = Provider.of<RadioProvider>(context, listen: false);
+      if (provider.forYouFuture == null && !_useCustomQuery) {
+        final String cName = countryMap[_selectedCountryCode]!.contains(' ')
+            ? countryMap[_selectedCountryCode]!.substring(
+                countryMap[_selectedCountryCode]!.indexOf(' ') + 1,
+              )
+            : countryMap[_selectedCountryCode] ?? 'USA';
+
+        provider.preFetchForYou(cName);
+      }
+
       final spotify = SpotifyService();
       await spotify.init(); // Load tokens
 
@@ -153,6 +169,19 @@ class _TrendingScreenState extends State<TrendingScreen>
         setState(() {
           _playlists = results;
         });
+
+        // Auto-scroll to providers when doing a custom search
+        if (_useCustomQuery && _customQueryController.text.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_providersKey.currentContext != null) {
+              Scrollable.ensureVisible(
+                _providersKey.currentContext!,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOut,
+              );
+            }
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -268,6 +297,10 @@ class _TrendingScreenState extends State<TrendingScreen>
                         setState(() {
                           _selectedCountryCode = val;
                           _useCustomQuery = false;
+                          Provider.of<RadioProvider>(
+                            context,
+                            listen: false,
+                          ).resetForYou();
                         });
                         _fetchTrending();
                       }
@@ -439,10 +472,38 @@ class _TrendingScreenState extends State<TrendingScreen>
                 },
               ),
 
+            // AI "For You" Section
+            if (!_useCustomQuery && provider.forYouFuture != null)
+              FutureBuilder<List<TrendingPlaylist>>(
+                future: provider.forYouFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox(
+                      height: 190,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final results = snapshot.data;
+                  if (results == null || results.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return _buildHorizontalSection(
+                    title: '✨ ${langProvider.translate('for_you')}',
+                    items: results,
+                    itemBuilder: (data) {
+                      final item = data as TrendingPlaylist;
+                      return _buildMixCard(item, false, langProvider);
+                    },
+                  );
+                },
+              ),
+
             // Unified FIFO Section (Recently Played)
             if (unifiedRecent.isNotEmpty)
               _buildHorizontalSection(
                 title: langProvider.translate('recently_played'),
+                topPadding: 8, // Reduced spacing
                 items: unifiedRecent.take(30).toList(),
                 itemBuilder: (data) {
                   final item = data as Map<String, dynamic>;
@@ -456,6 +517,7 @@ class _TrendingScreenState extends State<TrendingScreen>
               ),
 
             // Trending Playlists by Category
+            SizedBox(key: _providersKey),
             ...groupedTrending.entries.map((entry) {
               return _buildHorizontalSection(
                 title:
@@ -486,13 +548,14 @@ class _TrendingScreenState extends State<TrendingScreen>
     required List<dynamic> items,
     required Widget Function(dynamic) itemBuilder,
     double height = 190,
+    double topPadding = 24,
   }) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+          padding: EdgeInsets.fromLTRB(16, topPadding, 16, 12),
           child: Text(
             title,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -599,7 +662,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    song.title,
+                    song.title.replaceFirst("⬇️ ", "").replaceFirst("📱 ", ""),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -620,6 +683,286 @@ class _TrendingScreenState extends State<TrendingScreen>
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Color> _generateGradient(String text) {
+    final int hash = text.hashCode;
+    final List<List<Color>> palettes = [
+      [const Color(0xFFff9a9e), const Color(0xFFfecfef)],
+      [const Color(0xFFa18cd1), const Color(0xFFfbc2eb)],
+      [const Color(0xFF84fab0), const Color(0xFF8fd3f4)],
+      [const Color(0xFFfccb90), const Color(0xFFd57eeb)],
+      [const Color(0xFFe0c3fc), const Color(0xFF8ec5fc)],
+      [const Color(0xFF4facfe), const Color(0xFF00f2fe)],
+      [const Color(0xFF43e97b), const Color(0xFF38f9d7)],
+      [const Color(0xFFfa709a), const Color(0xFFfee140)],
+      [const Color(0xFF667eea), const Color(0xFF764ba2)],
+      [const Color(0xFFff0844), const Color(0xFFffb199)],
+      [const Color(0xFFb224ef), const Color(0xFF7579ff)],
+      [const Color(0xFF0ba360), const Color(0xFF3cba92)],
+      [const Color(0xFFff758c), const Color(0xFFff7eb3)],
+      [const Color(0xFFf12711), const Color(0xFFf5af19)],
+    ];
+    return palettes[hash.abs() % palettes.length];
+  }
+
+  IconData _getGenreIcon(String title) {
+    final String t = title.toLowerCase();
+    if (t.contains('rock') || t.contains('metal') || t.contains('punk')) {
+      return FontAwesomeIcons.guitar;
+    }
+    if (t.contains('workout') ||
+        t.contains('gym') ||
+        t.contains('running') ||
+        t.contains('running')) {
+      return Icons.fitness_center;
+    }
+    if (t.contains('pop') || t.contains('disco') || t.contains('party')) {
+      return Icons.wb_sunny_outlined;
+    }
+    if (t.contains('chill') ||
+        t.contains('ambient') ||
+        t.contains('sleep') ||
+        t.contains('lofi') ||
+        t.contains('focus')) {
+      return Icons.nights_stay_outlined;
+    }
+    if (t.contains('jazz') || t.contains('blues') || t.contains('soul')) {
+      return Icons.music_video_outlined;
+    }
+    if (t.contains('hip hop') || t.contains('r&b') || t.contains('rap')) {
+      return Icons.mic_external_on;
+    }
+    if (t.contains('classical') || t.contains('piano')) {
+      return Icons.piano;
+    }
+    if (t.contains('edm') ||
+        t.contains('techno') ||
+        t.contains('house') ||
+        t.contains('trance')) {
+      return Icons.speaker_group_outlined;
+    }
+    if (t.contains('gaming')) {
+      return Icons.videogame_asset_outlined;
+    }
+    if (t.contains('romance')) {
+      return Icons.favorite_outline;
+    }
+    if (t.contains('80s') || t.contains('90s') || t.contains('70s')) {
+      return Icons.vibration_outlined; // Retro feel
+    }
+    return Icons.music_note_outlined;
+  }
+
+  Widget _buildMixCard(
+    TrendingPlaylist item,
+    bool isPlaying,
+    LanguageProvider langProvider,
+  ) {
+    final theme = Theme.of(context);
+    final String mainImageUrl = item.imageUrls.isNotEmpty
+        ? item.imageUrls.first
+        : '';
+    final bool isAI = item.provider == 'AI';
+    final List<Color> gradientColors = _generateGradient(item.title);
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TrendingDetailsScreen(playlist: item),
+          ),
+        );
+      },
+      child: SizedBox(
+        width: 130,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: theme.cardColor,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                  border: Border.all(
+                    color: Colors.purple.withValues(alpha: 0.3),
+                    width: 1.5,
+                  ),
+                  image: !isAI && mainImageUrl.isNotEmpty
+                      ? DecorationImage(
+                          image: CachedNetworkImageProvider(mainImageUrl),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: Stack(
+                  children: [
+                    if (isAI)
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          gradient: LinearGradient(
+                            colors: gradientColors,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              right: -15,
+                              bottom: -15,
+                              child: Icon(
+                                _getGenreIcon(item.title),
+                                size: 100, // Even bigger
+                                color: Colors.white.withValues(
+                                  alpha: 0.3,
+                                ), // More visible
+                              ),
+                            ),
+                            Positioned(
+                              top: 10,
+                              left: 10,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Icon(
+                                  Icons.auto_awesome,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            Positioned.fill(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10.0,
+                                  vertical: 14.0,
+                                ),
+                                child: Column(
+                                  children: [
+                                    const SizedBox(
+                                      height: 15,
+                                    ), // Offset title higher
+                                    Text(
+                                      item.title.split(' ').first.toUpperCase(),
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.8,
+                                        ),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 2,
+                                      ),
+                                    ),
+                                    Text(
+                                      item.title.contains(' ')
+                                          ? item.title.substring(
+                                              item.title.indexOf(' ') + 1,
+                                            )
+                                          : item.title,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.white,
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.bold,
+                                        height: 0.9,
+                                        shadows: [
+                                          Shadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.4,
+                                            ),
+                                            offset: const Offset(0, 4),
+                                            blurRadius: 10,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    // Artists List at the bottom
+                                    if (item.predefinedTracks != null &&
+                                        item.predefinedTracks!.isNotEmpty)
+                                      Text(
+                                        "${item.predefinedTracks!.take(5).map((t) => t['artist'].toString().split(',').first.trim()).join(', ')}...",
+                                        textAlign: TextAlign.center,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.outfit(
+                                          color: Colors.white,
+                                          fontSize: 12, // Slightly larger
+                                          fontWeight: FontWeight
+                                              .w600, // Semi-bold for better impact
+                                          letterSpacing: 0.3,
+                                          height: 1.1,
+                                          shadows: [
+                                            Shadow(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.5,
+                                              ),
+                                              offset: const Offset(0, 1),
+                                              blurRadius: 4,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (mainImageUrl.isEmpty)
+                      const Center(
+                        child: Icon(
+                          Icons.auto_awesome,
+                          size: 40,
+                          color: Colors.white24,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            if (!isAI) ...[
+              const SizedBox(height: 8),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: isPlaying ? theme.primaryColor : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

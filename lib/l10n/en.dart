@@ -149,6 +149,7 @@ final Map<String, String> en = {
   'guest': 'Guest',
   'unknown_artist': 'Unknown Artist',
   'live_broadcast': 'Live Broadcast',
+  'for_you': 'For You',
   'select_a_station': 'Select a station',
   'shuffle': 'Shuffle',
   'already_saved': 'Already saved',

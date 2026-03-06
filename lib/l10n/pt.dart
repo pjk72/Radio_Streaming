@@ -148,6 +148,7 @@ final Map<String, String> pt = {
   'guest': 'Convidado',
   'unknown_artist': 'Artista Desconhecido',
   'live_broadcast': 'Transmissão Ao Vivo',
+  'for_you': 'Para Você',
   'select_a_station': 'Selecione uma estação',
   'shuffle': 'Ordem Aleatória',
   'already_saved': 'Já salvo',

@@ -147,6 +147,7 @@ final Map<String, String> ru = {
   'guest': 'Гость',
   'unknown_artist': 'Неизвестный исполнитель',
   'live_broadcast': 'Прямая трансляция',
+  'for_you': 'Для тебя',
   'select_a_station': 'Выберите станцию',
   'shuffle': 'В случайном порядке',
   'already_saved': 'Уже сохранено',
