@@ -10,6 +10,8 @@ import 'trending_details_screen.dart';
 import '../providers/language_provider.dart';
 import '../models/saved_song.dart';
 import 'artist_details_screen.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 
 class TrendingScreen extends StatefulWidget {
   const TrendingScreen({super.key});
@@ -32,6 +34,10 @@ class _TrendingScreenState extends State<TrendingScreen>
   bool _isLoading = false;
   List<TrendingPlaylist> _playlists = [];
   String? _errorMessage;
+
+  // Speech to Text variables
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
 
   Map<String, String> _getCountryMap(LanguageProvider langProvider) {
     return {
@@ -85,6 +91,7 @@ class _TrendingScreenState extends State<TrendingScreen>
 
     _selectedCountryCode = _detectCountry();
     _systemCountryCode = _selectedCountryCode;
+    _speech = stt.SpeechToText();
     if (_playlists.isEmpty) {
       _fetchTrending();
     }
@@ -305,9 +312,21 @@ class _TrendingScreenState extends State<TrendingScreen>
                   borderRadius: BorderRadius.circular(12),
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: _fetchTrending,
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _isListening ? Icons.mic : Icons.mic_none,
+                        color: _isListening ? Colors.red : null,
+                      ),
+                      onPressed: _toggleListening,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: _fetchTrending,
+                    ),
+                  ],
                 ),
               ),
               onSubmitted: (_) => _fetchTrending(),
@@ -316,6 +335,44 @@ class _TrendingScreenState extends State<TrendingScreen>
         ],
       ),
     );
+  }
+
+  void _toggleListening() async {
+    if (!_isListening) {
+      // Prompt for permission if not granted
+      var status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        // Show an alert or a snackbar explaining need for permission
+        return;
+      }
+
+      bool available = await _speech.initialize(
+        onStatus: (val) {
+          if (val == 'done' || val == 'notListening') {
+            setState(() => _isListening = false);
+            // Optionally auto-fetch when stop talking, or let user hit search!
+            if (_customQueryController.text.isNotEmpty) {
+              _fetchTrending();
+            }
+          }
+        },
+        onError: (val) {
+          setState(() => _isListening = false);
+        },
+      );
+      if (available) {
+        setState(() => _isListening = true);
+        _speech.listen(
+          onResult: (val) => setState(() {
+            _customQueryController.text = val.recognizedWords;
+          }),
+        );
+      }
+    } else {
+      setState(() => _isListening = false);
+      _speech.stop();
+      _fetchTrending();
+    }
   }
 
   Widget _buildGrid(BuildContext context, LanguageProvider langProvider) {

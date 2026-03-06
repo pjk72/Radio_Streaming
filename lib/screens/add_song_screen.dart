@@ -6,6 +6,8 @@ import '../providers/radio_provider.dart';
 import '../services/music_metadata_service.dart';
 import '../providers/language_provider.dart';
 import 'trending_details_screen.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 
 class AddSongScreen extends StatefulWidget {
   const AddSongScreen({super.key});
@@ -21,6 +23,16 @@ class _AddSongScreenState extends State<AddSongScreen> {
   bool _isLoading = false;
   bool _hasSearched = false;
   Timer? _searchDebounce;
+
+  // Speech to Text variables
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _speech = stt.SpeechToText();
+  }
 
   @override
   void dispose() {
@@ -128,8 +140,18 @@ class _AddSongScreenState extends State<AddSongScreen> {
                     color: theme.hintColor.withValues(alpha: 0.5),
                   ),
                   prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _controller.text.isNotEmpty
-                      ? IconButton(
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none,
+                          color: _isListening ? Colors.red : null,
+                        ),
+                        onPressed: _toggleListening,
+                      ),
+                      if (_controller.text.isNotEmpty)
+                        IconButton(
                           icon: const Icon(Icons.close, size: 20),
                           onPressed: () {
                             _controller.clear();
@@ -138,8 +160,9 @@ class _AddSongScreenState extends State<AddSongScreen> {
                               _results = [];
                             });
                           },
-                        )
-                      : null,
+                        ),
+                    ],
+                  ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -166,6 +189,49 @@ class _AddSongScreenState extends State<AddSongScreen> {
         ],
       ),
     );
+  }
+
+  void _toggleListening() async {
+    if (!_isListening) {
+      // Prompt for permission if not granted
+      var status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        return;
+      }
+
+      bool available = await _speech.initialize(
+        onStatus: (val) {
+          if (val == 'done' || val == 'notListening') {
+            setState(() => _isListening = false);
+            if (_controller.text.isNotEmpty) {
+              _performSearch(_controller.text);
+            }
+          }
+        },
+        onError: (val) {
+          setState(() => _isListening = false);
+        },
+      );
+      if (available) {
+        setState(() {
+          _isListening = true;
+          // When starting listen logic, clear results so it feels responsive
+          _hasSearched = false;
+          _results = [];
+        });
+        _speech.listen(
+          onResult: (val) => setState(() {
+            _controller.text = val.recognizedWords;
+          }),
+        );
+      }
+    } else {
+      setState(() => _isListening = false);
+      _speech.stop();
+      if (_controller.text.isNotEmpty) {
+        _performSearch(_controller.text);
+      }
+    }
   }
 
   Widget _buildResultsView(ThemeData theme) {
