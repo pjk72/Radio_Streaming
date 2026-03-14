@@ -395,23 +395,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   void _onUserStatusChanged() {
     final email = _backupService.currentUser?.email.toLowerCase();
-    final isDevUser =
-        email ==
-        utf8
-            .decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="))
-            .toLowerCase();
 
     SharedPreferences.getInstance().then((prefs) {
       if (email != null) {
         prefs.setString('user_email', email);
-        // No longer forcing reset, strictly following entitlements.
       } else {
         prefs.remove('user_email');
       }
     });
 
     if (_audioHandler is RadioAudioHandler) {
-      _audioHandler.setDevUser(isDevUser);
       _audioHandler.setACRCloudEnabled(isACRCloudEnabled);
     }
     notifyListeners();
@@ -512,7 +505,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Trigger AI pre-fetch in background after minimal delay to not block UI startup
     Future.delayed(const Duration(milliseconds: 500), () {
       final code = _detectCountryCode();
-      preFetchForYou(_getCountryName(code));
+      preFetchForYou(countryName: _getCountryName(code), countryCode: code);
     });
 
     // Defer startup playback slightly to ensure UI is ready if needed, or just run it.
@@ -603,22 +596,21 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   void _setupAudioHandlerCallbacks() {
     if (_audioHandler is RadioAudioHandler) {
-      final handler = _audioHandler;
-      handler.onSkipNext = () {
+      _audioHandler.onSkipNext = () {
         if (_currentPlayingPlaylistId != null) {
           playNext(true);
         } else {
           playNextStationInFavorites();
         }
       };
-      handler.onSkipPrevious = () {
+      _audioHandler.onSkipPrevious = () {
         if (_currentPlayingPlaylistId != null) {
           playPrevious();
         } else {
           playPreviousStationInFavorites();
         }
       };
-      handler.onPreloadNext = _preloadNextSong;
+      _audioHandler.onPreloadNext = _preloadNextSong;
     }
   }
 
@@ -648,6 +640,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               title: nextSong.title,
               artist: nextSong.artist,
               spotifyUrl: nextSong.spotifyUrl,
+              appleMusicUrl: nextSong.appleMusicUrl,
             ).timeout(const Duration(seconds: 8));
 
             final url = links['youtube'];
@@ -848,7 +841,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<List<TrendingPlaylist>>? _forYouFuture;
   Future<List<TrendingPlaylist>>? get forYouFuture => _forYouFuture;
 
-  void preFetchForYou(String countryName) {
+  void preFetchForYou({String? countryName, String? countryCode}) {
     if (_forYouFuture != null) return;
     _forYouFuture = _aiService.generateDiscoverWeekly(
       phoneHistory: _userPlayHistory,
@@ -856,6 +849,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       historyMetadata: _historyMetadata,
       targetCount: 15,
       countryName: countryName,
+      countryCode: countryCode,
     );
     notifyListeners();
   }
@@ -1086,8 +1080,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           if (state.processingState == AudioProcessingState.ready &&
               _currentStation != null &&
               _currentPlayingPlaylistId == null) {
+            // CRITICAL: Cancel any existing timer to avoid duplicates on rapid state changes
             _metadataTimer?.cancel();
-            // Delay recognition by 2 seconds using Timer for cancellability
+
+            // RadioAudioHandler handles recognition with intelligent scheduling.
+            // Avoid duplicate attempts from Provider.
+            if (isACRCloudEnabled) {
+              LogService().log("Recognition: Deferring to RadioAudioHandler");
+              return;
+            }
+
+            LogService().log("Recognition: Scheduling first attempt in 5s...");
             _metadataTimer = Timer(const Duration(seconds: 5), () {
               // Ensure we are still playing the radio and not loading
               if (_isPlaying &&
@@ -1095,7 +1098,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                   _currentPlayingPlaylistId == null) {
                 // Double check if ACRCloud is enabled via entitlements
                 if (isACRCloudEnabled) {
-                  LogService().log("Attempting Recognition...1");
+                  LogService().log("Recognition: Launching first attempt...");
                   _attemptRecognition();
                 }
               }
@@ -1142,6 +1145,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       if (_currentArtist != (item.artist ?? "")) {
         _currentArtist = item.artist ?? "";
         metadataChanged = true;
+
+        // If recognition failed and artist reverted to station info (genre/name),
+        // clear the artist image so the header falls back to the station logo.
+        final stationForCheck = _currentStation;
+        if (stationForCheck != null &&
+            (_currentArtist == stationForCheck.genre ||
+                _currentArtist == stationForCheck.name ||
+                _currentArtist == "Identifying song...")) {
+          _currentArtistImage = null;
+        }
       }
       if (_currentAlbum != (item.album ?? "")) {
         _currentAlbum = item.album ?? "";
@@ -1170,8 +1183,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           _currentTrackStartTime = null;
         }
 
-        // Trigger lyrics fetch and other updates
-        fetchLyrics();
+        // Trigger lyrics fetch and other updates.
+        // If user is on SongDetailsScreen, force:true to bypass timing guards
+        // (_currentTrackStartTime can be momentarily null during recognition updates).
+        fetchLyrics(force: _isObservingLyrics);
         checkIfCurrentSongIsSaved(); // Update save status for the new track
 
         // USER REQUEST: Avoid listing/updating phone UI if in car and background
@@ -1823,6 +1838,57 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     await _loadPlaylists();
   }
 
+  Future<void> refreshPlaylistInBackground(String playlistId) async {
+    // 1. Locate the playlist
+    Playlist? target;
+    try {
+      target = _playlists.firstWhere((p) => p.id == playlistId);
+    } catch (_) {
+      return;
+    }
+
+    bool changed = false;
+    final List<SavedSong> updatedSongs = List.from(target.songs);
+
+    // 2. Validate Local File Structure
+    for (int i = 0; i < updatedSongs.length; i++) {
+      final song = updatedSongs[i];
+      if (song.localPath != null && song.localPath!.isNotEmpty) {
+        final file = File(song.localPath!);
+        if (!(await file.exists())) {
+          LogService().log(
+            "refreshPlaylistInBackground: Local file missing for ${song.title}, cleaning up...",
+          );
+          // Try to find it again on the device before giving up
+          final foundPath = await _localPlaylistService.findSongOnDevice(
+            song.title,
+            song.artist,
+          );
+          if (foundPath != null) {
+            updatedSongs[i] = song.copyWith(localPath: foundPath);
+            changed = true;
+          } else {
+            updatedSongs[i] = song.copyWith(forceClearLocalPath: true);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      await _playlistService.updateSongsInPlaylist(playlistId, updatedSongs);
+      await _loadPlaylists(); // Refresh internal state
+    }
+
+    // 3. Chain to Video Link resolution (passes the now-updated songs)
+    try {
+      final latestPlaylist = _playlists.firstWhere((p) => p.id == playlistId);
+      resolvePlaylistLinksInBackground(playlistId, latestPlaylist.songs);
+    } catch (_) {
+      // Playlist might have been deleted
+    }
+  }
+
   Future<void> resolvePlaylistLinksInBackground(
     String playlistId,
     List<SavedSong> songs,
@@ -1845,6 +1911,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               title: currentSong.title,
               artist: currentSong.artist,
               spotifyUrl: currentSong.spotifyUrl,
+              appleMusicUrl: currentSong.appleMusicUrl,
             );
 
             if (links['youtube'] != null) {
@@ -2242,6 +2309,24 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String toPayloadId,
   ) async {
     await _playlistService.copySongs(songIds, fromPayloadId, toPayloadId);
+    await _loadPlaylists();
+  }
+
+  Future<void> moveSong(
+    String songId,
+    String fromPayloadId,
+    String toPayloadId,
+  ) async {
+    await _playlistService.moveSong(songId, fromPayloadId, toPayloadId);
+    await _loadPlaylists();
+  }
+
+  Future<void> moveSongs(
+    List<String> songIds,
+    String fromPayloadId,
+    String toPayloadId,
+  ) async {
+    await _playlistService.moveSongs(songIds, fromPayloadId, toPayloadId);
     await _loadPlaylists();
   }
 
@@ -3886,6 +3971,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Ensure playlist mode is OFF so next/prev buttons work for Radio
     _currentPlayingPlaylistId = null;
     _audioOnlySongId = null;
+    _metadataTimer
+        ?.cancel(); // Cancel any pending recognition timer from previous station
 
     // Save as "last played" immediately
     final prefs = await SharedPreferences.getInstance();
@@ -4442,6 +4529,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             artist: song.artist,
             spotifyUrl: song.spotifyUrl,
             youtubeUrl: song.youtubeUrl,
+            appleMusicUrl: song.appleMusicUrl,
           ).timeout(const Duration(seconds: 8));
         } catch (e) {
           LogService().log(
@@ -4826,16 +4914,91 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     return genre;
   }
 
+  String _cleanSongTitle(String title) {
+    return title.replaceAll("⬇️ ", "").replaceAll("📱 ", "").trim();
+  }
+
   Future<void> checkIfCurrentSongIsSaved() async {
     if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") {
       _currentSongIsSaved = false;
     } else {
+      final cleanTitle = _cleanSongTitle(_currentTrack);
       _currentSongIsSaved = await _playlistService.isSongInFavorites(
-        _currentTrack,
+        cleanTitle,
         _currentArtist,
       );
     }
     notifyListeners();
+  }
+
+  Future<bool?> toggleCurrentSongFavorite() async {
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") return null;
+    if (_isRecognizing) return null;
+
+    final cleanTitle = _cleanSongTitle(_currentTrack);
+    final cleanArtist = _currentArtist;
+
+    if (_currentSongIsSaved) {
+      // Remove
+      try {
+        final playlists = await _playlistService.loadPlaylists();
+        bool changed = false;
+        for (var p in playlists) {
+          final initialLen = p.songs.length;
+          p.songs.removeWhere((s) {
+            final sTitle = _cleanSongTitle(s.title);
+            return sTitle == cleanTitle && s.artist == cleanArtist;
+          });
+          if (p.songs.length != initialLen) changed = true;
+        }
+        if (changed) {
+          await _playlistService.saveAll(playlists);
+        }
+        _currentSongIsSaved = false;
+        notifyListeners();
+        return false;
+      } catch (e) {
+        debugPrint("Error toggling favorite (remove): $e");
+        return null;
+      }
+    } else {
+      // Add
+      try {
+        final genre = _currentGenre ?? "Mix";
+
+        // Sanitize album name: remove station name etc.
+        String cleanAlbum = _currentAlbum;
+        final stationName = _currentStation?.name ?? "";
+        if (stationName.isNotEmpty && cleanAlbum.contains(stationName)) {
+          cleanAlbum = cleanAlbum
+              .replaceAll(stationName, "")
+              .replaceAll("•", "")
+              .trim();
+        }
+
+        final songId = "${cleanTitle}_${cleanArtist}";
+        final song = SavedSong(
+          id: songId,
+          title: cleanTitle,
+          artist: cleanArtist,
+          album: cleanAlbum,
+          artUri: _currentAlbumArt ?? _currentStation?.logo ?? "",
+          duration: _currentSongDuration ?? Duration.zero,
+          dateAdded: DateTime.now(),
+          spotifyUrl: _currentSpotifyUrl,
+          youtubeUrl: _currentYoutubeUrl,
+          isValid: true,
+        );
+
+        await _playlistService.addToGenrePlaylist(genre, song);
+        _currentSongIsSaved = true;
+        notifyListeners();
+        return true;
+      } catch (e) {
+        debugPrint("Error toggling favorite (add): $e");
+        return null;
+      }
+    }
   }
 
   String _sanitizeArtistName(String artist) {
@@ -4876,6 +5039,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       artist: _currentArtist,
       spotifyUrl: _currentSpotifyUrl,
       youtubeUrl: _currentYoutubeUrl,
+      appleMusicUrl: _currentAppleMusicUrl,
     );
 
     // Update State
@@ -5336,6 +5500,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     required String artist,
     String? spotifyUrl,
     String? youtubeUrl,
+    String? appleMusicUrl,
   }) async {
     try {
       _lastSongLinkResponse = "Song Link: Fetching for '$title'...";
@@ -5363,6 +5528,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         sourceUrl = youtubeUrl;
       }
 
+      if (sourceUrl == null &&
+          appleMusicUrl != null &&
+          appleMusicUrl.contains('music.apple.com')) {
+        sourceUrl = appleMusicUrl;
+      }
+
       // 2b. EMERGENCY FALLBACK: iTunes Search
       // If we don't have a specific track link, use Title + Artist to find one via iTunes
       if (sourceUrl == null) {
@@ -5373,7 +5544,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       String debugLog = "--- SONG LINK CHECK (Manual) ---\n";
       debugLog += "1. Metadata: Title='$title', Artist='$artist'\n";
       debugLog +=
-          "2. Initial URLs: Spotify='${spotifyUrl ?? 'null'}', Youtube='${youtubeUrl ?? 'null'}'\n";
+          "2. Initial URLs: Spotify='${spotifyUrl ?? 'null'}', Youtube='${youtubeUrl ?? 'null'}', Apple='${appleMusicUrl ?? 'null'}'\n";
       debugLog += "3. Extracted SpotID: '${spotId ?? 'null'}'\n";
       debugLog += "4. Selected Source URL: '${sourceUrl ?? 'null'}'\n";
       debugLog += "----------------------------\n\n";
@@ -5724,12 +5895,21 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   Future<void> _attemptRecognition() async {
     // Entitlement Check: song_recognition
+    LogService().log(
+      "Recognition: Entitlement Check: ${_entitlementService.isFeatureEnabled('song_recognition')}",
+    );
     if (!_entitlementService.isFeatureEnabled('song_recognition')) {
       _isRecognizing = false; // Ensure loading state is OFF
       return;
     }
-
+    LogService().log("Recognition: ACRCloud Enabled: $isACRCloudEnabled");
     if (!isACRCloudEnabled) return;
+
+    // Defer to RadioAudioHandler for radio playback
+    if (_currentPlayingPlaylistId == null) {
+      _metadataTimer?.cancel();
+      return;
+    }
 
     // Strict Input Guard: Must be playing a station to recognize
     if (!_isPlaying ||
@@ -5737,8 +5917,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         _currentPlayingPlaylistId != null)
       return;
 
+    // Guard: Don't start another recognition if one is already in progress
+    if (_isRecognizing) return;
+
     LogService().log(
-      "ACRCloud: Starting recognition for ${_currentStation!.name}",
+      "Recognition: Starting identification for ${_currentStation!.name}",
     );
     _lastApiResponse = "Identifying...";
     _isRecognizing = true; // Start loading state
@@ -5747,8 +5930,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _audioHandler.updateMediaItem(
       MediaItem(
         id: _currentStation!.url,
-        title: "${_currentStation?.name ?? "Radio"} 🔍",
-        artist: "Identifying song...",
+        title: _currentStation?.name ?? "Radio",
         album: _currentStation?.name ?? "Radio",
         artUri: _currentStation?.logo != null
             ? Uri.tryParse(_currentStation!.logo!)
@@ -5871,13 +6053,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           notifyListeners();
         }
 
-        // --- INTELLIGENT SCHEDULING ---
         // Shazam usually doesn't provide precise offsets, we'll schedule a fixed delay check.
         int nextCheckDelay = 60000; // 60s default
-        LogService().log("ShazamAPI: Next check in ${nextCheckDelay ~/ 1000}s");
-
+        LogService().log(
+          "Recognition: Next check scheduled in ${nextCheckDelay ~/ 1000}s",
+        );
         _metadataTimer?.cancel();
-        LogService().log("Attempting Recognition...3");
         _metadataTimer = Timer(
           Duration(milliseconds: nextCheckDelay),
           _attemptRecognition,
@@ -5933,9 +6114,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   void _scheduleRetry(int seconds) {
-    LogService().log("ShazamAPI: Retrying in ${seconds}s");
+    LogService().log("Recognition: Scheduling retry in ${seconds}s");
     _metadataTimer?.cancel();
-    LogService().log("Attempting Recognition...4");
     _metadataTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
   }
 

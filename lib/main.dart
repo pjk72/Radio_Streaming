@@ -208,8 +208,8 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         listen: false,
       );
       AppOpenAdManager().init(entitlements);
+      _checkForUpdate();
     });
-    _checkForUpdate();
   }
 
   Future<void> _checkForUpdate() async {
@@ -217,14 +217,82 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       try {
         final info = await InAppUpdate.checkForUpdate();
         if (info.updateAvailability == UpdateAvailability.updateAvailable) {
-          if (info.immediateUpdateAllowed) {
-            await InAppUpdate.performImmediateUpdate();
+          if (mounted) {
+            _showUpdateDialog();
           }
         }
       } catch (e) {
         debugPrint('Error checking for updates: $e');
       }
     }
+  }
+
+  void _showUpdateDialog() {
+    final languageProvider = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    );
+
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Force user interaction
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1a1a24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withOpacity(0.1)),
+          ),
+          title: Text(
+            languageProvider.translate('update_available'),
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Text(
+            languageProvider.translate('update_desc'),
+            style: GoogleFonts.inter(color: Colors.white.withOpacity(0.8)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                languageProvider.translate('later'),
+                style: GoogleFonts.inter(color: Colors.white.withOpacity(0.6)),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                try {
+                  await InAppUpdate.performImmediateUpdate();
+                } catch (e) {
+                  debugPrint('Error performing immediate update: $e');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Update failed: $e')),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                languageProvider.translate('update_now'),
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override

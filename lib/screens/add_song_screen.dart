@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -439,7 +440,162 @@ class _AddSongScreenState extends State<AddSongScreen> {
     );
   }
 
-  Future<void> _saveSelectedSongs() async {
+  void _showPlaylistSelectionDialog() {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    final playlists = provider.playlists;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.5,
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).scaffoldBackgroundColor.withValues(alpha: 0.9),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            border: Border.all(color: Colors.white10),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    lang.translate('add_to_playlist'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white54),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Option: Create New Playlist
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.add, color: Theme.of(context).primaryColor),
+                ),
+                title: Text(
+                  lang.translate('create_new_playlist'),
+                  style: TextStyle(
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _createNewPlaylistAndSave();
+                },
+              ),
+              const Divider(color: Colors.white10),
+              // Playlists List
+              Expanded(
+                child: ListView.builder(
+                  itemCount: playlists.length,
+                  itemBuilder: (context, index) {
+                    final p = playlists[index];
+                    return ListTile(
+                      leading: const Icon(
+                        Icons.playlist_play_rounded,
+                        color: Colors.white70,
+                      ),
+                      title: Text(
+                        p.name,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _performSaveToPlaylist(p.id);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _createNewPlaylistAndSave() {
+    final controller = TextEditingController();
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a2e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          lang.translate('new_playlist'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: lang.translate('playlist_name'),
+            labelStyle: const TextStyle(color: Colors.white54),
+            enabledBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white24),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Theme.of(context).primaryColor),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(lang.translate('cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                final name = controller.text;
+                Navigator.pop(ctx);
+                _performSaveToPlaylist(null, newPlaylistName: name);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+            ),
+            child: Text(
+              lang.translate('create'),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performSaveToPlaylist(
+    String? playlistId, {
+    String? newPlaylistName,
+  }) async {
     final provider = Provider.of<RadioProvider>(context, listen: false);
     final lang = Provider.of<LanguageProvider>(context, listen: false);
     final count = _selectedItems.length;
@@ -452,9 +608,22 @@ class _AddSongScreenState extends State<AddSongScreen> {
     );
 
     try {
-      for (var item in _selectedItems) {
-        await provider.addFoundSongToGenre(item);
+      final songs = _selectedItems.map((item) => item.song).toList();
+      String targetPlaylistId;
+
+      if (newPlaylistName != null) {
+        final newPlaylist = await provider.createPlaylist(
+          newPlaylistName,
+          songs: songs,
+        );
+        targetPlaylistId = newPlaylist.id;
+      } else {
+        await provider.addSongsToPlaylist(playlistId!, songs);
+        targetPlaylistId = playlistId;
       }
+
+      // Start background resolution for all added songs to ensure video links etc.
+      provider.resolvePlaylistLinksInBackground(targetPlaylistId, songs);
 
       if (mounted) {
         Navigator.pop(context); // Pop loading
@@ -492,5 +661,10 @@ class _AddSongScreenState extends State<AddSongScreen> {
         );
       }
     }
+  }
+
+  Future<void> _saveSelectedSongs() async {
+    if (_selectedItems.isEmpty) return;
+    _showPlaylistSelectionDialog();
   }
 }

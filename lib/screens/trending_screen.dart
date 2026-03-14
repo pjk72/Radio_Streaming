@@ -13,6 +13,7 @@ import 'artist_details_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/log_service.dart';
 
 class TrendingScreen extends StatefulWidget {
   const TrendingScreen({super.key});
@@ -35,6 +36,7 @@ class _TrendingScreenState extends State<TrendingScreen>
   bool _isLoading = false;
   List<TrendingPlaylist> _playlists = [];
   String? _errorMessage;
+  bool _forYouLogged = false;
 
   // Speech to Text variables
   late stt.SpeechToText _speech;
@@ -136,15 +138,33 @@ class _TrendingScreenState extends State<TrendingScreen>
 
       // Lazily setup the intelligent recommendations
       final provider = Provider.of<RadioProvider>(context, listen: false);
-      if (provider.forYouFuture == null && !_useCustomQuery) {
-        final String cName = countryMap[_selectedCountryCode]!.contains(' ')
-            ? countryMap[_selectedCountryCode]!.substring(
-                countryMap[_selectedCountryCode]!.indexOf(' ') + 1,
-              )
-            : countryMap[_selectedCountryCode] ?? 'USA';
+      final countryName = countryMap[_selectedCountryCode]!.contains(' ')
+          ? countryMap[_selectedCountryCode]!.substring(
+              countryMap[_selectedCountryCode]!.indexOf(' ') + 1,
+            )
+          : countryMap[_selectedCountryCode] ?? 'USA';
 
-        provider.preFetchForYou(cName);
-      }
+      provider.preFetchForYou(
+        countryCode: _selectedCountryCode,
+        countryName: countryName,
+      );
+
+      // USER REQUEST: Log AI playlists creation for "PerTe" area
+      provider.forYouFuture?.then((playlists) {
+        if (mounted && !_forYouLogged) {
+          setState(() => _forYouLogged = true);
+          for (var p in playlists) {
+            final genre = p.title.replaceFirst('Mix ', '');
+            if (p.predefinedTracks != null) {
+              for (var t in p.predefinedTracks!) {
+                LogService().log(
+                  "Playlist [PerTe]: ${p.title} | Titolo: ${t['title']} | Genere: ${t['genre'] ?? genre}",
+                );
+              }
+            }
+          }
+        }
+      });
 
       final spotify = SpotifyService();
       await spotify.init(); // Load tokens
@@ -297,10 +317,6 @@ class _TrendingScreenState extends State<TrendingScreen>
                         setState(() {
                           _selectedCountryCode = val;
                           _useCustomQuery = false;
-                          Provider.of<RadioProvider>(
-                            context,
-                            listen: false,
-                          ).resetForYou();
                         });
                         _fetchTrending();
                       }
@@ -473,7 +489,7 @@ class _TrendingScreenState extends State<TrendingScreen>
               ),
 
             // AI "For You" Section
-            if (!_useCustomQuery && provider.forYouFuture != null)
+            if (provider.forYouFuture != null)
               FutureBuilder<List<TrendingPlaylist>>(
                 future: provider.forYouFuture,
                 builder: (context, snapshot) {
@@ -749,8 +765,14 @@ class _TrendingScreenState extends State<TrendingScreen>
     if (t.contains('gaming')) {
       return Icons.videogame_asset_outlined;
     }
-    if (t.contains('romance')) {
+    if (t.contains('romance') || t.contains('favorite')) {
       return Icons.favorite_outline;
+    }
+    if (t.contains('weekly') || t.contains('personal')) {
+      return Icons.person_outline;
+    }
+    if (t.contains('discovery') || t.contains('scoperta')) {
+      return Icons.explore_outlined;
     }
     if (t.contains('80s') || t.contains('90s') || t.contains('70s')) {
       return Icons.vibration_outlined; // Retro feel
@@ -861,34 +883,19 @@ class _TrendingScreenState extends State<TrendingScreen>
                                       height: 15,
                                     ), // Offset title higher
                                     Text(
-                                      item.title.split(' ').first.toUpperCase(),
-                                      style: GoogleFonts.outfit(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.8,
-                                        ),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 2,
-                                      ),
-                                    ),
-                                    Text(
-                                      item.title.contains(' ')
-                                          ? item.title.substring(
-                                              item.title.indexOf(' ') + 1,
-                                            )
-                                          : item.title,
+                                      item.title,
                                       textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 4,
+                                      softWrap: true,
                                       style: GoogleFonts.outfit(
                                         color: Colors.white,
-                                        fontSize: 26,
+                                        fontSize: 24,
                                         fontWeight: FontWeight.bold,
-                                        height: 0.9,
+                                        height: 1.1,
                                         shadows: [
                                           Shadow(
                                             color: Colors.black.withValues(
-                                              alpha: 0.4,
+                                              alpha: 0.5,
                                             ),
                                             offset: const Offset(0, 4),
                                             blurRadius: 10,

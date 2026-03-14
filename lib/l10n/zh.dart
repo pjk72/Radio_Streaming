@@ -306,6 +306,9 @@ final Map<String, String> zh = {
   'clean_all': '清理全部',
   'rename': '重命名',
   'copy_to_ellipsis': '复制到...',
+  'move_to': '移动到',
+  'moved_to': '已移动到 {0}',
+  'no_other_playlists_to_move': '没有其他可移动的播放列表。',
 
   // Add Song Screen
   'add_new_song': '添加新歌',
@@ -410,5 +413,14 @@ final Map<String, String> zh = {
   'unknown_title': '未知标题',
   'share': '分享',
   'share_song_text':
-      '🎵 来自 *MusicStream* 的分享 - {1} 的 {0}:\n{2}\n\n📱 下载 MusicStream 应用:\n{3}',
+      '🎵 分享自 *MusicStream* - {1} 的 {0}：\n{2}\n\n📱 下载 MusicStream 应用：\n{3}',
+
+  // Update
+  'update_available': '可用更新',
+  'update_desc': '应用程序有新版本可用。你想现在更新吗？',
+  'update_now': '现在更新',
+  'later': '稍后',
+  'webpage': '网页',
+  'privacy_policy': '隐私政策',
+  'version': '版本 {0}',
 };

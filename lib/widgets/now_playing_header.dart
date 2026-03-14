@@ -134,11 +134,12 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
       });
     }
 
-    // PRIORITY: Local Fetch -> Provider Artist Image -> Provider Album Art -> Station Logo
+    // PRIORITY: Local Fetch -> Provider Artist Image -> Station Logo
+    // NOTE: currentAlbumArt intentionally excluded to avoid the brief album-cover
+    // flash before the artist photo loads. Falls back directly to station logo.
     final String? imageUrl = station != null
         ? (_fetchedArtistImage ??
               provider.currentArtistImage ??
-              provider.currentAlbumArt ??
               station.logo)
         : null;
 
@@ -233,6 +234,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                             fit: BoxFit.cover,
                             color: Colors.black.withValues(alpha: 0.3),
                             colorBlendMode: BlendMode.darken,
+                            fallbackUrl: station?.logo,
                           ),
                         ),
                       ),
@@ -277,6 +279,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                   fit: BoxFit.cover,
                                   alignment:
                                       Alignment.topCenter, // Focus on face
+                                  fallbackUrl: station?.logo,
                                 ),
                               ),
                             ),
@@ -725,6 +728,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     Color? color,
     BlendMode? colorBlendMode,
     Alignment? alignment,
+    String? fallbackUrl, // Station logo fallback if the main image fails
   }) {
     if (url.startsWith('assets/')) {
       return Image.asset(
@@ -743,10 +747,21 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         alignment: alignment ?? Alignment.center,
         fadeInDuration: const Duration(milliseconds: 300),
         useOldImageOnUrlChange: true, // Reduce flickering
-        // Optimization: Cap the cache size.
-        // 1024 should be enough for a header on most phones/tablets without consuming too much RAM.
         memCacheWidth: 1024,
         maxWidthDiskCache: 1024,
+        // If the main image (artist/album art) fails, fall back to station logo
+        errorWidget: fallbackUrl != null && fallbackUrl != url
+            ? (context, url, error) => CachedNetworkImage(
+                imageUrl: fallbackUrl,
+                fit: fit,
+                color: color,
+                colorBlendMode: colorBlendMode,
+                alignment: alignment ?? Alignment.center,
+                fadeInDuration: const Duration(milliseconds: 200),
+                memCacheWidth: 512,
+                maxWidthDiskCache: 512,
+              )
+            : null,
       );
     }
   }

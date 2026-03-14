@@ -312,6 +312,10 @@ final Map<String, String> de = {
   'clean_all': 'Alles bereinigen',
   'rename': 'Umbenennen',
   'copy_to_ellipsis': 'Kopieren nach...',
+  'move_to': 'Verschieben nach',
+  'moved_to': 'Verschoben nach {0}',
+  'no_other_playlists_to_move':
+      'Keine anderen Wiedergabelisten zum Verschieben vorhanden.',
 
   // Add Song Screen
   'add_new_song': 'Neues Lied Hinzufügen',
@@ -421,5 +425,15 @@ final Map<String, String> de = {
   'unknown_title': 'Unbekannter Titel',
   'share': 'Teilen',
   'share_song_text':
-      '🎵 Geteilt von *MusicStream* - {0} von {1}:\n{2}\n\n📱 Lade die MusicStream-App herunter:\n{3}',
+      '🎵 Geteilt mit *MusicStream* - {0} von {1}:\n{2}\n\n📱 Lade die MusicStream App herunter:\n{3}',
+
+  // Update
+  'update_available': 'Update verfügbar',
+  'update_desc':
+      'Eine neue Version der App ist verfügbar. Möchten Sie jetzt aktualisieren?',
+  'update_now': 'Jetzt aktualisieren',
+  'later': 'Später',
+  'webpage': 'Webseite',
+  'privacy_policy': 'Datenschutzerklärung',
+  'version': 'Version {0}',
 };

@@ -310,6 +310,10 @@ final Map<String, String> es = {
   'clean_all': 'Limpiar todo',
   'rename': 'Renombrar',
   'copy_to_ellipsis': 'Copiar a...',
+  'move_to': 'Mover a',
+  'moved_to': 'Movido a {0}',
+  'no_other_playlists_to_move':
+      'No hay otras listas de reproducción para mover.',
 
   // Add Song Screen
   'add_new_song': 'Añadir Nueva Canción',
@@ -420,4 +424,14 @@ final Map<String, String> es = {
   'share': 'Compartir',
   'share_song_text':
       '🎵 Compartido desde *MusicStream* - {0} de {1}:\n{2}\n\n📱 Descarga la aplicación MusicStream:\n{3}',
+
+  // Update
+  'update_available': 'Actualización Disponible',
+  'update_desc':
+      'Hay una nueva versión de la aplicación disponible. ¿Quieres actualizar ahora?',
+  'update_now': 'Actualizar Ahora',
+  'later': 'Más tarde',
+  'webpage': 'Página Web',
+  'privacy_policy': 'Política de Privacidad',
+  'version': 'Versión {0}',
 };

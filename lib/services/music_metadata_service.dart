@@ -15,12 +15,17 @@ class MusicMetadataService {
   Future<List<SongSearchResult>> searchSongs({
     required String query,
     int limit = 10,
+    String? countryCode,
   }) async {
     // Basic cleaning of query
     final term = Uri.encodeComponent(query);
-    final url = Uri.parse(
-      '$_baseUrl?term=$term&media=music&entity=song&limit=$limit',
-    );
+    String urlString = '$_baseUrl?term=$term&media=music&entity=song&limit=$limit';
+    
+    if (countryCode != null && countryCode.isNotEmpty) {
+      urlString += '&country=$countryCode';
+    }
+
+    final url = Uri.parse(urlString);
 
     try {
       final response = await http.get(url);

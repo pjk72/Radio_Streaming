@@ -453,6 +453,34 @@ class SpotifyService {
     return null;
   }
 
+  Future<List<Map<String, dynamic>>> searchTracks(String query) async {
+    await _ensureToken();
+    if (!isLoggedIn) return [];
+
+    try {
+      final encodedQuery = Uri.encodeComponent(query);
+      final url =
+          "https://api.spotify.com/v1/search?q=$encodedQuery&type=track&limit=50";
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Authorization': 'Bearer $_accessToken'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final tracks = data['tracks']['items'] as List?;
+
+        if (tracks != null) {
+          return tracks.map((item) => Map<String, dynamic>.from(item)).toList();
+        }
+      }
+    } catch (e) {
+      LogService().log("SpotifyService: Track search exception: $e");
+    }
+    return [];
+  }
+
   Future<List<Map<String, dynamic>>> searchPlaylists(String query) async {
     await _ensureToken();
     if (!isLoggedIn) return [];
@@ -480,13 +508,9 @@ class SpotifyService {
               .where((m) => m.isNotEmpty)
               .toList();
         }
-      } else {
-        LogService().log(
-          "SpotifyService: Search failed: ${response.statusCode}",
-        );
       }
     } catch (e) {
-      LogService().log("SpotifyService: Search exception: $e");
+      LogService().log("SpotifyService: Playlist search exception: $e");
     }
     return [];
   }

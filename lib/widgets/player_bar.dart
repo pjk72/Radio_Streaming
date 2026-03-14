@@ -703,33 +703,53 @@ class PlayerBar extends StatelessWidget {
           IconButton(
             icon: Icon(
               provider.currentSongIsSaved
-                  ? Icons.check_circle
-                  : Icons.add_circle_outline,
+                  ? Icons.favorite
+                  : Icons.favorite_border,
             ),
             color: provider.currentSongIsSaved
-                ? Colors.greenAccent
+                ? Colors.redAccent
                 : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
             iconSize: 20,
             tooltip: provider.currentSongIsSaved
-                ? langProvider.translate('already_saved')
+                ? "Remove from Favorites" // Simplified English, or use translation if you want
                 : langProvider.translate('add_to_genre_playlist'),
-            onPressed: provider.currentSongIsSaved
-                ? null // Disable if already saved
-                : () async {
-                    final genre = await provider
-                        .addCurrentSongToGenrePlaylist();
+            onPressed: () async {
+                    final result = await provider.toggleCurrentSongFavorite();
                     if (context.mounted) {
-                      if (genre != null) {
+                      if (result == true) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             behavior: SnackBarBehavior.floating,
-                            backgroundColor: const Color(
-                              0xFF1a4d2e,
-                            ), // Dark Green
-                            content: Text(
-                              langProvider
-                                  .translate('added_to_playlist')
-                                  .replaceAll('{0}', genre),
+                            backgroundColor: const Color(0xFFb33939), // Dark Red/Heart styling
+                            content: Row(
+                              children: [
+                                const Icon(Icons.favorite, color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    langProvider.translate('added_to_playlist').replaceAll('{0}', 'Favorites'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      } else if (result == false) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: Colors.grey[800],
+                            content: Row(
+                              children: [
+                                const Icon(Icons.favorite_border, color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    "Removed from Favorites", // Assuming no direct translation exists, but can adjust if needed
+                                  ),
+                                ),
+                              ],
                             ),
                             duration: const Duration(seconds: 2),
                           ),

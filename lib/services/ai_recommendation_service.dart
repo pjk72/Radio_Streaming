@@ -1,411 +1,287 @@
-import 'dart:math';
 import '../models/saved_song.dart';
-import '../services/music_metadata_service.dart';
-import '../services/trending_service.dart';
+import 'music_metadata_service.dart';
+import 'trending_service.dart';
 
 class AIRecommendationService {
   final MusicMetadataService _metadataService = MusicMetadataService();
-  final Random _random = Random();
 
-  final List<String> _discoveryKeywords = [
-    'Pop',
-    'Rock',
-    '80s',
-    '90s',
-    '70s',
-    'Workout',
-    'Chill',
-    'Acoustic',
-    'Hip Hop',
-    'EDM',
-    'Jazz',
-    'R&B',
-    'Classical',
-    'Indie',
-    'Alternative',
-    'Country',
-    'Reggae',
-    'Blues',
-    'Soul',
-    'Funk',
-    'Disco',
-    'Metal',
-    'Punk',
-    'Techno',
-    'House',
-    'Trance',
-    'Ambient',
-    'Lofi',
-    'Party',
-    'Focus',
-    'Sleep',
-    'Romance',
-    'Gaming',
-    'Gym',
-    'Running',
-    'Latin',
-    'K-Pop',
-    'Afrobeat',
-    'Reggaeton',
-  ];
-
+  /// Main entry point: Generates a list of tailored playlists
   Future<List<TrendingPlaylist>> generateDiscoverWeekly({
     required Map<String, int> phoneHistory,
     required Map<String, int> aaHistory,
     required Map<String, SavedSong> historyMetadata,
-    int targetCount = 15, // Increased default as per RadioProvider
+    List<SavedSong> favorites = const [],
+    int targetCount = 25,
+    String? countryCode,
     String? countryName,
   }) async {
-    final Map<String, int> combinedHistory = {};
+    final Set<String> globalSeenIds = {};
+    final List<TrendingPlaylist> playlists = [];
 
-    phoneHistory.forEach((id, count) {
-      combinedHistory[id] = (combinedHistory[id] ?? 0) + count;
+    // Combine history for easy access
+    final List<SavedSong> userHistoryMetadata = historyMetadata.values.toList();
+    
+    // Sort history by play count (Total)
+    final List<SavedSong> sortedHistory = List.from(userHistoryMetadata);
+    sortedHistory.sort((a, b) {
+      final countA = (phoneHistory[a.id] ?? 0) + (aaHistory[a.id] ?? 0);
+      final countB = (phoneHistory[b.id] ?? 0) + (aaHistory[b.id] ?? 0);
+      return countB.compareTo(countA);
     });
 
-    aaHistory.forEach((id, count) {
-      combinedHistory[id] = (combinedHistory[id] ?? 0) + count;
-    });
-
-    final Set<String> usedGenres = {};
-    if (countryName != null && countryName.isNotEmpty) {
-      // We still keep country as a special "genre" for the first playlist
+    // 0. PERSONAL MIXES (New Dynamic Sections)
+    // 0.1 "Weekly Mix" (Mix Settimanale) - Most played
+    if (sortedHistory.isNotEmpty) {
+      final weeklyTracks =
+          sortedHistory.take(20).map((s) => _mapToTrack(s, true)).toList();
+      await _recoverMissingImages(weeklyTracks); // Recover missing images
+      playlists.add(_assemblePlaylist(
+        'Weekly Mix',
+        weeklyTracks,
+        owner: "Il tuo mix settimanale",
+      ));
+      for (var t in weeklyTracks) globalSeenIds.add(t['id']);
     }
 
-    if (combinedHistory.isEmpty || historyMetadata.isEmpty) {
-      final genericPlaylists = await _generateGenericDiscoverPlaylists(
-        targetCount,
-        {},
+    // 0.2 "Discovery Mix" (Scoperta) - Similar to top artists
+    if (sortedHistory.isNotEmpty) {
+      final topArtist = sortedHistory.first.artist.split(',').first.trim();
+      final discovery = await _createDynamicPlaylist(
+        title: 'Discovery Mix',
+        query: topArtist,
+        countryCode: countryCode,
+        countryName: countryName,
+        history: [], // Forcing new discovery
+        globalSeenIds: globalSeenIds,
       );
-      if (countryName != null && countryName.isNotEmpty) {
-        final cp = await _generateCountryPlaylist(countryName);
-        if (cp != null) genericPlaylists.insert(0, cp);
-      }
-      return genericPlaylists;
+      if (discovery != null) playlists.add(discovery);
     }
 
-    // NEW LOGIC: Detect Top Genres from history
-    // 1. Get top unique songs from history
-    final sortedHistory = combinedHistory.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    // 1. GENRE MIXES & DECADES (Standard Sections)
+    final sections = [
+      {'title': 'Mix Pop', 'query': 'Pop', 'genre': 'Pop'},
+      {'title': 'Mix Rock', 'query': 'Rock', 'genre': 'Rock'},
+      {'title': 'Mix Dance', 'query': 'Dance', 'genre': 'Dance'},
+      {'title': 'Mix Latin', 'query': 'Latin', 'genre': 'Latin'},
+      {'title': 'Mix Chillout', 'query': 'Chillout', 'genre': 'Chillout'},
+      {'title': 'Latest Hits', 'query': 'Latest Hits', 'period': 'Latest'},
+      {'title': '90s Hits', 'query': '1990s', 'period': '1990s'},
+      {'title': '80s Hits', 'query': '1980s', 'period': '1980s'},
+      {'title': '70s Hits', 'query': '1970s', 'period': '1970s'},
+      {'title': '60s Hits', 'query': '1960s', 'period': '1960s'},
+    ];
 
-    final int sampleLimit = 20;
-    final List<String> topIds = sortedHistory
-        .take(sampleLimit)
-        .map((e) => e.key)
-        .toList();
+    for (var sec in sections) {
+      final p = await _createDynamicPlaylist(
+        title: sec['title']!,
+        query: sec['query']!,
+        countryCode: countryCode,
+        countryName: countryName,
+        history: sortedHistory, // Pass sorted history to allow injection
+        globalSeenIds: globalSeenIds,
+        periodFilter: sec['period'],
+        genreFilter: sec['genre'],
+      );
+      if (p != null) playlists.add(p);
+    }
 
-    final Map<String, int> genreWeights = {};
-    final Map<String, String> songToGenre = {};
-    final Map<String, String> artistToGenre = {};
+    return playlists;
+  }
 
-    // 2. Fetch genres for top songs (Parallel)
-    final List<Future<void>> genreFetches = [];
-    for (var id in topIds) {
-      final song = historyMetadata[id];
-      if (song != null) {
-        genreFetches.add(() async {
+  /// Creates a single playlist by blending history and search results
+  Future<TrendingPlaylist?> _createDynamicPlaylist({
+    required String title,
+    required String query,
+    required List<SavedSong> history,
+    required Set<String> globalSeenIds,
+    String? countryCode,
+    String? countryName,
+    String? periodFilter,
+    String? genreFilter,
+  }) async {
+    final List<Map<String, dynamic>> tracks = [];
+    final Set<String> playlistSeenIds = {};
+    final Set<String> artists = {};
+
+    // 1. FILL FROM USER HISTORY (Natural Match)
+    for (var s in history) {
+      if (tracks.length >= 10) break; 
+      if (globalSeenIds.contains(s.id)) continue;
+
+      bool matches = false;
+      // Period matching
+      if (periodFilter != null && _isSongInPeriod(s, periodFilter)) {
+        matches = true;
+      } 
+      // Genre matching (Attempt)
+      else if (genreFilter != null) {
+        // If we don't have genre info, we can't be 100% sure, 
+        // but we can assume if the user listens to an artist a lot and we are in their mix, 
+        // it's a good candidate if we don't have other filters.
+        // For now, let's just use period as the primary hard filter for history.
+      }
+      // General match for Discovery/Query based mixes
+      else if (title == 'Discovery Mix') {
+        // We don't want history in discovery
+      }
+      else {
+        // For generic genre mixes without period, we take some history items to make it feel "personal"
+        // but we limit it.
+        if (tracks.length < 5) matches = true;
+      }
+
+      if (matches) {
+        tracks.add(_mapToTrack(s, true));
+        playlistSeenIds.add(s.id);
+        artists.add(s.artist.split(',').first.trim());
+      }
+    }
+
+    // 2. FILL FROM SEARCH (Local then Global)
+    final searchQueries = title == 'Discovery Mix' 
+        ? ["Similar to $query", "$query radio", "More like $query"]
+        : _generateSmartQueries(query, countryName, countryCode);
+
+    for (var q in searchQueries) {
+      if (tracks.length >= 25) break;
+
+      final results = await _metadataService.searchSongs(
+        query: q,
+        limit: 40,
+        countryCode: q.contains(countryName ?? '') ? countryCode : null,
+      );
+
+      for (var r in results) {
+        final s = r.song;
+        if (tracks.length >= 25) break;
+        if (playlistSeenIds.contains(s.id) || globalSeenIds.contains(s.id))
+          continue;
+
+        // Filter by period if necessary
+        if (periodFilter != null && !_isSongInPeriod(s, periodFilter)) continue;
+
+        // Diversity check
+        final artist = s.artist.split(',').first.trim();
+        if (artists.contains(artist) && tracks.length < 15) continue;
+
+        tracks.add(_mapToTrack(s, false));
+        playlistSeenIds.add(s.id);
+        artists.add(artist);
+      }
+    }
+
+    if (tracks.length < 5) return null;
+    
+    await _recoverMissingImages(tracks); // Recover missing images
+
+    globalSeenIds.addAll(playlistSeenIds);
+    return _assemblePlaylist(title, tracks);
+  }
+
+  List<String> _generateSmartQueries(
+    String base,
+    String? country,
+    String? code,
+  ) {
+    if (base == 'Latest Hits') {
+      final List<String> q = ["Today Hits"];
+      if (country != null) {
+        q.insert(0, "$country Hits");
+        q.insert(1, "Top $country");
+      }
+      return q;
+    }
+
+    if (base == 'Latin') {
+      final year = DateTime.now().year;
+      final prevYear = year - 1;
+      return [
+        "Top Latin $year",
+        "Top Latin $prevYear",
+        "Top Merengue Hits",
+        "Top Salsa Hits",
+        "Top Latin Pop",
+      ];
+    }
+
+    final List<String> q = ["$base Hits"];
+    if (country != null) {
+      q.insert(0, "$base $country");
+    }
+    return q;
+  }
+
+  bool _isSongInPeriod(SavedSong song, String period) {
+    final yearStr = song.releaseDate?.split('-').first ?? '0';
+    final year = int.tryParse(yearStr) ?? 0;
+
+    if (period == 'Latest') return year >= 2020;
+
+    final pYear = int.tryParse(period.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    if (pYear > 0) return year >= pYear && year < pYear + 10;
+
+    return true;
+  }
+
+  Map<String, dynamic> _mapToTrack(SavedSong s, bool fromHistory) => {
+    'title': s.title,
+    'artist': s.artist,
+    'album': s.album,
+    'image': s.artUri ?? '',
+    'id': s.id,
+    'provider': 'AI',
+    'fromHistory': fromHistory,
+    if (s.youtubeUrl != null) 'youtubeUrl': s.youtubeUrl,
+  };
+
+  TrendingPlaylist _assemblePlaylist(
+    String title,
+    List<Map<String, dynamic>> tracks, {
+    String owner = "AI Discovery",
+  }) {
+    return TrendingPlaylist(
+      id: "ai_${title.hashCode}_${DateTime.now().millisecond}",
+      title: title,
+      provider: 'AI',
+      trackCount: tracks.length,
+      owner: owner,
+      predefinedTracks: tracks,
+      imageUrls: tracks
+          .map((t) => t['image'].toString())
+          .where((i) => i.isNotEmpty)
+          .take(4)
+          .toList(),
+    );
+  }
+
+  /// Proactively recovers missing images for a list of tracks
+  Future<void> _recoverMissingImages(List<Map<String, dynamic>> tracks) async {
+    final List<Future<void>> futures = [];
+    // Limit recovery to first 15 tracks to keep it fast
+    for (var i = 0; i < tracks.length && i < 15; i++) {
+      final t = tracks[i];
+      if (t['image'] == null || t['image'].toString().isEmpty) {
+        futures.add(() async {
           try {
-            // Use metadata service to find the actual genre
+            final query = "${t['artist']} ${t['title']}";
             final results = await _metadataService.searchSongs(
-              query: "${song.title} ${song.artist}",
+              query: query,
               limit: 1,
             );
-            if (results.isNotEmpty) {
-              final rawGenre = results.first.genre;
-              final normalized = _normalizeGenre(rawGenre);
-              songToGenre[id] = normalized;
-
-              final weight = combinedHistory[id] ?? 1;
-              genreWeights[normalized] =
-                  (genreWeights[normalized] ?? 0) + weight;
-
-              // Map artist too for broader heuristic
-              final firstArtist = song.artist.split(',').first.trim();
-              if (firstArtist.isNotEmpty) {
-                artistToGenre[firstArtist] = normalized;
-              }
+            if (results.isNotEmpty && results.first.song.artUri != null) {
+              t['image'] = results.first.song.artUri;
             }
           } catch (_) {}
         }());
       }
     }
-    await Future.wait(
-      genreFetches,
-    ).timeout(const Duration(seconds: 10), onTimeout: () => []);
 
-    final sortedGenres = genreWeights.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    final List<TrendingPlaylist> playlists = [];
-    final Set<String> recommendedIds = combinedHistory.keys.toSet();
-
-    // Add Country Playlist first if available
-    if (countryName != null && countryName.isNotEmpty) {
-      final cp = await _generateCountryPlaylist(countryName);
-      if (cp != null) {
-        playlists.add(cp);
-        for (var t in cp.predefinedTracks ?? []) {
-          recommendedIds.add(t['id']);
-        }
-      }
-    }
-
-    // 3. Generate playlists for Top Genres
-    for (var genreEntry in sortedGenres) {
-      if (playlists.length >= targetCount) break;
-
-      final genre = genreEntry.key;
-      if (usedGenres.contains(genre)) continue;
-      usedGenres.add(genre);
-
-      try {
-        // Collect existing songs from history belonging to this genre
-        final List<Map<String, dynamic>> historyTracks = [];
-        combinedHistory.forEach((id, count) {
-          final song = historyMetadata[id];
-          if (song == null) return;
-
-          bool matches = false;
-          if (songToGenre[id] == genre) {
-            matches = true;
-          } else {
-            // Check artist heuristic
-            final firstArtist = song.artist.split(',').first.trim();
-            if (artistToGenre[firstArtist] == genre) {
-              matches = true;
-            }
-          }
-
-          if (matches) {
-            historyTracks.add({
-              'title': song.title,
-              'artist': song.artist,
-              'album': song.album,
-              'image': song.artUri ?? '',
-              'id': song.id,
-              'provider': 'AI',
-              'fromHistory': true,
-            });
-          }
-        });
-
-        // Fetch new recommendations for this genre
-        final results = await _metadataService.searchSongs(
-          query: "Popular $genre",
-          limit: 25,
-        );
-
-        final List<Map<String, dynamic>> discoveryTracks = [];
-        final imageUrls = <String>[];
-        final artistCounts = <String, int>{};
-
-        // Populate imagery from history first to make it feel familiar
-        for (var t in historyTracks) {
-          if (t['image'] != null &&
-              t['image'].isNotEmpty &&
-              imageUrls.length < 4) {
-            if (!imageUrls.contains(t['image'])) imageUrls.add(t['image']);
-          }
-        }
-
-        for (var result in results) {
-          if (!recommendedIds.contains(result.song.id)) {
-            final trackArtist = result.song.artist;
-            final count = artistCounts[trackArtist] ?? 0;
-            if (count >= 2) continue; // Variation
-
-            discoveryTracks.add({
-              'title': result.song.title,
-              'artist': trackArtist,
-              'album': result.song.album,
-              'image': result.song.artUri ?? '',
-              'id': result.song.id,
-              'provider': 'AI',
-            });
-            artistCounts[trackArtist] = count + 1;
-
-            if (result.song.artUri != null && result.song.artUri!.isNotEmpty) {
-              if (!imageUrls.contains(result.song.artUri) &&
-                  imageUrls.length < 4) {
-                imageUrls.add(result.song.artUri!);
-              }
-            }
-          }
-        }
-
-        // Combine: History (top) + Discovery
-        historyTracks.sort((a, b) {
-          final countA = combinedHistory[a['id']] ?? 0;
-          final countB = combinedHistory[b['id']] ?? 0;
-          return countB.compareTo(countA);
-        });
-
-        final finalTracks = [...historyTracks.take(5), ...discoveryTracks];
-        finalTracks.shuffle(_random);
-
-        if (finalTracks.length >= 3) {
-          playlists.add(
-            TrendingPlaylist(
-              id: "ai_playlist_genre_${genre.toLowerCase().replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}",
-              title: "Mix $genre",
-              provider: 'AI',
-              imageUrls: imageUrls,
-              trackCount: finalTracks.length,
-              owner: "AI Discovery",
-              predefinedTracks: finalTracks.take(20).toList(),
-            ),
-          );
-
-          // Add recommended IDs to avoid duplicates in other playlists
-          for (var t in finalTracks) {
-            recommendedIds.add(t['id']);
-          }
-        }
-      } catch (e) {
-        // Skip this genre
-      }
-    }
-
-    // Fallback to generic if we don't have enough
-    if (playlists.length < targetCount) {
-      final additional = await _generateGenericDiscoverPlaylists(
-        targetCount - playlists.length,
-        usedGenres,
+    if (futures.isNotEmpty) {
+      // Don't wait more than 3 seconds for recovery
+      await Future.wait(futures).timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => [],
       );
-      playlists.addAll(additional);
     }
-
-    // NOTE: We don't shuffle the entire list anymore to keep the most relevant (top genres) first
-    // as it usually feels better for "Per Te".
-    return playlists;
-  }
-
-  String _normalizeGenre(String rawGenre) {
-    final lower = rawGenre.toLowerCase();
-    for (var keyword in _discoveryKeywords) {
-      if (lower.contains(keyword.toLowerCase())) {
-        return keyword;
-      }
-    }
-    // Return capitalized first letter if not in list
-    if (rawGenre.isEmpty) return "Pop";
-    return rawGenre[0].toUpperCase() + rawGenre.substring(1).toLowerCase();
-  }
-
-  Future<List<TrendingPlaylist>> _generateGenericDiscoverPlaylists(
-    int count,
-    Set<String> usedKeywords,
-  ) async {
-    final List<TrendingPlaylist> playlists = [];
-
-    for (int i = 0; i < count; i++) {
-      final availableKeywords = _discoveryKeywords
-          .where((k) => !usedKeywords.contains(k))
-          .toList();
-      if (availableKeywords.isEmpty) break;
-
-      final keyword =
-          availableKeywords[_random.nextInt(availableKeywords.length)];
-      usedKeywords.add(keyword);
-
-      try {
-        final results = await _metadataService.searchSongs(
-          query: 'Popular $keyword',
-          limit: 15,
-        );
-        final uniqueValidTracks = <Map<String, dynamic>>[];
-        final imageUrls = <String>[];
-        final artistCounts = <String, int>{};
-
-        for (var result in results) {
-          final trackArtist = result.song.artist;
-          final count = artistCounts[trackArtist] ?? 0;
-          if (count >= 3) continue;
-
-          uniqueValidTracks.add({
-            'title': result.song.title,
-            'artist': trackArtist,
-            'album': result.song.album,
-            'image': result.song.artUri ?? '',
-            'id': result.song.id,
-            'provider': 'AI',
-          });
-          artistCounts[trackArtist] = count + 1;
-
-          if (result.song.artUri != null && result.song.artUri!.isNotEmpty) {
-            if (!imageUrls.contains(result.song.artUri) &&
-                imageUrls.length < 4) {
-              imageUrls.add(result.song.artUri!);
-            }
-          }
-
-          if (uniqueValidTracks.length >= 15) break;
-        }
-
-        if (uniqueValidTracks.isNotEmpty) {
-          playlists.add(
-            TrendingPlaylist(
-              id: "ai_playlist_generic_${DateTime.now().millisecondsSinceEpoch}_$i",
-              title: "Mix $keyword",
-              provider: 'AI',
-              imageUrls: imageUrls,
-              trackCount: uniqueValidTracks.length,
-              owner: "AI Discovery",
-              predefinedTracks: uniqueValidTracks,
-            ),
-          );
-        }
-      } catch (e) {}
-    }
-
-    return playlists;
-  }
-
-  Future<TrendingPlaylist?> _generateCountryPlaylist(String countryName) async {
-    try {
-      final results = await _metadataService.searchSongs(
-        query: 'Top Hits $countryName',
-        limit: 15,
-      );
-      final uniqueValidTracks = <Map<String, dynamic>>[];
-      final imageUrls = <String>[];
-      final artistCounts = <String, int>{};
-
-      for (var result in results) {
-        final trackArtist = result.song.artist;
-        final count = artistCounts[trackArtist] ?? 0;
-        if (count >= 3) continue;
-
-        uniqueValidTracks.add({
-          'title': result.song.title,
-          'artist': trackArtist,
-          'album': result.song.album,
-          'image': result.song.artUri ?? '',
-          'id': result.song.id,
-          'provider': 'AI',
-        });
-        artistCounts[trackArtist] = count + 1;
-
-        if (result.song.artUri != null && result.song.artUri!.isNotEmpty) {
-          if (!imageUrls.contains(result.song.artUri) && imageUrls.length < 4) {
-            imageUrls.add(result.song.artUri!);
-          }
-        }
-        if (uniqueValidTracks.length >= 15) break;
-      }
-
-      if (uniqueValidTracks.isNotEmpty) {
-        return TrendingPlaylist(
-          id: "ai_playlist_country_${DateTime.now().millisecondsSinceEpoch}",
-          title: "Mix $countryName",
-          provider: 'AI',
-          imageUrls: imageUrls,
-          trackCount: uniqueValidTracks.length,
-          owner: "AI Discovery",
-          predefinedTracks: uniqueValidTracks,
-        );
-      }
-    } catch (e) {}
-    return null;
   }
 }

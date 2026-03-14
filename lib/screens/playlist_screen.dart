@@ -766,6 +766,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             artist: song.artist,
             spotifyUrl: song.spotifyUrl,
             youtubeUrl: song.youtubeUrl,
+            appleMusicUrl: song.appleMusicUrl,
           )
           .timeout(const Duration(seconds: 10));
 
@@ -1869,14 +1870,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       return RefreshIndicator(
                         onRefresh: () async {
                           if (_selectedPlaylistId != null) {
-                            await provider.reloadPlaylists();
-                            // Also search for missing artworks when refreshing a specific playlist
-                            await provider.findMissingArtworks(
-                              playlistId: _selectedPlaylistId,
+                            // Call background refresh that checks local file structure and video links
+                            await provider.refreshPlaylistInBackground(
+                              _selectedPlaylistId!,
                             );
+                            await provider.reloadPlaylists();
                           } else {
-                            // If artist or album selection, still refresh all?
-                            // Or maybe just reload. For now, let's call it without ID.
                             await provider.reloadPlaylists();
                             await provider.findMissingArtworks();
                           }
@@ -3374,6 +3373,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     artist: song.artist,
                     spotifyUrl: song.spotifyUrl,
                     youtubeUrl: song.youtubeUrl,
+                    appleMusicUrl: song.appleMusicUrl,
                   )
                   .timeout(const Duration(seconds: 20));
               audioUrl = links['youtube'];
@@ -5343,6 +5343,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       artist: song.artist,
                                       spotifyUrl: song.spotifyUrl,
                                       youtubeUrl: song.youtubeUrl,
+                                      appleMusicUrl: song.appleMusicUrl,
                                     )
                                     .timeout(
                                       const Duration(seconds: 10),
@@ -5417,6 +5418,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               }
                             } else if (value == 'copy') {
                               await _showCopySongDialog(
+                                context,
+                                provider,
+                                playlist,
+                                song.id,
+                              );
+                            } else if (value == 'move') {
+                              await _showMoveSongDialog(
                                 context,
                                 provider,
                                 playlist,
@@ -5571,6 +5579,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       artist: song.artist,
                                       spotifyUrl: song.spotifyUrl,
                                       youtubeUrl: song.youtubeUrl,
+                                      appleMusicUrl: song.appleMusicUrl,
                                     )
                                     .timeout(
                                       const Duration(seconds: 10),
@@ -5674,6 +5683,24 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       context,
                                       listen: false,
                                     ).translate('copy_to'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'move',
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.drive_file_move_rounded,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    Provider.of<LanguageProvider>(
+                                      context,
+                                      listen: false,
+                                    ).translate('move_to'),
                                   ),
                                 ],
                               ),
@@ -5929,6 +5956,104 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           listen: false,
                                         )
                                         .translate('copied_to')
+                                        .replaceAll('{0}', p.name),
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
+  Future<bool> _showMoveSongDialog(
+    BuildContext context,
+    RadioProvider provider,
+    Playlist currentPlaylist,
+    String songId,
+  ) async {
+    final others = provider.playlists
+        .where((p) => p.id != currentPlaylist.id && p.id != 'favorites')
+        .toList();
+    if (others.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('no_other_playlists_to_move'),
+          ),
+        ),
+      );
+      return false;
+    }
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('move_to'),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.titleLarge?.color,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: others
+                      .map(
+                        (p) => ListTile(
+                          leading: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Center(child: _buildDialogIcon(context, p)),
+                          ),
+                          title: Text(
+                            p.name,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          onTap: () {
+                            provider.moveSong(songId, currentPlaylist.id, p.id);
+                            Navigator.pop(ctx, true);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        )
+                                        .translate('moved_to')
                                         .replaceAll('{0}', p.name),
                                   ),
                                 ),

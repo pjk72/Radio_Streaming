@@ -1191,46 +1191,70 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                           return IconButton(
                             icon: Icon(
                               provider.currentSongIsSaved
-                                  ? Icons.check_circle
-                                  : Icons.add_circle_outline,
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
                             ),
                             color: provider.currentSongIsSaved
-                                ? Colors.greenAccent
+                                ? Colors.redAccent
                                 : Colors.white54,
                             iconSize: 28,
                             tooltip: provider.currentSongIsSaved
-                                ? Provider.of<LanguageProvider>(
-                                    context,
-                                    listen: false,
-                                  ).translate('already_saved')
+                                ? "Remove from Favorites"
                                 : Provider.of<LanguageProvider>(
                                     context,
                                     listen: false,
                                   ).translate('add_to_genre_playlist'),
-                            onPressed: provider.currentSongIsSaved
-                                ? null
-                                : () async {
-                                    final genre = await provider
-                                        .addCurrentSongToGenrePlaylist();
+                            onPressed: () async {
+                                    final result = await provider
+                                        .toggleCurrentSongFavorite();
                                     if (context.mounted) {
-                                      if (genre != null) {
+                                      if (result == true) {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
                                           SnackBar(
                                             behavior: SnackBarBehavior.floating,
-                                            backgroundColor: const Color(
-                                              0xFF1a4d2e,
+                                            backgroundColor: const Color(0xFFb33939), // Dark Red/Heart styling
+                                            content: Row(
+                                              children: [
+                                                const Icon(Icons.favorite, color: Colors.white, size: 20),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    Provider.of<LanguageProvider>(
+                                                          context,
+                                                          listen: false,
+                                                        )
+                                                        .translate(
+                                                          'added_to_playlist',
+                                                        )
+                                                        .replaceAll('{0}', 'Favorites'),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            content: Text(
-                                              Provider.of<LanguageProvider>(
-                                                    context,
-                                                    listen: false,
-                                                  )
-                                                  .translate(
-                                                    'added_to_playlist',
-                                                  )
-                                                  .replaceAll('{0}', genre),
+                                            duration: const Duration(
+                                              seconds: 2,
+                                            ),
+                                          ),
+                                        );
+                                      } else if (result == false) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            behavior: SnackBarBehavior.floating,
+                                            backgroundColor: Colors.grey[800],
+                                            content: Row(
+                                              children: [
+                                                const Icon(Icons.favorite_border, color: Colors.white, size: 20),
+                                                const SizedBox(width: 8),
+                                                const Expanded(
+                                                  child: Text(
+                                                    "Removed from Favorites",
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                             duration: const Duration(
                                               seconds: 2,

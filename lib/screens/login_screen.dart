@@ -6,7 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/radio_provider.dart';
-import '../providers/language_provider.dart';
+
 import 'package:firebase_analytics/firebase_analytics.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -80,20 +80,58 @@ class _LoginScreenState extends State<LoginScreen> {
         await FirebaseAnalytics.instance.logEvent(name: 'login_google');
 
         _goToHome();
+      } else if (!auth.isSignedIn && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              "Sign in canceled",
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
+              textAlign: TextAlign.center,
+            ),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(bottom: 40, left: 80, right: 80),
+            backgroundColor: Colors.black.withValues(alpha: 0.8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            elevation: 0,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              Provider.of<LanguageProvider>(
-                context,
-                listen: false,
-              ).translate('login_failed').replaceAll('{0}', e.toString()),
+            content: const Text(
+              "Sign-in failed. Try again.",
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
+              textAlign: TextAlign.center,
             ),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(bottom: 40, left: 60, right: 60),
+            backgroundColor: Colors.black.withValues(alpha: 0.8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            elevation: 0,
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _continueAsGuest() async {
+    setState(() => _isLoading = true);
+    try {
+      final auth = Provider.of<BackupService>(context, listen: false);
+      await auth.signOut();
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('was_guest', true);
+
+      await FirebaseAnalytics.instance.logEvent(name: 'login_guest');
+
+      _goToHome();
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -264,22 +302,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       // Guest Option
                       TextButton(
-                        onPressed: () async {
-                          final auth = Provider.of<BackupService>(
-                            context,
-                            listen: false,
-                          );
-                          await auth.signOut();
-
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.setBool('was_guest', true);
-
-                          await FirebaseAnalytics.instance.logEvent(
-                            name: 'login_guest',
-                          );
-
-                          _goToHome();
-                        },
+                        onPressed: _continueAsGuest,
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                             vertical: 16,

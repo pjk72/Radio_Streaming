@@ -17,7 +17,7 @@ import '../services/playlist_service.dart';
 import '../models/playlist.dart' as model;
 import 'log_service.dart';
 import '../utils/genre_mapper.dart';
-import 'shazam_api_service.dart';
+import 'recognition_api_service.dart';
 import 'song_link_service.dart';
 import 'encryption_service.dart';
 
@@ -70,8 +70,7 @@ class RadioAudioHandler extends BaseAudioHandler
   // Recognition
   bool _isACRCloudEnabled =
       true; // Kept flag name to avoid breaking external calls
-  bool _isDevUser = false; // Strict Guard
-  final ShazamApiService _shazamApiService = ShazamApiService();
+  final RecognitionApiService _recognitionApiService = RecognitionApiService();
   final SongLinkService _songLinkService = SongLinkService();
   Timer? _recognitionTimer;
 
@@ -117,26 +116,15 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   void setACRCloudEnabled(bool value) {
-    if (!_isDevUser && value == true) return;
     _isACRCloudEnabled = value;
     if (!_isACRCloudEnabled) {
       _stopRecognition();
     }
   }
 
-  void setDevUser(bool value) {
-    _isDevUser = value;
-    if (!_isDevUser) {
-      _isACRCloudEnabled = false; // Force OFF
-      _stopRecognition();
-      // Clear any pre-existing song metadata if not authorized
-      _handleNoMatch();
-    }
-  }
-
   void _stopRecognition() {
     _recognitionTimer?.cancel();
-    _shazamApiService.cancel();
+    _recognitionApiService.cancel();
 
     // Revert identifying text if it was showing
     final currentItem = mediaItem.value;
@@ -317,34 +305,30 @@ class RadioAudioHandler extends BaseAudioHandler
     _playerPositionSubscription = _player.onPositionChanged.listen((pos) {
       _currentPosition = pos; // Track position
 
-      // Fallback: If we see position moving, we are definitely NOT buffering anymore
-      // BUT we don't clear _expectingStop here as it might be a stale event from a previous track
-      if (_isInitialBuffering && pos > Duration.zero) {
+      // Fallback: If we see position moving or stop expecting stop, we are definitely NOT buffering anymore
+      if (_isInitialBuffering && (pos > Duration.zero || !_expectingStop)) {
         _isInitialBuffering = false;
         _broadcastState(_player.state);
-        // Also ensure stuck monitor starts if not already
         _startStuckMonitor();
-        return;
-      }
 
-      if (_isInitialBuffering && !_expectingStop) {
-        _isInitialBuffering = false;
-        _broadcastState(_player.state);
         // Start recognition if in Radio Mode
         if (playbackState.value.playing &&
             mediaItem.value?.extras?['type'] != 'playlist_song') {
-          if (_recognitionTimer == null || !_recognitionTimer!.isActive) {
-            // Delay recognition by 5 seconds to match Application Rules
-            Timer(const Duration(seconds: 5), () {
-              if (playbackState.value.playing &&
-                  (_isDevUser || _isACRCloudEnabled) &&
-                  mediaItem.value?.extras?['type'] != 'playlist_song') {
-                LogService().log("Attempting Recognition...5");
-                _attemptRecognition();
-              }
-            });
-          }
+          // CRITICAL: Always cancel any previous timer before starting a new one
+          _recognitionTimer?.cancel();
+
+          // Delay recognition by 5 seconds to match Application Rules
+          LogService().log("Recognition: Scheduling primary attempt in 5s...");
+          _recognitionTimer = Timer(const Duration(seconds: 5), () {
+            if (playbackState.value.playing &&
+                _isACRCloudEnabled &&
+                mediaItem.value?.extras?['type'] != 'playlist_song') {
+              LogService().log("Attempting Recognition...5");
+              _attemptRecognition();
+            }
+          });
         }
+        return;
       } else {
         // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
         final expectedDuration = mediaItem.value?.duration;
@@ -484,7 +468,6 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _initializeBackgroundState() async {
     LogService().log("RadioAudioHandler: Starting background state load...");
     try {
-      await _loadSettings();
       await _quickRestore();
       await _loadStationsFromPrefs();
       await _loadQueue();
@@ -536,14 +519,6 @@ class RadioAudioHandler extends BaseAudioHandler
         _broadcastState(PlayerState.stopped);
       }
     } catch (_) {}
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final email = prefs.getString('user_email');
-    _isDevUser =
-        email == utf8.decode(base64.decode("b3JhemlvLmZhemlvQGdtYWlsLmNvbQ=="));
   }
 
   Future<void> _loadStationsFromPrefs() async {
@@ -2071,6 +2046,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // ORIGINAL RADIO LOGIC BELOW
     // 1. Force Stop & Clean State
+    _stopRecognition(); // Reset recognition state and timers before starting new station
     _expectingStop = true;
     _isRetryPending = false;
     if (!_internalRetry) {
@@ -3359,18 +3335,15 @@ class RadioAudioHandler extends BaseAudioHandler
   // --- RECOGNITION LOGIC ---
 
   Future<void> _attemptRecognition() async {
-    // Strict Guard: Only Dev User allowed
-    if (!_isDevUser) {
-      // Ensure timer is killed if it somehow got here
-      _recognitionTimer?.cancel();
-      return;
-    }
-
     if (!_isACRCloudEnabled) return;
 
     // Validations
     final currentItem = mediaItem.value;
     if (currentItem == null) return;
+
+    // Guard: Prevent multiple concurrent attempts
+    if (currentItem.artist == "Identifying song...") return;
+
     if (currentItem.extras?['type'] == 'playlist_song')
       return; // Don't recognize playlist songs
     if (!playbackState.value.playing) return;
@@ -3383,13 +3356,13 @@ class RadioAudioHandler extends BaseAudioHandler
     if (currentItem.id == streamUrl) {
       mediaItem.add(
         currentItem.copyWith(
-          title: "${currentItem.title} 🔍",
+          title: currentItem.title,
           artist: "Identifying song...",
         ),
       );
     }
 
-    final result = await _shazamApiService.identifyStream(streamUrl);
+    final result = await _recognitionApiService.identifyStream(streamUrl);
 
     if (result != null && result.containsKey('track')) {
       final trackInfo = result['track'];
@@ -3411,7 +3384,7 @@ class RadioAudioHandler extends BaseAudioHandler
           } catch (_) {}
         }
 
-        LogService().log("ShazamAPI: Match found: $title - $artists");
+        LogService().log("RecognitionAPI: Match found: $title - $artists");
 
         // Lookup station to preserve radio identity on Android Auto
         Station? station;
@@ -3433,19 +3406,52 @@ class RadioAudioHandler extends BaseAudioHandler
         );
         mediaItem.add(newMediaItem);
 
-        // Try to find artwork from Shazam
-        String? shazamArtwork;
+        // Try to find artwork from Recognition service
+        String? recognitionArtwork;
         if (trackInfo['images'] != null &&
             trackInfo['images']['coverart'] != null) {
-          shazamArtwork = trackInfo['images']['coverart'];
+          recognitionArtwork = trackInfo['images']['coverart'];
         }
 
         // Start Smart Link Resolution (Album Art Recovery)
-        _resolveAndApplyMetadata(title ?? "", artists ?? "", shazamArtwork);
+        _resolveAndApplyMetadata(
+          title ?? "",
+          artists ?? "",
+          recognitionArtwork,
+        );
 
         // Schedule Next Check
         int nextCheckDelay = 60000; // 60s default
-        LogService().log("ShazamAPI: Next check in ${nextCheckDelay ~/ 1000}s");
+
+        try {
+          double offsetSeconds = 0;
+          if (result['matches'] != null &&
+              result['matches'] is List &&
+              (result['matches'] as List).isNotEmpty) {
+            offsetSeconds = (result['matches'][0]['offset'] as num).toDouble();
+            if (offsetSeconds < 0) offsetSeconds = 0;
+          }
+          final durationMs = await _fetchItunesDuration(
+            title ?? "",
+            artists ?? "",
+          );
+          if (durationMs != null && durationMs > 0) {
+            final durationSeconds = durationMs / 1000.0;
+            final remainingSeconds = durationSeconds - offsetSeconds;
+
+            if (remainingSeconds > 0) {
+              nextCheckDelay = ((remainingSeconds + 5) * 1000).toInt();
+              if (nextCheckDelay > 240000) nextCheckDelay = 240000;
+              if (nextCheckDelay < 15000) nextCheckDelay = 15000;
+            }
+          }
+        } catch (e) {
+          LogService().log("Error calculating intelligent scheduling: $e");
+        }
+
+        LogService().log(
+          "RecognitionAPI: Duration estimated, next check in ${nextCheckDelay ~/ 1000}s",
+        );
 
         _recognitionTimer?.cancel();
         LogService().log("Attempting Recognition...8");
@@ -3556,6 +3562,27 @@ class RadioAudioHandler extends BaseAudioHandler
         if (data['resultCount'] > 0) {
           final result = data['results'][0];
           return result['trackViewUrl'] as String?;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<int?> _fetchItunesDuration(String title, String artist) async {
+    try {
+      final query = "$title $artist";
+      final encodedOriginal = Uri.encodeComponent(query);
+      final url = Uri.parse(
+        'https://itunes.apple.com/search?term=$encodedOriginal&limit=1&media=music',
+      );
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['resultCount'] > 0) {
+          final result = data['results'][0];
+          return result['trackTimeMillis'] as int?;
         }
       }
     } catch (_) {}

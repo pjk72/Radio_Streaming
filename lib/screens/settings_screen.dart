@@ -13,6 +13,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'local_library_screen.dart';
 import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,10 +25,21 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   Timer? _backupUnlockTimer;
+  String _appVersion = '1.1.1';
 
   @override
   void initState() {
     super.initState();
+    _loadAppInfo();
+  }
+
+  Future<void> _loadAppInfo() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() {
+        _appVersion = "${packageInfo.version}+${packageInfo.buildNumber}";
+      });
+    }
   }
 
   @override
@@ -88,7 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
+            color: Theme.of(context).colorScheme.surface,
             border: Border.all(
               color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
             ),
@@ -273,25 +286,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   if (auth.isSignedIn) {
                                     await auth.signOut();
                                   } else {
-                                    try {
-                                      await auth.signIn();
-                                    } catch (e) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            langProvider
-                                                .translate('error_generic')
-                                                .replaceAll(
-                                                  '{0}',
-                                                  e.toString(),
-                                                ),
-                                          ),
-                                        ),
-                                      );
+                                      try {
+                                        await auth.signIn();
+                                        if (!auth.isSignedIn && context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: const Text(
+                                                "Sign in canceled",
+                                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              duration: const Duration(seconds: 2),
+                                              behavior: SnackBarBehavior.floating,
+                                              margin: const EdgeInsets.only(bottom: 40, left: 80, right: 80),
+                                              backgroundColor: Colors.black.withValues(alpha: 0.8),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                                              elevation: 0,
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: const Text(
+                                                "Sign-in failed. Try again.",
+                                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                              duration: const Duration(seconds: 3),
+                                              behavior: SnackBarBehavior.floating,
+                                              margin: const EdgeInsets.only(bottom: 40, left: 60, right: 60),
+                                              backgroundColor: Colors.black.withValues(alpha: 0.8),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                                              elevation: 0,
+                                            ),
+                                          );
+                                        }
+                                      }
                                     }
-                                  }
                                 },
                                 child: Text(
                                   auth.isSignedIn
@@ -1064,6 +1097,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 40),
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).dividerColor.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).dividerColor.withValues(alpha: 0.05),
+                              ),
+                            ),
+                            child: Text(
+                              langProvider
+                                  .translate('version')
+                                  .replaceAll('{0}', _appVersion)
+                                  .toUpperCase(),
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withValues(alpha: 0.3),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildFooterButton(
+                                context,
+                                icon: Icons.public_rounded,
+                                label: langProvider.translate('webpage'),
+                                url: 'https://pjk72.github.io/musicstream',
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                "•",
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.2),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _buildFooterButton(
+                                context,
+                                icon: Icons.security_outlined,
+                                label: langProvider.translate('privacy_policy'),
+                                url:
+                                    'https://pjk72.github.io/musicstream/policy.html',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1570,6 +1674,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildFooterButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String url,
+  }) {
+    return InkWell(
+      onTap: () =>
+          launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.color?.withValues(alpha: 0.8),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

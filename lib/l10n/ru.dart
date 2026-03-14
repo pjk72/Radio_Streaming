@@ -308,6 +308,9 @@ final Map<String, String> ru = {
   'clean_all': 'Очистить все',
   'rename': 'Переименовать',
   'copy_to_ellipsis': 'Копировать в...',
+  'move_to': 'Переместить в',
+  'moved_to': 'Перемещено в {0}',
+  'no_other_playlists_to_move': 'Нет других плейлистов для перемещения.',
 
   // Add Song Screen
   'add_new_song': 'Добавить новую песню',
@@ -417,5 +420,14 @@ final Map<String, String> ru = {
   'unknown_title': 'Неизвестное название',
   'share': 'Поделиться',
   'share_song_text':
-      '🎵 Поделились из *MusicStream* - {0} от {1}:\n{2}\n\n📱 Скачать приложение MusicStream:\n{3}',
+      '🎵 Поделился из *MusicStream* — {0} от {1}:\n{2}\n\n📱 Скачать приложение MusicStream:\n{3}',
+
+  // Update
+  'update_available': 'Доступно обновление',
+  'update_desc': 'Доступна новая версия приложения. Хотите обновить сейчас?',
+  'update_now': 'Обновить сейчас',
+  'later': 'Позже',
+  'webpage': 'Веб-страница',
+  'privacy_policy': 'Политика конфиденциальности',
+  'version': 'Версия {0}',
 };

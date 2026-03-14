@@ -384,6 +384,96 @@ class PlaylistService {
     }
   }
 
+  Future<void> moveSong(
+    String songId,
+    String fromPlaylistId,
+    String toPlaylistId,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final fromIndex = playlists.indexWhere((p) => p.id == fromPlaylistId);
+    final toIndex = playlists.indexWhere((p) => p.id == toPlaylistId);
+
+    if (fromIndex != -1 && toIndex != -1) {
+      final songIndex = playlists[fromIndex].songs.indexWhere(
+        (s) => s.id == songId,
+      );
+      if (songIndex != -1) {
+        final song = playlists[fromIndex].songs[songIndex];
+
+        bool changed = false;
+
+        // Add to destination (check duplicates)
+        if (!playlists[toIndex].songs.any(
+          (s) =>
+              s.id == song.id ||
+              (s.title == song.title && s.artist == song.artist),
+        )) {
+          playlists[toIndex].songs.insert(0, song);
+          changed = true;
+        }
+
+        // Remove from source
+        playlists[fromIndex].songs.removeAt(songIndex);
+        changed = true;
+
+        if (changed) {
+          await _savePlaylists(prefs, playlists);
+          _notifyListeners();
+        }
+      }
+    }
+  }
+
+  Future<void> moveSongs(
+    List<String> songIds,
+    String fromPlaylistId,
+    String toPlaylistId,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final playlists = await loadPlaylists();
+
+    final fromIndex = playlists.indexWhere((p) => p.id == fromPlaylistId);
+    final toIndex = playlists.indexWhere((p) => p.id == toPlaylistId);
+
+    if (fromIndex != -1 && toIndex != -1) {
+      bool changed = false;
+      final List<SavedSong> songsToMove = [];
+
+      for (var songId in songIds) {
+        final songIndex = playlists[fromIndex].songs.indexWhere(
+          (s) => s.id == songId,
+        );
+        if (songIndex != -1) {
+          final song = playlists[fromIndex].songs[songIndex];
+          songsToMove.add(song);
+
+          // Add to destination (check duplicates)
+          if (!playlists[toIndex].songs.any(
+            (s) =>
+                s.id == song.id ||
+                (s.title == song.title && s.artist == song.artist),
+          )) {
+            playlists[toIndex].songs.insert(0, song);
+            changed = true;
+          }
+        }
+      }
+
+      // Remove from source
+      if (songsToMove.isNotEmpty) {
+        playlists[fromIndex].songs.removeWhere((s) => songIds.contains(s.id));
+        changed = true;
+      }
+
+      if (changed) {
+        await _savePlaylists(prefs, playlists);
+        _notifyListeners();
+      }
+    }
+  }
+
   Future<bool> isSongInFavorites(String title, String artist) async {
     final playlists = await loadPlaylists();
     if (playlists.isEmpty) return false;
@@ -393,6 +483,7 @@ class PlaylistService {
       (p) => p.songs.any((s) => s.title == title && s.artist == artist),
     );
   }
+
 
   Future<void> addToGenrePlaylist(String genre, SavedSong song) async {
     await addSongsToGenrePlaylists([(genre: genre, song: song)]);
