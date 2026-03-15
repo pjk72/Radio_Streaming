@@ -73,6 +73,10 @@ class RadioAudioHandler extends BaseAudioHandler
   final RecognitionApiService _recognitionApiService = RecognitionApiService();
   final SongLinkService _songLinkService = SongLinkService();
   Timer? _recognitionTimer;
+  DateTime? _lastRecognitionTime;
+  Duration? _nextCheckDuration;
+  bool _isSearching = false;
+
 
   void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
     if (kDebugMode) {
@@ -125,17 +129,33 @@ class RadioAudioHandler extends BaseAudioHandler
   void _stopRecognition() {
     _recognitionTimer?.cancel();
     _recognitionApiService.cancel();
+    _lastRecognitionTime = null;
+    _nextCheckDuration = null;
 
-    // Revert identifying text if it was showing
     final currentItem = mediaItem.value;
-    if (currentItem != null && currentItem.artist == "Identifying song...") {
+    if (currentItem != null && currentItem.duration != null) {
+      mediaItem.add(currentItem.copyWith(duration: null));
+    }
+    _broadcastState();
+
+    _isSearching = false;
+    _broadcastState();
+
+    // Revert identifying state if it was showing
+    if (currentItem != null && (currentItem.extras?['isSearching'] == true)) {
       Station? station;
       try {
         station = _stations.firstWhere((s) => s.url == currentItem.id);
       } catch (_) {}
       if (station != null) {
+        final newExtras = Map<String, dynamic>.from(currentItem.extras ?? {});
+        newExtras['isSearching'] = false;
         mediaItem.add(
-          currentItem.copyWith(title: station.name, artist: station.genre),
+          currentItem.copyWith(
+            title: station.name,
+            artist: station.genre,
+            extras: newExtras,
+          ),
         );
       }
     }
@@ -303,7 +323,9 @@ class RadioAudioHandler extends BaseAudioHandler
     });
 
     _playerPositionSubscription = _player.onPositionChanged.listen((pos) {
-      _currentPosition = pos; // Track position
+      if (mediaItem.value?.extras?['type'] == 'playlist_song') {
+        _currentPosition = pos; // Track position only for playlist songs
+      }
 
       // Fallback: If we see position moving or stop expecting stop, we are definitely NOT buffering anymore
       if (_isInitialBuffering && (pos > Duration.zero || !_expectingStop)) {
@@ -311,14 +333,22 @@ class RadioAudioHandler extends BaseAudioHandler
         _broadcastState(_player.state);
         _startStuckMonitor();
 
-        // Start recognition if in Radio Mode
+        // Start recognition if in Radio Mode and enabled
         if (playbackState.value.playing &&
+            _isACRCloudEnabled &&
             mediaItem.value?.extras?['type'] != 'playlist_song') {
           // CRITICAL: Always cancel any previous timer before starting a new one
           _recognitionTimer?.cancel();
 
           // Delay recognition by 5 seconds to match Application Rules
           LogService().log("Recognition: Scheduling primary attempt in 5s...");
+
+          _lastRecognitionTime = DateTime.now();
+          _nextCheckDuration = const Duration(seconds: 5);
+          if (mediaItem.value != null) {
+            mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
+          }
+
           _recognitionTimer = Timer(const Duration(seconds: 5), () {
             if (playbackState.value.playing &&
                 _isACRCloudEnabled &&
@@ -330,14 +360,16 @@ class RadioAudioHandler extends BaseAudioHandler
         }
         return;
       } else {
-        // Enforce Metadata Limits - If metadata says 2:30, stop at 2:30 even if file is longer
-        final expectedDuration = mediaItem.value?.duration;
-        if (expectedDuration != null) {
+        // Enforce Metadata Limits - ONLY for playlist songs
+        final currentMedia = mediaItem.value;
+        final expectedDuration = currentMedia?.duration;
+
+        if (expectedDuration != null &&
+            currentMedia?.extras?['type'] == 'playlist_song') {
           // Trigger preloading 10 seconds before end
           if (expectedDuration - pos <= const Duration(seconds: 10) &&
               expectedDuration > Duration.zero) {
-            if (!_hasTriggeredPreload &&
-                mediaItem.value?.extras?['type'] == 'playlist_song') {
+            if (!_hasTriggeredPreload) {
               _hasTriggeredPreload = true;
               if (onPreloadNext != null) onPreloadNext!();
             }
@@ -346,9 +378,7 @@ class RadioAudioHandler extends BaseAudioHandler
           // Trigger early start 5 seconds before end
           if (expectedDuration - pos <= const Duration(seconds: 5) &&
               expectedDuration > Duration.zero) {
-            if (!_hasTriggeredEarlyStart &&
-                mediaItem.value?.extras?['type'] == 'playlist_song' &&
-                _nextPlayerSourceUrl != null) {
+            if (!_hasTriggeredEarlyStart && _nextPlayerSourceUrl != null) {
               _hasTriggeredEarlyStart = true;
               skipToNext(reason: "Gapless transition (early start)");
               return;
@@ -2672,6 +2702,25 @@ class RadioAudioHandler extends BaseAudioHandler
       actions.add(MediaAction.setShuffleMode);
     }
 
+    final now = DateTime.now();
+    Duration effectivePosition = _currentPosition;
+    if (mediaItem.value?.extras?['type'] == 'station') {
+      if (_isSearching) {
+        effectivePosition = Duration.zero;
+      } else if (_lastRecognitionTime != null) {
+        effectivePosition = now.difference(_lastRecognitionTime!);
+        if (effectivePosition < Duration.zero) effectivePosition = Duration.zero;
+        if (_nextCheckDuration != null && effectivePosition > _nextCheckDuration!) {
+          effectivePosition = _nextCheckDuration!;
+        }
+      }
+    }
+
+    double speed = 1.0;
+    if (!playing || (mediaItem.value?.extras?['type'] == 'station' && _isSearching)) {
+      speed = 0.0;
+    }
+
     playbackState.add(
       PlaybackState(
         controls: controls,
@@ -2679,10 +2728,10 @@ class RadioAudioHandler extends BaseAudioHandler
         androidCompactActionIndices: const [0, 1, 2],
         processingState: pState,
         playing: playing,
-        updatePosition: _currentPosition,
+        updatePosition: effectivePosition,
         bufferedPosition: Duration.zero,
-        speed: 1.0,
-        updateTime: DateTime.now(),
+        speed: speed,
+        updateTime: now,
         queueIndex: isPlaylistSong ? _playlistIndex : (index >= 0 ? index : 0),
         errorMessage: null,
         shuffleMode: (_isShuffleMode && isPlaylistSong)
@@ -3342,24 +3391,32 @@ class RadioAudioHandler extends BaseAudioHandler
     if (currentItem == null) return;
 
     // Guard: Prevent multiple concurrent attempts
-    if (currentItem.artist == "Identifying song...") return;
+    if (_isSearching) return;
 
     if (currentItem.extras?['type'] == 'playlist_song')
       return; // Don't recognize playlist songs
     if (!playbackState.value.playing) return;
 
     final streamUrl = currentItem.id;
+    _isSearching = true;
 
     LogService().log("ACRCloud: Starting recognition for $streamUrl");
 
-    // Show indicator on Android Auto by updating artist field
+    // Update MediaItem state
     if (currentItem.id == streamUrl) {
+      final newExtras = Map<String, dynamic>.from(currentItem.extras ?? {});
+      newExtras['isSearching'] = true;
+
       mediaItem.add(
         currentItem.copyWith(
-          title: currentItem.title,
-          artist: "Identifying song...",
+          duration: null, // Hide progress bar while identified info is being replaced
+          extras: newExtras,
         ),
       );
+      _lastRecognitionTime = null; // Reset countdown during identification
+      _nextCheckDuration = null;
+      _currentPosition = Duration.zero; 
+      _broadcastState();
     }
 
     final result = await _recognitionApiService.identifyStream(streamUrl);
@@ -3394,15 +3451,17 @@ class RadioAudioHandler extends BaseAudioHandler
         final stationName = station?.name ?? "Radio";
 
         // Update MediaItem immediately with basic info
+        final newExtras = Map<String, dynamic>.from(currentItem.extras ?? {});
+        newExtras['isSearching'] = false;
+
         final newMediaItem = currentItem.copyWith(
           title: title ?? "Unknown Title",
           artist: artists ?? "Unknown Artist",
-          // Include station name in album field for context (Android Auto reference)
           album: (album != null && album.isNotEmpty)
               ? "$stationName • $album"
               : stationName,
-          // Use station logo as temporary placeholder instead of null to prevent "logo disappearing"
           artUri: station?.logo != null ? Uri.parse(station!.logo!) : null,
+          extras: newExtras,
         );
         mediaItem.add(newMediaItem);
 
@@ -3453,16 +3512,26 @@ class RadioAudioHandler extends BaseAudioHandler
           "RecognitionAPI: Duration estimated, next check in ${nextCheckDelay ~/ 1000}s",
         );
 
+        _lastRecognitionTime = DateTime.now();
+        _nextCheckDuration = Duration(milliseconds: nextCheckDelay);
+        if (mediaItem.value != null) {
+          mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
+        }
+
         _recognitionTimer?.cancel();
         LogService().log("Attempting Recognition...8");
         _recognitionTimer = Timer(
           Duration(milliseconds: nextCheckDelay),
           _attemptRecognition,
         );
+        _isSearching = false;
+        _broadcastState();
       } else {
+        _isSearching = false;
         _handleNoMatch();
       }
     } else {
+      _isSearching = false;
       _handleNoMatch();
     }
   }
@@ -3476,11 +3545,15 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (_) {}
 
     if (station != null) {
+      final newExtras = Map<String, dynamic>.from(mediaItem.value?.extras ?? {});
+      newExtras['isSearching'] = false;
+      
       final newItem = mediaItem.value?.copyWith(
         title: station.name,
         artist: station.genre,
         album: station.name,
         artUri: station.logo != null ? Uri.parse(station.logo!) : null,
+        extras: newExtras,
       );
       if (newItem != null) mediaItem.add(newItem);
     }
@@ -3491,6 +3564,13 @@ class RadioAudioHandler extends BaseAudioHandler
     _recognitionTimer?.cancel();
     _recognitionTimer = Timer(Duration(seconds: seconds), _attemptRecognition);
     LogService().log("Attempting Recognition...9");
+
+    _lastRecognitionTime = DateTime.now();
+    _nextCheckDuration = Duration(seconds: seconds);
+    if (mediaItem.value != null) {
+      mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
+    }
+    _broadcastState();
   }
 
   Future<void> _resolveAndApplyMetadata(

@@ -851,31 +851,43 @@ class PlayerBar extends StatelessWidget {
           final totalDuration =
               provider.audioHandler.mediaItem.value?.duration ??
               const Duration(seconds: 1);
-          final maxSec = totalDuration.inSeconds > 0
-              ? totalDuration.inSeconds
-              : 1;
-          final progress = (position.inSeconds / maxSec).clamp(0.0, 1.0);
+          final maxMs = totalDuration.inMilliseconds > 0
+              ? totalDuration.inMilliseconds
+              : 1000;
+          final progress = (position.inMilliseconds / maxMs).clamp(0.0, 1.0);
 
           return _progressBarLine(
             context,
             progress,
             accentColor,
             onSeek: (p) => provider.audioHandler.seek(
-              Duration(seconds: (p * maxSec).toInt()),
+              Duration(milliseconds: (p * maxMs).toInt()),
             ),
           );
         },
       );
-    } else if (provider.isRecognizing) {
-      return SizedBox(
-        height: 2,
-        child: LinearProgressIndicator(
-          backgroundColor: Colors.transparent,
-          valueColor: AlwaysStoppedAnimation<Color>(
+    } else if ((provider.isRecognizing ||
+        provider.audioHandler.mediaItem.value?.duration != null) && provider.isACRCloudEnabled) {
+      return StreamBuilder<Duration>(
+        stream: AudioService.position,
+        builder: (context, snapshot) {
+          final position = provider.isRecognizing
+              ? Duration.zero
+              : (snapshot.data ?? Duration.zero);
+          final totalDuration =
+              provider.audioHandler.mediaItem.value?.duration ??
+              const Duration(seconds: 1);
+          final maxMs = totalDuration.inMilliseconds > 0
+              ? totalDuration.inMilliseconds
+              : 1000;
+          final progress = (position.inMilliseconds / maxMs).clamp(0.0, 1.0);
+
+          return _progressBarLine(
+            context,
+            progress,
             accentColor.withValues(alpha: 0.5),
-          ),
-          minHeight: 2,
-        ),
+          );
+        },
       );
     }
     return const SizedBox(height: 2);
@@ -922,6 +934,7 @@ class PlayerBar extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
+                  curve: Curves.linear,
                   width: constraints.maxWidth * progress,
                   height: 2,
                   decoration: BoxDecoration(

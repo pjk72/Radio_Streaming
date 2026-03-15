@@ -1131,7 +1131,11 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           // Progress Bar (Youtube) - Above Controls
           if (provider.hiddenAudioController != null)
             _buildProgressBar(context, provider.hiddenAudioController!)
-          else if (provider.currentPlayingPlaylistId != null)
+          else if (provider.currentPlayingPlaylistId != null ||
+              ((provider.currentStation != null ||
+                      provider.audioHandler.mediaItem.value?.duration !=
+                          null) &&
+                  provider.isACRCloudEnabled))
             _buildNativeProgressBar(context, provider)
           else
             const SizedBox(height: 20), // Space for Radio info separation
@@ -1205,80 +1209,81 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                     listen: false,
                                   ).translate('add_to_genre_playlist'),
                             onPressed: () async {
-                                    final result = await provider
-                                        .toggleCurrentSongFavorite();
-                                    if (context.mounted) {
-                                      if (result == true) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            behavior: SnackBarBehavior.floating,
-                                            backgroundColor: const Color(0xFFb33939), // Dark Red/Heart styling
-                                            content: Row(
-                                              children: [
-                                                const Icon(Icons.favorite, color: Colors.white, size: 20),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    Provider.of<LanguageProvider>(
-                                                          context,
-                                                          listen: false,
-                                                        )
-                                                        .translate(
-                                                          'added_to_playlist',
-                                                        )
-                                                        .replaceAll('{0}', 'Favorites'),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            duration: const Duration(
-                                              seconds: 2,
-                                            ),
+                              final result = await provider
+                                  .toggleCurrentSongFavorite();
+                              if (context.mounted) {
+                                if (result == true) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: const Color(
+                                        0xFFb33939,
+                                      ), // Dark Red/Heart styling
+                                      content: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.favorite,
+                                            color: Colors.white,
+                                            size: 20,
                                           ),
-                                        );
-                                      } else if (result == false) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            behavior: SnackBarBehavior.floating,
-                                            backgroundColor: Colors.grey[800],
-                                            content: Row(
-                                              children: [
-                                                const Icon(Icons.favorite_border, color: Colors.white, size: 20),
-                                                const SizedBox(width: 8),
-                                                const Expanded(
-                                                  child: Text(
-                                                    "Removed from Favorites",
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            duration: const Duration(
-                                              seconds: 2,
-                                            ),
-                                          ),
-                                        );
-                                      } else {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
                                               Provider.of<LanguageProvider>(
-                                                context,
-                                                listen: false,
-                                              ).translate(
-                                                'could_not_identify_song',
-                                              ),
+                                                    context,
+                                                    listen: false,
+                                                  )
+                                                  .translate(
+                                                    'added_to_playlist',
+                                                  )
+                                                  .replaceAll(
+                                                    '{0}',
+                                                    'Favorites',
+                                                  ),
                                             ),
                                           ),
-                                        );
-                                      }
-                                    }
-                                  },
+                                        ],
+                                      ),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                } else if (result == false) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: Colors.grey[800],
+                                      content: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.favorite_border,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Expanded(
+                                            child: Text(
+                                              "Removed from Favorites",
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        ).translate('could_not_identify_song'),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
                           );
                         }
                         return const SizedBox.shrink();
@@ -1441,15 +1446,21 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     return StreamBuilder<Duration>(
       stream: AudioService.position,
       builder: (context, snapshot) {
-        final position = snapshot.data ?? Duration.zero;
+        final position = provider.isRecognizing
+            ? Duration.zero
+            : (snapshot.data ?? Duration.zero);
         final duration =
             provider.audioHandler.mediaItem.value?.duration ?? Duration.zero;
 
-        // Basic clamp to avoid errors if position > duration temporarily
-        final maxVal = duration.inSeconds.toDouble() > 0
-            ? duration.inSeconds.toDouble()
-            : 1.0;
-        final val = position.inSeconds.toDouble().clamp(0.0, maxVal);
+        final maxMs = duration.inMilliseconds.toDouble() > 0
+            ? duration.inMilliseconds.toDouble()
+            : 1000.0;
+        final val = position.inMilliseconds.toDouble().clamp(0.0, maxMs);
+
+        final isStation = provider.currentPlayingPlaylistId == null;
+        final leftLabel = (isStation && duration > Duration.zero)
+            ? "-${_formatDuration(duration - position > Duration.zero ? duration - position : Duration.zero)}"
+            : _formatDuration(position);
 
         return Column(
           children: [
@@ -1458,7 +1469,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               child: Row(
                 children: [
                   Text(
-                    _formatDuration(position),
+                    leftLabel,
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                   Expanded(
@@ -1478,21 +1489,40 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                           context,
                         ).primaryColor.withValues(alpha: 0.12),
                       ),
-                      child: Slider(
-                        value: val,
-                        max: maxVal,
-                        onChanged: (v) {
-                          provider.audioHandler.seek(
-                            Duration(seconds: v.toInt()),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(end: val),
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.linear,
+                        builder: (context, animatedVal, _) {
+                          final secureValue = animatedVal.clamp(0.0, maxMs);
+                          return Slider(
+                            value: secureValue,
+                            max: maxMs,
+                            onChanged: provider.currentPlayingPlaylistId != null
+                                ? (v) {
+                                    provider.audioHandler.seek(
+                                      Duration(milliseconds: v.toInt()),
+                                    );
+                                  }
+                                : null,
                           );
                         },
                       ),
                     ),
                   ),
-                  Text(
-                    _formatDuration(duration),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
+                  isStation
+                      ? const Icon(
+                          Icons.search_rounded,
+                          color: Colors.white70,
+                          size: 16,
+                        )
+                      : Text(
+                          _formatDuration(duration),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
                 ],
               ),
             ),

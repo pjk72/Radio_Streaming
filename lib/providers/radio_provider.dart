@@ -1146,13 +1146,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         _currentArtist = item.artist ?? "";
         metadataChanged = true;
 
+        // Sync recognizing state from handler
+        _isRecognizing = item.extras?['isSearching'] == true;
+
         // If recognition failed and artist reverted to station info (genre/name),
         // clear the artist image so the header falls back to the station logo.
         final stationForCheck = _currentStation;
         if (stationForCheck != null &&
             (_currentArtist == stationForCheck.genre ||
                 _currentArtist == stationForCheck.name ||
-                _currentArtist == "Identifying song...")) {
+                _isRecognizing)) {
           _currentArtistImage = null;
         }
       }
@@ -5939,6 +5942,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           'url': _currentStation!.url,
           'stationId': _currentStation?.id,
           'type': 'station',
+          'isSearching': true,
         },
       ),
     );
