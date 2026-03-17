@@ -3777,7 +3777,35 @@ class RadioAudioHandler extends BaseAudioHandler
         );
       }
 
-      // 3. Save back
+      // 3. Weekly Play Log (last 7 days)
+      List<dynamic> weeklyLog = [];
+      final wStr = prefs.getString('weekly_play_log');
+      if (wStr != null) {
+        try {
+          weeklyLog = jsonDecode(wStr);
+        } catch (_) {}
+      }
+
+      final now = DateTime.now();
+      final sevenDaysAgo = now.subtract(const Duration(days: 7));
+
+      // Add new event
+      weeklyLog.add({
+        'id': songId,
+        'ts': now.toIso8601String(),
+      });
+
+      // Filter old events
+      weeklyLog.removeWhere((event) {
+        try {
+          final ts = DateTime.parse(event['ts']);
+          return ts.isBefore(sevenDaysAgo);
+        } catch (_) {
+          return true;
+        }
+      });
+
+      // 4. Save back
       await prefs.setString('user_play_history', jsonEncode(phoneHistory));
       await prefs.setString('aa_user_play_history', jsonEncode(aaHistory));
       final metadataEncoded = metadata.map((k, v) => MapEntry(k, v.toJson()));
@@ -3785,6 +3813,7 @@ class RadioAudioHandler extends BaseAudioHandler
       await prefs.setStringList('recent_songs_order', phoneOrder);
       await prefs.setStringList('aa_recent_songs_order', aaOrder);
       await prefs.setString('last_source_map', jsonEncode(sourceMap));
+      await prefs.setString('weekly_play_log', jsonEncode(weeklyLog));
 
       // 4. Notify UI Isolate
       customEvent.add({'type': 'history_updated'});

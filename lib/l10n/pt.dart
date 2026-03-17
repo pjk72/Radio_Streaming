@@ -411,6 +411,8 @@ final Map<String, String> pt = {
   'restore_successful': 'Restauração bem-sucedida!',
   'restore_failed': 'Falha na restauração: {0}',
   'music': 'Música',
+  'ranking': 'Ranking',
+  'years': 'anos',
   'unknown_track': 'Faixa desconhecida',
   'est_year': 'Est. {0}',
   'discover_radio': 'Descobrir Rádio',

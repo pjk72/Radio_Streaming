@@ -89,6 +89,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   static const String _keyAAUserPlayHistory = 'aa_user_play_history';
   static const String _keyAARecentSongsOrder = 'aa_recent_songs_order';
   static const String _keyLastSourceMap = 'last_source_map';
+  static const String _keyWeeklyPlayLog = 'weekly_play_log';
 
   Map<String, int> _userPlayHistory = {};
   Map<String, SavedSong> _historyMetadata = {};
@@ -97,6 +98,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Map<String, int> _aaUserPlayHistory = {};
   List<String> _aaRecentSongsOrder = [];
   Map<String, String> _lastSourceMap = {}; // songId -> 'car' or 'phone'
+  List<dynamic> _weeklyPlayLog = [];
 
   Map<String, int> get userPlayHistory => _userPlayHistory;
   Map<String, int> get aaUserPlayHistory => _aaUserPlayHistory;
@@ -840,17 +842,79 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   final AIRecommendationService _aiService = AIRecommendationService();
   Future<List<TrendingPlaylist>>? _forYouFuture;
   Future<List<TrendingPlaylist>>? get forYouFuture => _forYouFuture;
+  List<TrendingPlaylist?> _forYouList = [];
+  List<TrendingPlaylist?> get forYouList => _forYouList;
+  StreamSubscription? _forYouSubscription;
+  String? _lastForYouCountryCode;
+  String? _lastForYouLanguageCode;
+  int? _lastWeeklySeed;
 
-  void preFetchForYou({String? countryName, String? countryCode}) {
-    if (_forYouFuture != null) return;
+  void preFetchForYou({String? countryName, String? countryCode, String? languageCode}) {
+    final langCode = languageCode ?? _detectLanguageCode();
+    final seed = _getWeeklySeed();
+
+    // Force rebuild if country, language or week changes
+    if (_forYouList.isNotEmpty &&
+        _lastForYouCountryCode == countryCode &&
+        _lastForYouLanguageCode == langCode &&
+        _lastWeeklySeed == seed) return;
+
+    if (_lastForYouCountryCode != countryCode ||
+        _lastForYouLanguageCode != langCode ||
+        _lastWeeklySeed != seed) {
+      LogService().log(
+        "[RadioProvider] Cambio paese, lingua o settimana rilevato ($_lastForYouCountryCode -> $countryCode, $_lastForYouLanguageCode -> $langCode, $_lastWeeklySeed -> $seed): ricostruzione 'Per Te'...",
+      );
+    } else {
+      LogService().log(
+        "[RadioProvider] Avvio pre-fetch AI 'Per Te' (Country: $countryCode, Lang: $langCode, Seed: $seed)...",
+      );
+    }
+
+    _lastForYouCountryCode = countryCode;
+    _lastForYouLanguageCode = langCode;
+    _lastWeeklySeed = seed;
+    _forYouSubscription?.cancel();
+
+    // Reset list with placeholders
+    _forYouList = List.generate(15, (_) => null);
+    
+    // Also keep the future for any existing listeners (optional but safe)
     _forYouFuture = _aiService.generateDiscoverWeekly(
       phoneHistory: _userPlayHistory,
       aaHistory: _aaUserPlayHistory,
       historyMetadata: _historyMetadata,
+      weeklyLog: _weeklyPlayLog,
       targetCount: 15,
       countryName: countryName,
       countryCode: countryCode,
+      languageCode: langCode,
     );
+
+    int index = 0;
+    _forYouSubscription = _aiService.generateDiscoverWeeklyStream(
+      phoneHistory: _userPlayHistory,
+      aaHistory: _aaUserPlayHistory,
+      historyMetadata: _historyMetadata,
+      weeklyLog: _weeklyPlayLog,
+      targetCount: 15,
+      countryName: countryName,
+      countryCode: countryCode,
+      languageCode: langCode,
+    ).listen((playlist) {
+      if (index < _forYouList.length) {
+        _forYouList[index] = playlist;
+      } else {
+        _forYouList.add(playlist);
+      }
+      index++;
+      notifyListeners();
+    }, onDone: () {
+      // Clean up remaining nulls if fewer than 15 playlists were generated
+      _forYouList.removeWhere((p) => p == null);
+      notifyListeners();
+    });
+
     notifyListeners();
   }
 
@@ -871,6 +935,22 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
     } catch (_) {}
     return 'US';
+  }
+
+  String _detectLanguageCode() {
+    try {
+      final String systemLocale = Platform.localeName;
+      return systemLocale.split('_').first.split('-').first.toLowerCase();
+    } catch (_) {}
+    return 'en';
+  }
+
+  int _getWeeklySeed() {
+    final now = DateTime.now();
+    final year = now.year;
+    final days = now.difference(DateTime(year, 1, 1)).inDays;
+    final week = days ~/ 7;
+    return year * 100 + week;
   }
 
   String _getCountryName(String code) {
@@ -3848,6 +3928,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       try {
         final Map<String, dynamic> decoded = jsonDecode(lastSourceStr);
         _lastSourceMap = decoded.map((k, v) => MapEntry(k, v as String));
+      } catch (_) {}
+    }
+
+    final weeklyLogStr = prefs.getString(_keyWeeklyPlayLog);
+    if (weeklyLogStr != null) {
+      try {
+        _weeklyPlayLog = jsonDecode(weeklyLogStr);
       } catch (_) {}
     }
     notifyListeners();

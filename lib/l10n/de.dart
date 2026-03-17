@@ -415,6 +415,8 @@ final Map<String, String> de = {
   'restore_successful': 'Wiederherstellung erfolgreich!',
   'restore_failed': 'Wiederherstellung fehlgeschlagen: {0}',
   'music': 'Musik',
+  'ranking': 'Charts',
+  'years': 'Jahre',
   'unknown_track': 'Unbekannter Titel',
   'est_year': 'Gegr. {0}',
   'discover_radio': 'Radio entdecken',

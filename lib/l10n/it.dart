@@ -413,6 +413,8 @@ final Map<String, String> it = {
   'restore_successful': 'Ripristino completato con successo!',
   'restore_failed': 'Ripristino fallito: {0}',
   'music': 'Musica',
+  'ranking': 'Classifica',
+  'years': 'anni',
   'unknown_track': 'Brano sconosciuto',
   'est_year': 'Fond. {0}',
   'discover_radio': 'Scopri Radio',

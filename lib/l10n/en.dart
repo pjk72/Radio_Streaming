@@ -437,6 +437,8 @@ final Map<String, String> en = {
   'minute_ago': '1 minute ago',
   'and_separator': ' and ',
   'music': 'Music',
+  'ranking': 'Chart',
+  'years': 'years',
   'unknown_track': 'Unknown Track',
   'est_year': 'Est. {0}',
   'discover_radio': 'Discover Radio',

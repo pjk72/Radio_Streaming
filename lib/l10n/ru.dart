@@ -410,6 +410,8 @@ final Map<String, String> ru = {
   'restore_successful': 'Восстановление выполнено!',
   'restore_failed': 'Ошибка восстановления: {0}',
   'music': 'Музыка',
+  'ranking': 'Рейтинг',
+  'years': 'годы',
   'unknown_track': 'Неизвестный трек',
   'est_year': 'Осн. {0}',
   'discover_radio': 'Откройте для себя радио',

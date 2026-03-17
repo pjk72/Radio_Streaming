@@ -4011,7 +4011,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     color: accentColor.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: FaIcon(icon, color: accentColor, size: 24),
+                  child: FaIcon(icon, color: accentColor, size: 22),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -4028,9 +4028,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
+                  style: const TextStyle(
+                    color: Color(0xFFE6E0E9),
                     fontSize: 11,
+                    height: 1.4,
+                    leadingDistribution: TextLeadingDistribution.even,
+                    decoration: TextDecoration.none,
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 2,

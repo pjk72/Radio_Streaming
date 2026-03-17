@@ -13,7 +13,6 @@ import 'artist_details_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../services/log_service.dart';
 
 class TrendingScreen extends StatefulWidget {
   const TrendingScreen({super.key});
@@ -36,7 +35,6 @@ class _TrendingScreenState extends State<TrendingScreen>
   bool _isLoading = false;
   List<TrendingPlaylist> _playlists = [];
   String? _errorMessage;
-  bool _forYouLogged = false;
 
   // Speech to Text variables
   late stt.SpeechToText _speech;
@@ -147,24 +145,9 @@ class _TrendingScreenState extends State<TrendingScreen>
       provider.preFetchForYou(
         countryCode: _selectedCountryCode,
         countryName: countryName,
+        languageCode: langProvider.resolvedLanguageCode,
       );
 
-      // USER REQUEST: Log AI playlists creation for "PerTe" area
-      provider.forYouFuture?.then((playlists) {
-        if (mounted && !_forYouLogged) {
-          setState(() => _forYouLogged = true);
-          for (var p in playlists) {
-            final genre = p.title.replaceFirst('Mix ', '');
-            if (p.predefinedTracks != null) {
-              for (var t in p.predefinedTracks!) {
-                LogService().log(
-                  "Playlist [PerTe]: ${p.title} | Titolo: ${t['title']} | Genere: ${t['genre'] ?? genre}",
-                );
-              }
-            }
-          }
-        }
-      });
 
       final spotify = SpotifyService();
       await spotify.init(); // Load tokens
@@ -489,29 +472,16 @@ class _TrendingScreenState extends State<TrendingScreen>
               ),
 
             // AI "For You" Section
-            if (provider.forYouFuture != null)
-              FutureBuilder<List<TrendingPlaylist>>(
-                future: provider.forYouFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const SizedBox(
-                      height: 190,
-                      child: Center(child: CircularProgressIndicator()),
-                    );
+            if (provider.forYouList.isNotEmpty)
+              _buildHorizontalSection(
+                title: '✨ ${langProvider.translate('for_you')}',
+                items: provider.forYouList,
+                itemBuilder: (data) {
+                  final item = data as TrendingPlaylist?;
+                  if (item == null) {
+                    return _buildShimmerCard();
                   }
-                  final results = snapshot.data;
-                  if (results == null || results.isEmpty) {
-                    return const SizedBox.shrink();
-                  }
-
-                  return _buildHorizontalSection(
-                    title: '✨ ${langProvider.translate('for_you')}',
-                    items: results,
-                    itemBuilder: (data) {
-                      final item = data as TrendingPlaylist;
-                      return _buildMixCard(item, false, langProvider);
-                    },
-                  );
+                  return _buildMixCard(item, false, langProvider);
                 },
               ),
 
@@ -1191,6 +1161,82 @@ class _TrendingScreenState extends State<TrendingScreen>
         ],
       ),
       child: Icon(icon, color: color, size: 12),
+    );
+  }
+
+  Widget _buildShimmerCard() {
+    final theme = Theme.of(context);
+    final baseColor = theme.cardColor.withValues(alpha: 0.3);
+
+    return SizedBox(
+      width: 130,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: baseColor,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  width: 1.5,
+                ),
+              ),
+              child: Stack(
+                children: [
+                   Positioned(
+                    right: -10,
+                    bottom: -10,
+                    child: Icon(
+                      Icons.blur_on,
+                      size: 60,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                  ),
+                  const Center(
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 80,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: baseColor,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: 50,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: baseColor.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

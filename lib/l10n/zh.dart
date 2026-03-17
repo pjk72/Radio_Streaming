@@ -403,6 +403,8 @@ final Map<String, String> zh = {
   'restore_successful': '还原成功！',
   'restore_failed': '还原失败：{0}',
   'music': '音乐',
+  'ranking': '排行',
+  'years': '年代',
   'unknown_track': '未知曲目',
   'est_year': '建于 {0}',
   'discover_radio': '发现电台',
