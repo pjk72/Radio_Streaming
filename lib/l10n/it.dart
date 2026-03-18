@@ -436,4 +436,5 @@ final Map<String, String> it = {
   'webpage': 'Sito Web',
   'privacy_policy': 'Informativa sulla Privacy',
   'version': 'Versione {0}',
+  'top_radios': 'Top Radio',
 };

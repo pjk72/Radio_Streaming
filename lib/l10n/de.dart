@@ -438,4 +438,5 @@ final Map<String, String> de = {
   'webpage': 'Webseite',
   'privacy_policy': 'Datenschutzerklärung',
   'version': 'Version {0}',
+  'top_radios': 'Top Radios',
 };

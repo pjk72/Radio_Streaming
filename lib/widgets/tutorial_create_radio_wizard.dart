@@ -9,6 +9,7 @@ import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import '../models/station.dart';
 import '../utils/genre_mapper.dart';
+import '../services/log_service.dart';
 
 class TutorialCreateRadioWizard extends StatefulWidget {
   const TutorialCreateRadioWizard({super.key});
@@ -19,6 +20,12 @@ class TutorialCreateRadioWizard extends StatefulWidget {
 }
 
 class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
+  @override
+  void initState() {
+    super.initState();
+    _loadPreviewRadios();
+  }
+
   @override
   void dispose() {
     super.dispose();
@@ -41,6 +48,198 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   final Map<int, bool> _selectedIndices = {};
   final Map<int, bool> _favoriteIndices = {};
   final Map<int, String> _customLogos = {};
+
+  // Horizontal Preview carousel variables
+  List<dynamic> _previewRadios = [];
+  final Set<dynamic> _selectedPreviewRadios = {};
+  final Map<dynamic, String> _previewCustomLogos = {};
+  bool _isLoadingPreview = true;
+
+  Future<void> _loadPreviewRadios([String? countryCode]) async {
+    setState(() => _isLoadingPreview = true);
+    String code = countryCode ?? "US"; // fallback
+
+    if (countryCode == null) {
+      try {
+        final locale = Platform.localeName;
+        if (locale.contains('_')) {
+          final parts = locale.split('_');
+          if (parts.length > 1) {
+            code = parts[1].toUpperCase();
+          }
+        } else if (locale.length == 2) {
+          code = locale.toUpperCase();
+        }
+      } catch (_) {}
+    }
+
+    try {
+      for (int i = 1; i <= 5; i++) {
+        final server = "de$i.api.radio-browser.info";
+        final url = (code == "ALL")
+            ? Uri.parse(
+                "https://$server/json/stations/search?limit=100&order=clickcount&reverse=true",
+              )
+            : Uri.parse(
+                "https://$server/json/stations/search?countrycode=${code.toLowerCase()}&limit=100&order=clickcount&reverse=true",
+              );
+
+        final response = await http
+            .get(url)
+            .timeout(const Duration(seconds: 4));
+        if (response.statusCode == 200) {
+          final List<dynamic> raw = json.decode(response.body);
+
+          if (mounted) {
+            // Sort explicitly by clickcount DESC, then votes DESC
+            raw.sort((a, b) {
+              final aClicks =
+                  int.tryParse(a['clickcount']?.toString() ?? '0') ?? 0;
+              final bClicks =
+                  int.tryParse(b['clickcount']?.toString() ?? '0') ?? 0;
+              int comp = bClicks.compareTo(aClicks);
+              if (comp != 0) return comp;
+              final aVotes = int.tryParse(a['votes']?.toString() ?? '0') ?? 0;
+              final bVotes = int.tryParse(b['votes']?.toString() ?? '0') ?? 0;
+              return bVotes.compareTo(aVotes);
+            });
+
+            // 1. Filter internal duplicates (API often returns same station 4 times)
+            // We do this by keeping only the first (most popular) occurrence of each name
+            final seenNames = <String>{};
+            final uniquePreviewRadios = <dynamic>[];
+
+            for (final s in raw) {
+              final sName = (s['name']?.toString() ?? '').toLowerCase().trim();
+              if (sName.isNotEmpty && !seenNames.contains(sName)) {
+                seenNames.add(sName);
+                uniquePreviewRadios.add(s);
+              }
+              // We stop when we have enough unique ones to fill the 25 slots
+              if (uniquePreviewRadios.length >= 25) break;
+            }
+
+            final finalPreview = uniquePreviewRadios;
+
+            setState(() {
+              _previewRadios = finalPreview;
+              _previewCustomLogos.clear();
+              _selectedPreviewRadios.clear();
+              _isLoadingPreview = false;
+            });
+
+            // Start an async background task to find missing logos
+            _autoFetchMissingLogos();
+          }
+          break;
+        }
+      }
+    } catch (_) {}
+    if (mounted && _isLoadingPreview) {
+      setState(() => _isLoadingPreview = false);
+    }
+  }
+
+  void _togglePreviewSelection(dynamic data) {
+    setState(() {
+      if (_selectedPreviewRadios.contains(data)) {
+        _selectedPreviewRadios.remove(data);
+      } else {
+        _selectedPreviewRadios.add(data);
+      }
+    });
+  }
+
+  Future<void> _addStationToProvider(
+    dynamic data,
+    String? customLogo,
+    bool isFavorite,
+  ) async {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    final name = data['name'] ?? 'Unknown Radio';
+    final url = data['url_resolved'] ?? data['url'] ?? '';
+    final genre = (data['tags'] ?? '').toString().replaceAll(',', ' | ');
+    final String? apiIcon = data['favicon'];
+
+    // Log the click count and votes as requested
+    final clicks = data['clickcount']?.toString() ?? '0';
+    final votes = data['votes']?.toString() ?? '0';
+    LogService().log(
+      "Station Inserted: $name (Clicks: $clicks, Votes: $votes)",
+    );
+
+    // Priority: Custom -> API -> Genre Generated
+    String? finalLogo = customLogo;
+    if ((finalLogo == null || finalLogo.isEmpty) &&
+        (apiIcon != null && apiIcon.isNotEmpty)) {
+      finalLogo = apiIcon;
+    }
+    if (finalLogo == null || finalLogo.isEmpty) {
+      final splitted = genre.split('|');
+      if (splitted.isNotEmpty) {
+        finalLogo = GenreMapper.getGenreImage(splitted.first.trim());
+      }
+    }
+
+    // EXTRACT COLOR (Async)
+    String finalColor = '0xFFFFFFFF';
+    if (finalLogo != null && finalLogo.isNotEmpty) {
+      finalColor = await _extractColor(finalLogo);
+    }
+
+    // Check Duplicates in Provider
+    final existingIndex = provider.stations.indexWhere(
+      (s) => s.name.toLowerCase() == name.toLowerCase(),
+    );
+
+    // Determine Category: Selection -> Device Locale -> Default
+    String? effectiveCode = _selectedCountryCode;
+    if (effectiveCode == null) {
+      try {
+        final locale = Platform.localeName;
+        if (locale.contains('_')) {
+          effectiveCode = locale.split('_')[1].toUpperCase();
+        } else if (locale.length == 2) {
+          effectiveCode = locale.toUpperCase();
+        }
+      } catch (_) {}
+    }
+
+    String category = 'International';
+    if (effectiveCode != null && _countryMap.containsKey(effectiveCode)) {
+      category = _countryMap[effectiveCode]!;
+    } else if (data['country'] != null &&
+        data['country'].toString().isNotEmpty) {
+      category = data['country'].toString();
+    }
+
+    final newStation = Station(
+      id: existingIndex != -1
+          ? provider.stations[existingIndex].id
+          : DateTime.now().millisecondsSinceEpoch + name.hashCode,
+      name: name,
+      url: url,
+      genre: genre.isNotEmpty ? genre : 'Pop',
+      logo: finalLogo,
+      category: category,
+      color: finalColor,
+      icon: 'radio',
+    );
+
+    if (existingIndex != -1) {
+      await provider.editStation(newStation);
+    } else {
+      await provider.addStation(newStation);
+    }
+
+    // Handle Favorites
+    if (isFavorite) {
+      if (!provider.favorites.contains(newStation.id)) {
+        provider.toggleFavorite(newStation.id);
+      }
+    }
+  }
 
   Map<String, String> get _countryMap {
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
@@ -99,6 +298,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       _customLogos.clear();
     });
 
+    // Make sure preview reflects selected country
+    _loadPreviewRadios(_selectedCountryCode);
+
     try {
       List<dynamic> stations = [];
       // Try servers de1 to de5
@@ -107,15 +309,13 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         final Uri url;
 
         if (_selectedCountryCode == "ALL") {
-          // Top Clicked Global
+          // Top Global
           url = Uri.parse(
             "https://$server/json/stations/search?limit=100&order=clickcount&reverse=true",
           );
         } else {
-          // Top Clicked by Country
-          // limit increased to show ample options
+          // Top by Country
           url = Uri.parse(
-            //"https://$server/json/stations/search?countrycode=${_selectedCountryCode!.toLowerCase()}&limit=500&order=clickcount&reverse=true",
             "https://$server/json/stations/search?countrycode=${_selectedCountryCode!.toLowerCase()}&order=clickcount&reverse=true",
           );
         }
@@ -146,11 +346,18 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                 stations.add(s);
               }
             }
-            stations.sort(
-              (a, b) => (a['name']?.toString() ?? '').toLowerCase().compareTo(
-                (b['name']?.toString() ?? '').toLowerCase(),
-              ),
-            );
+            // Explicitly sort memory by clickcount then votes
+            stations.sort((a, b) {
+              final aClicks =
+                  int.tryParse(a['clickcount']?.toString() ?? '0') ?? 0;
+              final bClicks =
+                  int.tryParse(b['clickcount']?.toString() ?? '0') ?? 0;
+              int comp = bClicks.compareTo(aClicks);
+              if (comp != 0) return comp;
+              final aVotes = int.tryParse(a['votes']?.toString() ?? '0') ?? 0;
+              final bVotes = int.tryParse(b['votes']?.toString() ?? '0') ?? 0;
+              return bVotes.compareTo(aVotes);
+            });
             break;
           }
         } catch (_) {}
@@ -194,10 +401,124 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     }
   }
 
-  Future<void> _searchAndShowLogos(int index, String query) async {
+  Future<String?> _fetchFirstLogo(dynamic station) async {
+    if (station == null) return null;
+
+    final String name = (station['name']?.toString() ?? '').trim();
+    final String homepage = (station['homepage']?.toString() ?? '').trim();
+    final String country = (station['country']?.toString() ?? '').trim();
+
+    if (name.isEmpty) return null;
+
+    // 1. Google Favicon Service (Highest Accuracy for Radios with websites)
+    if (homepage.isNotEmpty && homepage.startsWith('http')) {
+      try {
+        final uri = Uri.parse(homepage);
+        // Returns a 256x256 icon extracted from the official website
+        return "https://www.google.com/s2/favicons?sz=256&domain_url=${uri.host}";
+      } catch (_) {}
+    }
+
+    // Prepare refined search query
+    String searchQuery = name;
+    if (!searchQuery.toLowerCase().contains('radio')) {
+      searchQuery += " Radio";
+    }
+    if (country.isNotEmpty &&
+        !searchQuery.toLowerCase().contains(country.toLowerCase())) {
+      searchQuery += " $country";
+    }
+
+    try {
+      // 2. iTunes Search API (Highest quality for media/radio logos)
+      try {
+        final itunesUri = Uri.parse(
+          "https://itunes.apple.com/search?term=${Uri.encodeComponent(searchQuery)}&media=podcast&entity=podcast&limit=1",
+        );
+        final itunesResp = await http
+            .get(itunesUri)
+            .timeout(const Duration(seconds: 3));
+        if (itunesResp.statusCode == 200) {
+          final data = json.decode(itunesResp.body);
+          final results = data['results'] as List?;
+          if (results != null && results.isNotEmpty) {
+            final logo =
+                results[0]['artworkUrl600'] ?? results[0]['artworkUrl100'];
+            if (logo != null) return logo.toString();
+          }
+        }
+      } catch (_) {}
+
+      // 3. Clearbit (Company Logos)
+      try {
+        final resp = await http
+            .get(
+              Uri.parse(
+                "https://autocomplete.clearbit.com/v1/companies/suggest?query=${Uri.encodeComponent(name)}",
+              ),
+            )
+            .timeout(const Duration(seconds: 3));
+        if (resp.statusCode == 200) {
+          final List data = json.decode(resp.body);
+          for (var item in data) {
+            final companyName = (item['name']?.toString() ?? '').toLowerCase();
+            // Basic verification: does it match our station name?
+            if (companyName.contains(name.toLowerCase()) ||
+                name.toLowerCase().contains(companyName)) {
+              final logo = item['logo']?.toString() ?? "";
+              if (logo.isNotEmpty) return logo;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 4. Fallback to Bing Proxy with refined query
+      final base = "https://tse2.mm.bing.net/th";
+      final params = "&w=500&h=500&c=7&rs=1&p=0";
+      return "$base?q=${Uri.encodeComponent("$searchQuery logo")}$params";
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _autoFetchMissingLogos() async {
+    // Traverse preview radios, find a high-quality logo
+    for (final s in _previewRadios) {
+      if (!mounted) break;
+
+      // We always try to find a BETTER logo for Top Radios to ensure high quality
+      if (_previewCustomLogos[s] == null) {
+        final fetchedLogo = await _fetchFirstLogo(s);
+        if (fetchedLogo != null && fetchedLogo.isNotEmpty && mounted) {
+          setState(() {
+            _previewCustomLogos[s] = fetchedLogo;
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _searchAndShowLogos({
+    int? index,
+    dynamic previewStation,
+    required dynamic station,
+  }) async {
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
-    // Reusing logo search logic - simplified for this widget
-    if (query.isEmpty) return;
+
+    final String name = (station['name']?.toString() ?? '').trim();
+    final String country = (station['country']?.toString() ?? '').trim();
+
+    if (name.isEmpty) return;
+
+    // Refined query for better accuracy
+    String searchQuery = name;
+    if (!searchQuery.toLowerCase().contains('radio')) {
+      searchQuery += " Radio";
+    }
+    if (country.isNotEmpty &&
+        !searchQuery.toLowerCase().contains(country.toLowerCase())) {
+      searchQuery += " $country";
+    }
 
     // Show simple loading dialog
     showDialog(
@@ -219,7 +540,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       await Future.wait([
         safeFetch(() async {
           final uri = Uri.parse(
-            "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=podcast&entity=podcast&limit=5",
+            "https://itunes.apple.com/search?term=${Uri.encodeComponent(searchQuery)}&media=podcast&entity=podcast&limit=10",
           );
           final resp = await http.get(uri).timeout(const Duration(seconds: 4));
           if (resp.statusCode == 200) {
@@ -241,7 +562,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           final resp = await http
               .get(
                 Uri.parse(
-                  "https://autocomplete.clearbit.com/v1/companies/suggest?query=${Uri.encodeComponent(query)}",
+                  "https://autocomplete.clearbit.com/v1/companies/suggest?query=${Uri.encodeComponent(name)}",
                 ),
               )
               .timeout(const Duration(seconds: 4));
@@ -261,9 +582,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           String makeUrl(String q) =>
               "$base?q=${Uri.encodeComponent(q)}$params";
           return [
-            makeUrl("$query logo"),
-            makeUrl("$query radio station"),
-            makeUrl(query),
+            makeUrl("$searchQuery logo"),
+            makeUrl(searchQuery),
+            makeUrl("$name station logo"),
           ];
         }),
       ]);
@@ -287,7 +608,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         builder: (ctx) => AlertDialog(
           backgroundColor: Theme.of(context).cardColor,
           title: Text(
-            langProvider.translate('select_logo_for').replaceAll('{0}', query),
+            langProvider.translate('select_logo_for').replaceAll('{0}', name),
             style: TextStyle(
               color: Theme.of(context).textTheme.titleLarge?.color,
             ),
@@ -316,7 +637,11 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
       if (selected != null) {
         setState(() {
-          _customLogos[index] = selected;
+          if (index != null) {
+            _customLogos[index] = selected;
+          } else if (previewStation != null) {
+            _previewCustomLogos[previewStation] = selected;
+          }
         });
       }
     } catch (e) {
@@ -417,7 +742,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   void _finish() async {
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
-    final provider = Provider.of<RadioProvider>(context, listen: false);
 
     int count = 0;
 
@@ -425,68 +749,25 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     setState(() => _isLoading = true);
 
     try {
+      // 1. Process Main Search Selections
       for (int i = 0; i < _searchResults.length; i++) {
         if (_selectedIndices[i] == true) {
           final data = _searchResults[i];
-          final name = data['name'] ?? 'Unknown Radio';
-          final url = data['url_resolved'] ?? data['url'] ?? '';
-          final genre = (data['tags'] ?? '').toString().replaceAll(',', ' | ');
-          final String? customLogo = _customLogos[i];
-          final String? apiIcon = data['favicon'];
-
-          // Priority: Custom -> API -> Genre Generated
-          String? finalLogo = customLogo;
-          if ((finalLogo == null || finalLogo.isEmpty) &&
-              (apiIcon != null && apiIcon.isNotEmpty)) {
-            finalLogo = apiIcon;
-          }
-          if (finalLogo == null || finalLogo.isEmpty) {
-            final splitted = genre.split('|');
-            if (splitted.isNotEmpty) {
-              finalLogo = GenreMapper.getGenreImage(splitted.first.trim());
-            }
-          }
-
-          // EXTRACT COLOR (Async)
-          String finalColor = '0xFFFFFFFF';
-          if (finalLogo != null && finalLogo.isNotEmpty) {
-            finalColor = await _extractColor(finalLogo);
-          }
-
-          // Check Duplicates in Provider
-          final existingIndex = provider.stations.indexWhere(
-            (s) => s.name.toLowerCase() == name.toLowerCase(),
+          await _addStationToProvider(
+            data,
+            _customLogos[i],
+            _favoriteIndices[i] == true,
           );
-
-          final newStation = Station(
-            id: existingIndex != -1
-                ? provider.stations[existingIndex].id
-                : DateTime.now().millisecondsSinceEpoch + i,
-            name: name,
-            url: url,
-            genre: genre.isNotEmpty ? genre : 'Pop',
-            logo: finalLogo,
-            category: _selectedCountryCode != null
-                ? (_countryMap[_selectedCountryCode] ?? 'International')
-                : 'International',
-            color: finalColor,
-            icon: 'radio',
-          );
-
-          if (existingIndex != -1) {
-            await provider.editStation(newStation);
-          } else {
-            await provider.addStation(newStation);
-          }
-
-          // Handle Favorites
-          if (_favoriteIndices[i] == true) {
-            if (!provider.favorites.contains(newStation.id)) {
-              provider.toggleFavorite(newStation.id);
-            }
-          }
           count++;
         }
+      }
+
+      // 2. Process Preview Selections
+      for (final previewData in _selectedPreviewRadios) {
+        // Apply custom logo if set, set as favorite by default as requested
+        final String? customLogo = _previewCustomLogos[previewData];
+        await _addStationToProvider(previewData, customLogo, true);
+        count++;
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -507,8 +788,19 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   @override
   Widget build(BuildContext context) {
-    if (_step == 0) return _buildCountrySelection();
-    return _buildRadioSelection();
+    int totalSelected =
+        _selectedIndices.values.where((v) => v).length +
+        _selectedPreviewRadios.length;
+
+    return Column(
+      children: [
+        _buildTopRadiosCarousel(),
+        Expanded(
+          child: _step == 0 ? _buildCountrySelection() : _buildRadioSelection(),
+        ),
+        if (totalSelected > 0) _buildFooter(totalSelected),
+      ],
+    );
   }
 
   Widget _buildCountrySelection() {
@@ -636,9 +928,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   Widget _buildRadioSelection() {
     final langProvider = Provider.of<LanguageProvider>(context);
 
-    final selectedCount = _selectedIndices.values
-        .where((selected) => selected)
-        .length;
     if (_isLoading) {
       return Center(
         child: Column(
@@ -867,8 +1156,8 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                                   ),
                                   TextButton.icon(
                                     onPressed: () => _searchAndShowLogos(
-                                      index,
-                                      station['name'] ?? "",
+                                      index: index,
+                                      station: station,
                                     ),
                                     icon: const Icon(
                                       Icons.image_search,
@@ -994,10 +1283,160 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
             },
           ),
         ),
-        // Sticky Bottom Footer
-        _buildFooter(selectedCount),
-        // Sticky Bottom Footer
       ],
+    );
+  }
+
+  Widget _buildTopRadiosCarousel() {
+    final langProvider = Provider.of<LanguageProvider>(context);
+
+    if (_isLoadingPreview) {
+      return Container(
+        height: 140,
+        alignment: Alignment.center,
+        child: const CircularProgressIndicator(),
+      );
+    }
+
+    if (_previewRadios.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      height: 180,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              langProvider.translate('top_radios'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              itemCount: _previewRadios.length,
+              itemBuilder: (context, index) {
+                final station = _previewRadios[index];
+                return _buildPreviewCard(station);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewCard(dynamic station) {
+    if (station == null) return const SizedBox.shrink();
+    final isSelected = _selectedPreviewRadios.contains(station);
+    final customLogo = _previewCustomLogos[station];
+    final displayLogo = customLogo ?? station['favicon'];
+
+    return GestureDetector(
+      onTap: () => _togglePreviewSelection(station),
+      child: Container(
+        width: 120,
+        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
+              : Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: isSelected
+              ? Border.all(color: Theme.of(context).primaryColor, width: 2)
+              : Border.all(color: Colors.transparent, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child:
+                        (displayLogo != null &&
+                            displayLogo.toString().isNotEmpty)
+                        ? Image.network(
+                            displayLogo,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(Icons.radio, size: 40),
+                          )
+                        : const Icon(Icons.radio, size: 40),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Text(
+                    station['name'] ?? 'Unknown',
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+            if (isSelected)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.favorite,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            Positioned(
+              top: 4,
+              left: 4,
+              child: GestureDetector(
+                onTap: () => _searchAndShowLogos(
+                  previewStation: station,
+                  station: station,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Colors.black45,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.image_search,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

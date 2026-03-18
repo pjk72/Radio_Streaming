@@ -434,4 +434,5 @@ final Map<String, String> pt = {
   'webpage': 'Página Web',
   'privacy_policy': 'Política de Privacidade',
   'version': 'Versão {0}',
+  'top_radios': 'Top Rádios',
 };

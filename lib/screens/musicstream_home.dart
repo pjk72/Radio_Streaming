@@ -62,20 +62,26 @@ class MusicStreamHome extends StatelessWidget {
               sliver: SliverSafeArea(
                 top: false,
                 bottom: false,
-                sliver: SliverPersistentHeader(
-                  pinned: true,
-                  delegate: NowPlayingHeaderDelegate(
-                    minHeight: 90 + MediaQuery.of(context).padding.top,
-                    maxHeight: 160 + MediaQuery.of(context).padding.top,
-                    topPadding: MediaQuery.of(context).padding.top,
-                  ),
-                ),
+                sliver: categories.isEmpty
+                    ? const SliverToBoxAdapter(child: SizedBox.shrink())
+                    : SliverPersistentHeader(
+                        pinned: true,
+                        delegate: NowPlayingHeaderDelegate(
+                          minHeight: 90 + MediaQuery.of(context).padding.top,
+                          maxHeight: 160 + MediaQuery.of(context).padding.top,
+                          topPadding: MediaQuery.of(context).padding.top,
+                        ),
+                      ),
               ),
             ),
           ];
         },
         body: Builder(
           builder: (context) {
+            if (categories.isEmpty) {
+              return const TutorialCreateRadioWizard();
+            }
+
             return CustomScrollView(
               key: const PageStorageKey(
                 "MusicStreamScrollKey",
@@ -87,16 +93,6 @@ class MusicStreamHome extends StatelessWidget {
                     context,
                   ),
                 ),
-                // AppBar moved to headerSliverBuilder
-                SliverPadding(
-                  padding: EdgeInsets.symmetric(horizontal: contentPadding),
-                  sliver: categories.isEmpty
-                      ? SliverFillRemaining(
-                          child: const TutorialCreateRadioWizard(),
-                        )
-                      : const SliverToBoxAdapter(child: SizedBox.shrink()),
-                ),
-
                 // Genres List with SliverReorderableList
                 SliverPadding(
                   padding: EdgeInsets.symmetric(horizontal: contentPadding),

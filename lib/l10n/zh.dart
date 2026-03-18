@@ -425,4 +425,5 @@ final Map<String, String> zh = {
   'webpage': '网页',
   'privacy_policy': '隐私政策',
   'version': '版本 {0}',
+  'top_radios': '热门电台',
 };

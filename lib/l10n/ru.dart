@@ -432,4 +432,5 @@ final Map<String, String> ru = {
   'webpage': 'Веб-страница',
   'privacy_policy': 'Политика конфиденциальности',
   'version': 'Версия {0}',
+  'top_radios': 'Топ Радио',
 };
