@@ -22,6 +22,7 @@ final Map<String, String> fr = {
   'local_library_desc': 'Gérer les dossiers et listes de lecture locaux',
   'logs': 'Journaux',
   'logs_desc': 'Voir les réponses API et journaux de l\'application',
+
   'compact_view': 'Vue Compacte',
   'compact_view_desc': 'Afficher plus de stations en moins d\'espace',
   'song_recognition': 'Activer la Reconnaissance de Chansons',

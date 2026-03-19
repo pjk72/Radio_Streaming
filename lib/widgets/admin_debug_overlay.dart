@@ -131,11 +131,11 @@ class _AdminDebugOverlayState extends State<AdminDebugOverlay> {
                 child: HeroControllerScope.none(
                   child: Navigator(
                     onGenerateRoute: (settings) => MaterialPageRoute(
-                      builder: (context) => const Material(
+                      builder: (context) => Material(
                         type: MaterialType.transparency,
                         child: Directionality(
                           textDirection: TextDirection.ltr,
-                          child: DebugLogScreen(),
+                          child: const DebugLogScreen(),
                         ),
                       ),
                     ),

@@ -16,6 +16,7 @@ import '../providers/language_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -96,6 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canManageStations = entitlements.isFeatureEnabled('manage_stations');
     final canUseAppearance = entitlements.isFeatureEnabled('appearance');
     final canUseDebugLogs = entitlements.isFeatureEnabled('debug_logs');
+
 
     return Stack(
       children: [

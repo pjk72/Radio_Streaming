@@ -22,6 +22,7 @@ final Map<String, String> ru = {
   'local_library_desc': 'Управление локальными папками и плейлистами',
   'logs': 'Журналы',
   'logs_desc': 'Просмотр ответов API и журналов приложения',
+
   'compact_view': 'Компактный вид',
   'compact_view_desc': 'Показывать больше станций',
   'song_recognition': 'Распознавание песен',

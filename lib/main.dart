@@ -27,6 +27,8 @@ import 'services/encryption_service.dart';
 import 'services/entitlement_service.dart';
 import 'widgets/admin_debug_overlay.dart';
 import 'services/app_open_ad_manager.dart';
+import 'services/notification_service.dart';
+import 'services/user_sync_service.dart';
 
 late AudioHandler audioHandler;
 
@@ -208,8 +210,23 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         listen: false,
       );
       AppOpenAdManager().init(entitlements);
+      _initNotifications();
       _checkForUpdate();
     });
+  }
+
+  Future<void> _initNotifications() async {
+    final notificationService = NotificationService();
+    await notificationService.init();
+
+    final userSyncService = UserSyncService(
+      Provider.of<BackupService>(context, listen: false),
+    );
+    await userSyncService.syncUserInfo();
+
+    // Trigger an internal event for Firebase In-App Messaging
+    // You can create campaigns based on this 'app_opened' event in Firebase Console
+    await notificationService.triggerInAppEvent('app_opened');
   }
 
   Future<void> _checkForUpdate() async {

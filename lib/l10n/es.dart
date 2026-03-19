@@ -22,6 +22,7 @@ final Map<String, String> es = {
   'local_library_desc': 'Gestionar carpetas y listas de reproducción locales',
   'logs': 'Registros',
   'logs_desc': 'Ver respuestas API y registros de la app',
+
   'compact_view': 'Vista Compacta',
   'compact_view_desc': 'Mostrar más estaciones en menos espacio',
   'song_recognition': 'Habilitar Reconocimiento de Canciones',

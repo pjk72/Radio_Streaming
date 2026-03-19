@@ -22,6 +22,7 @@ final Map<String, String> pt = {
   'local_library_desc': 'Gerenciar pastas e playlists locais',
   'logs': 'Registros (Logs)',
   'logs_desc': 'Ver respostas de API e logs',
+
   'compact_view': 'Visualização Compacta',
   'compact_view_desc': 'Mostrar mais estações em menos espaço',
   'song_recognition': 'Reconhecimento de Música',

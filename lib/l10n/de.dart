@@ -22,6 +22,7 @@ final Map<String, String> de = {
   'local_library_desc': 'Lokale Ordner und Wiedergabelisten verwalten',
   'logs': 'Protokolle',
   'logs_desc': 'API-Antworten und App-Protokolle anzeigen',
+
   'compact_view': 'Kompakte Ansicht',
   'compact_view_desc': 'Mehr Sender auf weniger Platz anzeigen',
   'song_recognition': 'Songerkennung Aktivieren',

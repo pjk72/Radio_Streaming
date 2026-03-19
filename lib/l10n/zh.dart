@@ -22,6 +22,7 @@ final Map<String, String> zh = {
   'local_library_desc': '管理本地文件夹和播放列表',
   'logs': '日志',
   'logs_desc': '查看 API 响应和应用日志',
+
   'compact_view': '紧凑视图',
   'compact_view_desc': '在更少的空间内显示更多的电台',
   'song_recognition': '启用歌曲识别',

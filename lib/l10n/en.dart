@@ -22,6 +22,7 @@ final Map<String, String> en = {
   'local_library_desc': 'Manage local folders and playlists',
   'logs': 'Logs',
   'logs_desc': 'View API responses and app logs',
+
   'compact_view': 'Compact View',
   'compact_view_desc': 'Show more stations in less space',
   'song_recognition': 'Enable Song Recognition',
