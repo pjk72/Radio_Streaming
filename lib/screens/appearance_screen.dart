@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:ui';
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/language_provider.dart';
@@ -37,6 +41,16 @@ class AppearanceScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             _buildCustomColorSection(context, themeProvider),
+            const SizedBox(height: 32),
+
+            _buildSectionHeader(langProvider.translate('background_image')),
+            const SizedBox(height: 8),
+            Text(
+              langProvider.translate('background_image_desc'),
+              style: const TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            _buildBackgroundImageSection(context, themeProvider),
 
             if (themeProvider.hasCustomColors) ...[
               const SizedBox(height: 24),
@@ -88,6 +102,8 @@ class AppearanceScreen extends StatelessWidget {
     ThemeProvider provider,
   ) {
     final langProvider = Provider.of<LanguageProvider>(context);
+    final hasImage = provider.customBackgroundImageUrl != null;
+
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
@@ -107,36 +123,41 @@ class AppearanceScreen extends StatelessWidget {
             'primary',
             provider,
           ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          _buildColorTile(
-            context,
-            langProvider.translate('background_color'),
-            langProvider.translate('background_color_desc'),
-            provider.activeBackgroundColor,
-            (c) => provider.setCustomBackgroundColor(c),
-            'background',
-            provider,
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          _buildColorTile(
-            context,
-            langProvider.translate('card_color'),
-            langProvider.translate('card_color_desc'),
-            provider.activeCardColor,
-            (c) => provider.setCustomCardColor(c),
-            'card',
-            provider,
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          _buildColorTile(
-            context,
-            langProvider.translate('surface_header'),
-            langProvider.translate('surface_header_desc'),
-            provider.activeSurfaceColor,
-            (c) => provider.setCustomSurfaceColor(c),
-            'surface',
-            provider,
-          ),
+          if (!hasImage) ...[
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildColorTile(
+              context,
+              langProvider.translate('background_color'),
+              langProvider.translate('background_color_desc'),
+              provider.activeBackgroundColor,
+              (c) => provider.setCustomBackgroundColor(c),
+              'background',
+              provider,
+              isDisabled: hasImage,
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildColorTile(
+              context,
+              langProvider.translate('card_color'),
+              langProvider.translate('card_color_desc'),
+              provider.activeCardColor,
+              (c) => provider.setCustomCardColor(c),
+              'card',
+              provider,
+              isDisabled: hasImage,
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildColorTile(
+              context,
+              langProvider.translate('surface_header'),
+              langProvider.translate('surface_header_desc'),
+              provider.activeSurfaceColor,
+              (c) => provider.setCustomSurfaceColor(c),
+              'surface',
+              provider,
+              isDisabled: hasImage,
+            ),
+          ],
         ],
       ),
     );
@@ -149,14 +170,23 @@ class AppearanceScreen extends StatelessWidget {
     Color currentColor,
     Function(Color) onColorSelected,
     String colorKey,
-    ThemeProvider provider,
-  ) {
+    ThemeProvider provider, {
+    bool isDisabled = false,
+  }) {
     return ListTile(
+      enabled: !isDisabled,
       title: Text(
         title,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          color: isDisabled ? Colors.grey : null,
+        ),
       ),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(fontSize: 12, color: isDisabled ? Colors.grey : null),
+      ),
       trailing: Container(
         width: 36,
         height: 36,
@@ -173,7 +203,9 @@ class AppearanceScreen extends StatelessWidget {
           ],
         ),
       ),
-      onTap: () => _showColorPicker(context, colorKey, provider),
+      onTap: isDisabled
+          ? null
+          : () => _showColorPicker(context, colorKey, provider),
     );
   }
 
@@ -184,13 +216,51 @@ class AppearanceScreen extends StatelessWidget {
   ) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).cardColor,
+      backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (ctx) {
-        return _AdvancedColorPicker(initialKey: initialKey, provider: provider);
+        final cardColor = Theme.of(context).cardColor;
+        final contrastColor = cardColor.computeLuminance() > 0.5
+            ? Colors.black
+            : Colors.white;
+
+        return ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    cardColor.withValues(alpha: 0.4),
+                    cardColor.withValues(alpha: 0.6),
+                  ],
+                ),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                border: Border(
+                  top: BorderSide(
+                    color: contrastColor.withValues(alpha: 0.1),
+                    width: 0.5,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: _AdvancedColorPicker(
+                initialKey: initialKey,
+                provider: provider,
+              ),
+            ),
+          ),
+        );
       },
     );
   }
@@ -340,6 +410,417 @@ class AppearanceScreen extends StatelessWidget {
       },
     );
   }
+
+  Widget _buildBackgroundImageSection(
+    BuildContext context,
+    ThemeProvider provider,
+  ) {
+    final langProvider = Provider.of<LanguageProvider>(context);
+    final hasImage = provider.customBackgroundImageUrl != null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.image, color: Theme.of(context).primaryColor),
+            ),
+            title: Text(
+              langProvider.translate('background_image'),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+            subtitle: Text(
+              hasImage
+                  ? langProvider.translate('custom_search')
+                  : langProvider.translate('use_default'),
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.search, size: 20),
+            onTap: () => _showImageSearchDialog(context, provider),
+          ),
+          if (hasImage) ...[
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            ListTile(
+              leading: const Icon(
+                Icons.refresh,
+                color: Colors.redAccent,
+                size: 20,
+              ),
+              title: Text(
+                langProvider.translate('reset_background'),
+                style: const TextStyle(color: Colors.redAccent, fontSize: 14),
+              ),
+              onTap: () => provider.setCustomBackgroundImage(null),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showImageSearchDialog(BuildContext context, ThemeProvider provider) {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    final stt.SpeechToText speech = stt.SpeechToText();
+    final TextEditingController controller = TextEditingController();
+    List<String> results = [];
+    bool isSearching = false;
+    bool isListening = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          Future<void> performSearch() async {
+            if (controller.text.isEmpty) return;
+            setModalState(() {
+              isSearching = true;
+              results = [];
+            });
+            try {
+              final urls = await _searchImages(controller.text);
+              setModalState(() {
+                results = urls;
+                isSearching = false;
+              });
+              if (urls.isEmpty && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(langProvider.translate('no_images_found')),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            } catch (e) {
+              setModalState(() {
+                isSearching = false;
+              });
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Error searching images")),
+                );
+              }
+            }
+          } // Added missing closing brace for performSearch()
+
+          Future<void> listen() async {
+            if (!isListening) {
+              bool available = await speech.initialize(
+                onStatus: (val) {
+                  if (val == 'done' || val == 'notListening') {
+                    setModalState(() => isListening = false);
+                  }
+                },
+                onError: (val) => setModalState(() => isListening = false),
+              );
+              if (available) {
+                setModalState(() => isListening = true);
+                speech.listen(
+                  onResult: (val) {
+                    setModalState(() {
+                      controller.text = val.recognizedWords;
+                      if (val.finalResult) {
+                        isListening = false;
+                        performSearch();
+                      }
+                    });
+                  },
+                );
+              }
+            } else {
+              setModalState(() => isListening = false);
+              speech.stop();
+            }
+          }
+
+          final cardColor = Theme.of(context).cardColor;
+          final contrastColor = cardColor.computeLuminance() > 0.5
+              ? Colors.black
+              : Colors.white;
+
+          return ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                height: MediaQuery.of(ctx).size.height * 0.85,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      cardColor.withValues(alpha: 0.4),
+                      cardColor.withValues(alpha: 0.6),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                  border: Border(
+                    top: BorderSide(
+                      color: contrastColor.withValues(alpha: 0.1),
+                      width: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: controller,
+                              autofocus: true,
+                              decoration: InputDecoration(
+                                hintText: langProvider.translate(
+                                  'search_images_hint',
+                                ),
+                                prefixIcon: const Icon(Icons.search),
+                                suffixIcon: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (controller.text.isNotEmpty)
+                                      IconButton(
+                                        icon: const Icon(Icons.clear_rounded),
+                                        onPressed: () {
+                                          setModalState(() {
+                                            controller.clear();
+                                          });
+                                        },
+                                      ),
+                                    IconButton(
+                                      icon: Icon(
+                                        isListening
+                                            ? Icons.mic_rounded
+                                            : Icons.mic_none_rounded,
+                                        color: isListening
+                                            ? Theme.of(context).primaryColor
+                                            : null,
+                                      ),
+                                      onPressed: listen,
+                                    ),
+                                  ],
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 10,
+                                ),
+                              ),
+                              onChanged: (val) {
+                                setModalState(() {});
+                              },
+                              onSubmitted: (_) => performSearch(),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          IconButton(
+                            onPressed: performSearch,
+                            icon: const Icon(Icons.arrow_forward_rounded),
+                            style: IconButton.styleFrom(
+                              backgroundColor: Theme.of(context).primaryColor,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isSearching)
+                      const Expanded(
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (results.isEmpty)
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            langProvider.translate('no_images_found'),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: GridView.builder(
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 0.7,
+                              ),
+                          itemCount: results.length,
+                          itemBuilder: (ctx, index) {
+                            return GestureDetector(
+                              onTap: () {
+                                provider.setCustomBackgroundImage(
+                                  results[index],
+                                );
+                                Navigator.pop(context);
+                              },
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Image.network(
+                                      results[index],
+                                      fit: BoxFit.cover,
+                                      loadingBuilder:
+                                          (context, child, loadingProgress) {
+                                            if (loadingProgress == null)
+                                              return child;
+                                            return const Center(
+                                              child:
+                                                  CircularProgressIndicator(),
+                                            );
+                                          },
+                                      errorBuilder: (_, __, ___) => Container(
+                                        color: Colors.grey.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        child: const Icon(Icons.error_outline),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      bottom: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.bottomCenter,
+                                            end: Alignment.topCenter,
+                                            colors: [
+                                              Colors.black.withValues(
+                                                alpha: 0.8,
+                                              ),
+                                              Colors.transparent,
+                                            ],
+                                          ),
+                                        ),
+                                        child: Text(
+                                          langProvider.translate(
+                                            'select_as_background',
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<List<String>> _searchImages(String query) async {
+    try {
+      final String encodedQuery = Uri.encodeComponent(query);
+
+      // We try 3 different variations of the Unsplash NAPI
+      final endpoints = [
+        'https://unsplash.com/napi/search/photos?query=$encodedQuery&per_page=30',
+        'https://unsplash.com/napi/search?query=$encodedQuery&per_page=30',
+        'https://unsplash.com/napi/search/photos?query=$encodedQuery&xp=search-trending:control',
+      ];
+
+      final headers = {
+        'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://unsplash.com/',
+      };
+
+      for (var endpoint in endpoints) {
+        try {
+          final url = Uri.parse(endpoint);
+          final res = await http
+              .get(url, headers: headers)
+              .timeout(const Duration(seconds: 8));
+
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            dynamic results;
+
+            // Unsplash NAPI returns results in different places depending on endpoint
+            if (data['results'] is List) {
+              results = data['results'];
+            } else if (data['photos']?['results'] is List) {
+              results = data['photos']['results'];
+            } else if (data['results']?['photos']?['results'] is List) {
+              results = data['results']['photos']['results'];
+            }
+
+            if (results is List && results.isNotEmpty) {
+              return results
+                  .map<String>((item) {
+                    if (item is Map) {
+                      final urls = item['urls'] as Map?;
+                      return urls?['regular']?.toString() ??
+                          urls?['small']?.toString() ??
+                          urls?['full']?.toString() ??
+                          '';
+                    }
+                    return '';
+                  })
+                  .where((u) => u.isNotEmpty)
+                  .toList();
+            }
+          }
+        } catch (e) {
+          debugPrint("Search attempt failed for $endpoint: $e");
+          continue;
+        }
+      }
+    } catch (e) {
+      debugPrint("Global search error: $e");
+    }
+    return [];
+  }
 }
 
 class _AdvancedColorPicker extends StatefulWidget {
@@ -367,6 +848,9 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
   void initState() {
     super.initState();
     _activeKey = widget.initialKey;
+    if (widget.provider.customBackgroundImageUrl != null) {
+      _activeKey = 'primary';
+    }
 
     // Initialize draft colors from provider
     _draftColors = {
@@ -384,7 +868,11 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
     _hsv = HSVColor.fromColor(color);
     _alpha = color.opacity;
     _hexController = TextEditingController(
-      text: color.value.toRadixString(16).substring(2).toUpperCase(),
+      text: color.value
+          .toRadixString(16)
+          .padLeft(8, '0')
+          .substring(2)
+          .toUpperCase(),
     );
   }
 
@@ -410,6 +898,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
 
       _hexController.text = newColor.value
           .toRadixString(16)
+          .padLeft(8, '0')
           .substring(2)
           .toUpperCase();
     });
@@ -478,6 +967,8 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
         ? Colors.black
         : Colors.white;
 
+    final String? backgroundUrl = widget.provider.customBackgroundImageUrl;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
@@ -486,104 +977,134 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
         border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
       ),
-      child: Column(
-        children: [
-          // Mock Header / Surface
-          Container(
-            height: 40,
-            decoration: BoxDecoration(
-              color: effectiveSurface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          children: [
+            if (backgroundUrl != null)
+              Positioned.fill(
+                child: Image.network(
+                  backgroundUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
               ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
+            // Glass effect overlay if image exists
+            if (backgroundUrl != null)
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+                  child: Container(color: effectiveBg.withValues(alpha: 0.3)),
+                ),
+              ),
+            Column(
               children: [
-                Icon(Icons.menu, color: effectiveTextOnSurface, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    langProvider.translate('preview'),
-                    style: TextStyle(
-                      color: effectiveTextOnSurface,
-                      fontWeight: FontWeight.bold,
+                // Mock Header / Surface
+                Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: effectiveSurface,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(12),
                     ),
                   ),
-                ),
-                Icon(Icons.search, color: effectiveTextOnSurface, size: 20),
-              ],
-            ),
-          ),
-          // Body content
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  langProvider.translate('content_area'),
-                  style: TextStyle(
-                    color: effectiveTextOnBg.withValues(alpha: 0.7),
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Mock Card 1
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: effectiveCard,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(
                     children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: effectivePrimary.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(Icons.music_note, color: effectivePrimary),
-                      ),
+                      Icon(Icons.menu, color: effectiveTextOnSurface, size: 20),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              langProvider.translate('song_title'),
-                              style: TextStyle(
-                                color: effectiveTextOnCard,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              langProvider.translate('artist_name'),
-                              style: TextStyle(
-                                color: effectiveTextOnCard.withValues(
-                                  alpha: 0.6,
-                                ),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          langProvider.translate('preview'),
+                          style: TextStyle(
+                            color: effectiveTextOnSurface,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       Icon(
-                        Icons.play_circle_fill,
-                        color: effectivePrimary,
-                        size: 32,
+                        Icons.search,
+                        color: effectiveTextOnSurface,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+                // Body content
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        langProvider.translate('content_area'),
+                        style: TextStyle(
+                          color: effectiveTextOnBg.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Mock Card 1
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: effectiveCard,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: effectivePrimary.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.music_note,
+                                color: effectivePrimary,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    langProvider.translate('song_title'),
+                                    style: TextStyle(
+                                      color: effectiveTextOnCard,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    langProvider.translate('artist_name'),
+                                    style: TextStyle(
+                                      color: effectiveTextOnCard.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.play_circle_fill,
+                              color: effectivePrimary,
+                              size: 32,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -661,27 +1182,29 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                       "primary",
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: _buildTab(
-                      langProvider.translate('color_bg'),
-                      "background",
+                  if (widget.provider.customBackgroundImageUrl == null) ...[
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _buildTab(
+                        langProvider.translate('color_bg'),
+                        "background",
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: _buildTab(
-                      langProvider.translate('color_card'),
-                      "card",
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _buildTab(
+                        langProvider.translate('color_card'),
+                        "card",
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: _buildTab(
-                      langProvider.translate('color_surface'),
-                      "surface",
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _buildTab(
+                        langProvider.translate('color_surface'),
+                        "surface",
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -1069,12 +1592,9 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
 class CheckerBoardPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    // Fill white first
     canvas.drawColor(Colors.white, BlendMode.src);
-
     final paint = Paint()..color = Colors.grey.shade300;
     const double sizeSq = 8;
-
     for (double y = 0; y < size.height; y += sizeSq) {
       for (double x = 0; x < size.width; x += sizeSq) {
         if (((x / sizeSq).floor() + (y / sizeSq).floor()) % 2 == 0) {

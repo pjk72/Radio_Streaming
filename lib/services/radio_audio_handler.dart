@@ -77,7 +77,6 @@ class RadioAudioHandler extends BaseAudioHandler
   Duration? _nextCheckDuration;
   bool _isSearching = false;
 
-
   void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
     if (kDebugMode) {
       debugPrint(
@@ -346,7 +345,9 @@ class RadioAudioHandler extends BaseAudioHandler
           _lastRecognitionTime = DateTime.now();
           _nextCheckDuration = const Duration(seconds: 5);
           if (mediaItem.value != null) {
-            mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
+            mediaItem.add(
+              mediaItem.value!.copyWith(duration: _nextCheckDuration),
+            );
           }
 
           _recognitionTimer = Timer(const Duration(seconds: 5), () {
@@ -2709,15 +2710,18 @@ class RadioAudioHandler extends BaseAudioHandler
         effectivePosition = Duration.zero;
       } else if (_lastRecognitionTime != null) {
         effectivePosition = now.difference(_lastRecognitionTime!);
-        if (effectivePosition < Duration.zero) effectivePosition = Duration.zero;
-        if (_nextCheckDuration != null && effectivePosition > _nextCheckDuration!) {
+        if (effectivePosition < Duration.zero)
+          effectivePosition = Duration.zero;
+        if (_nextCheckDuration != null &&
+            effectivePosition > _nextCheckDuration!) {
           effectivePosition = _nextCheckDuration!;
         }
       }
     }
 
     double speed = 1.0;
-    if (!playing || (mediaItem.value?.extras?['type'] == 'station' && _isSearching)) {
+    if (!playing ||
+        (mediaItem.value?.extras?['type'] == 'station' && _isSearching)) {
       speed = 0.0;
     }
 
@@ -3409,13 +3413,14 @@ class RadioAudioHandler extends BaseAudioHandler
 
       mediaItem.add(
         currentItem.copyWith(
-          duration: null, // Hide progress bar while identified info is being replaced
+          duration:
+              null, // Hide progress bar while identified info is being replaced
           extras: newExtras,
         ),
       );
       _lastRecognitionTime = null; // Reset countdown during identification
       _nextCheckDuration = null;
-      _currentPosition = Duration.zero; 
+      _currentPosition = Duration.zero;
       _broadcastState();
     }
 
@@ -3515,7 +3520,9 @@ class RadioAudioHandler extends BaseAudioHandler
         _lastRecognitionTime = DateTime.now();
         _nextCheckDuration = Duration(milliseconds: nextCheckDelay);
         if (mediaItem.value != null) {
-          mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
+          mediaItem.add(
+            mediaItem.value!.copyWith(duration: _nextCheckDuration),
+          );
         }
 
         _recognitionTimer?.cancel();
@@ -3545,9 +3552,11 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (_) {}
 
     if (station != null) {
-      final newExtras = Map<String, dynamic>.from(mediaItem.value?.extras ?? {});
+      final newExtras = Map<String, dynamic>.from(
+        mediaItem.value?.extras ?? {},
+      );
       newExtras['isSearching'] = false;
-      
+
       final newItem = mediaItem.value?.copyWith(
         title: station.name,
         artist: station.genre,
@@ -3790,10 +3799,7 @@ class RadioAudioHandler extends BaseAudioHandler
       final sevenDaysAgo = now.subtract(const Duration(days: 7));
 
       // Add new event
-      weeklyLog.add({
-        'id': songId,
-        'ts': now.toIso8601String(),
-      });
+      weeklyLog.add({'id': songId, 'ts': now.toIso8601String()});
 
       // Filter old events
       weeklyLog.removeWhere((event) {

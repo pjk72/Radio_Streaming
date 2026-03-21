@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:flutter/foundation.dart'; // For kReleaseMode
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_performance/firebase_performance.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -29,6 +32,7 @@ import 'widgets/admin_debug_overlay.dart';
 import 'services/app_open_ad_manager.dart';
 import 'services/notification_service.dart';
 import 'services/user_sync_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 late AudioHandler audioHandler;
 
@@ -37,27 +41,28 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
-  // Ensure Analytics is active and log the first event
+  FlutterError.onError = (errorDetails) {
+    FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
+  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+  await FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
+
   final analytics = FirebaseAnalytics.instance;
   await analytics.setAnalyticsCollectionEnabled(true);
-
-  if (kDebugMode) {
-    debugPrint(
-      "📊 Firebase Analytics [DEBUG]: Session started. Ensure DebugView is active on device.",
-    );
-  }
-
   await analytics.logAppOpen();
-  debugPrint("✅ Firebase Analytics: App Open Event Logged");
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  debugPrint("App Entry Point");
 
   if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
     Workmanager().initialize(callbackDispatcher, isInDebugMode: !kReleaseMode);
   }
 
-  debugPrint("Initializing AudioService in main()...");
   audioHandler = await AudioService.init(
     builder: () => RadioAudioHandler(),
     config: AudioServiceConfig(
@@ -72,118 +77,40 @@ Future<void> main() async {
     ),
   );
 
-  debugPrint("Initializing EncryptionService...");
   await EncryptionService().init();
 
-  runApp(const AppBootstrapper());
+  runApp(const MusicStreamRoot());
 }
 
-class AppBootstrapper extends StatefulWidget {
-  const AppBootstrapper({super.key});
+class MusicStreamRoot extends StatefulWidget {
+  const MusicStreamRoot({super.key});
 
   @override
-  State<AppBootstrapper> createState() => _AppBootstrapperState();
+  State<MusicStreamRoot> createState() => _MusicStreamRootState();
 }
 
-class _AppBootstrapperState extends State<AppBootstrapper> {
-  bool _isInitialized = false;
-  String? _error;
+class _MusicStreamRootState extends State<MusicStreamRoot> {
   late BackupService _backupService;
+  late EntitlementService _entitlementService;
 
   @override
   void initState() {
     super.initState();
     _backupService = BackupService();
-    _initApp();
-  }
-
-  Future<void> _initApp() async {
-    debugPrint("Initializing App...");
-    try {
-      // Simulate small delay to ensure UI renders first frame
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        MobileAds.instance.initialize();
-      }
-
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
-      }
-    } catch (e, stack) {
-      debugPrint("Initialization Error: $e");
-      debugPrint(stack.toString());
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-        });
-      }
-    }
+    _entitlementService = EntitlementService(_backupService);
   }
 
   @override
   Widget build(BuildContext context) {
-    // 1. Error State
-    if (_error != null) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: const Color(0xFF0a0a0f),
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: SingleChildScrollView(
-                child: Text(
-                  "Startup Error:\n$_error",
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.redAccent),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // 2. Loading State
-    if (!_isInitialized) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: const Color(
-            0xFF0a0a0f,
-          ), // Set a consistent background color
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(color: Colors.white),
-                const SizedBox(height: 20),
-                Text(
-                  "Initializing Audio Service...",
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    // 3. App Loaded
-    final entitlementService = EntitlementService(_backupService);
-
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: _backupService),
-        ChangeNotifierProvider.value(value: entitlementService),
+        ChangeNotifierProvider.value(value: _entitlementService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
         ChangeNotifierProvider(
           create: (_) =>
-              RadioProvider(audioHandler, _backupService, entitlementService),
+              RadioProvider(audioHandler, _backupService, _entitlementService),
           lazy: false,
         ),
       ],
@@ -200,32 +127,51 @@ class RadioApp extends StatefulWidget {
 }
 
 class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
+  bool _isInitialized = false;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _initApp();
+  }
+
+  Future<void> _initApp() async {
+    try {
+      // 2.5 seconds of splash screen time
+      await Future.delayed(const Duration(milliseconds: 2500));
+
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        MobileAds.instance.initialize();
+      }
+
       final entitlements = Provider.of<EntitlementService>(
         context,
         listen: false,
       );
       AppOpenAdManager().init(entitlements);
-      _initNotifications();
-      _checkForUpdate();
-    });
+
+      await _initNotifications();
+      await _checkForUpdate();
+
+      if (mounted) {
+        setState(() => _isInitialized = true);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString());
+      }
+    }
   }
 
   Future<void> _initNotifications() async {
     final notificationService = NotificationService();
     await notificationService.init();
-
     final userSyncService = UserSyncService(
       Provider.of<BackupService>(context, listen: false),
     );
     await userSyncService.syncUserInfo();
-
-    // Trigger an internal event for Firebase In-App Messaging
-    // You can create campaigns based on this 'app_opened' event in Firebase Console
     await notificationService.triggerInAppEvent('app_opened');
   }
 
@@ -234,13 +180,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       try {
         final info = await InAppUpdate.checkForUpdate();
         if (info.updateAvailability == UpdateAvailability.updateAvailable) {
-          if (mounted) {
-            _showUpdateDialog();
-          }
+          if (mounted) _showUpdateDialog();
         }
-      } catch (e) {
-        debugPrint('Error checking for updates: $e');
-      }
+      } catch (_) {}
     }
   }
 
@@ -249,66 +191,27 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       context,
       listen: false,
     );
-
     showDialog(
       context: context,
-      barrierDismissible: false, // Force user interaction
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF1a1a24),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withOpacity(0.1)),
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: Text(languageProvider.translate('update_available')),
+        content: Text(languageProvider.translate('update_desc')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(languageProvider.translate('later')),
           ),
-          title: Text(
-            languageProvider.translate('update_available'),
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await InAppUpdate.performImmediateUpdate();
+            },
+            child: Text(languageProvider.translate('update_now')),
           ),
-          content: Text(
-            languageProvider.translate('update_desc'),
-            style: GoogleFonts.inter(color: Colors.white.withOpacity(0.8)),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                languageProvider.translate('later'),
-                style: GoogleFonts.inter(color: Colors.white.withOpacity(0.6)),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                try {
-                  await InAppUpdate.performImmediateUpdate();
-                } catch (e) {
-                  debugPrint('Error performing immediate update: $e');
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Update failed: $e')),
-                    );
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                languageProvider.translate('update_now'),
-                style: GoogleFonts.inter(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -334,69 +237,129 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
         systemNavigationBarColor:
             themeProvider.themeData.scaffoldBackgroundColor,
         systemNavigationBarIconBrightness: isDark
             ? Brightness.light
             : Brightness.dark,
-        systemNavigationBarDividerColor: Colors.transparent,
       ),
       child: MaterialApp(
         title: 'MusicStream',
         debugShowCheckedModeBanner: false,
+        theme: themeProvider.themeData,
         builder: (context, child) {
-          if (child == null) return const SizedBox.shrink();
+          return Scaffold(
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 1. BASE COLOR LAYER
+                Container(color: themeProvider.activeBackgroundColor),
 
-          final isSupportedPlatform =
-              !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+                // 2. IMAGE LAYER
+                if (!_isInitialized)
+                  // SPLASH BACKGROUND (STAYS UNTIL FULLY LOADED)
+                  Image.asset('assets/splash_bg.png', fit: BoxFit.cover)
+                else if (themeProvider.customBackgroundImageUrl != null)
+                  // CUSTOM IMAGE (AFTER INITIALIZATION)
+                  CachedNetworkImage(
+                    imageUrl: themeProvider.customBackgroundImageUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) =>
+                        Container(color: themeProvider.activeBackgroundColor),
+                    errorWidget: (context, url, error) =>
+                        const SizedBox.shrink(),
+                  ),
 
-          return Material(
-            type: MaterialType.transparency,
-            child: Directionality(
-              textDirection: TextDirection.ltr,
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        child,
-                        const GlobalHiddenPlayer(),
-                        const ConnectivityBanner(),
-                        const AdminDebugOverlay(),
-                      ],
+                // Global Overlay (only if an image is showing)
+                if (!_isInitialized ||
+                    themeProvider.customBackgroundImageUrl != null)
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.4),
+                          Colors.black.withValues(alpha: 0.8),
+                        ],
+                      ),
                     ),
                   ),
-                  Selector<RadioProvider, bool>(
-                    selector: (_, p) => p.showGlobalBanner,
-                    builder: (context, showBanner, child) {
-                      if (isSupportedPlatform && showBanner) {
-                        return Container(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          child: const SafeArea(
-                            top: false,
-                            child: AdMobBannerWidget(),
-                          ),
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                ],
-              ),
+
+                // Content Transition
+                if (!_isInitialized)
+                  _buildSplashContent()
+                else if (_error != null)
+                  _buildErrorContent()
+                else
+                  _buildMainContent(child!),
+              ],
             ),
           );
         },
-        theme: themeProvider.themeData,
-        darkTheme: themeProvider.themeData,
-        themeMode: themeProvider.themeData.brightness == Brightness.dark
-            ? ThemeMode.dark
-            : ThemeMode.light,
-        navigatorObservers: [
-          FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
-        ],
         home: const LoginScreen(),
       ),
+    );
+  }
+
+  Widget _buildSplashContent() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            "MusicStream",
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontSize: 48,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 40),
+          const CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+          const SizedBox(height: 20),
+          Text(
+            "Initializing Experience...",
+            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorContent() {
+    return Center(
+      child: Text(
+        "Startup Error:\n$_error",
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Colors.redAccent),
+      ),
+    );
+  }
+
+  Widget _buildMainContent(Widget navigator) {
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              navigator,
+              const GlobalHiddenPlayer(),
+              const ConnectivityBanner(),
+              const AdminDebugOverlay(),
+            ],
+          ),
+        ),
+        // Banner Ad
+        Selector<RadioProvider, bool>(
+          selector: (_, p) => p.showGlobalBanner,
+          builder: (context, showBanner, _) {
+            if (showBanner) return const AdMobBannerWidget();
+            return const SizedBox.shrink();
+          },
+        ),
+      ],
     );
   }
 }

@@ -16,7 +16,9 @@ class RecognitionApiService {
 
   Future<Map<String, dynamic>?> identifyStream(String streamUrl) async {
     if (_isGlobalRecognizing) {
-      LogService().log("RecognitionAPI: Global lock active, ignoring duplicate request.");
+      LogService().log(
+        "RecognitionAPI: Global lock active, ignoring duplicate request.",
+      );
       return null;
     }
     _isGlobalRecognizing = true;
@@ -40,7 +42,7 @@ class RecognitionApiService {
 
       // 4. Send MP3 straight to recognition service (Shazam API)
       final uri = Uri.https(_host, '/recognize/file');
-      
+
       if (_activeClient == null) return null;
       final response = await _activeClient!.post(
         uri,
@@ -213,13 +215,19 @@ class _MusicIdentifierState extends State<MusicIdentifier> {
           if (data.containsKey('track') && data['track'] != null) {
             final trackInfo = data['track'];
             setState(() {
-              _result = "Trovata: ${trackInfo['title']} - ${trackInfo['subtitle']}";
+              _result =
+                  "Trovata: ${trackInfo['title']} - ${trackInfo['subtitle']}";
             });
           } else {
-            setState(() => _result = "Nessuna canzone riconosciuta in questo audio.");
+            setState(
+              () => _result = "Nessuna canzone riconosciuta in questo audio.",
+            );
           }
         } else {
-          setState(() => _result = "Errore API Shazam: ${response.statusCode}\n${response.body}");
+          setState(
+            () => _result =
+                "Errore API Shazam: ${response.statusCode}\n${response.body}",
+          );
         }
       } catch (e) {
         setState(() => _result = "Errore: $e");

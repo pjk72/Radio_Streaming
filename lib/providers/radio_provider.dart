@@ -74,7 +74,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   static const String _keyInvalidSongIds = 'invalid_song_ids';
   static const String _keyManageGridView = 'manage_grid_view';
   static const String _keyManageGroupingMode = 'manage_grouping_mode';
-  static const String _keyPlaylistCreatorFilter = 'playlist_creator_filter';
   static const String _keyFollowedArtists = 'followed_artists';
   static const String _keyFollowedAlbums = 'followed_albums';
   static const String _keyArtistImagesCache = 'artist_images_cache';
@@ -808,36 +807,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   int _manageGroupingMode = 0; // 0: none, 1: genre, 2: origin
   int get manageGroupingMode => _manageGroupingMode;
 
-  List<String> _playlistCreatorFilter = []; // Empty = Show All
-  List<String> get playlistCreatorFilter => _playlistCreatorFilter;
-
-  // Filtered Playlists Getter
-  List<Playlist> get filteredPlaylists {
-    final List<Playlist> baseList = playlists;
-    if (_playlistCreatorFilter.isEmpty) return baseList;
-    return baseList.where((p) {
-      if (_playlistCreatorFilter.contains('all')) return true;
-
-      // Determine creator type
-      String type = p.creator;
-      // Handle legacy/edge cases
-      if (p.id.startsWith('spotify_'))
-        type = 'spotify';
-      else if (p.id == 'favorites')
-        type = 'app';
-
-      final canUseSpotify = _entitlementService.isFeatureEnabled(
-        'spotify_integration',
-      );
-      if (type == 'spotify' && !canUseSpotify) return false;
-
-      final canUseLocal = _entitlementService.isFeatureEnabled('local_library');
-      if (type == 'local' && !canUseLocal) return false;
-
-      return _playlistCreatorFilter.contains(type);
-    }).toList();
-  }
-
   // --- AI Recommendations Support ---
   final AIRecommendationService _aiService = AIRecommendationService();
   Future<List<TrendingPlaylist>>? _forYouFuture;
@@ -849,7 +818,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   String? _lastForYouLanguageCode;
   int? _lastWeeklySeed;
 
-  void preFetchForYou({String? countryName, String? countryCode, String? languageCode}) {
+  void preFetchForYou({
+    String? countryName,
+    String? countryCode,
+    String? languageCode,
+  }) {
     final langCode = languageCode ?? _detectLanguageCode();
     final seed = _getWeeklySeed();
 
@@ -857,7 +830,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_forYouList.isNotEmpty &&
         _lastForYouCountryCode == countryCode &&
         _lastForYouLanguageCode == langCode &&
-        _lastWeeklySeed == seed) return;
+        _lastWeeklySeed == seed)
+      return;
 
     if (_lastForYouCountryCode != countryCode ||
         _lastForYouLanguageCode != langCode ||
@@ -878,7 +852,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // Reset list with placeholders
     _forYouList = List.generate(15, (_) => null);
-    
+
     // Also keep the future for any existing listeners (optional but safe)
     _forYouFuture = _aiService.generateDiscoverWeekly(
       phoneHistory: _userPlayHistory,
@@ -892,28 +866,33 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     );
 
     int index = 0;
-    _forYouSubscription = _aiService.generateDiscoverWeeklyStream(
-      phoneHistory: _userPlayHistory,
-      aaHistory: _aaUserPlayHistory,
-      historyMetadata: _historyMetadata,
-      weeklyLog: _weeklyPlayLog,
-      targetCount: 15,
-      countryName: countryName,
-      countryCode: countryCode,
-      languageCode: langCode,
-    ).listen((playlist) {
-      if (index < _forYouList.length) {
-        _forYouList[index] = playlist;
-      } else {
-        _forYouList.add(playlist);
-      }
-      index++;
-      notifyListeners();
-    }, onDone: () {
-      // Clean up remaining nulls if fewer than 15 playlists were generated
-      _forYouList.removeWhere((p) => p == null);
-      notifyListeners();
-    });
+    _forYouSubscription = _aiService
+        .generateDiscoverWeeklyStream(
+          phoneHistory: _userPlayHistory,
+          aaHistory: _aaUserPlayHistory,
+          historyMetadata: _historyMetadata,
+          weeklyLog: _weeklyPlayLog,
+          targetCount: 15,
+          countryName: countryName,
+          countryCode: countryCode,
+          languageCode: langCode,
+        )
+        .listen(
+          (playlist) {
+            if (index < _forYouList.length) {
+              _forYouList[index] = playlist;
+            } else {
+              _forYouList.add(playlist);
+            }
+            index++;
+            notifyListeners();
+          },
+          onDone: () {
+            // Clean up remaining nulls if fewer than 15 playlists were generated
+            _forYouList.removeWhere((p) => p == null);
+            notifyListeners();
+          },
+        );
 
     notifyListeners();
   }
@@ -1375,7 +1354,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _loadStartupSettings();
     _loadYouTubeSettings();
     _loadManageSettings();
-    _loadPlaylistCreatorFilter();
+
     _loadArtistImagesCache();
     _loadStations();
 
@@ -1544,34 +1523,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<void> _saveArtistImagesCache() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyArtistImagesCache, jsonEncode(_artistImageCache));
-  }
-
-  Future<void> _loadPlaylistCreatorFilter() async {
-    final prefs = await SharedPreferences.getInstance();
-    _playlistCreatorFilter =
-        prefs.getStringList(_keyPlaylistCreatorFilter) ?? [];
-    notifyListeners();
-  }
-
-  Future<void> togglePlaylistCreatorFilter(String type) async {
-    if (_playlistCreatorFilter.contains(type)) {
-      _playlistCreatorFilter.remove(type);
-    } else {
-      _playlistCreatorFilter.add(type);
-    }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _keyPlaylistCreatorFilter,
-      _playlistCreatorFilter,
-    );
-    notifyListeners();
-  }
-
-  Future<void> clearPlaylistCreatorFilter() async {
-    _playlistCreatorFilter.clear();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyPlaylistCreatorFilter);
-    notifyListeners();
   }
 
   Future<void> _loadManageSettings() async {
@@ -5054,8 +5005,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     } else {
       // Add
       try {
-        final genre = _currentGenre ?? "Mix";
-
         // Sanitize album name: remove station name etc.
         String cleanAlbum = _currentAlbum;
         final stationName = _currentStation?.name ?? "";
@@ -5080,7 +5029,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           isValid: true,
         );
 
-        await _playlistService.addToGenrePlaylist(genre, song);
+        await _playlistService.addSongToPlaylist('favorites', song);
         _currentSongIsSaved = true;
         notifyListeners();
         return true;
@@ -6314,32 +6263,36 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               s.artUri!.isEmpty ||
               s.artUri!.contains('placeholder') ||
               s.album == 'Unknown Album' ||
-              s.album.isEmpty) {
+              s.album.isEmpty ||
+              s.youtubeUrl == null ||
+              s.youtubeUrl!.isEmpty) {
             toProcess.add(s);
           }
         }
       } catch (_) {
         // If it's a temp playlist (artist/album view), we can't find it by ID in _playlists.
-        // In this case, we'll just process all songs in the library that match the missing criteria.
-        // This is safer than trying to pass a song list through multiple layers.
         for (var s in _allUniqueSongs) {
           if (s.artUri == null ||
               s.artUri!.isEmpty ||
               s.artUri!.contains('placeholder') ||
               s.album == 'Unknown Album' ||
-              s.album.isEmpty) {
+              s.album.isEmpty ||
+              s.youtubeUrl == null ||
+              s.youtubeUrl!.isEmpty) {
             toProcess.add(s);
           }
         }
       }
     } else {
-      // Process all unique songs that are missing art
+      // Process all unique songs that are missing art or video links
       for (var s in _allUniqueSongs) {
         if (s.artUri == null ||
             s.artUri!.isEmpty ||
             s.artUri!.contains('placeholder') ||
             s.album == 'Unknown Album' ||
-            s.album.isEmpty) {
+            s.album.isEmpty ||
+            s.youtubeUrl == null ||
+            s.youtubeUrl!.isEmpty) {
           toProcess.add(s);
         }
       }
@@ -6382,6 +6335,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                           updatedSongs[songIndex].album.isEmpty)
                       ? match.album
                       : updatedSongs[songIndex].album,
+                  appleMusicUrl:
+                      updatedSongs[songIndex].appleMusicUrl ??
+                      match.appleMusicUrl,
                 );
                 _playlists[i] = playlist.copyWith(songs: updatedSongs);
                 songChanged = true;
@@ -6389,7 +6345,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               }
             }
             if (songChanged) {
-              // Update allUniqueSongs too
               final idx = _allUniqueSongs.indexWhere((s) => s.id == songId);
               if (idx != -1) {
                 _allUniqueSongs[idx] = _allUniqueSongs[idx].copyWith(
@@ -6399,8 +6354,50 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                           _allUniqueSongs[idx].album.isEmpty)
                       ? match.album
                       : _allUniqueSongs[idx].album,
+                  appleMusicUrl:
+                      _allUniqueSongs[idx].appleMusicUrl ?? match.appleMusicUrl,
                 );
               }
+            }
+          }
+        }
+
+        // Also try to resolve YouTube/Spotify links if missing
+        final songToFix = _allUniqueSongs.firstWhere((s) => s.id == songId);
+        if (songToFix.youtubeUrl == null ||
+            songToFix.youtubeUrl!.isEmpty ||
+            songToFix.spotifyUrl == null ||
+            songToFix.spotifyUrl!.isEmpty) {
+          final links = await resolveLinks(
+            title: songToFix.title,
+            artist: songToFix.artist,
+            appleMusicUrl: songToFix.appleMusicUrl,
+          );
+
+          if (links.isNotEmpty) {
+            for (int i = 0; i < _playlists.length; i++) {
+              final playlist = _playlists[i];
+              final songIndex = playlist.songs.indexWhere(
+                (s) => s.id == songId,
+              );
+              if (songIndex != -1) {
+                final updatedSongs = List<SavedSong>.from(playlist.songs);
+                updatedSongs[songIndex] = updatedSongs[songIndex].copyWith(
+                  youtubeUrl:
+                      updatedSongs[songIndex].youtubeUrl ?? links['youtube'],
+                  spotifyUrl:
+                      updatedSongs[songIndex].spotifyUrl ?? links['spotify'],
+                );
+                _playlists[i] = playlist.copyWith(songs: updatedSongs);
+                anyChanged = true;
+              }
+            }
+            final idx = _allUniqueSongs.indexWhere((s) => s.id == songId);
+            if (idx != -1) {
+              _allUniqueSongs[idx] = _allUniqueSongs[idx].copyWith(
+                youtubeUrl: _allUniqueSongs[idx].youtubeUrl ?? links['youtube'],
+                spotifyUrl: _allUniqueSongs[idx].spotifyUrl ?? links['spotify'],
+              );
             }
           }
         }
@@ -6497,6 +6494,22 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_currentArtistImage != imageUrl) {
       _currentArtistImage = imageUrl;
       notifyListeners();
+    }
+  }
+
+  Future<String?> searchYoutubeVideo(String title, String artist) async {
+    final yt = yt_explode.YoutubeExplode();
+    try {
+      final results = await yt.search.search("$artist $title");
+      if (results.isNotEmpty) {
+        return "https://www.youtube.com/watch?v=${results.first.id.value}";
+      }
+      return null;
+    } catch (e) {
+      debugPrint("searchYoutubeVideo error: $e");
+      return null;
+    } finally {
+      yt.close();
     }
   }
 }

@@ -17,7 +17,7 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
-  
+
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final FirebaseInAppMessaging _fiam = FirebaseInAppMessaging.instance;
 
@@ -104,7 +104,7 @@ class NotificationService {
   void _showForegroundNotification(RemoteMessage message) {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
-    
+
     if (notification != null && android != null) {
       _notificationsPlugin.show(
         id: notification.hashCode,
@@ -114,7 +114,8 @@ class NotificationService {
           android: AndroidNotificationDetails(
             'high_importance_channel',
             'High Importance Notifications',
-            channelDescription: 'This channel is used for important notifications.',
+            channelDescription:
+                'This channel is used for important notifications.',
             importance: Importance.max,
             priority: Priority.high,
           ),

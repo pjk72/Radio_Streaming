@@ -714,57 +714,79 @@ class PlayerBar extends StatelessWidget {
                 ? "Remove from Favorites" // Simplified English, or use translation if you want
                 : langProvider.translate('add_to_genre_playlist'),
             onPressed: () async {
-                    final result = await provider.toggleCurrentSongFavorite();
-                    if (context.mounted) {
-                      if (result == true) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: const Color(0xFFb33939), // Dark Red/Heart styling
-                            content: Row(
-                              children: [
-                                const Icon(Icons.favorite, color: Colors.white, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    langProvider.translate('added_to_playlist').replaceAll('{0}', 'Favorites'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      } else if (result == false) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: Colors.grey[800],
-                            content: Row(
-                              children: [
-                                const Icon(Icons.favorite_border, color: Colors.white, size: 20),
-                                const SizedBox(width: 8),
-                                const Expanded(
-                                  child: Text(
-                                    "Removed from Favorites", // Assuming no direct translation exists, but can adjust if needed
-                                  ),
-                                ),
-                              ],
-                            ),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              langProvider.translate('could_not_identify_song'),
+              final result = await provider.toggleCurrentSongFavorite();
+              if (context.mounted) {
+                if (result == true) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      content: Row(
+                        children: [
+                          Icon(Icons.favorite, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              langProvider
+                                  .translate('added_to_playlist')
+                                  .replaceAll('{0}', 'Favorites'),
+                              style: TextStyle(
+                                color:
+                                    Theme.of(
+                                      context,
+                                    ).snackBarTheme.contentTextStyle?.color ??
+                                    Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
-                        );
-                      }
-                    }
-                  },
+                        ],
+                      ),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                } else if (result == false) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      content: Row(
+                        children: [
+                          Icon(
+                            Icons.favorite_border,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "Removed from Favorites", // Assuming no direct translation exists, but can adjust if needed
+                              style: TextStyle(
+                                color:
+                                    Theme.of(
+                                      context,
+                                    ).snackBarTheme.contentTextStyle?.color ??
+                                    Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        langProvider.translate('could_not_identify_song'),
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
           ),
           const SizedBox(width: 8),
         ],
@@ -830,6 +852,7 @@ class PlayerBar extends StatelessWidget {
         builder: (context, value, child) {
           final position = value.position.inSeconds.toDouble();
           final duration = value.metaData.duration.inSeconds.toDouble();
+          // genre detection is no longer needed here as we use Favorites specifically
           final max = duration > 0 ? duration : 100.0;
           final progress = (position / max).clamp(0.0, 1.0);
 
@@ -867,7 +890,8 @@ class PlayerBar extends StatelessWidget {
         },
       );
     } else if ((provider.isRecognizing ||
-        provider.audioHandler.mediaItem.value?.duration != null) && provider.isACRCloudEnabled) {
+            provider.audioHandler.mediaItem.value?.duration != null) &&
+        provider.isACRCloudEnabled) {
       return StreamBuilder<Duration>(
         stream: AudioService.position,
         builder: (context, snapshot) {

@@ -367,4 +367,37 @@ class LyricsService {
 
     return original;
   }
+
+  Future<String> translateText(String text, String targetLang) async {
+    if (text.isEmpty) return text;
+
+    try {
+      LogService().log("Translating text to $targetLang...");
+
+      final uri = Uri.parse(
+        'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetLang&dt=t',
+      );
+
+      final response = await http
+          .post(uri, body: {'q': text})
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final translatedParts = data[0] as List;
+        String fullTranslation = '';
+
+        for (var part in translatedParts) {
+          if (part[0] != null) {
+            fullTranslation += part[0].toString();
+          }
+        }
+        LogService().log("Text successfully translated to $targetLang.");
+        return fullTranslation;
+      }
+    } catch (e) {
+      LogService().log("Text Translation error: $e");
+    }
+    return text;
+  }
 }

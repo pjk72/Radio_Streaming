@@ -19,8 +19,9 @@ class MusicMetadataService {
   }) async {
     // Basic cleaning of query
     final term = Uri.encodeComponent(query);
-    String urlString = '$_baseUrl?term=$term&media=music&entity=song&limit=$limit';
-    
+    String urlString =
+        '$_baseUrl?term=$term&media=music&entity=song&limit=$limit';
+
     if (countryCode != null && countryCode.isNotEmpty) {
       urlString += '&country=$countryCode';
     }

@@ -7,6 +7,7 @@ import 'trending_details_screen.dart';
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import 'package:provider/provider.dart';
+import '../services/lyrics_service.dart';
 
 class ArtistDetailsScreen extends StatefulWidget {
   final String artistName;
@@ -245,7 +246,9 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
 
                                 // Data extraction (handle AudioDB vs iTunes keys)
                                 final bio =
-                                    artistInfo?['strBiographyEN'] as String?;
+                                    (artistInfo?['strBiographyEN'] ??
+                                            artistInfo?['strBiography'])
+                                        as String?;
                                 final style =
                                     artistInfo?['strStyle'] as String?;
                                 final formed =
@@ -598,14 +601,82 @@ class ExternalBioText extends StatefulWidget {
 
 class _ExternalBioTextState extends State<ExternalBioText> {
   bool _expanded = false;
+  String? _translatedBio;
+  bool _isTranslating = false;
 
   @override
   Widget build(BuildContext context) {
+    if (widget.bio.isEmpty) return const SizedBox.shrink();
+
+    final bioToDisplay = _translatedBio ?? widget.bio;
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    final targetLang = langProvider.resolvedLanguageCode;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                _translatedBio != null ? "Translation" : "Biography",
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+            if (widget.bio.isNotEmpty)
+              _isTranslating
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white54,
+                      ),
+                    )
+                  : IconButton(
+                      icon: Icon(
+                        Icons.g_translate_rounded,
+                        size: 18,
+                        color: _translatedBio != null
+                            ? Theme.of(context).primaryColor
+                            : Colors.white54,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () async {
+                        if (_translatedBio != null) {
+                          setState(() => _translatedBio = null);
+                          return;
+                        }
+
+                        setState(() => _isTranslating = true);
+                        try {
+                          final translated = await LyricsService()
+                              .translateText(widget.bio, targetLang);
+                          if (mounted) {
+                            setState(() {
+                              _translatedBio = translated;
+                              _isTranslating = false;
+                            });
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            setState(() => _isTranslating = false);
+                          }
+                        }
+                      },
+                    ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Text(
-          widget.bio,
+          bioToDisplay,
           style: const TextStyle(
             color: Colors.white70,
             fontSize: 14,

@@ -674,7 +674,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              backgroundColor: Colors.green,
               content: Text(langProvider.translate('stream_valid')),
               duration: const Duration(seconds: 2),
             ),
@@ -690,7 +689,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: Colors.red,
             content: Text(
               langProvider
                   .translate('stream_verify_failed')

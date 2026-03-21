@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../services/log_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 class LogEntry {
   final String time;
@@ -98,7 +99,10 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: Text(Provider.of<LanguageProvider>(context).translate('debug_logs'), style: TextStyle(color: Colors.white)),
+        title: Text(
+          Provider.of<LanguageProvider>(context).translate('debug_logs'),
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -162,8 +166,27 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
               final text = LogService().logs.value.join('\n');
               Clipboard.setData(ClipboardData(text: text));
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(Provider.of<LanguageProvider>(context, listen: false).translate('logs_copied'))),
+                SnackBar(
+                  content: Text(
+                    Provider.of<LanguageProvider>(
+                      context,
+                      listen: false,
+                    ).translate('logs_copied'),
+                  ),
+                ),
               );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.flash_on, color: Colors.orange),
+            tooltip: "Force Crash (Crashlytics Test)",
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Forcing crash in 1 second...")),
+              );
+              Future.delayed(const Duration(seconds: 1), () {
+                FirebaseCrashlytics.instance.crash();
+              });
             },
           ),
           IconButton(
@@ -344,7 +367,12 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
             return Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: ChoiceChip(
-                label: Text(Provider.of<LanguageProvider>(context).translate('all_title').replaceAll('{0}', title), style: const TextStyle(fontSize: 11)),
+                label: Text(
+                  Provider.of<LanguageProvider>(
+                    context,
+                  ).translate('all_title').replaceAll('{0}', title),
+                  style: const TextStyle(fontSize: 11),
+                ),
                 selected: isAllSelected,
                 onSelected: (selected) {
                   if (selected) setState(() => selectionSet.clear());
@@ -403,7 +431,10 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
           children: [
             Icon(Icons.info_outline, color: Colors.blueAccent),
             SizedBox(width: 8),
-            Text(Provider.of<LanguageProvider>(context).translate('log_detail'), style: TextStyle(color: Colors.white)),
+            Text(
+              Provider.of<LanguageProvider>(context).translate('log_detail'),
+              style: TextStyle(color: Colors.white),
+            ),
           ],
         ),
         content: SizedBox(
@@ -543,9 +574,16 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: entry.raw));
               Navigator.of(context).pop();
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text(Provider.of<LanguageProvider>(context, listen: false).translate('raw_log_copied'))));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    Provider.of<LanguageProvider>(
+                      context,
+                      listen: false,
+                    ).translate('raw_log_copied'),
+                  ),
+                ),
+              );
             },
           ),
         ],
@@ -615,7 +653,10 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05), width: 0.5),
+          bottom: BorderSide(
+            color: Colors.white.withValues(alpha: 0.05),
+            width: 0.5,
+          ),
         ),
       ),
       child: Row(
@@ -645,4 +686,3 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
     );
   }
 }
-

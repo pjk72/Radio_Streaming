@@ -110,7 +110,10 @@ class _AdminDebugOverlayState extends State<AdminDebugOverlay> {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3), width: 1),
+        border: Border.all(
+          color: Colors.redAccent.withValues(alpha: 0.3),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.5),
@@ -209,4 +212,3 @@ class _ResizeHandlePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-

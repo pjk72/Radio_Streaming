@@ -48,7 +48,9 @@ class _SpotifyLoginScreenState extends State<SpotifyLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(Provider.of<LanguageProvider>(context).translate('spotify_login')),
+        title: Text(
+          Provider.of<LanguageProvider>(context).translate('spotify_login'),
+        ),
         backgroundColor: const Color(0xFF1db954),
       ),
       body: WebViewWidget(controller: _controller),

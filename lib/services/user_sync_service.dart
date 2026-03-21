@@ -27,7 +27,10 @@ class UserSyncService {
       final email = _backupService.currentUser?.email;
 
       // Target document: Users are keyed by their email if signed in, or by their unique device ID
-      final docId = email ?? deviceData['deviceId'] ?? 'unknown_device_${DateTime.now().millisecondsSinceEpoch}';
+      final docId =
+          email ??
+          deviceData['deviceId'] ??
+          'unknown_device_${DateTime.now().millisecondsSinceEpoch}';
 
       await _firestore.collection('users').doc(docId).set({
         'fcmToken': token,
@@ -45,7 +48,8 @@ class UserSyncService {
         'allFilters': [
           'platform_${defaultTargetPlatform.name}',
           'model_${deviceData['model']}',
-          if (locationData['region'] != null) 'region_${locationData['region']}',
+          if (locationData['region'] != null)
+            'region_${locationData['region']}',
           if (locationData['city'] != null) 'city_${locationData['city']}',
           if (email != null) 'email_$email',
         ],
@@ -103,7 +107,9 @@ class UserSyncService {
   Future<Map<String, String?>> _getLocationFromIp() async {
     try {
       // Using a free IP geolocation API (no GPS permission needed)
-      final response = await http.get(Uri.parse('http://ip-api.com/json')).timeout(const Duration(seconds: 5));
+      final response = await http
+          .get(Uri.parse('http://ip-api.com/json'))
+          .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return {

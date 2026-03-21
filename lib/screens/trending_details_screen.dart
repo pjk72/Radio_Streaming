@@ -467,7 +467,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15,7 +16,6 @@ import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -98,16 +98,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canUseAppearance = entitlements.isFeatureEnabled('appearance');
     final canUseDebugLogs = entitlements.isFeatureEnabled('debug_logs');
 
-
     return Stack(
       children: [
         Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border.all(
-              color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-            ),
-          ),
+          decoration: const BoxDecoration(color: Colors.transparent),
           clipBehavior: Clip.hardEdge,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,45 +282,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   if (auth.isSignedIn) {
                                     await auth.signOut();
                                   } else {
-                                      try {
-                                        await auth.signIn();
-                                        if (!auth.isSignedIn && context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: const Text(
-                                                "Sign in canceled",
-                                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
-                                                textAlign: TextAlign.center,
+                                    try {
+                                      await auth.signIn();
+                                      if (!auth.isSignedIn && context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: const Text(
+                                              "Sign in canceled",
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.white,
                                               ),
-                                              duration: const Duration(seconds: 2),
-                                              behavior: SnackBarBehavior.floating,
-                                              margin: const EdgeInsets.only(bottom: 40, left: 80, right: 80),
-                                              backgroundColor: Colors.black.withValues(alpha: 0.8),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                              elevation: 0,
+                                              textAlign: TextAlign.center,
                                             ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: const Text(
-                                                "Sign-in failed. Try again.",
-                                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
-                                                textAlign: TextAlign.center,
+                                            duration: const Duration(
+                                              seconds: 2,
+                                            ),
+                                            behavior: SnackBarBehavior.floating,
+                                            margin: const EdgeInsets.only(
+                                              bottom: 40,
+                                              left: 80,
+                                              right: 80,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(30),
+                                            ),
+                                            elevation: 0,
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: const Text(
+                                              "Sign-in failed. Try again.",
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.white,
                                               ),
-                                              duration: const Duration(seconds: 3),
-                                              behavior: SnackBarBehavior.floating,
-                                              margin: const EdgeInsets.only(bottom: 40, left: 60, right: 60),
-                                              backgroundColor: Colors.black.withValues(alpha: 0.8),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                              elevation: 0,
+                                              textAlign: TextAlign.center,
                                             ),
-                                          );
-                                        }
+                                            duration: const Duration(
+                                              seconds: 3,
+                                            ),
+                                            behavior: SnackBarBehavior.floating,
+                                            margin: const EdgeInsets.only(
+                                              bottom: 40,
+                                              left: 60,
+                                              right: 60,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(30),
+                                            ),
+                                            elevation: 0,
+                                          ),
+                                        );
                                       }
                                     }
+                                  }
                                 },
                                 child: Text(
                                   auth.isSignedIn
@@ -705,17 +727,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           langProvider.translate('backup'),
                                         ),
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(
-                                            0xFF6c5ce7,
-                                          ),
+                                          backgroundColor: Theme.of(
+                                            context,
+                                          ).primaryColor,
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(
                                             vertical: 12,
                                           ),
                                           // Visual feedback for disabled state
-                                          disabledBackgroundColor: const Color(
-                                            0xFF6c5ce7,
-                                          ).withValues(alpha: 0.5),
+                                          disabledBackgroundColor: Theme.of(
+                                            context,
+                                          ).primaryColor.withValues(alpha: 0.5),
                                           disabledForegroundColor:
                                               Colors.white38,
                                         ),
@@ -769,9 +791,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                                 'backup',
                                                               ),
                                                           style: TextStyle(
-                                                            color: Color(
-                                                              0xFF6c5ce7,
-                                                            ),
+                                                            color: Theme.of(
+                                                              context,
+                                                            ).primaryColor,
                                                             fontWeight:
                                                                 FontWeight.bold,
                                                           ),
@@ -794,8 +816,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                               'backup_successful',
                                                             ),
                                                           ),
-                                                          backgroundColor:
-                                                              Colors.green,
                                                         ),
                                                       );
                                                     }
@@ -808,8 +828,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                           content: Text(
                                                             "${langProvider.translate('backup_failed')}: $e",
                                                           ),
-                                                          backgroundColor:
-                                                              Colors.red,
                                                         ),
                                                       );
                                                     }
@@ -840,7 +858,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       langProvider.translate('restore'),
                                     ),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.orange.shade800,
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).primaryColor,
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 12,
@@ -894,11 +914,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                               .translate(
                                                                 'restore',
                                                               ),
-                                                          style:
-                                                              const TextStyle(
-                                                                color: Colors
-                                                                    .redAccent,
-                                                              ),
+                                                          style: TextStyle(
+                                                            color: Theme.of(
+                                                              context,
+                                                            ).primaryColor,
+                                                          ),
                                                         ),
                                                       ),
                                                     ],
@@ -918,8 +938,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                           'restore_successful',
                                                         ),
                                                       ),
-                                                      backgroundColor:
-                                                          Colors.green,
                                                     ),
                                                   );
                                                 }
@@ -939,8 +957,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                               e.toString(),
                                                             ),
                                                       ),
-                                                      backgroundColor:
-                                                          Colors.red,
                                                     ),
                                                   );
                                                 }
@@ -1053,9 +1069,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                 langProvider.translate(
                                                   'spotify_connected',
                                                 ),
-                                              ),
-                                              backgroundColor: const Color(
-                                                0xFF1db954,
                                               ),
                                             ),
                                           );
@@ -1385,7 +1398,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             listen: false,
                                           ).translate('import_complete'),
                                         ),
-                                        backgroundColor: Colors.green,
                                       ),
                                     );
                                   } else {
@@ -1396,7 +1408,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             'no_tracks_in_playlist',
                                           ),
                                         ),
-                                        backgroundColor: Colors.orange,
                                       ),
                                     );
                                   }
@@ -1413,7 +1424,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             .translate('import_failed')
                                             .replaceAll('{0}', e.toString()),
                                       ),
-                                      backgroundColor: Colors.red,
                                     ),
                                   );
                                 }
@@ -1435,61 +1445,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildLogsSubMenu(BuildContext context) {
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(2),
+    final cardColor = Theme.of(context).cardColor;
+    final contrastColor = cardColor.computeLuminance() > 0.5
+        ? Colors.black
+        : Colors.white;
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                cardColor.withValues(alpha: 0.4),
+                cardColor.withValues(alpha: 0.6),
+              ],
             ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(
+                color: contrastColor.withValues(alpha: 0.1),
+                width: 0.5,
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 20,
+                offset: const Offset(0, -5),
+              ),
+            ],
           ),
-          const SizedBox(height: 24),
-          Text(
-            langProvider.translate('system_logs'),
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-          _buildSettingsTile(
-            context,
-            icon: Icons.code,
-            title: langProvider.translate('api_debug_title'),
-            subtitle: langProvider.translate('api_debug_desc'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                langProvider.translate('system_logs'),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 24),
+              _buildSettingsTile(
                 context,
-                MaterialPageRoute(builder: (_) => const ApiDebugScreen()),
-              );
-            },
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.bug_report,
-            title: langProvider.translate('debug_logs_title'),
-            subtitle: langProvider.translate('debug_logs_desc'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
+                icon: Icons.code,
+                title: langProvider.translate('api_debug_title'),
+                subtitle: langProvider.translate('api_debug_desc'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ApiDebugScreen()),
+                  );
+                },
+              ),
+              _buildSettingsTile(
                 context,
-                MaterialPageRoute(builder: (_) => const DebugLogScreen()),
-              );
-            },
+                icon: Icons.bug_report,
+                title: langProvider.translate('debug_logs_title'),
+                subtitle: langProvider.translate('debug_logs_desc'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const DebugLogScreen()),
+                  );
+                },
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1610,67 +1647,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ];
 
-            return Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      langProvider.translate('language'),
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.titleLarge?.color,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+            final cardColor = Theme.of(context).cardColor;
+            final contrastColor = cardColor.computeLuminance() > 0.5
+                ? Colors.black
+                : Colors.white;
+
+            return ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        cardColor.withValues(alpha: 0.4),
+                        cardColor.withValues(alpha: 0.6),
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16),
+                    ),
+                    border: Border(
+                      top: BorderSide(
+                        color: contrastColor.withValues(alpha: 0.1),
+                        width: 0.5,
                       ),
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, -5),
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      itemCount: options.length,
-                      itemBuilder: (ctx, index) {
-                        final option = options[index];
-                        final isSelected =
-                            langProvider.currentLanguageCode == option['code'];
-                        return ListTile(
-                          leading: Text(
-                            option['flag']!,
-                            style: const TextStyle(fontSize: 24),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          langProvider.translate('language'),
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).textTheme.titleLarge?.color,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
-                          title: Text(
-                            option['label']!,
-                            style: TextStyle(
-                              color: isSelected
-                                  ? Theme.of(context).primaryColor
-                                  : Theme.of(
-                                      context,
-                                    ).textTheme.bodyLarge?.color,
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                          trailing: isSelected
-                              ? Icon(
-                                  Icons.check,
-                                  color: Theme.of(context).primaryColor,
-                                )
-                              : null,
-                          onTap: () {
-                            langProvider.setLanguage(option['code']!);
-                            Navigator.pop(ctx);
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: options.length,
+                          itemBuilder: (ctx, index) {
+                            final option = options[index];
+                            final isSelected =
+                                langProvider.currentLanguageCode ==
+                                option['code'];
+                            return ListTile(
+                              leading: Text(
+                                option['flag']!,
+                                style: const TextStyle(fontSize: 24),
+                              ),
+                              title: Text(
+                                option['label']!,
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Theme.of(context).primaryColor
+                                      : Theme.of(
+                                          context,
+                                        ).textTheme.bodyLarge?.color,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                              trailing: isSelected
+                                  ? Icon(
+                                      Icons.check,
+                                      color: Theme.of(context).primaryColor,
+                                    )
+                                  : null,
+                              onTap: () {
+                                langProvider.setLanguage(option['code']!);
+                                Navigator.pop(ctx);
+                              },
+                            );
                           },
-                        );
-                      },
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             );
           },

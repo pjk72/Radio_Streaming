@@ -1216,9 +1216,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       behavior: SnackBarBehavior.floating,
-                                      backgroundColor: const Color(
-                                        0xFFb33939,
-                                      ), // Dark Red/Heart styling
                                       content: Row(
                                         children: [
                                           const Icon(
@@ -1251,7 +1248,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       behavior: SnackBarBehavior.floating,
-                                      backgroundColor: Colors.grey[800],
                                       content: Row(
                                         children: [
                                           const Icon(
@@ -1366,7 +1362,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   behavior: SnackBarBehavior.floating,
-                                  backgroundColor: Colors.black87,
                                   content: Row(
                                     children: [
                                       Icon(

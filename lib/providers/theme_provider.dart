@@ -267,9 +267,12 @@ class ThemeProvider with ChangeNotifier {
   Color? _customBackgroundColor;
   Color? _customCardColor;
   Color? _customSurfaceColor;
+  String? _customBackgroundImageUrl;
 
   ThemePreset get currentPreset => _currentPreset;
   List<ThemePreset> get presets => [..._presets];
+
+  String? get customBackgroundImageUrl => _customBackgroundImageUrl;
 
   // Helper getters to filter by brightness for the UI
   List<ThemePreset> get darkPresets =>
@@ -280,11 +283,17 @@ class ThemeProvider with ChangeNotifier {
   // Getters for current active colors (either custom or preset)
   Color get activePrimaryColor =>
       _customPrimaryColor ?? _currentPreset.primaryColor;
-  Color get activeBackgroundColor =>
-      _customBackgroundColor ?? _currentPreset.backgroundColor;
-  Color get activeCardColor => _customCardColor ?? _currentPreset.cardColor;
-  Color get activeSurfaceColor =>
-      _customSurfaceColor ?? _currentPreset.surfaceColor;
+  Color get activeBackgroundColor => _customBackgroundImageUrl != null
+      ? Colors.transparent
+      : (_customBackgroundColor ?? _currentPreset.backgroundColor);
+  Color get activeCardColor => _customBackgroundImageUrl != null
+      ? (_customCardColor ?? _currentPreset.cardColor).withValues(alpha: 0.15)
+      : (_customCardColor ?? _currentPreset.cardColor);
+  Color get activeSurfaceColor => _customBackgroundImageUrl != null
+      ? (_customSurfaceColor ?? _currentPreset.surfaceColor).withValues(
+          alpha: 0.2,
+        )
+      : (_customSurfaceColor ?? _currentPreset.surfaceColor);
 
   bool get hasCustomColors =>
       _customPrimaryColor != null ||
@@ -319,6 +328,8 @@ class ThemeProvider with ChangeNotifier {
 
     final int? surface = prefs.getInt('custom_surface');
     if (surface != null) _customSurfaceColor = Color(surface);
+
+    _customBackgroundImageUrl = prefs.getString('custom_bg_image');
 
     notifyListeners();
   }
@@ -386,6 +397,19 @@ class ThemeProvider with ChangeNotifier {
     await prefs.remove('custom_bg');
     await prefs.remove('custom_card');
     await prefs.remove('custom_surface');
+    _customBackgroundImageUrl = null;
+    await prefs.remove('custom_bg_image');
+  }
+
+  Future<void> setCustomBackgroundImage(String? url) async {
+    _customBackgroundImageUrl = url;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (url != null) {
+      await prefs.setString('custom_bg_image', url);
+    } else {
+      await prefs.remove('custom_bg_image');
+    }
   }
 
   // Generate ThemeData from the current preset
@@ -411,12 +435,43 @@ class ThemeProvider with ChangeNotifier {
     // Note: onCard is not a standard Theme property, usually falls back to onSurface.
     // However, we ensure the global text theme matches the background.
 
+    // Calculate opaque glass effect (vetro opaco) for menus, dropdowns, and dialogs
+    final baseSurface = _customSurfaceColor ?? _currentPreset.surfaceColor;
+    final overlayColor = _customBackgroundImageUrl != null
+        ? baseSurface.withValues(alpha: 0.85) // Vetro opaco
+        : effectiveSurface;
+
     return ThemeData(
       brightness: effectiveBrightness,
-      scaffoldBackgroundColor: effectiveBg,
+      scaffoldBackgroundColor:
+          Colors.transparent, // Allow global background to show
       primaryColor: effectivePrimary,
-      canvasColor: effectiveSurface, // Sidebar/Drawer color
+      canvasColor:
+          overlayColor, // Sidebar/Drawer color and DropdownButton default background
       cardColor: effectiveCard,
+
+      popupMenuTheme: PopupMenuThemeData(
+        color: overlayColor,
+        surfaceTintColor: Colors.transparent,
+      ),
+
+      dialogTheme: DialogThemeData(
+        backgroundColor: overlayColor,
+        surfaceTintColor: Colors.transparent,
+      ),
+
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: overlayColor,
+        modalBackgroundColor: overlayColor,
+        surfaceTintColor: Colors.transparent,
+      ),
+
+      dropdownMenuTheme: DropdownMenuThemeData(
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(overlayColor),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
+      ),
 
       colorScheme: ColorScheme(
         brightness: effectiveBrightness,
@@ -451,6 +506,13 @@ class ThemeProvider with ChangeNotifier {
       ),
 
       iconTheme: IconThemeData(color: onBg),
+
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: effectivePrimary,
+        contentTextStyle: TextStyle(color: onPrimary),
+        actionTextColor: onPrimary,
+        behavior: SnackBarBehavior.floating,
+      ),
 
       useMaterial3: true,
     );

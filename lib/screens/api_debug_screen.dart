@@ -31,7 +31,10 @@ class ApiDebugScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: const Color(0xFF1a1a2e),
         appBar: AppBar(
-          title: Text(Provider.of<LanguageProvider>(context).translate('api_debug'), style: TextStyle(color: Colors.white)),
+          title: Text(
+            Provider.of<LanguageProvider>(context).translate('api_debug'),
+            style: TextStyle(color: Colors.white),
+          ),
           iconTheme: const IconThemeData(color: Colors.white),
           backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
           bottom: TabBar(
@@ -39,8 +42,16 @@ class ApiDebugScreen extends StatelessWidget {
             unselectedLabelColor: Colors.grey,
             indicatorColor: Colors.greenAccent,
             tabs: [
-              Tab(text: Provider.of<LanguageProvider>(context).translate('api_debug_recognition')),
-              Tab(text: Provider.of<LanguageProvider>(context).translate('api_debug_song_links')),
+              Tab(
+                text: Provider.of<LanguageProvider>(
+                  context,
+                ).translate('api_debug_recognition'),
+              ),
+              Tab(
+                text: Provider.of<LanguageProvider>(
+                  context,
+                ).translate('api_debug_song_links'),
+              ),
             ],
           ),
         ),

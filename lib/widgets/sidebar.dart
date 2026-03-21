@@ -219,4 +219,3 @@ class Sidebar extends StatelessWidget {
     );
   }
 }
-

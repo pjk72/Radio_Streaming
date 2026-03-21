@@ -85,14 +85,19 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(
             content: const Text(
               "Sign in canceled",
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
               textAlign: TextAlign.center,
             ),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.only(bottom: 40, left: 80, right: 80),
-            backgroundColor: Colors.black.withValues(alpha: 0.8),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
             elevation: 0,
           ),
         );
@@ -103,14 +108,19 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(
             content: const Text(
               "Sign-in failed. Try again.",
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
               textAlign: TextAlign.center,
             ),
             duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.only(bottom: 40, left: 60, right: 60),
-            backgroundColor: Colors.black.withValues(alpha: 0.8),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
             elevation: 0,
           ),
         );
@@ -140,81 +150,17 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isCheckingAuth) {
-      return Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
-            ),
-          ),
-          child: const Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          ),
-        ),
+      return const Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 1. Background Gradient
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF0F2027), // Deep Dark Blue
-                  Color(0xFF203A43), // Midnight
-                  Color(0xFF2C5364), // Teal-ish Dark
-                ],
-              ),
-            ),
-          ),
-
-          // 2. Abstract shapes acting as ambient light
-          Positioned(
-            top: -100,
-            left: -100,
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF6c5ce7).withValues(alpha: 0.4),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6c5ce7).withValues(alpha: 0.4),
-                    blurRadius: 100,
-                    spreadRadius: 50,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -50,
-            right: -50,
-            child: Container(
-              width: 250,
-              height: 250,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF00b894).withValues(alpha: 0.3),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF00b894).withValues(alpha: 0.3),
-                    blurRadius: 100,
-                    spreadRadius: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // 3. Main Content Center
+          // Main Content
           Center(
             child: SafeArea(
               child: SingleChildScrollView(

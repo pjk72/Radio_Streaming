@@ -95,9 +95,9 @@ class AIRecommendationService {
 
       await _recoverMissingImages(weeklyTracks);
       yield _assemblePlaylist(
-        'Weekly Mix',
+        _t('weekly_mix', languageCode: languageCode),
         weeklyTracks,
-        owner: "Il tuo mix settimanale",
+        owner: _t('weekly_mix_owner', languageCode: languageCode),
       );
     }
 
@@ -116,7 +116,7 @@ class AIRecommendationService {
       if (topArtists.length > 10) topArtists.removeRange(10, topArtists.length);
 
       final discovery = await _createDynamicPlaylist(
-        title: 'Discovery Mix',
+        title: _t('discovery_mix', languageCode: languageCode),
         query: topArtists.join('|'),
         countryCode: countryCode,
         countryName: countryName,
@@ -130,7 +130,7 @@ class AIRecommendationService {
 
     // 0.3 "Latest Hits" - Always 3rd
     final latestHits = await _createDynamicPlaylist(
-      title: 'Latest Hits',
+      title: _t('latest_hits', languageCode: languageCode),
       query: 'Latest Hits',
       countryCode: countryCode,
       countryName: countryName,
@@ -144,50 +144,99 @@ class AIRecommendationService {
 
     // 1. GENRE MIXES & DECADES
     final sections = [
-      {'title': 'Mix Pop', 'query': 'Pop', 'genre': 'Pop', 'period': 'Latest'},
       {
-        'title': 'Mix Rock',
+        'title': _t('mix_pop', languageCode: languageCode),
+        'key': 'mix_pop',
+        'query': 'Pop',
+        'genre': 'Pop',
+        'period': 'Latest',
+      },
+      {
+        'title': _t('mix_rock', languageCode: languageCode),
+        'key': 'mix_rock',
         'query': 'Rock',
         'genre': 'Rock',
         'period': 'Latest',
       },
       {
-        'title': 'Mix Dance',
+        'title': _t('mix_dance', languageCode: languageCode),
+        'key': 'mix_dance',
         'query': 'Dance',
         'genre': 'Dance',
         'period': 'Latest',
       },
-      {'title': 'Mix Latin', 'query': 'Latin', 'genre': 'Latin'},
       {
-        'title': 'Mix Hip-Hop',
+        'title': _t('mix_latin', languageCode: languageCode),
+        'key': 'mix_latin',
+        'query': 'Latin',
+        'genre': 'Latin',
+      },
+      {
+        'title': _t('mix_hip_hop', languageCode: languageCode),
+        'key': 'mix_hip_hop',
         'query': 'Hip-Hop',
         'genre': 'Hip-Hop',
         'period': 'Latest',
       },
-      {'title': 'Mix R&B', 'query': 'R&B', 'genre': 'R&B', 'period': 'Latest'},
-      {'title': 'Mix Rap', 'query': 'Rap', 'genre': 'Rap', 'period': 'Latest'},
       {
-        'title': 'Mix Country',
+        'title': _t('mix_rb', languageCode: languageCode),
+        'key': 'mix_rb',
+        'query': 'R&B',
+        'genre': 'R&B',
+        'period': 'Latest',
+      },
+      {
+        'title': _t('mix_rap', languageCode: languageCode),
+        'key': 'mix_rap',
+        'query': 'Rap',
+        'genre': 'Rap',
+        'period': 'Latest',
+      },
+      {
+        'title': _t('mix_country', languageCode: languageCode),
+        'key': 'mix_country',
         'query': 'Country',
         'genre': 'Country',
         'period': 'Latest',
       },
       {
-        'title': 'Mix Jazz',
+        'title': _t('mix_jazz', languageCode: languageCode),
+        'key': 'mix_jazz',
         'query': 'Jazz',
         'genre': 'Jazz',
         'period': 'Latest',
       },
       {
-        'title': 'Mix Chillout',
+        'title': _t('mix_chillout', languageCode: languageCode),
+        'key': 'mix_chillout',
         'query': 'Chillout',
         'genre': 'Chillout',
         'period': 'Latest',
       },
-      {'title': '90s Hits', 'query': '1990s', 'period': '1990s'},
-      {'title': '80s Hits', 'query': '1980s', 'period': '1980s'},
-      {'title': '70s Hits', 'query': '1970s', 'period': '1970s'},
-      {'title': '60s Hits', 'query': '1960s', 'period': '1960s'},
+      {
+        'title': _t('hits_90s', languageCode: languageCode),
+        'key': 'hits_90s',
+        'query': '1990s',
+        'period': '1990s',
+      },
+      {
+        'title': _t('hits_80s', languageCode: languageCode),
+        'key': 'hits_80s',
+        'query': '1980s',
+        'period': '1980s',
+      },
+      {
+        'title': _t('hits_70s', languageCode: languageCode),
+        'key': 'hits_70s',
+        'query': '1970s',
+        'period': '1970s',
+      },
+      {
+        'title': _t('hits_60s', languageCode: languageCode),
+        'key': 'hits_60s',
+        'query': '1960s',
+        'period': '1960s',
+      },
     ];
 
     for (var sec in sections) {
@@ -229,14 +278,11 @@ class AIRecommendationService {
     final Set<String> artists = {};
 
     // 1. FILL FROM USER HISTORY
-    final bool isChartBased =
-        title == 'Discovery Mix' ||
-        title == 'Latest Hits' ||
-        title.startsWith('Mix ') ||
-        title.endsWith(' Hits');
+    final bool isChartBased = title.contains('Mix') || title.contains('Hits');
 
-    // "Mix Latin" is and exception that allowed a mix of history and charts
-    final int historyLimit = (isChartBased && title != 'Mix Latin') ? 0 : 10;
+    // "Mix Latin" is an exception that allowed a mix of history and charts
+    final bool isLatin = title.toLowerCase().contains('latin');
+    final int historyLimit = (isChartBased && !isLatin) ? 0 : 10;
     if (historyLimit > 0) {
       for (var s in history) {
         if (tracks.length >= historyLimit) break;
@@ -385,18 +431,11 @@ class AIRecommendationService {
   List<String> _generateSmartQueries(
     String base,
     String? country,
-    String? code,
+    String? countryCode,
     String languageCode,
   ) {
     // Helper for translations
-    String t(String key) {
-      // Use imports from AppTranslations if possible, or direct map access
-      // We know AppTranslations.translations exists from previous context
-      final Map<String, String>? translations = _getTranslationsFor(
-        languageCode,
-      );
-      return translations?[key] ?? _getTranslationsFor('en')?[key] ?? key;
-    }
+    String t(String key) => _t(key, languageCode: languageCode);
 
     if (base == 'Latest Hits') {
       final year = DateTime.now().year;
@@ -530,7 +569,7 @@ class AIRecommendationService {
     String owner = "AI Discovery",
   }) {
     return TrendingPlaylist(
-      id: "ai_${title.hashCode}_${DateTime.now().millisecond}",
+      id: "ai_${title.hashCode}_${_getWeeklySeed()}",
       title: title,
       provider: 'AI',
       trackCount: tracks.length,
@@ -568,6 +607,13 @@ class AIRecommendationService {
         futures,
       ).timeout(const Duration(seconds: 3), onTimeout: () => []);
     }
+  }
+
+  String _t(String key, {String? languageCode}) {
+    final Map<String, String>? translations = _getTranslationsFor(
+      languageCode ?? 'en',
+    );
+    return translations?[key] ?? _getTranslationsFor('en')?[key] ?? key;
   }
 
   Map<String, String>? _getTranslationsFor(String code) {

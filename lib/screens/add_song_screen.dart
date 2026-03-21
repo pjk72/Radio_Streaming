@@ -71,7 +71,6 @@ class _AddSongScreenState extends State<AddSongScreen> {
             content: Text(
               lang.translate('search_error').replaceAll('{0}', e.toString()),
             ),
-            backgroundColor: Colors.redAccent,
           ),
         );
       }
@@ -642,7 +641,6 @@ class _AddSongScreenState extends State<AddSongScreen> {
                   ),
             ),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.green,
           ),
         );
       }
@@ -656,7 +654,6 @@ class _AddSongScreenState extends State<AddSongScreen> {
                   .translate('error_adding_songs')
                   .replaceAll('{0}', e.toString()),
             ),
-            backgroundColor: Colors.redAccent,
           ),
         );
       }

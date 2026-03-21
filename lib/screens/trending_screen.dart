@@ -148,7 +148,6 @@ class _TrendingScreenState extends State<TrendingScreen>
         languageCode: langProvider.resolvedLanguageCode,
       );
 
-
       final spotify = SpotifyService();
       await spotify.init(); // Load tokens
 
@@ -259,9 +258,9 @@ class _TrendingScreenState extends State<TrendingScreen>
 
     return Container(
       padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor.withValues(alpha: 0.5),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(0)),
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1186,7 +1185,7 @@ class _TrendingScreenState extends State<TrendingScreen>
               ),
               child: Stack(
                 children: [
-                   Positioned(
+                  Positioned(
                     right: -10,
                     bottom: -10,
                     child: Icon(
@@ -1201,7 +1200,9 @@ class _TrendingScreenState extends State<TrendingScreen>
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white12),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.white12,
+                        ),
                       ),
                     ),
                   ),

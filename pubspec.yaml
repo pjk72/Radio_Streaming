@@ -85,6 +85,8 @@ dependencies:
   firebase_in_app_messaging: any
   cloud_firestore: ^5.6.3
   device_info_plus: ^11.3.0
+  firebase_crashlytics: ^4.3.10
+  firebase_performance: ^0.10.1+1
 
 
 dev_dependencies:
@@ -120,6 +122,7 @@ flutter:
   assets:
     - assets/icon.png
     - assets/empty_playlist.webp
+    - assets/splash_bg.png
     - lib/utils/json/config.json
 
   # An image asset can refer to one or more resolution-specific "variants", see

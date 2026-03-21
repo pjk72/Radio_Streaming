@@ -116,10 +116,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
             _lastTestResult = true;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: Colors.green,
-              content: Text(langProvider.translate('stream_valid')),
-            ),
+            SnackBar(content: Text(langProvider.translate('stream_valid'))),
           );
         }
       } else {
@@ -133,7 +130,6 @@ class _EditStationScreenState extends State<EditStationScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: Colors.red,
             content: Text(
               langProvider
                   .translate('stream_invalid')
@@ -300,7 +296,6 @@ class _EditStationScreenState extends State<EditStationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(langProvider.translate('color_updated')),
-            backgroundColor: extracted,
             duration: const Duration(seconds: 1),
           ),
         );
@@ -1334,7 +1329,14 @@ class _EditStationScreenState extends State<EditStationScreen> {
       if (verifiedImages.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_valid_logo_suggestions'))),
+            SnackBar(
+              content: Text(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('no_valid_logo_suggestions'),
+              ),
+            ),
           );
         }
         return;
@@ -1405,7 +1407,12 @@ class _EditStationScreenState extends State<EditStationScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('cancel')),
+              child: Text(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('cancel'),
+              ),
             ),
           ],
         ),
@@ -1451,7 +1458,6 @@ class _EditStationScreenState extends State<EditStationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(langProvider.translate('select_min_one_genre')),
-            backgroundColor: Colors.red,
           ),
         );
         return;
@@ -1463,17 +1469,13 @@ class _EditStationScreenState extends State<EditStationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(langProvider.translate('select_category_error')),
-            backgroundColor: Colors.red,
           ),
         );
         return;
       }
       if (_selectedCategory!.length > 35) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(langProvider.translate('category_too_long')),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(langProvider.translate('category_too_long'))),
         );
         return;
       }

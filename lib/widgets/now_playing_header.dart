@@ -138,9 +138,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     // NOTE: currentAlbumArt intentionally excluded to avoid the brief album-cover
     // flash before the artist photo loads. Falls back directly to station logo.
     final String? imageUrl = station != null
-        ? (_fetchedArtistImage ??
-              provider.currentArtistImage ??
-              station.logo)
+        ? (_fetchedArtistImage ?? provider.currentArtistImage ?? station.logo)
         : null;
 
     // Logic to determine if we are showing a specific image (Artist/Album) or just the default Station Logo

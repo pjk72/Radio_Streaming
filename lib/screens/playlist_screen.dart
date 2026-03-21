@@ -941,7 +941,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     final provider = Provider.of<RadioProvider>(context);
     final lang = Provider.of<LanguageProvider>(context);
     // Use filtered playlists as the source of truth for the list view
-    final allPlaylists = provider.filteredPlaylists;
+    final allPlaylists = provider.playlists;
 
     // Aggregate all songs from all playlists (deduplicated by ID) for "All Songs" views
     final Set<String> uniqueIds = {};
@@ -1006,10 +1006,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         displayPlaylists = allPlaylists;
       }
     }
-    final appBarBgColor = Theme.of(context).cardColor.withValues(alpha: 0.5);
-    final headerContrastColor = appBarBgColor.computeLuminance() > 0.5
-        ? Colors.black
-        : Colors.white;
+    const appBarBgColor = Colors.transparent;
+    final headerContrastColor =
+        Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white;
 
     // Helper for Mode Button
     Widget buildModeBtn(String title, MetadataViewMode mode) {
@@ -1609,26 +1608,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               onPressed: () =>
                                   _showCreatePlaylistDialog(context, provider),
                             ),
-                            const SizedBox(width: 8),
-                            // Filter Button
-                            IconButton(
-                              icon: Icon(
-                                provider.playlistCreatorFilter.isEmpty
-                                    ? Icons.filter_none
-                                    : Icons.filter_list_alt,
-                                //    color: provider.playlistCreatorFilter.isEmpty
-                                //        ? Colors.white54
-                                //        : Theme.of(context).primaryColor,
-                                color: provider.playlistCreatorFilter.isEmpty
-                                    ? Theme.of(
-                                        context,
-                                      ).appBarTheme.foregroundColor
-                                    : Theme.of(context).primaryColor,
-                              ),
-                              tooltip: "Filter Playlists",
-                              onPressed: () =>
-                                  _showFilterDialog(context, provider),
-                            ),
                           ],
                           if (_viewMode == MetadataViewMode.artists) ...[
                             IconButton(
@@ -1906,42 +1885,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
                     // Global Search OR Main View
                     if (!isSelectionActive && _searchQuery.isNotEmpty) {
-                      if (_viewMode == MetadataViewMode.playlists) {
-                        return _buildGlobalSearchResults(
-                          context,
-                          provider,
-                          allPlaylists,
-                        );
-                      } else {
-                        // Filter Logic for Artists/Albums Grid Search
-                        if (_viewMode == MetadataViewMode.artists) {
-                          final filteredArtists = allSongs
-                              .where(
-                                (s) => s.artist.toLowerCase().contains(
-                                  _searchQuery,
-                                ),
-                              )
-                              .toList();
-                          return _buildArtistsGrid(
-                            context,
-                            provider,
-                            filteredArtists,
-                          );
-                        } else {
-                          final filteredAlbums = allSongs
-                              .where(
-                                (s) => s.album.toLowerCase().contains(
-                                  _searchQuery,
-                                ),
-                              )
-                              .toList();
-                          return _buildAlbumsGrid(
-                            context,
-                            provider,
-                            filteredAlbums,
-                          );
-                        }
-                      }
+                      return _buildGlobalSearchResults(
+                        context,
+                        provider,
+                        allPlaylists,
+                      );
                     }
 
                     switch (_viewMode) {
@@ -2789,7 +2737,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               listen: false,
             ).translate('no_permission_download'),
           ),
-          backgroundColor: Colors.redAccent,
         ),
       );
       return;
@@ -2803,7 +2750,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 .translate('download_limit_reached')
                 .replaceAll('{0}', downloadLimit.toString()),
           ),
-          backgroundColor: Colors.orangeAccent,
         ),
       );
       return;
@@ -3356,7 +3302,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   content: Text(
                     "Download limit of $downloadLimit songs reached. Skipping remaining.",
                   ),
-                  backgroundColor: Colors.orangeAccent,
                   duration: const Duration(seconds: 3),
                 ),
               );
@@ -3608,7 +3553,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   listen: false,
                 ).translate('download_cancelled'),
               ),
-              backgroundColor: Colors.orange,
             ),
           );
         }
@@ -3637,7 +3581,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               content: Text(
                 "Download Complete: $successCount / ${playlist.songs.length}",
               ),
-              backgroundColor: Colors.green,
             ),
           );
         }
@@ -3927,9 +3870,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                               content: Text(
                                                 "Import Completed: $successCount imported, $failCount failed.",
                                               ),
-                                              backgroundColor: failCount == 0
-                                                  ? Colors.green
-                                                  : Colors.orange,
                                             ),
                                           );
                                         }
@@ -4389,136 +4329,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const AddSongScreen()),
-    );
-  }
-
-  void _showFilterDialog(BuildContext context, RadioProvider provider) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            final entitlements = Provider.of<EntitlementService>(
-              context,
-              listen: false,
-            );
-            final lang = Provider.of<LanguageProvider>(context, listen: false);
-            final filters = provider.playlistCreatorFilter;
-            final isApp = filters.contains('app');
-            final isUser = filters.contains('user');
-            final isSpotify = filters.contains('spotify');
-            final isLocal = filters.contains('local');
-            final canUseSpotify = entitlements.isFeatureEnabled(
-              'spotify_integration',
-            );
-            final canUseLocal = entitlements.isFeatureEnabled('local_library');
-
-            return AlertDialog(
-              backgroundColor: Theme.of(context).cardColor,
-              title: Text(
-                lang.translate('filter_playlists'),
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.titleLarge?.color,
-                ),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CheckboxListTile(
-                    title: Text(
-                      lang.translate('user_created'),
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
-                      ),
-                    ),
-                    activeColor: Theme.of(context).primaryColor,
-                    value:
-                        isUser ||
-                        filters.isEmpty, // Show checked if empty (all)
-                    onChanged: (val) {
-                      provider.togglePlaylistCreatorFilter('user');
-                      setState(() {});
-                    },
-                  ),
-                  CheckboxListTile(
-                    title: Text(
-                      lang.translate('app_created'),
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
-                      ),
-                    ),
-                    activeColor: Theme.of(context).primaryColor,
-                    value: isApp || filters.isEmpty,
-                    onChanged: (val) {
-                      provider.togglePlaylistCreatorFilter('app');
-                      setState(() {});
-                    },
-                  ),
-                  if (canUseLocal)
-                    CheckboxListTile(
-                      title: Text(
-                        lang.translate('local_device'),
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
-                      subtitle: Text(
-                        lang.translate('folders_from_device'),
-                        style: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                      activeColor: Theme.of(context).primaryColor,
-                      value: isLocal || filters.isEmpty,
-                      onChanged: (val) {
-                        provider.togglePlaylistCreatorFilter('local');
-                        setState(() {});
-                      },
-                    ),
-                  if (canUseSpotify)
-                    CheckboxListTile(
-                      title: Text(
-                        lang.translate('spotify_imported'),
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
-                      activeColor: Theme.of(context).primaryColor,
-                      value: isSpotify || filters.isEmpty,
-                      onChanged: (val) {
-                        provider.togglePlaylistCreatorFilter('spotify');
-                        setState(() {});
-                      },
-                    ),
-                  if (filters.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: TextButton(
-                        onPressed: () {
-                          provider.clearPlaylistCreatorFilter();
-                          Navigator.pop(ctx);
-                        },
-                        child: Text(
-                          lang.translate('clear_filters'),
-                          style: const TextStyle(color: Colors.blueAccent),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(lang.translate('done')),
-                ),
-              ],
-            );
-          },
-        );
-      },
     );
   }
 
@@ -5363,7 +5173,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   rootNavigator: true,
                                 ).pop();
 
-                                final url = links['youtube'] ?? song.youtubeUrl;
+                                var url = links['youtube'] ?? song.youtubeUrl;
+                                if (url == null || url.isEmpty) {
+                                  url = await provider.searchYoutubeVideo(
+                                    song.title,
+                                    song.artist,
+                                  );
+                                }
                                 if (url != null) {
                                   final videoId = YoutubePlayer.convertUrlToId(
                                     url,
@@ -5529,9 +5345,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     ).clearSnackBars();
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        backgroundColor: const Color(
-                                          0xFF333333,
-                                        ),
                                         content: Text(
                                           Provider.of<LanguageProvider>(
                                             context,
@@ -6184,24 +5997,41 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     RadioProvider provider,
     List<Playlist> allPlaylists,
   ) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
     print("Building global search results: query='$_searchQuery'");
     // 1. Filter Playlists by name
     final matchedPlaylists = allPlaylists
         .where((p) => p.name.toLowerCase().contains(_searchQuery))
         .toList();
 
-    // 2. Find Songs across ALL playlists
+    // 2. Find matches across the 3 categories
     final List<Map<String, dynamic>> matchedSongs = [];
+    final List<SavedSong> matchedArtists = [];
+    final List<SavedSong> matchedAlbums = [];
+    final Set<String> seenSongIds = {}; // Prevent duplicates
+
     for (var p in allPlaylists) {
       for (var s in p.songs) {
-        if (s.title.toLowerCase().contains(_searchQuery) ||
-            s.artist.toLowerCase().contains(_searchQuery)) {
-          matchedSongs.add({'playlist': p, 'song': s});
+        if (!seenSongIds.contains(s.id)) {
+          seenSongIds.add(s.id);
+
+          if (s.title.toLowerCase().contains(_searchQuery)) {
+            matchedSongs.add({'playlist': p, 'song': s});
+          }
+          if (s.artist.toLowerCase().contains(_searchQuery)) {
+            matchedArtists.add(s);
+          }
+          if (s.album.toLowerCase().contains(_searchQuery)) {
+            matchedAlbums.add(s);
+          }
         }
       }
     }
 
-    if (matchedPlaylists.isEmpty && matchedSongs.isEmpty) {
+    if (matchedPlaylists.isEmpty &&
+        matchedSongs.isEmpty &&
+        matchedArtists.isEmpty &&
+        matchedAlbums.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -6228,31 +6058,17 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 60),
       children: [
-        if (matchedPlaylists.isNotEmpty) ...[
-          const Text(
-            "Playlists",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildPlaylistsGrid(context, provider, matchedPlaylists),
-          const SizedBox(height: 24),
-        ],
         if (matchedSongs.isNotEmpty) ...[
-          const Text(
-            "Songs",
-            style: TextStyle(
+          Text(
+            lang.translate('tab_songs'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 12),
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -6263,7 +6079,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               final Playlist playlist = item['playlist'];
 
               return Container(
-                margin: const EdgeInsets.only(bottom: 12),
+                margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
                   color: Theme.of(context).cardColor.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.zero,
@@ -6380,6 +6196,46 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               );
             },
           ),
+          const SizedBox(height: 24),
+        ],
+        if (matchedPlaylists.isNotEmpty) ...[
+          Text(
+            lang.translate('tab_playlists'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildPlaylistsGrid(context, provider, matchedPlaylists),
+          const SizedBox(height: 24),
+        ],
+        if (matchedArtists.isNotEmpty) ...[
+          Text(
+            lang.translate('tab_artists'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildArtistsGrid(context, provider, matchedArtists, isSearch: true),
+          const SizedBox(height: 24),
+        ],
+        if (matchedAlbums.isNotEmpty) ...[
+          Text(
+            lang.translate('tab_albums'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildAlbumsGrid(context, provider, matchedAlbums, isSearch: true),
+          const SizedBox(height: 24),
         ],
       ],
     );
@@ -6388,8 +6244,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   Widget _buildArtistsGrid(
     BuildContext context,
     RadioProvider provider,
-    List<SavedSong> allSongs,
-  ) {
+    List<SavedSong> allSongs, {
+    bool isSearch = false,
+  }) {
     // Grouping Logic
     final Map<String, Set<String>> groupedVariants = {};
     final Map<String, String> normKeyToDisplay = {};
@@ -6472,7 +6329,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (playingIndex != -1) {
+        if (!isSearch && playingIndex != -1) {
           final uniqueKey = "artist_${groups[playingIndex]}";
           if (_lastScrolledCategoryItem != uniqueKey) {
             _lastScrolledCategoryItem = uniqueKey;
@@ -6519,9 +6376,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         }
 
         return GridView.builder(
-          controller: _artistsScrollController,
-          key: const PageStorageKey('artists_grid'),
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+          shrinkWrap: isSearch,
+          physics: isSearch ? const NeverScrollableScrollPhysics() : null,
+          controller: isSearch ? null : _artistsScrollController,
+          key: isSearch ? null : const PageStorageKey('artists_grid'),
+          padding: isSearch
+              ? EdgeInsets.zero
+              : const EdgeInsets.fromLTRB(16, 0, 16, 80),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 150,
             childAspectRatio: 1.0,
@@ -6599,8 +6460,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   Widget _buildAlbumsGrid(
     BuildContext context,
     RadioProvider provider,
-    List<SavedSong> allSongs,
-  ) {
+    List<SavedSong> allSongs, {
+    bool isSearch = false,
+  }) {
     // ALBUM GROUPING LOGIC
     final Map<String, Set<String>> groupedAlbums = {};
     final Map<String, String> normKeyToDisplay = {};
@@ -6664,7 +6526,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (playingIndex != -1) {
+        if (!isSearch && playingIndex != -1) {
           final uniqueKey = "album_${groups[playingIndex]}";
           if (_lastScrolledCategoryItem != uniqueKey) {
             _lastScrolledCategoryItem = uniqueKey;
@@ -6711,9 +6573,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         }
 
         return GridView.builder(
-          controller: _albumsScrollController,
-          key: const PageStorageKey('albums_grid'),
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+          shrinkWrap: isSearch,
+          physics: isSearch ? const NeverScrollableScrollPhysics() : null,
+          controller: isSearch ? null : _albumsScrollController,
+          key: isSearch ? null : const PageStorageKey('albums_grid'),
+          padding: isSearch
+              ? EdgeInsets.zero
+              : const EdgeInsets.fromLTRB(16, 0, 16, 80),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 150,
             childAspectRatio: 1.0,

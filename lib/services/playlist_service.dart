@@ -484,7 +484,6 @@ class PlaylistService {
     );
   }
 
-
   Future<void> addToGenrePlaylist(String genre, SavedSong song) async {
     await addSongsToGenrePlaylists([(genre: genre, song: song)]);
   }
