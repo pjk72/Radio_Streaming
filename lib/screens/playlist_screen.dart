@@ -3321,6 +3321,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   )
                   .timeout(const Duration(seconds: 20));
               audioUrl = links['youtube'];
+              
+              if (audioUrl == null) {
+                // Last Resort: Search YouTube directly by title + artist
+                audioUrl = await provider.searchYoutubeVideo(song.title, song.artist);
+              }
             }
 
             if (audioUrl != null) {

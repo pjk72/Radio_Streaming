@@ -149,132 +149,150 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isCheckingAuth) {
-      return const Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
-      );
-    }
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Main Content
-          Center(
-            child: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Logo / Icon
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(32),
-                        color: Colors.white.withValues(alpha: 0.1),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.asset(
-                          'assets/icon.png',
-                          width: 64,
-                          height: 64,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
+          // 1. Splash Background Image
+          Image.asset(
+            'assets/splash_bg.png',
+            fit: BoxFit.cover,
+          ),
 
-                    // Text Branding
-                    const Text(
-                      "MusicStream",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 42,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -1.5,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black45,
-                            blurRadius: 10,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      "Your Music. Anywhere. Anytime.",
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 60),
-
-                    // Actions
-                    if (_isLoading)
-                      const SizedBox(
-                        height: 50,
-                        width: 50,
-                        child: CircularProgressIndicator(color: Colors.white),
-                      )
-                    else ...[
-                      // Google Sign In
-                      _buildLoginButton(
-                        icon: Icons.login_rounded, // Fallback if no FontAwesome
-                        label: "Sign in with Google",
-                        onPressed: _handleGoogleLogin,
-                        backgroundColor: Colors.white,
-                        textColor: Colors.black87,
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Guest Option
-                      TextButton(
-                        onPressed: _continueAsGuest,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                            horizontal: 32,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        child: const Text(
-                          "Continue as Guest",
-                          style: TextStyle(
-                            color: Colors.white60,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 40),
-                  ],
-                ),
+          // 2. Gradient Overlay (consistent with splash screen)
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.4),
+                  Colors.black.withValues(alpha: 0.8),
+                ],
               ),
             ),
           ),
+
+          // 3. Content
+          if (_isCheckingAuth)
+            const Center(child: CircularProgressIndicator(color: Colors.white))
+          else
+            Center(
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo / Icon
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(32),
+                          color: Colors.white.withValues(alpha: 0.1),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.asset(
+                            'assets/icon.png',
+                            width: 64,
+                            height: 64,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+
+                      // Text Branding
+                      const Text(
+                        "MusicStream",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 42,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -1.5,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black45,
+                              blurRadius: 10,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        "Your Music. Anywhere. Anytime.",
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 60),
+
+                      // Actions
+                      if (_isLoading)
+                        const SizedBox(
+                          height: 50,
+                          width: 50,
+                          child: CircularProgressIndicator(color: Colors.white),
+                        )
+                      else ...[
+                        // Google Sign In
+                        _buildLoginButton(
+                          icon:
+                              Icons.login_rounded, // Fallback if no FontAwesome
+                          label: "Sign in with Google",
+                          onPressed: _handleGoogleLogin,
+                          backgroundColor: Colors.white,
+                          textColor: Colors.black87,
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Guest Option
+                        TextButton(
+                          onPressed: _continueAsGuest,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 16,
+                              horizontal: 32,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                          ),
+                          child: const Text(
+                            "Continue as Guest",
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
