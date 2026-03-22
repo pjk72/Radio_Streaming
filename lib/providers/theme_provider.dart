@@ -438,7 +438,7 @@ class ThemeProvider with ChangeNotifier {
     // Calculate opaque glass effect (vetro opaco) for menus, dropdowns, and dialogs
     final baseSurface = _customSurfaceColor ?? _currentPreset.surfaceColor;
     final overlayColor = _customBackgroundImageUrl != null
-        ? baseSurface.withValues(alpha: 0.85) // Vetro opaco
+        ? baseSurface.withValues(alpha: 0.6) // Even glassier
         : effectiveSurface;
 
     return ThemeData(
@@ -446,8 +446,7 @@ class ThemeProvider with ChangeNotifier {
       scaffoldBackgroundColor:
           Colors.transparent, // Allow global background to show
       primaryColor: effectivePrimary,
-      canvasColor:
-          overlayColor, // Sidebar/Drawer color and DropdownButton default background
+      canvasColor: Colors.transparent,
       cardColor: effectiveCard,
 
       popupMenuTheme: PopupMenuThemeData(
@@ -481,9 +480,9 @@ class ThemeProvider with ChangeNotifier {
         onSecondary: getContrastColor(_currentPreset.secondaryColor),
         error: Colors.redAccent,
         onError: Colors.white,
-        surface: effectiveSurface,
+        surface: Colors.transparent,
         onSurface: onSurface,
-        background: effectiveBg,
+        background: Colors.transparent,
         onBackground: onBg,
       ),
 

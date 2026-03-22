@@ -20,6 +20,8 @@ import '../utils/genre_mapper.dart';
 import 'recognition_api_service.dart';
 import 'song_link_service.dart';
 import 'encryption_service.dart';
+import 'ai_recommendation_service.dart';
+import 'trending_service.dart';
 
 @pragma('vm:entry-point')
 class RadioAudioHandler extends BaseAudioHandler
@@ -40,6 +42,9 @@ class RadioAudioHandler extends BaseAudioHandler
   final PlaylistService _playlistService = PlaylistService();
   int _retryCount = 0;
   int _consecutiveErrorCount = 0; // Prevent infinite skip loops
+  final AIRecommendationService _aiService = AIRecommendationService();
+  List<TrendingPlaylist> _cachedForYouMixes = [];
+  DateTime? _lastForYouFetch;
 
   // Internal Playlist Queue State
   List<MediaItem> _playlistQueue = [];
@@ -963,8 +968,31 @@ class RadioAudioHandler extends BaseAudioHandler
         return;
       }
 
+      String effectiveVideoId = videoId;
+
+      // 1. SEARCH FALLBACK if videoId is missing
+      if (effectiveVideoId.isEmpty) {
+        try {
+          final searchQuery = "${song.title} ${song.artist}";
+          final searchList = await yt.search.getVideos(searchQuery);
+          if (searchList.isNotEmpty) {
+            effectiveVideoId = searchList.first.id.value;
+            LogService().log(
+              "YouTube Search Fallback: Resolved '$searchQuery' to $effectiveVideoId",
+            );
+          } else {
+            throw Exception("YouTube search returned no results");
+          }
+        } catch (searchError) {
+          yt.close();
+          throw Exception(
+            "YouTube resolution failed (No ID and Search failed)",
+          );
+        }
+      }
+
       var video = await yt.videos
-          .get(videoId)
+          .get(effectiveVideoId)
           .timeout(
             const Duration(seconds: 10),
             onTimeout: () =>
@@ -977,7 +1005,7 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       var manifest = await yt.videos.streamsClient
-          .getManifest(videoId)
+          .getManifest(effectiveVideoId)
           .timeout(
             const Duration(seconds: 10),
             onTimeout: () =>
@@ -998,7 +1026,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'youtubeUrl': song.youtubeUrl,
         'playlistId': playlistId,
         'songId': song.id,
-        'videoId': videoId,
+        'videoId': effectiveVideoId,
         'type': 'playlist_song',
         'is_resolved': true,
         'duration': video.duration?.inSeconds,
@@ -2789,20 +2817,7 @@ class RadioAudioHandler extends BaseAudioHandler
       return [
         MediaItem(
           id: 'favorites_radio',
-          title: '❤️ Favorites',
-          playable: false,
-          artUri: Uri.parse("https://img.icons8.com/fluency/240/heart.png"),
-          extras: {
-            'style': 'list_item',
-            'android.media.metadata.DISPLAY_ICON_URI':
-                "https://img.icons8.com/fluency/240/heart.png",
-            'android.media.metadata.ART_URI':
-                "https://img.icons8.com/fluency/240/heart.png",
-          },
-        ),
-        MediaItem(
-          id: 'live_radio',
-          title: 'All Stations',
+          title: '📻 Radio',
           playable: false,
           artUri: Uri.parse("https://img.icons8.com/fluency/240/radio.png"),
           extras: {
@@ -2814,8 +2829,21 @@ class RadioAudioHandler extends BaseAudioHandler
           },
         ),
         MediaItem(
+          id: 'for_you_root',
+          title: '✨ Per Te',
+          playable: false,
+          artUri: Uri.parse("https://img.icons8.com/fluency/240/sparkling.png"),
+          extras: {
+            'style': 'list_item',
+            'android.media.metadata.DISPLAY_ICON_URI':
+                "https://img.icons8.com/fluency/240/sparkling.png",
+            'android.media.metadata.ART_URI':
+                "https://img.icons8.com/fluency/240/sparkling.png",
+          },
+        ),
+        MediaItem(
           id: 'playlists_root',
-          title: 'Playlists',
+          title: '📚 Playlists',
           playable: false,
           artUri: Uri.parse("https://img.icons8.com/fluency/240/playlist.png"),
           extras: {
@@ -2827,15 +2855,15 @@ class RadioAudioHandler extends BaseAudioHandler
         ),
         MediaItem(
           id: 'downloads_root',
-          title: '📥 Downloads',
+          title: '💾 Offline',
           playable: false,
-          artUri: Uri.parse("https://img.icons8.com/fluency/240/download.png"),
+          artUri: Uri.parse("https://img.icons8.com/fluency/240/save.png"),
           extras: {
             'style': 'list_item',
             'android.media.metadata.DISPLAY_ICON_URI':
-                "https://img.icons8.com/fluency/240/download.png",
+                "https://img.icons8.com/fluency/240/save.png",
             'android.media.metadata.ART_URI':
-                "https://img.icons8.com/fluency/240/download.png",
+                "https://img.icons8.com/fluency/240/save.png",
           },
         ),
       ];
@@ -2857,9 +2885,128 @@ class RadioAudioHandler extends BaseAudioHandler
       }).toList();
     }
 
-    // 2. Stations List
+    // 2. Per Te (For You) AI Mixes Folder
+    if (parentMediaId == 'for_you_root') {
+      if (_cachedForYouMixes.isEmpty ||
+          _lastForYouFetch == null ||
+          DateTime.now().difference(_lastForYouFetch!).inHours > 1) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          Map<String, int> phoneHistory = {};
+          Map<String, int> aaHistory = {};
+          Map<String, SavedSong> metadata = {};
+
+          final pStr = prefs.getString('user_play_history');
+          if (pStr != null) {
+            phoneHistory = Map<String, int>.from(jsonDecode(pStr));
+          }
+          final aaStr = prefs.getString('aa_user_play_history');
+          if (aaStr != null) {
+            aaHistory = Map<String, int>.from(jsonDecode(aaStr));
+          }
+          final mStr = prefs.getString('history_metadata');
+          if (mStr != null) {
+            final Map<String, dynamic> decoded = jsonDecode(mStr);
+            metadata = decoded.map(
+              (k, v) => MapEntry(k, SavedSong.fromJson(v)),
+            );
+          }
+
+          final wStr = prefs.getString('weekly_play_log');
+          List<dynamic> weeklyLog = [];
+          if (wStr != null) {
+            try {
+              weeklyLog = jsonDecode(wStr);
+            } catch (_) {}
+          }
+
+          // We'll use Italian as requested for the Android Auto UI context
+          _cachedForYouMixes = await _aiService.generateDiscoverWeekly(
+            phoneHistory: phoneHistory,
+            aaHistory: aaHistory,
+            historyMetadata: metadata,
+            weeklyLog: weeklyLog,
+            targetCount: 15,
+            languageCode: 'it',
+          );
+          _lastForYouFetch = DateTime.now();
+        } catch (e) {
+          LogService().log("Error generating For You for AA: $e");
+        }
+      }
+
+      return _cachedForYouMixes.map((mix) {
+        final artUri = mix.imageUrls.isNotEmpty
+            ? Uri.parse(mix.imageUrls.first)
+            : null;
+        return MediaItem(
+          id: 'ai_playlist_${mix.id}',
+          title: mix.title,
+          album: mix.owner ?? 'Per Te',
+          playable: false, // It's a folder
+          artUri: artUri,
+          extras: {
+            'android.media.metadata.DISPLAY_ICON_URI': artUri?.toString(),
+            'android.media.metadata.ART_URI': artUri?.toString(),
+            'style': 'grid_item', // Grid looks better for mixes
+          },
+        );
+      }).toList();
+    }
+
+    // 2. Per Te: Individual Mix Content
+    if (parentMediaId.startsWith('ai_playlist_')) {
+      final playlistId = parentMediaId.substring('ai_playlist_'.length);
+      try {
+        final mix = _cachedForYouMixes.firstWhere((m) => m.id == playlistId);
+        if (mix.predefinedTracks == null) return [];
+
+        final List<MediaItem> songItems = mix.predefinedTracks!.map((t) {
+          final s = SavedSong(
+            id: t['id'],
+            title: t['title'],
+            artist: t['artist'],
+            album: t['album'],
+            artUri: t['image'],
+            youtubeUrl: t['youtubeUrl'],
+            dateAdded: DateTime.now(),
+          );
+
+          final String mId = s.youtubeUrl ?? 'song_${s.id}';
+          final String contextId = 'ctx_ai_${mix.id}_$mId';
+
+          return _songToMediaItem(
+            s,
+            'ai_${mix.id}',
+            mediaIdOverride: contextId,
+          );
+        }).toList();
+
+        // Add Play All Item at the top
+        if (songItems.isNotEmpty) {
+          songItems.insert(
+            0,
+            MediaItem(
+              id: 'play_all_ai_${mix.id}',
+              title: 'Play All',
+              playable: true,
+              artUri: Uri.parse(
+                "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+              ),
+              extras: {'style': 'list_item'},
+            ),
+          );
+        }
+
+        return songItems;
+      } catch (_) {
+        return [];
+      }
+    }
+
+    // 2. Original Radio List (Fallback for direct access if any)
     if (parentMediaId == 'live_radio') {
-      await _loadStationsFromPrefs(); // Force refresh to get latest order/favorites
+      await _loadStationsFromPrefs();
       return _stations.map((s) {
         final item = _stationToMediaItem(s);
         return item.copyWith(extras: {...?item.extras, 'origin': 'all'});
@@ -3032,6 +3179,47 @@ class RadioAudioHandler extends BaseAudioHandler
       final prefix = isShuffle ? 'shuffle_all_' : 'play_all_';
       final playlistId = mediaId.substring(prefix.length);
 
+      // Handle AI Mix Play All
+      if (playlistId.startsWith('ai_')) {
+        final mixId = playlistId.substring('ai_'.length);
+        try {
+          final mix = _cachedForYouMixes.firstWhere((m) => m.id == mixId);
+          if (mix.predefinedTracks == null) return;
+
+          _currentPlayingPlaylistId = 'ai_${mix.id}';
+          _isShuffleMode = true; // Use shuffle for mixes
+
+          _playlistQueue = mix.predefinedTracks!.map((t) {
+            final ps = SavedSong(
+              id: t['id'],
+              title: t['title'],
+              artist: t['artist'],
+              album: t['album'],
+              artUri: t['image'],
+              youtubeUrl: t['youtubeUrl'],
+              dateAdded: DateTime.now(),
+            );
+            final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
+            return _songToMediaItem(
+              ps,
+              'ai_${mix.id}',
+              mediaIdOverride: 'ctx_ai_${mix.id}_$pId',
+            );
+          }).toList();
+
+          if (_isShuffleMode) _playlistQueue.shuffle();
+
+          if (_playlistQueue.isNotEmpty) {
+            _playlistIndex = 0;
+            queue.add(_playlistQueue);
+            await playFromMediaId(_playlistQueue.first.id, {
+              'queue_ready': true,
+            });
+          }
+        } catch (_) {}
+        return;
+      }
+
       if (playlistId == 'downloads_root') {
         final result = await _playlistService.loadPlaylistsResult();
         final downloadedSongs = result.uniqueSongs
@@ -3135,6 +3323,69 @@ class RadioAudioHandler extends BaseAudioHandler
           final String videoId = _extractVideoId(finalUrl) ?? '';
           await _playYoutubeVideo(videoId, song, 'downloads_root');
           return;
+        }
+
+        // AI PRE-DEFINED MIXES
+        if (mediaId.startsWith('ctx_ai_')) {
+          // Format: ctx_ai_{mixId}_{stableId}
+          final String suffix = mediaId.substring('ctx_ai_'.length);
+
+          for (var mix in _cachedForYouMixes) {
+            if (suffix.startsWith('${mix.id}_')) {
+              final realMediaId = suffix.substring('${mix.id}_'.length);
+
+              // Find song in pre-defined tracks
+              final track = mix.predefinedTracks!.firstWhere(
+                (t) => (t['youtubeUrl'] ?? 'song_${t['id']}') == realMediaId,
+              );
+
+              final song = SavedSong(
+                id: track['id'],
+                title: track['title'],
+                artist: track['artist'],
+                album: track['album'],
+                artUri: track['image'],
+                youtubeUrl: track['youtubeUrl'],
+                dateAdded: DateTime.now(),
+              );
+
+              final bool queueIsReady = extras?['queue_ready'] == true;
+              if (!queueIsReady &&
+                  _currentPlayingPlaylistId != 'ai_${mix.id}') {
+                _currentPlayingPlaylistId = 'ai_${mix.id}';
+                _isShuffleMode = true;
+
+                _playlistQueue = mix.predefinedTracks!.map((t) {
+                  final ps = SavedSong(
+                    id: t['id'],
+                    title: t['title'],
+                    artist: t['artist'],
+                    album: t['album'],
+                    artUri: t['image'],
+                    youtubeUrl: t['youtubeUrl'],
+                    dateAdded: DateTime.now(),
+                  );
+                  final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
+                  return _songToMediaItem(
+                    ps,
+                    'ai_${mix.id}',
+                    mediaIdOverride: 'ctx_ai_${mix.id}_$pId',
+                  );
+                }).toList();
+
+                if (_isShuffleMode) _playlistQueue.shuffle();
+                queue.add(_playlistQueue);
+              }
+
+              _playlistIndex = _playlistQueue.indexWhere(
+                (item) => item.id == mediaId,
+              );
+              final String finalUrl = song.youtubeUrl ?? '';
+              final String videoId = _extractVideoId(finalUrl) ?? '';
+              await _playYoutubeVideo(videoId, song, 'ai_${mix.id}');
+              return;
+            }
+          }
         }
 
         // Format: ctx_{playlistId}_{originalId}
@@ -3380,9 +3631,14 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   String? _extractVideoId(String url) {
+    if (url.isEmpty) return null;
     if (url.contains('v=')) return url.split('v=')[1].split('&')[0];
     if (url.contains('youtu.be/'))
       return url.split('youtu.be/')[1].split('?')[0];
+    if (url.startsWith('youtube://')) return url.substring('youtube://'.length);
+    // If it's a short 11-char ID already
+    if (url.length == 11 && !url.contains('/') && !url.contains(':'))
+      return url;
     return null;
   }
   // --- RECOGNITION LOGIC ---

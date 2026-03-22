@@ -4,6 +4,7 @@ import '../models/saved_song.dart';
 import '../providers/radio_provider.dart';
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
+import '../utils/glass_utils.dart';
 
 void scanForDuplicates(
   BuildContext context,
@@ -44,7 +45,7 @@ void scanForDuplicates(
   }
 
   // 3. Show Resolution Dialog
-  showDialog(
+  GlassUtils.showGlassDialog(
     context: context,
     builder: (ctx) => _DuplicateResolutionDialog(
       playlist: playlist,

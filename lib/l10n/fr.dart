@@ -75,6 +75,15 @@ final Map<String, String> fr = {
   'color_bg': 'Fond',
   'color_card': 'Carte',
   'color_surface': 'Surface',
+  'background_image': 'Image de Fond',
+  'background_image_desc':
+      'Personnalisez votre arrière-plan avec une image élégante.',
+  'search_background': 'Rechercher une Image',
+  'reset_background': 'Rétablir le Fond d\'Origine',
+  'search_images_hint': 'ex. océan, galaxie, abstrait...',
+  'no_images_found': 'Aucune image trouvée.',
+  'searching_images': 'Recherche d\'images en cours...',
+  'select_as_background': 'Définir comme Fond',
 
   // Manage Stations
   'manage_stations_title': 'Gérer les Stations',

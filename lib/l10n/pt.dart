@@ -74,6 +74,14 @@ final Map<String, String> pt = {
   'color_bg': 'Fundo',
   'color_card': 'Cartão',
   'color_surface': 'Superfície',
+  'background_image': 'Imagem de Fundo',
+  'background_image_desc': 'Personalize seu fundo com uma imagem elegante.',
+  'search_background': 'Pesquisar Imagem',
+  'reset_background': 'Redefinir para o Fundo Original',
+  'search_images_hint': 'ex. oceano, galáxia, abstrato...',
+  'no_images_found': 'Nenhuma imagem encontrada.',
+  'searching_images': 'Pesquisando imagens...',
+  'select_as_background': 'Definir como Fundo',
 
   // Manage Stations
   'manage_stations_title': 'Gerenciar Estações',

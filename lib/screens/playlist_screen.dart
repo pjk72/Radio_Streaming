@@ -40,6 +40,7 @@ import 'playlist_screen_duplicates_logic.dart';
 import '../widgets/native_ad_widget.dart';
 import 'add_song_screen.dart';
 import '../services/entitlement_service.dart';
+import '../utils/glass_utils.dart';
 
 enum MetadataViewMode { playlists, artists, albums }
 
@@ -110,14 +111,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         .map((p) => "${p.playlistId}_${p.songId}")
         .toSet();
 
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setState) {
             final proposals = provider.upgradeProposals;
             return AlertDialog(
-              backgroundColor: const Color(0xFF1a1a2e),
+              surfaceTintColor: Colors.transparent,
               title: const Text(
                 "Local Files Found",
                 style: TextStyle(color: Colors.white),
@@ -528,12 +529,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         song.localPath != null || song.id.startsWith('local_');
     final bool hideOnline = isLocalPlaylist || isLocalSong;
 
-    showModalBottomSheet(
+    GlassUtils.showGlassBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      isScrollControlled: false,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -634,7 +632,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 ),
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final confirmed = await showDialog<bool>(
+                  final confirmed = await GlassUtils.showGlassDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       backgroundColor: const Color(0xFF222222),
@@ -857,10 +855,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   }
 
   void _showSongDetailsDialog(BuildContext context, SavedSong song) {
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        surfaceTintColor: Colors.transparent,
         title: const Text(
           "Song Details",
           style: TextStyle(color: Colors.white),
@@ -1244,6 +1242,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               color: headerContrastColor,
                             ),
                             tooltip: "Options",
+                            surfaceTintColor: Colors.transparent,
                             onSelected: (value) {
                               if (value == 'sort') {
                                 setState(() {
@@ -1902,7 +1901,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           child: ListView(
                             controller: _playlistsScrollController,
                             key: const PageStorageKey('playlists_list'),
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                             children: [
                               _buildPlaylistsGrid(
                                 context,
@@ -2386,7 +2385,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       ),
                     ],
                   ),
-                  color: const Color(0xFF1e1e24),
+                  surfaceTintColor: Colors.transparent,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -2757,10 +2756,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     // 0. High Data Usage Confirmation
     final bool shouldProceed =
-        await showDialog<bool>(
+        await GlassUtils.showGlassDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1e1e24),
+            surfaceTintColor: Colors.transparent,
             elevation: 24,
             shadowColor: Colors.black,
             shape: RoundedRectangleBorder(
@@ -2955,14 +2954,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     // 2. Show Progress Dialog IMMEDIATELY
     if (!mounted) return;
 
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => PopScope(
         canPop: false,
         child: Center(
           child: Card(
-            color: const Color(0xFF1e1e24),
+            color: Theme.of(context).cardColor.withValues(alpha: 0.7),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
@@ -3618,13 +3617,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     final Set<String> selectedIds = {};
     final List<Map<String, dynamic>> selectedPlaylists = [];
 
-    showModalBottomSheet(
+    GlassUtils.showGlassBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF16213e),
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setState) {
@@ -3992,7 +3987,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     RadioProvider provider,
     Playlist sourcePlaylist,
   ) {
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (context) {
         final playlists = provider.playlists
@@ -4000,7 +3995,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             .toList();
 
         return AlertDialog(
-          backgroundColor: Theme.of(context).cardColor,
+          surfaceTintColor: Colors.transparent,
           title: Text(
             "Copy Playlist",
             style: TextStyle(
@@ -4104,10 +4099,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   }
 
   void _showClearFavoritesDialog(BuildContext context, RadioProvider provider) {
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1e1e24),
+        surfaceTintColor: Colors.transparent,
         title: const Text(
           "Clear Favorites?",
           style: TextStyle(color: Colors.white),
@@ -4169,10 +4164,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     if (playlist.id == 'favorites' || playlist.creator == 'local') return;
 
     final controller = TextEditingController(text: playlist.name);
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
+        surfaceTintColor: Colors.transparent,
         title: Text(
           "Rename Playlist",
           style: TextStyle(
@@ -4269,10 +4264,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
   void _showCreatePlaylistDialog(BuildContext context, RadioProvider provider) {
     final TextEditingController nameController = TextEditingController();
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
+        surfaceTintColor: Colors.transparent,
         title: Text(
           "New Playlist",
           style: TextStyle(
@@ -4698,10 +4693,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         }
       },
       onRemove: () async {
-        final confirmed = await showDialog<bool>(
+        final confirmed = await GlassUtils.showGlassDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            backgroundColor: Theme.of(context).cardColor,
+            surfaceTintColor: Colors.transparent,
             title: Text(
               "Delete Album",
               style: TextStyle(
@@ -5133,13 +5128,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       ),
                       if (!isInvalid) ...[
                         PopupMenuButton<String>(
+                          surfaceTintColor: Colors.transparent,
                           icon: Icon(
                             Icons.more_vert_rounded,
                             color: contrastColor,
                           ),
                           onSelected: (value) async {
                             if (value == 'video') {
-                              showDialog(
+                              GlassUtils.showGlassDialog(
                                 context: context,
                                 barrierDismissible: false,
                                 builder: (ctx) => const Center(
@@ -5187,7 +5183,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   if (videoId != null) {
                                     provider.pause();
                                     if (!mounted) return;
-                                    showDialog(
+                                    GlassUtils.showGlassDialog(
                                       context: context,
                                       builder: (_) => YouTubePopup(
                                         videoId: videoId,
@@ -5253,12 +5249,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               bool confirm = true;
                               if (playlist.creator == 'local') {
                                 confirm =
-                                    await showDialog<bool>(
+                                    await GlassUtils.showGlassDialog<bool>(
                                       context: context,
                                       builder: (ctx) => AlertDialog(
-                                        backgroundColor: Theme.of(
-                                          context,
-                                        ).cardColor,
+                                        surfaceTintColor: Colors.transparent,
                                         title: Text(
                                           Provider.of<LanguageProvider>(
                                             context,
@@ -5378,7 +5372,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 }
                               }
                             } else if (value == 'share') {
-                              showDialog(
+                              GlassUtils.showGlassDialog(
                                 context: context,
                                 barrierDismissible: false,
                                 builder: (ctx) => const Center(
@@ -5605,10 +5599,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     Playlist playlist,
   ) {
     if (playlist.id == 'favorites') return; // Cannot delete favorites
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
+        surfaceTintColor: Colors.transparent,
         title: Text(
           Provider.of<LanguageProvider>(
             context,
@@ -7106,6 +7100,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                       ),
                     ],
                     PopupMenuButton<String>(
+                      surfaceTintColor: Colors.transparent,
                       icon: Icon(
                         Icons.more_vert_rounded,
                         color: contrastColor.withValues(alpha: 0.5),
@@ -7654,10 +7649,10 @@ class _DuplicateResolutionDialogState
               ? null
               : () async {
                   final count = _selectedForRemoval.length;
-                  final confirm = await showDialog<bool>(
+                  final confirm = await GlassUtils.showGlassDialog<bool>(
                     context: context,
                     builder: (c) => AlertDialog(
-                      backgroundColor: const Color(0xFF222222),
+                      surfaceTintColor: Colors.transparent,
                       title: Text(
                         Provider.of<LanguageProvider>(
                           context,

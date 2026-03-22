@@ -75,6 +75,14 @@ final Map<String, String> es = {
   'color_bg': 'Fondo',
   'color_card': 'Tarjeta',
   'color_surface': 'Superficie',
+  'background_image': 'Imagen de Fondo',
+  'background_image_desc': 'Personaliza tu fondo con una imagen elegante.',
+  'search_background': 'Buscar Imagen',
+  'reset_background': 'Restablecer al Fondo Original',
+  'search_images_hint': 'ej. océano, galaxia, abstracto...',
+  'no_images_found': 'No se encontraron imágenes.',
+  'searching_images': 'Buscando imágenes...',
+  'select_as_background': 'Establecer como Fondo',
 
   // Manage Stations
   'manage_stations_title': 'Gestionar Emisoras',

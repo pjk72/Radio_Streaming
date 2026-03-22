@@ -6,6 +6,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/language_provider.dart';
+import '../utils/glass_utils.dart';
 
 class AppearanceScreen extends StatelessWidget {
   const AppearanceScreen({super.key});
@@ -214,9 +215,8 @@ class AppearanceScreen extends StatelessWidget {
     String initialKey,
     ThemeProvider provider,
   ) {
-    showModalBottomSheet(
+    GlassUtils.showGlassBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) {
         final cardColor = Theme.of(context).cardColor;
@@ -224,41 +224,34 @@ class AppearanceScreen extends StatelessWidget {
             ? Colors.black
             : Colors.white;
 
-        return ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    cardColor.withValues(alpha: 0.4),
-                    cardColor.withValues(alpha: 0.6),
-                  ],
-                ),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-                border: Border(
-                  top: BorderSide(
-                    color: contrastColor.withValues(alpha: 0.1),
-                    width: 0.5,
-                  ),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 20,
-                    offset: const Offset(0, -5),
-                  ),
-                ],
-              ),
-              child: _AdvancedColorPicker(
-                initialKey: initialKey,
-                provider: provider,
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                cardColor.withValues(alpha: 0.4),
+                cardColor.withValues(alpha: 0.6),
+              ],
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(
+                color: contrastColor.withValues(alpha: 0.1),
+                width: 0.5,
               ),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 20,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: _AdvancedColorPicker(
+            initialKey: initialKey,
+            provider: provider,
           ),
         );
       },
@@ -479,10 +472,9 @@ class AppearanceScreen extends StatelessWidget {
     bool isSearching = false;
     bool isListening = false;
 
-    showModalBottomSheet(
+    GlassUtils.showGlassBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           Future<void> performSearch() async {
@@ -552,204 +544,190 @@ class AppearanceScreen extends StatelessWidget {
               ? Colors.black
               : Colors.white;
 
-          return ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: Container(
-                height: MediaQuery.of(ctx).size.height * 0.85,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      cardColor.withValues(alpha: 0.4),
-                      cardColor.withValues(alpha: 0.6),
-                    ],
-                  ),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
-                  ),
-                  border: Border(
-                    top: BorderSide(
-                      color: contrastColor.withValues(alpha: 0.1),
-                      width: 0.5,
-                    ),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 12, bottom: 8),
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: controller,
-                              autofocus: true,
-                              decoration: InputDecoration(
-                                hintText: langProvider.translate(
-                                  'search_images_hint',
-                                ),
-                                prefixIcon: const Icon(Icons.search),
-                                suffixIcon: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (controller.text.isNotEmpty)
-                                      IconButton(
-                                        icon: const Icon(Icons.clear_rounded),
-                                        onPressed: () {
-                                          setModalState(() {
-                                            controller.clear();
-                                          });
-                                        },
-                                      ),
-                                    IconButton(
-                                      icon: Icon(
-                                        isListening
-                                            ? Icons.mic_rounded
-                                            : Icons.mic_none_rounded,
-                                        color: isListening
-                                            ? Theme.of(context).primaryColor
-                                            : null,
-                                      ),
-                                      onPressed: listen,
-                                    ),
-                                  ],
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 10,
-                                ),
-                              ),
-                              onChanged: (val) {
-                                setModalState(() {});
-                              },
-                              onSubmitted: (_) => performSearch(),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          IconButton(
-                            onPressed: performSearch,
-                            icon: const Icon(Icons.arrow_forward_rounded),
-                            style: IconButton.styleFrom(
-                              backgroundColor: Theme.of(context).primaryColor,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (isSearching)
-                      const Expanded(
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (results.isEmpty)
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            langProvider.translate('no_images_found'),
-                          ),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: GridView.builder(
-                          padding: const EdgeInsets.all(16),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                childAspectRatio: 0.7,
-                              ),
-                          itemCount: results.length,
-                          itemBuilder: (ctx, index) {
-                            return GestureDetector(
-                              onTap: () {
-                                provider.setCustomBackgroundImage(
-                                  results[index],
-                                );
-                                Navigator.pop(context);
-                              },
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Image.network(
-                                      results[index],
-                                      fit: BoxFit.cover,
-                                      loadingBuilder:
-                                          (context, child, loadingProgress) {
-                                            if (loadingProgress == null)
-                                              return child;
-                                            return const Center(
-                                              child:
-                                                  CircularProgressIndicator(),
-                                            );
-                                          },
-                                      errorBuilder: (_, __, ___) => Container(
-                                        color: Colors.grey.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        child: const Icon(Icons.error_outline),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 0,
-                                      left: 0,
-                                      right: 0,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.bottomCenter,
-                                            end: Alignment.topCenter,
-                                            colors: [
-                                              Colors.black.withValues(
-                                                alpha: 0.8,
-                                              ),
-                                              Colors.transparent,
-                                            ],
-                                          ),
-                                        ),
-                                        child: Text(
-                                          langProvider.translate(
-                                            'select_as_background',
-                                          ),
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                  ],
+          return Container(
+            height: MediaQuery.of(ctx).size.height * 0.85,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  cardColor.withValues(alpha: 0.4),
+                  cardColor.withValues(alpha: 0.6),
+                ],
+              ),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              border: Border(
+                top: BorderSide(
+                  color: contrastColor.withValues(alpha: 0.1),
+                  width: 0.5,
                 ),
               ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            hintText: langProvider.translate(
+                              'search_images_hint',
+                            ),
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (controller.text.isNotEmpty)
+                                  IconButton(
+                                    icon: const Icon(Icons.clear_rounded),
+                                    onPressed: () {
+                                      setModalState(() {
+                                        controller.clear();
+                                      });
+                                    },
+                                  ),
+                                IconButton(
+                                  icon: Icon(
+                                    isListening
+                                        ? Icons.mic_rounded
+                                        : Icons.mic_none_rounded,
+                                    color: isListening
+                                        ? Theme.of(context).primaryColor
+                                        : null,
+                                  ),
+                                  onPressed: listen,
+                                ),
+                              ],
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
+                          ),
+                          onChanged: (val) {
+                            setModalState(() {});
+                          },
+                          onSubmitted: (_) => performSearch(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        onPressed: performSearch,
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isSearching)
+                  const Expanded(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (results.isEmpty)
+                  Expanded(
+                    child: Center(
+                      child: Text(langProvider.translate('no_images_found')),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: GridView.builder(
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.7,
+                          ),
+                      itemCount: results.length,
+                      itemBuilder: (ctx, index) {
+                        return GestureDetector(
+                          onTap: () {
+                            provider.setCustomBackgroundImage(results[index]);
+                            Navigator.pop(context);
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.network(
+                                  results[index],
+                                  fit: BoxFit.cover,
+                                  loadingBuilder:
+                                      (context, child, loadingProgress) {
+                                        if (loadingProgress == null)
+                                          return child;
+                                        return const Center(
+                                          child: CircularProgressIndicator(),
+                                        );
+                                      },
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: Colors.grey.withValues(alpha: 0.1),
+                                    child: const Icon(Icons.error_outline),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.bottomCenter,
+                                        end: Alignment.topCenter,
+                                        colors: [
+                                          Colors.black.withValues(alpha: 0.8),
+                                          Colors.transparent,
+                                        ],
+                                      ),
+                                    ),
+                                    child: Text(
+                                      langProvider.translate(
+                                        'select_as_background',
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
           );
         },

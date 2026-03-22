@@ -74,6 +74,15 @@ final Map<String, String> ru = {
   'color_bg': 'Фон',
   'color_card': 'Карточка',
   'color_surface': 'Поверхность',
+  'background_image': 'Фоновое изображение',
+  'background_image_desc':
+      'Персонализируйте свой фон с помощью элегантного изображения.',
+  'search_background': 'Поиск изображения',
+  'reset_background': 'Сбросить к исходному фону',
+  'search_images_hint': 'напр. океан, галактика, абстракция...',
+  'no_images_found': 'Изображения не найдены.',
+  'searching_images': 'Поиск изображений...',
+  'select_as_background': 'Установить как фон',
 
   // Manage Stations
   'manage_stations_title': 'Управление станциями',

@@ -9,6 +9,7 @@ import '../providers/language_provider.dart';
 import 'trending_details_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
+import '../utils/glass_utils.dart';
 
 class AddSongScreen extends StatefulWidget {
   const AddSongScreen({super.key});
@@ -541,11 +542,10 @@ class _AddSongScreenState extends State<AddSongScreen> {
     final controller = TextEditingController();
     final lang = Provider.of<LanguageProvider>(context, listen: false);
 
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        surfaceTintColor: Colors.transparent,
         title: Text(
           lang.translate('new_playlist'),
           style: const TextStyle(color: Colors.white),
@@ -600,7 +600,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
     final count = _selectedItems.length;
 
     // Show loading indicator
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(child: CircularProgressIndicator()),

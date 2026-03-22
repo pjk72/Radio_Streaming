@@ -16,6 +16,7 @@ import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../utils/glass_utils.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -744,64 +745,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         onPressed: !radio.canInitiateBackup
                                             ? null
                                             : () async {
-                                                final confirm = await showDialog<bool>(
-                                                  context: context,
-                                                  builder: (ctx) => AlertDialog(
-                                                    backgroundColor:
-                                                        const Color(0xFF16213e),
-                                                    title: Text(
-                                                      langProvider.translate(
-                                                        'overwrite_backup_title',
-                                                      ),
-                                                      style: TextStyle(
-                                                        color: Colors.white,
-                                                      ),
-                                                    ),
-                                                    content: Text(
-                                                      langProvider.translate(
-                                                        'overwrite_backup_desc',
-                                                      ),
-                                                      style: TextStyle(
-                                                        color: Colors.white70,
-                                                      ),
-                                                    ),
-                                                    actions: [
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                              ctx,
-                                                              false,
-                                                            ),
-                                                        child: Text(
-                                                          langProvider
-                                                              .translate(
-                                                                'cancel',
-                                                              ),
-                                                        ),
-                                                      ),
-                                                      TextButton(
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                              ctx,
-                                                              true,
-                                                            ),
-                                                        child: Text(
-                                                          langProvider
-                                                              .translate(
-                                                                'backup',
-                                                              ),
+                                                final confirm =
+                                                    await GlassUtils.showGlassDialog<
+                                                      bool
+                                                    >(
+                                                      context: context,
+                                                      builder: (ctx) => AlertDialog(
+                                                        surfaceTintColor:
+                                                            Colors.transparent,
+                                                        title: Text(
+                                                          langProvider.translate(
+                                                            'overwrite_backup_title',
+                                                          ),
                                                           style: TextStyle(
-                                                            color: Theme.of(
-                                                              context,
-                                                            ).primaryColor,
-                                                            fontWeight:
-                                                                FontWeight.bold,
+                                                            color: Colors.white,
                                                           ),
                                                         ),
+                                                        content: Text(
+                                                          langProvider.translate(
+                                                            'overwrite_backup_desc',
+                                                          ),
+                                                          style: TextStyle(
+                                                            color:
+                                                                Colors.white70,
+                                                          ),
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  ctx,
+                                                                  false,
+                                                                ),
+                                                            child: Text(
+                                                              langProvider
+                                                                  .translate(
+                                                                    'cancel',
+                                                                  ),
+                                                            ),
+                                                          ),
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  ctx,
+                                                                  true,
+                                                                ),
+                                                            child: Text(
+                                                              langProvider
+                                                                  .translate(
+                                                                    'backup',
+                                                                  ),
+                                                              style: TextStyle(
+                                                                color: Theme.of(
+                                                                  context,
+                                                                ).primaryColor,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
-                                                    ],
-                                                  ),
-                                                );
+                                                    );
                                                 if (confirm == true &&
                                                     context.mounted) {
                                                   try {
@@ -871,11 +877,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         ? null
                                         : () async {
                                             final confirm =
-                                                await showDialog<bool>(
+                                                await GlassUtils.showGlassDialog<
+                                                  bool
+                                                >(
                                                   context: context,
                                                   builder: (ctx) => AlertDialog(
-                                                    backgroundColor:
-                                                        const Color(0xFF16213e),
+                                                    surfaceTintColor:
+                                                        Colors.transparent,
                                                     title: Text(
                                                       langProvider.translate(
                                                         'restore_backup_title',

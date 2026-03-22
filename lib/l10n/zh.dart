@@ -74,6 +74,14 @@ final Map<String, String> zh = {
   'color_bg': '背景',
   'color_card': '卡片',
   'color_surface': '表面',
+  'background_image': '背景图片',
+  'background_image_desc': '用优雅的图片个性化您的背景。',
+  'search_background': '搜索图片',
+  'reset_background': '重置为原始背景',
+  'search_images_hint': '例如：海洋、星系、抽象...',
+  'no_images_found': '未找到图片。',
+  'searching_images': '正在搜索图片...',
+  'select_as_background': '设为背景',
 
   // Manage Stations
   'manage_stations_title': '管理电台',

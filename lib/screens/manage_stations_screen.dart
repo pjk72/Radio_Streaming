@@ -8,6 +8,7 @@ import '../utils/icon_library.dart';
 import '../widgets/tutorial_create_radio_wizard.dart';
 import 'edit_station_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../utils/glass_utils.dart';
 
 enum GroupingMode { none, genre, origin }
 
@@ -171,6 +172,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                   : langProvider.translate('grid_view'),
             ),
             PopupMenuButton<GroupingMode>(
+              surfaceTintColor: Colors.transparent,
               icon: Icon(
                 Icons.sort_rounded,
                 color:
@@ -430,7 +432,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
         color: iconColor ?? Theme.of(context).iconTheme.color,
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: Theme.of(context).cardColor,
+      surfaceTintColor: Colors.transparent,
       onSelected: (value) async {
         final langProvider = Provider.of<LanguageProvider>(
           context,
@@ -442,10 +444,10 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
             MaterialPageRoute(builder: (_) => EditStationScreen(station: s)),
           );
         } else if (value == 'delete') {
-          final confirm = await showDialog<bool>(
+          final confirm = await GlassUtils.showGlassDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
-              backgroundColor: Theme.of(context).cardColor,
+              surfaceTintColor: Colors.transparent,
               title: Text(
                 langProvider.translate('delete_station_title'),
                 style: TextStyle(

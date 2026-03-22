@@ -10,6 +10,7 @@ import '../providers/language_provider.dart';
 import '../models/station.dart';
 import '../utils/genre_mapper.dart';
 import '../services/log_service.dart';
+import '../utils/glass_utils.dart';
 
 class TutorialCreateRadioWizard extends StatefulWidget {
   const TutorialCreateRadioWizard({super.key});
@@ -521,7 +522,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     }
 
     // Show simple loading dialog
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       barrierDismissible: false,
       builder: (c) => const Center(child: CircularProgressIndicator()),
@@ -603,10 +604,10 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       }
 
       // Show Selection Dialog
-      final selected = await showDialog<String>(
+      final selected = await GlassUtils.showGlassDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: Theme.of(context).cardColor,
+          surfaceTintColor: Colors.transparent,
           title: Text(
             langProvider.translate('select_logo_for').replaceAll('{0}', name),
             style: TextStyle(

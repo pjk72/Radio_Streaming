@@ -18,6 +18,7 @@ import '../widgets/native_ad_widget.dart';
 import '../widgets/mini_visualizer.dart';
 import '../services/log_service.dart';
 import '../providers/language_provider.dart';
+import '../utils/glass_utils.dart';
 
 class _AdItem {
   const _AdItem();
@@ -1078,7 +1079,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     final provider = Provider.of<RadioProvider>(context, listen: false);
 
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (context) {
         final playlists = provider.playlists;
@@ -1088,7 +1089,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           listen: false,
         );
         return AlertDialog(
-          backgroundColor: Theme.of(context).cardColor,
+          surfaceTintColor: Colors.transparent,
           title: Text(
             langProvider.translate('copy_playlist'),
             style: TextStyle(
@@ -1160,10 +1161,10 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   void _createNewPlaylist() {
     final controller = TextEditingController();
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
+        surfaceTintColor: Colors.transparent,
         title: Text(
           langProvider.translate('new_playlist'),
           style: TextStyle(
@@ -1273,7 +1274,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   void _showAddSongDialog(SavedSong song) {
     final provider = Provider.of<RadioProvider>(context, listen: false);
 
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (context) {
         final playlists = provider.playlists;
@@ -1283,7 +1284,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           listen: false,
         );
         return AlertDialog(
-          backgroundColor: Theme.of(context).cardColor,
+          surfaceTintColor: Colors.transparent,
           title: Text(
             langProvider.translate('add_to_playlist'),
             style: TextStyle(
@@ -1358,10 +1359,10 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     final controller = TextEditingController();
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
 
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
+        surfaceTintColor: Colors.transparent,
         title: Text(
           langProvider.translate('new_playlist'),
           style: TextStyle(
@@ -1465,11 +1466,11 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   }
 
   void _showProcessingDialog(String message) {
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1e1e24),
+        surfaceTintColor: Colors.transparent,
         content: Row(
           children: [
             const CircularProgressIndicator(color: Colors.redAccent),

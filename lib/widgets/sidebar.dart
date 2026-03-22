@@ -157,13 +157,14 @@ class Sidebar extends StatelessWidget {
                       langProvider.translate('tab_trending'),
                     ),
 
-                    const Spacer(),
+                    // const SizedBox(height: 24),
                     _navItem(
                       context,
                       3,
                       Icons.settings,
                       langProvider.translate('settings'),
                     ),
+                    const SizedBox(height: 50), // Reserve space for player bar
                   ],
                 ),
               ),

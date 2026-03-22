@@ -200,9 +200,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
               decoration: BoxDecoration(
                 // Increase opacity when collapsed (t -> 0) to prevent background content mix
                 // Increase opacity when collapsed (t -> 0) to prevent background content mix
-                color: Theme.of(
-                  context,
-                ).scaffoldBackgroundColor.withValues(alpha: 0.3),
+                color: Theme.of(context).appBarTheme.backgroundColor ??
+                    Theme.of(context).scaffoldBackgroundColor.withValues(
+                      alpha: 0.3,
+                    ),
                 borderRadius: BorderRadius.circular(borderRadius),
                 border: Border.all(
                   color: Colors.white.withValues(

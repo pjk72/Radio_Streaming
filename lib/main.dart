@@ -33,6 +33,7 @@ import 'services/app_open_ad_manager.dart';
 import 'services/notification_service.dart';
 import 'services/user_sync_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'utils/glass_utils.dart';
 
 late AudioHandler audioHandler;
 
@@ -191,11 +192,11 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       context,
       listen: false,
     );
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a24),
+        surfaceTintColor: Colors.transparent,
         title: Text(languageProvider.translate('update_available')),
         content: Text(languageProvider.translate('update_desc')),
         actions: [

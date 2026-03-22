@@ -10,6 +10,7 @@ import 'package:palette_generator/palette_generator.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
 import '../utils/genre_mapper.dart';
+import '../utils/glass_utils.dart';
 
 class EditStationScreen extends StatefulWidget {
   final Station? station; // null for new station
@@ -755,7 +756,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
   }
 
   void _showAddGenreDialog(BuildContext context, List<String> existing) async {
-    final result = await showDialog<List<String>>(
+    final result = await GlassUtils.showGlassDialog<List<String>>(
       context: context,
       builder: (ctx) => _GenreSelectionDialog(
         existing: existing,
@@ -859,7 +860,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
     BuildContext context,
     List<String> existing,
   ) async {
-    final result = await showDialog<Map<String, String?>>(
+    final result = await GlassUtils.showGlassDialog<Map<String, String?>>(
       context: context,
       builder: (ctx) => _CategorySelectionDialog(
         existing: existing,
@@ -1100,7 +1101,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
         if (candidates.isNotEmpty) {
           setState(() => _isSearching = false);
-          final selected = await showDialog<Map<String, dynamic>>(
+          final selected = await GlassUtils.showGlassDialog<Map<String, dynamic>>(
             context: context,
             builder: (ctx) => _StationSelectionDialog(stations: candidates),
           );
@@ -1344,10 +1345,10 @@ class _EditStationScreenState extends State<EditStationScreen> {
 
       if (!mounted) return;
 
-      final selected = await showDialog<String>(
+      final selected = await GlassUtils.showGlassDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: Theme.of(context).cardColor,
+          surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),

@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart'; // For AppLifecycleState
+import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -709,9 +710,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   @override
   void notifyListeners() {
-    // Basic guard to ensure we don't notify if the binding is in a weird state
-    // but usually ChangeNotifier handle this.
-    super.notifyListeners();
+    // Safety guard: if we are in the middle of a build/layout phase, 
+    // defer the notification to the next frame to avoid "setState() called during build" errors.
+    if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Double check if we still need to notify (not disposed)
+        // super.notifyListeners() doesn't need a check itself but it's good practice.
+        super.notifyListeners();
+      });
+    } else {
+      super.notifyListeners();
+    }
   }
 
   @override

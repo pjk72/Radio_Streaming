@@ -74,6 +74,15 @@ final Map<String, String> de = {
   'color_bg': 'HG',
   'color_card': 'Karte',
   'color_surface': 'Oberfläche',
+  'background_image': 'Hintergrundbild',
+  'background_image_desc':
+      'Personalisiere deinen Hintergrund mit einem eleganten Bild.',
+  'search_background': 'Bild suchen',
+  'reset_background': 'Auf Original-Hintergrund zurücksetzen',
+  'search_images_hint': 'z.B. Ozean, Galaxie, Abstrakt...',
+  'no_images_found': 'Keine Bilder gefunden.',
+  'searching_images': 'Suche Bilder...',
+  'select_as_background': 'Als Hintergrund festlegen',
 
   // Manage Stations
   'manage_stations_title': 'Sender verwalten',

@@ -4,6 +4,7 @@ import '../services/log_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import '../utils/glass_utils.dart';
 
 class LogEntry {
   final String time;
@@ -422,7 +423,7 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
   }
 
   void _showLogDetail(LogEntry entry) {
-    showDialog(
+    GlassUtils.showGlassDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],

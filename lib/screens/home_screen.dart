@@ -111,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
         right: 8,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
+        color: Theme.of(context).appBarTheme.backgroundColor,
         border: Border(
           bottom: BorderSide(
             color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
