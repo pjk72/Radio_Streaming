@@ -9,22 +9,13 @@ class SongLinkService {
   String get lastRawJson => _lastRawJson;
 
   Future<Map<String, String>> fetchLinks({
-    String? spotifyId,
     String? url,
     String countryCode = 'IT',
   }) async {
     _lastRawJson = ""; // Reset
 
-    String queryUrl;
-
-    if (spotifyId != null) {
-      // Use URI format as requested by user example
-      queryUrl = 'spotify:track:$spotifyId';
-    } else if (url != null) {
-      queryUrl = url;
-    } else {
-      return {};
-    }
+    if (url == null) return {};
+    final String queryUrl = url;
 
     final uri = Uri.parse(
       '$_baseUrl?url=${Uri.encodeComponent(queryUrl)}&userCountry=$countryCode',
@@ -51,12 +42,10 @@ class SongLinkService {
           try {
             // SongLink usually provides entitiesByUniqueId.
             // We need to find a valid entity to get the thumbnail.
-            // Usually we can trust the 'spotify' or 'google' or 'appleMusic' entry in linksByPlatform
+            // Usually we can trust the 'appleMusic' or 'youtube' entry in linksByPlatform
             // to have an 'entityUniqueId'.
             String? entityId;
-            if (links.containsKey('spotify')) {
-              entityId = links['spotify']['entityUniqueId'];
-            } else if (links.containsKey('appleMusic')) {
+            if (links.containsKey('appleMusic')) {
               entityId = links['appleMusic']['entityUniqueId'];
             } else if (links.containsKey('youtube')) {
               entityId = links['youtube']['entityUniqueId'];
@@ -82,11 +71,6 @@ class SongLinkService {
             LogService().log("Error extracting thumbnail: $e");
           }
 
-          // Spotify
-          if (links.containsKey('spotify')) {
-            final data = links['spotify'];
-            result['spotify'] = data['nativeAppUriMobile'] ?? data['url'];
-          }
 
           // Apple Music
           if (links.containsKey('appleMusic')) {

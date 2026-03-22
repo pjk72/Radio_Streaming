@@ -30,7 +30,6 @@ import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
 import '../services/log_service.dart';
 import '../services/lyrics_service.dart';
-import '../services/spotify_service.dart';
 import '../services/entitlement_service.dart';
 
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -369,16 +368,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool _currentSongIsSaved = false;
   bool get currentSongIsSaved => _currentSongIsSaved;
 
-  bool _isImportingSpotify = false;
-  double _spotifyImportProgress = 0;
-  String? _spotifyImportName;
   bool _isRecognizing = false;
 
   bool _showGlobalBanner = true;
 
-  bool get isImportingSpotify => _isImportingSpotify;
-  double get spotifyImportProgress => _spotifyImportProgress;
-  String? get spotifyImportName => _spotifyImportName;
   bool get isRecognizing => _isRecognizing;
   bool get showGlobalBanner => _showGlobalBanner;
 
@@ -641,7 +634,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             final links = await resolveLinks(
               title: nextSong.title,
               artist: nextSong.artist,
-              spotifyUrl: nextSong.spotifyUrl,
               appleMusicUrl: nextSong.appleMusicUrl,
             ).timeout(const Duration(seconds: 8));
 
@@ -740,8 +732,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   final SongLinkService _songLinkService = SongLinkService();
   final MusicMetadataService _musicMetadataService = MusicMetadataService();
   final LyricsService _lyricsService = LyricsService();
-  final SpotifyService _spotifyService = SpotifyService();
-  SpotifyService get spotifyService => _spotifyService;
   final ShazamApiService _shazamApiService = ShazamApiService();
   final LocalPlaylistService _localPlaylistService = LocalPlaylistService();
 
@@ -1355,9 +1345,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Set initial volume if possible, or just default local
     setVolume(_volume);
 
-    // Initialize Spotify
-    _spotifyService.init().then((_) => notifyListeners());
-
     // Load persisted data
     _loadStationOrder();
     _loadStartupSettings();
@@ -1684,7 +1671,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       artist: _currentArtist,
       album: cleanAlbum,
       artUri: _currentAlbumArt,
-      spotifyUrl: _currentSpotifyUrl,
       youtubeUrl: _currentYoutubeUrl,
       appleMusicUrl:
           _currentAppleMusicUrl ??
@@ -1953,7 +1939,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             final links = await resolveLinks(
               title: currentSong.title,
               artist: currentSong.artist,
-              spotifyUrl: currentSong.spotifyUrl,
               appleMusicUrl: currentSong.appleMusicUrl,
             );
 
@@ -2182,7 +2167,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           } else {
             final bool canRevert =
                 s.youtubeUrl != null ||
-                s.spotifyUrl != null ||
                 s.appleMusicUrl != null;
 
             if (canRevert) {
@@ -2551,7 +2535,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   String _currentAlbum = "";
   String? _currentAlbumArt;
   String? _currentArtistImage;
-  String? _currentSpotifyUrl;
   String? _currentYoutubeUrl;
   String? _currentAppleMusicUrl;
   String? _currentDeezerUrl;
@@ -2659,7 +2642,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   String get currentAlbum => _currentAlbum;
   String? get currentAlbumArt => _currentAlbumArt;
   String? get currentArtistImage => _currentArtistImage;
-  String? get currentSpotifyUrl => _currentSpotifyUrl;
   String? get currentYoutubeUrl => _currentYoutubeUrl;
   String? get currentAppleMusicUrl => _currentAppleMusicUrl;
   String? get currentDeezerUrl => _currentDeezerUrl;
@@ -3241,10 +3223,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                             _lastMonitoredPosition) {
                       final bool isRemotePlaylist =
                           _currentPlayingPlaylistId != null &&
-                          (_currentPlayingPlaylistId!.startsWith('trending_') ||
-                              _currentPlayingPlaylistId!.startsWith(
-                                'spotify_',
-                              ));
+                          _currentPlayingPlaylistId!.startsWith('trending_');
 
                       if (isRemotePlaylist) {
                         debugPrint(
@@ -3411,8 +3390,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       final bool isRemotePlaylist =
           _currentPlayingPlaylistId != null &&
-          (_currentPlayingPlaylistId!.startsWith('trending_') ||
-              _currentPlayingPlaylistId!.startsWith('spotify_'));
+          _currentPlayingPlaylistId!.startsWith('trending_');
 
       if (isRemotePlaylist) {
         LogService().log(
@@ -3454,8 +3432,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
           final bool isRemotePlaylist =
               _currentPlayingPlaylistId != null &&
-              (_currentPlayingPlaylistId!.startsWith('trending_') ||
-                  _currentPlayingPlaylistId!.startsWith('spotify_'));
+              _currentPlayingPlaylistId!.startsWith('trending_');
 
           if (isRemotePlaylist) {
             LogService().log(
@@ -4041,7 +4018,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _currentAlbum = "";
       _currentAlbumArt = station.logo;
       _currentArtistImage = null;
-      _currentSpotifyUrl = null;
       _currentYoutubeUrl = null;
       _currentAppleMusicUrl = null;
       _currentDeezerUrl = null;
@@ -4561,8 +4537,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       // and it's from a trending or remote playlist, use it directly.
       if (videoId == null &&
           playlistId != null &&
-          (playlistId.startsWith('trending_') ||
-              playlistId.startsWith('spotify_'))) {
+          playlistId.startsWith('trending_')) {
         if (song.id.length == 11) {
           videoId = song.id;
           LogService().log(
@@ -4572,12 +4547,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
 
       if (videoId == null) {
-        Map<String, String> links = {};
+        Map<String, String?> links = {};
         try {
           links = await resolveLinks(
             title: song.title,
             artist: song.artist,
-            spotifyUrl: song.spotifyUrl,
             youtubeUrl: song.youtubeUrl,
             appleMusicUrl: song.appleMusicUrl,
           ).timeout(const Duration(seconds: 8));
@@ -4942,7 +4916,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       artUri: _currentAlbumArt ?? _currentStation!.logo ?? "",
       duration: _currentSongDuration ?? Duration.zero,
       dateAdded: DateTime.now(),
-      spotifyUrl: _currentSpotifyUrl,
       youtubeUrl: _currentYoutubeUrl,
       isValid: true,
     );
@@ -5033,7 +5006,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           artUri: _currentAlbumArt ?? _currentStation?.logo ?? "",
           duration: _currentSongDuration ?? Duration.zero,
           dateAdded: DateTime.now(),
-          spotifyUrl: _currentSpotifyUrl,
           youtubeUrl: _currentYoutubeUrl,
           isValid: true,
         );
@@ -5085,7 +5057,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     final links = await resolveLinks(
       title: _currentTrack,
       artist: _currentArtist,
-      spotifyUrl: _currentSpotifyUrl,
       youtubeUrl: _currentYoutubeUrl,
       appleMusicUrl: _currentAppleMusicUrl,
     );
@@ -5097,36 +5068,30 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
     }
 
-    if (links.containsKey('spotify')) {
-      _currentSpotifyUrl = links['spotify'];
+    // Fetch Artist Image using Deezer (Requested Method)
+    try {
+      if (_currentArtist.isNotEmpty) {
+        final query = _sanitizeArtistName(_currentArtist);
+        final uri = Uri.parse(
+          "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(query)}&limit=1",
+        );
+        final response = await http.get(uri);
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body);
+          if (json['data'] != null && (json['data'] as List).isNotEmpty) {
+            String? picture =
+                json['data'][0]['picture_xl'] ??
+                json['data'][0]['picture_big'] ??
+                json['data'][0]['picture_medium'];
 
-      // Fetch Artist Image using Deezer (Requested Method)
-      try {
-        if (_currentArtist.isNotEmpty) {
-          final query = _sanitizeArtistName(_currentArtist);
-          final uri = Uri.parse(
-            "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(query)}&limit=1",
-          );
-          final response = await http.get(uri);
-          if (response.statusCode == 200) {
-            final json = jsonDecode(response.body);
-            if (json['data'] != null && (json['data'] as List).isNotEmpty) {
-              String? picture =
-                  json['data'][0]['picture_xl'] ??
-                  json['data'][0]['picture_big'] ??
-                  json['data'][0]['picture_medium'];
-
-              if (picture != null) {
-                _currentArtistImage = picture;
-              }
+            if (picture != null) {
+              _currentArtistImage = picture;
             }
           }
         }
-      } catch (e) {
-        debugPrint("Error fetching artist image from Deezer: $e");
       }
-
-      // Fallback or additional Spotify check could be here if needed, but user requested consistent method.
+    } catch (e) {
+      debugPrint("Error fetching artist image from Deezer: $e");
     }
 
     if (links.containsKey('youtube')) _currentYoutubeUrl = links['youtube'];
@@ -5166,7 +5131,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             'url': _currentStation!.url,
             'stationId': _currentStation!.id,
             'type': 'station',
-            'spotifyUrl': _currentSpotifyUrl,
             'youtubeUrl': _currentYoutubeUrl,
             'appleMusicUrl': _currentAppleMusicUrl,
             'deezerUrl': _currentDeezerUrl,
@@ -5543,10 +5507,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<Map<String, String>> resolveLinks({
+  Future<Map<String, String?>> resolveLinks({
     required String title,
     required String artist,
-    String? spotifyUrl,
     String? youtubeUrl,
     String? appleMusicUrl,
   }) async {
@@ -5556,21 +5519,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       // Determine best source URL for SongLink
       String? sourceUrl;
-      String? spotId;
-
-      // 1. Try Spotify ID first
-      if (spotifyUrl != null && spotifyUrl.contains('/track/')) {
-        spotId = spotifyUrl.split('track/').last.split('?').first;
-      }
 
       // 2. Fallback to full URLs
       // Filter out generic search URLs which SongLink likely can't handle
-      if (spotifyUrl != null && !spotifyUrl.contains('/search')) {
-        sourceUrl = spotifyUrl;
-      }
 
-      if (sourceUrl == null &&
-          youtubeUrl != null &&
+      if (youtubeUrl != null &&
           !youtubeUrl.contains('search_query') &&
           !youtubeUrl.contains('/results')) {
         sourceUrl = youtubeUrl;
@@ -5592,8 +5545,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       String debugLog = "--- SONG LINK CHECK (Manual) ---\n";
       debugLog += "1. Metadata: Title='$title', Artist='$artist'\n";
       debugLog +=
-          "2. Initial URLs: Spotify='${spotifyUrl ?? 'null'}', Youtube='${youtubeUrl ?? 'null'}', Apple='${appleMusicUrl ?? 'null'}'\n";
-      debugLog += "3. Extracted SpotID: '${spotId ?? 'null'}'\n";
+          "2. Initial URLs: Youtube='${youtubeUrl ?? 'null'}', Apple='${appleMusicUrl ?? 'null'}'\n";
       debugLog += "4. Selected Source URL: '${sourceUrl ?? 'null'}'\n";
       debugLog += "----------------------------\n\n";
 
@@ -5601,7 +5553,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       notifyListeners();
 
       final links = await _songLinkService.fetchLinks(
-        spotifyId: spotId,
         url: sourceUrl,
         countryCode: _currentStation?.countryCode ?? 'IT',
       );
@@ -5871,76 +5822,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  // Spotify Auth methods
-  Future<bool> spotifyHandleAuthCode(String code) async {
-    final success = await _spotifyService.handleAuthCode(code);
-    if (success) notifyListeners();
-    return success;
-  }
-
-  Future<void> spotifyLogout() async {
-    await _spotifyService.logout();
-    notifyListeners();
-  }
-
-  Future<bool> importSpotifyPlaylist(
-    String name,
-    String spotifyId, {
-    int? total,
-  }) async {
-    if (!_entitlementService.isFeatureEnabled('spotify_integration')) {
-      return false;
-    }
-    _isImportingSpotify = true;
-    _spotifyImportProgress = 0;
-    _spotifyImportName = name;
-    notifyListeners();
-
-    try {
-      final tracks = await _spotifyService.getPlaylistTracks(
-        spotifyId,
-        total: total,
-        onProgress: (p) {
-          _spotifyImportProgress = p * 0.8;
-          notifyListeners();
-        },
-      );
-
-      if (tracks.isNotEmpty) {
-        _spotifyImportProgress = 0.85;
-        notifyListeners();
-
-        final playlistId = "spotify_$spotifyId";
-        final List<String> targetIds = [playlistId];
-        final Map<String, String> targetNames = {playlistId: name};
-
-        if (spotifyId == 'liked_songs') {
-          targetIds.add('favorites');
-          targetNames['favorites'] = 'Favorites';
-        }
-
-        await _playlistService.restoreSongsToMultiplePlaylists(
-          targetIds,
-          tracks,
-          playlistNames: targetNames,
-        );
-
-        _spotifyImportProgress = 0.95;
-        notifyListeners();
-
-        await reloadPlaylists();
-
-        _spotifyImportProgress = 1.0;
-        notifyListeners();
-        return true;
-      }
-      return false;
-    } finally {
-      _isImportingSpotify = false;
-      notifyListeners();
-    }
-  }
-
   Future<void> _attemptRecognition() async {
     // Entitlement Check: song_recognition
     LogService().log(
@@ -6054,7 +5935,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           _currentArtistImage = null;
 
           // Reset External Links
-          _currentSpotifyUrl = null;
           _currentYoutubeUrl = null;
           _currentAppleMusicUrl = null;
           _currentDeezerUrl = null;
@@ -6371,12 +6251,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           }
         }
 
-        // Also try to resolve YouTube/Spotify links if missing
+        // Also try to resolve YouTube/Other links if missing
         final songToFix = _allUniqueSongs.firstWhere((s) => s.id == songId);
         if (songToFix.youtubeUrl == null ||
-            songToFix.youtubeUrl!.isEmpty ||
-            songToFix.spotifyUrl == null ||
-            songToFix.spotifyUrl!.isEmpty) {
+            songToFix.youtubeUrl!.isEmpty) {
           final links = await resolveLinks(
             title: songToFix.title,
             artist: songToFix.artist,
@@ -6394,8 +6272,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                 updatedSongs[songIndex] = updatedSongs[songIndex].copyWith(
                   youtubeUrl:
                       updatedSongs[songIndex].youtubeUrl ?? links['youtube'],
-                  spotifyUrl:
-                      updatedSongs[songIndex].spotifyUrl ?? links['spotify'],
                 );
                 _playlists[i] = playlist.copyWith(songs: updatedSongs);
                 anyChanged = true;
@@ -6405,7 +6281,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             if (idx != -1) {
               _allUniqueSongs[idx] = _allUniqueSongs[idx].copyWith(
                 youtubeUrl: _allUniqueSongs[idx].youtubeUrl ?? links['youtube'],
-                spotifyUrl: _allUniqueSongs[idx].spotifyUrl ?? links['spotify'],
               );
             }
           }

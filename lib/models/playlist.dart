@@ -5,7 +5,7 @@ class Playlist {
   final String name;
   final List<SavedSong> songs;
   final DateTime createdAt;
-  final String creator; // 'app', 'user', 'spotify', etc.
+  final String creator; // 'app', 'user', etc.
   final String? customImageUrl;
 
   Playlist({

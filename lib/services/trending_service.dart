@@ -1,12 +1,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'spotify_service.dart';
 
 class TrendingPlaylist {
   final String id;
   final String title;
-  final String provider; // Spotify, YouTube, Audius, etc.
+  final String provider; // YouTube, Audius, etc.
   final List<String> imageUrls; // For collage (4 items)
   final String? externalUrl;
   final int trackCount;
@@ -26,13 +25,12 @@ class TrendingPlaylist {
 }
 
 class TrendingService {
-  final SpotifyService _spotifyService;
   final YoutubeExplode _yt = YoutubeExplode();
 
   // Basic cache to avoid hammering APIs
   final Map<String, List<TrendingPlaylist>> _cache = {};
 
-  TrendingService(this._spotifyService);
+  TrendingService();
 
   void dispose() {
     _yt.close();
@@ -51,7 +49,6 @@ class TrendingService {
     }
 
     final results = await Future.wait([
-      _searchSpotify(customQuery ?? "Top 50 - $country"),
       _searchYouTube(customQuery ?? "Top $country $year"),
       _searchAudius(customQuery ?? country),
       _searchDeezer(customQuery ?? "Top $country"),
@@ -62,10 +59,7 @@ class TrendingService {
 
     for (var sublist in results) {
       int countForThisSource = 0;
-      final String? sourceName = sublist.isNotEmpty
-          ? sublist.first.provider
-          : null;
-      final int maxForSource = (sourceName == 'Spotify') ? 20 : 10;
+      final int maxForSource = 10;
 
       for (var p in sublist) {
         if (p.trackCount <= 0) continue;
@@ -87,44 +81,7 @@ class TrendingService {
     return finalResults;
   }
 
-  Future<List<TrendingPlaylist>> _searchSpotify(String query) async {
-    try {
-      final playlists = await _spotifyService.searchPlaylists(query);
-      return playlists.map((p) {
-        final images = (p['images'] as List?) ?? [];
-        String mainImage = '';
-        if (images.isNotEmpty) {
-          mainImage = images[0]['url'];
-        }
 
-        // Spotify playlists often have one mosaic image, but user asked for collage of 4.
-        // If Spotify gives one image, we use it 4 times or look inside?
-        // Accessing tracks to build collage is expensive (N requests).
-        // We will use the main image provided by Spotify which is often already a collage.
-        // But the user requested "collage(4 photos) dei primi album".
-        // To do that strictly, we'd need to fetch tracks for EVERY playlist.
-        // That is too slow for a list view.
-        // We will pass the main image, and maybe handle the collage in UI?
-        // Or fetch tracks lazily?
-        // User requirements: "verifiva che le foto/album esistono atrimento passi alla prossima".
-        // This implies fetching tracks.
-        // I'll try to use the main image for now to save quota/time, or maybe just duplicate it in the list.
-
-        return TrendingPlaylist(
-          id: p['id'],
-          title: p['name'],
-          provider: 'Spotify',
-          imageUrls: mainImage.isNotEmpty ? [mainImage] : [],
-          externalUrl: p['external_urls']?['spotify'], // fixed access
-          trackCount: p['tracks']?['total'] ?? 0,
-          owner: p['owner']?['display_name'],
-        );
-      }).toList();
-    } catch (e) {
-      print("Error searching Spotify: $e");
-      return [];
-    }
-  }
 
   Future<List<TrendingPlaylist>> _searchYouTube(String query) async {
     try {
@@ -232,25 +189,7 @@ class TrendingService {
         return playlist.predefinedTracks!
             .map((t) => t.map((k, v) => MapEntry(k, v.toString())))
             .toList();
-      } else if (playlist.provider == 'Spotify') {
-        // We use SpotifyService.getPlaylistTracks but it returns SavedSong.
-        // We can map it or stick to standard Map/SavedSong.
-        // Let's use SavedSong if possible or return a generic simpler object?
-        // The UI needs title, artist.
-        // Let's return List of simple Maps for now, or assume this service returns uniform data.
-        final tracks = await _spotifyService.getPlaylistTracks(playlist.id);
-        return tracks
-            .map(
-              (s) => {
-                'title': s.title,
-                'artist': s.artist,
-                'album': s.album,
-                'image': s.artUri ?? '',
-                'id': s.id, // Spotify ID
-                'provider': 'Spotify',
-              },
-            )
-            .toList();
+
       } else if (playlist.provider == 'YouTube') {
         final videos = await _yt.playlists.getVideos(playlist.id).toList();
         return videos

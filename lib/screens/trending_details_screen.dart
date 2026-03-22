@@ -8,7 +8,6 @@ import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 
 import '../services/trending_service.dart';
-import '../services/spotify_service.dart';
 import '../providers/radio_provider.dart';
 import '../models/saved_song.dart';
 import '../models/playlist.dart';
@@ -61,7 +60,6 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   List<dynamic> _items = [];
   bool _isLoading = true;
   TrendingService? _trendingService;
-  SpotifyService? _spotifyService;
   String? _lastScrollSongId;
 
   // Album specific data
@@ -158,9 +156,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   }
 
   Future<void> _fetchPlaylistTracks() async {
-    _spotifyService = SpotifyService();
-    await _spotifyService!.init();
-    _trendingService = TrendingService(_spotifyService!);
+    _trendingService = TrendingService();
 
     final tracks = await _trendingService!.getPlaylistTracks(widget.playlist!);
 
@@ -1019,9 +1015,6 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         artUri: t['image'],
         youtubeUrl: t['provider'] == 'YouTube'
             ? "https://youtube.com/watch?v=${t['id']}"
-            : null,
-        spotifyUrl: t['provider'] == 'Spotify'
-            ? "https://open.spotify.com/track/${t['id']}"
             : null,
         provider: t['provider'],
         rawStreamUrl: t['provider'] == 'Audius'

@@ -4,7 +4,6 @@ class SavedSong {
   final String artist;
   final String album;
   final String? artUri;
-  final String? spotifyUrl;
   final String? youtubeUrl;
   final String? appleMusicUrl;
   final DateTime dateAdded;
@@ -21,7 +20,6 @@ class SavedSong {
     required this.artist,
     required this.album,
     this.artUri,
-    this.spotifyUrl,
     this.youtubeUrl,
     this.appleMusicUrl,
     required this.dateAdded,
@@ -40,7 +38,6 @@ class SavedSong {
       'artist': artist,
       'album': album,
       'artUri': artUri,
-      'spotifyUrl': spotifyUrl,
       'youtubeUrl': youtubeUrl,
       'appleMusicUrl': appleMusicUrl,
       'dateAdded': dateAdded.toIso8601String(),
@@ -60,7 +57,6 @@ class SavedSong {
       artist: json['artist'],
       album: json['album'],
       artUri: json['artUri'],
-      spotifyUrl: json['spotifyUrl'],
       youtubeUrl: json['youtubeUrl'],
       appleMusicUrl: json['appleMusicUrl'],
       dateAdded: DateTime.parse(json['dateAdded']),
@@ -81,7 +77,6 @@ class SavedSong {
     String? artist,
     String? album,
     String? artUri,
-    String? spotifyUrl,
     String? youtubeUrl,
     String? appleMusicUrl,
     DateTime? dateAdded,
@@ -99,7 +94,6 @@ class SavedSong {
       artist: artist ?? this.artist,
       album: album ?? this.album,
       artUri: artUri ?? this.artUri,
-      spotifyUrl: spotifyUrl ?? this.spotifyUrl,
       youtubeUrl: youtubeUrl ?? this.youtubeUrl,
       appleMusicUrl: appleMusicUrl ?? this.appleMusicUrl,
       dateAdded: dateAdded ?? this.dateAdded,

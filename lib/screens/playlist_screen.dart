@@ -31,7 +31,6 @@ import 'trending_details_screen.dart';
 import 'artist_details_screen.dart';
 import '../widgets/youtube_popup.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'spotify_login_screen.dart';
 import 'local_library_screen.dart';
 
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -762,7 +761,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           .resolveLinks(
             title: song.title,
             artist: song.artist,
-            spotifyUrl: song.spotifyUrl,
             youtubeUrl: song.youtubeUrl,
             appleMusicUrl: song.appleMusicUrl,
           )
@@ -875,8 +873,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               _detailItem("Date Added", song.dateAdded.toString()),
               if (song.youtubeUrl != null)
                 _detailItem("YouTube URL", song.youtubeUrl!),
-              if (song.spotifyUrl != null)
-                _detailItem("Spotify URL", song.spotifyUrl!),
             ],
           ),
         ),
@@ -1969,22 +1965,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     RadioProvider provider,
     List<Playlist> playlists,
   ) {
-    final hasAnySpotify = provider.playlists.any(
-      (p) => p.id.startsWith('spotify_') || p.creator == 'spotify',
-    );
     final hasAnyLocal = provider.playlists.any((p) => p.creator == 'local');
     final lang = Provider.of<LanguageProvider>(context, listen: false);
 
     final entitlements = Provider.of<EntitlementService>(context);
-    final canUseSpotify = entitlements.isFeatureEnabled('spotify_integration');
     final canUseLocal = entitlements.isFeatureEnabled('local_library');
 
-    final bool showSpotifyLink =
-        _searchQuery.isEmpty && !hasAnySpotify && canUseSpotify;
     final bool showLocalLink =
         _searchQuery.isEmpty && !hasAnyLocal && canUseLocal;
 
-    final int extraCount = (showSpotifyLink ? 1 : 0) + (showLocalLink ? 1 : 0);
+    final int extraCount = (showLocalLink ? 1 : 0);
 
     if (playlists.isEmpty && extraCount == 0) {
       return Center(
@@ -2082,35 +2072,21 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   null,
                 );
               } else {
-                int invIdx = index - playlists.length;
-                if (showSpotifyLink && invIdx == 0) {
-                  return _buildDirectAccessCard(
+                return _buildDirectAccessCard(
+                  context,
+                  provider,
+                  lang.translate('local_music'),
+                  lang.translate('add_folders_device'),
+                  Icons.smartphone_rounded,
+                  Colors.orangeAccent,
+                  () => Navigator.push(
                     context,
-                    provider,
-                    lang.translate('connect_spotify'),
-                    lang.translate('import_spotify_playlists'),
-                    FontAwesomeIcons.spotify,
-                    const Color(0xFF1DB954),
-                    () => _handleSpotifyLogin(context, provider),
-                    const ValueKey('inv_spotify'),
-                  );
-                } else {
-                  return _buildDirectAccessCard(
-                    context,
-                    provider,
-                    lang.translate('local_music'),
-                    lang.translate('add_folders_device'),
-                    Icons.smartphone_rounded,
-                    Colors.orangeAccent,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const LocalLibraryScreen(),
-                      ),
+                    MaterialPageRoute(
+                      builder: (_) => const LocalLibraryScreen(),
                     ),
-                    const ValueKey('inv_local'),
-                  );
-                }
+                  ),
+                  const ValueKey('inv_local'),
+                );
               }
             },
           );
@@ -2138,35 +2114,21 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 ValueKey(playlist.id),
               );
             } else {
-              int invIdx = index - playlists.length;
-              if (showSpotifyLink && invIdx == 0) {
-                return _buildDirectAccessCard(
+              return _buildDirectAccessCard(
+                context,
+                provider,
+                lang.translate('local_music'),
+                lang.translate('add_folders_device'),
+                Icons.smartphone_rounded,
+                Colors.orangeAccent,
+                () => Navigator.push(
                   context,
-                  provider,
-                  lang.translate('connect_spotify'),
-                  lang.translate('import_spotify_playlists'),
-                  FontAwesomeIcons.spotify,
-                  const Color(0xFF1DB954),
-                  () => _handleSpotifyLogin(context, provider),
-                  const ValueKey('inv_spotify'),
-                );
-              } else {
-                return _buildDirectAccessCard(
-                  context,
-                  provider,
-                  lang.translate('local_music'),
-                  lang.translate('add_folders_device'),
-                  Icons.smartphone_rounded,
-                  Colors.orangeAccent,
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const LocalLibraryScreen(),
-                    ),
+                  MaterialPageRoute(
+                    builder: (_) => const LocalLibraryScreen(),
                   ),
-                  const ValueKey('inv_local'),
-                );
-              }
+                ),
+                const ValueKey('inv_local'),
+              );
             }
           },
           onReorder: (oldIndex, newIndex) {
@@ -2314,17 +2276,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             ),
 
             // Source/Type Icon (Top Left)
-            if (playlist.id.startsWith('spotify_'))
-              const Positioned(
-                top: 8,
-                left: 8,
-                child: FaIcon(
-                  FontAwesomeIcons.spotify,
-                  color: Color(0xFF1DB954),
-                  size: 16,
-                ),
-              )
-            else if (playlist.creator == 'local')
+            if (playlist.creator == 'local')
               Positioned(
                 top: 8,
                 left: 8,
@@ -2559,7 +2511,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    playlist.name.replaceAll('Spotify: ', ''),
+                    playlist.name,
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -3315,7 +3267,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   .resolveLinks(
                     title: song.title,
                     artist: song.artist,
-                    spotifyUrl: song.spotifyUrl,
                     youtubeUrl: song.youtubeUrl,
                     appleMusicUrl: song.appleMusicUrl,
                   )
@@ -3592,312 +3543,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
   }
 
-  void _handleSpotifyLogin(BuildContext context, RadioProvider provider) async {
-    final url = provider.spotifyService.getLoginUrl();
-    final redirect = provider.spotifyService.redirectUri;
-
-    final code = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (ctx) =>
-            SpotifyLoginScreen(loginUrl: url, redirectUri: redirect),
-      ),
-    );
-
-    if (code != null) {
-      final success = await provider.spotifyService.handleAuthCode(code);
-      if (success) {
-        provider.notifyListeners();
-        // ignore: use_build_context_synchronously
-        if (context.mounted) _showSpotifyPlaylistPicker(context, provider);
-      }
-    }
-  }
-
-  void _showSpotifyPlaylistPicker(
-    BuildContext context,
-    RadioProvider radio,
-  ) async {
-    // Keep track of selections
-    final Set<String> selectedIds = {};
-    final List<Map<String, dynamic>> selectedPlaylists = [];
-
-    GlassUtils.showGlassBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return FutureBuilder<List<Map<String, dynamic>>>(
-              future: radio.spotifyService.getUserPlaylists(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SizedBox(
-                    height: 300,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                if (snapshot.hasError ||
-                    !snapshot.hasData ||
-                    snapshot.data!.isEmpty) {
-                  return const SizedBox(
-                    height: 200,
-                    child: Center(
-                      child: Text(
-                        "No playlists found",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  );
-                }
-
-                final playlists = snapshot.data!;
-                return DraggableScrollableSheet(
-                  initialChildSize: 0.8,
-                  minChildSize: 0.5,
-                  maxChildSize: 0.95,
-                  expand: false,
-                  builder: (ctx, scrollController) {
-                    return Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                "Import Playlist (${playlists.length} found)",
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (selectedIds.isNotEmpty)
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      selectedIds.clear();
-                                      selectedPlaylists.clear();
-                                    });
-                                  },
-                                  child: Text(
-                                    Provider.of<LanguageProvider>(
-                                      context,
-                                      listen: false,
-                                    ).translate('clear_selection'),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: ListView.builder(
-                            controller: scrollController,
-                            itemCount: playlists.length,
-                            itemBuilder: (ctx, index) {
-                              final p = playlists[index];
-                              final id = p['id'].toString();
-                              final isSelected = selectedIds.contains(id);
-                              final images = p['images'] as List?;
-                              final String? imgUrl =
-                                  (images != null && images.isNotEmpty)
-                                  ? images[0]['url']
-                                  : null;
-
-                              return ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                leading: Stack(
-                                  children: [
-                                    SizedBox(
-                                      width: 50,
-                                      height: 50,
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: imgUrl != null
-                                            ? Image.network(
-                                                imgUrl,
-                                                width: 50,
-                                                height: 50,
-                                                fit: BoxFit.cover,
-                                              )
-                                            : Container(
-                                                color: Colors.white10,
-                                                child: const Icon(
-                                                  Icons.music_note,
-                                                  color: Colors.white54,
-                                                ),
-                                              ),
-                                      ),
-                                    ),
-                                    if (isSelected)
-                                      Positioned.fill(
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: Theme.of(context)
-                                                .primaryColor
-                                                .withValues(alpha: 0.2),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                          ),
-                                          child: const Center(
-                                            child: Icon(
-                                              Icons.check,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                title: Text(
-                                  p['name'],
-                                  style: TextStyle(
-                                    color: isSelected
-                                        ? Theme.of(context).primaryColor
-                                        : Colors.white,
-                                    fontWeight: isSelected
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  "${p['tracks']['total']} tracks",
-                                  style: const TextStyle(color: Colors.white54),
-                                ),
-                                onTap: () {
-                                  setState(() {
-                                    if (isSelected) {
-                                      selectedIds.remove(id);
-                                      selectedPlaylists.removeWhere(
-                                        (item) => item['id'] == id,
-                                      );
-                                    } else {
-                                      selectedIds.add(id);
-                                      selectedPlaylists.add(p);
-                                    }
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        // Action Bar
-                        Container(
-                          padding: const EdgeInsets.all(16.0),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF16213e),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 4,
-                                offset: Offset(0, -2),
-                              ),
-                            ],
-                          ),
-                          child: SafeArea(
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).primaryColor,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                onPressed: selectedIds.isEmpty
-                                    ? null
-                                    : () async {
-                                        Navigator.pop(ctx);
-
-                                        // Process imports
-                                        int successCount = 0;
-                                        int failCount = 0;
-
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              "Importing ${selectedIds.length} playlists...",
-                                            ),
-                                            duration: const Duration(
-                                              seconds: 2,
-                                            ),
-                                          ),
-                                        );
-
-                                        for (var p in selectedPlaylists) {
-                                          try {
-                                            final success = await radio
-                                                .importSpotifyPlaylist(
-                                                  p['name'],
-                                                  p['id'],
-                                                  total:
-                                                      p['tracks']['total']
-                                                          is int
-                                                      ? p['tracks']['total']
-                                                      : int.tryParse(
-                                                          p['tracks']['total']
-                                                              .toString(),
-                                                        ),
-                                                );
-                                            if (success) {
-                                              successCount++;
-                                            } else {
-                                              failCount++;
-                                            }
-                                          } catch (e) {
-                                            failCount++;
-                                          }
-                                        }
-
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                "Import Completed: $successCount imported, $failCount failed.",
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      },
-                                child: Text(
-                                  selectedIds.isEmpty
-                                      ? "Select Playlists to Import"
-                                      : "Import ${selectedIds.length} Playlists",
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
 
   Widget _buildDirectAccessCard(
     BuildContext context,
@@ -5155,7 +4800,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     .resolveLinks(
                                       title: song.title,
                                       artist: song.artist,
-                                      spotifyUrl: song.spotifyUrl,
                                       youtubeUrl: song.youtubeUrl,
                                       appleMusicUrl: song.appleMusicUrl,
                                     )
@@ -5392,7 +5036,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     .resolveLinks(
                                       title: song.title,
                                       artist: song.artist,
-                                      spotifyUrl: song.spotifyUrl,
                                       youtubeUrl: song.youtubeUrl,
                                       appleMusicUrl: song.appleMusicUrl,
                                     )
@@ -5651,9 +5294,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   }
 
   Widget _buildDialogIcon(BuildContext context, Playlist p) {
-    if (p.id.startsWith('spotify_')) {
-      return const FaIcon(FontAwesomeIcons.spotify, color: Color(0xFF1DB954));
-    }
     if (p.creator == 'local') {
       return Icon(
         Icons.smartphone_rounded,

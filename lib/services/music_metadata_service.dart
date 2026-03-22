@@ -52,7 +52,6 @@ class MusicMetadataService {
             artist: item['artistName'] ?? 'Unknown Artist',
             album: item['collectionName'] ?? 'Unknown Album',
             artUri: artworkUrl,
-            spotifyUrl: null, // iTunes doesn't give Spotify links obviously
             appleMusicUrl: item['trackViewUrl'],
             youtubeUrl: null,
             dateAdded:

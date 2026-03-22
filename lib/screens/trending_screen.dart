@@ -4,7 +4,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:io';
 import '../services/trending_service.dart';
-import '../services/spotify_service.dart';
 import '../providers/radio_provider.dart';
 import 'trending_details_screen.dart';
 import '../providers/language_provider.dart';
@@ -84,15 +83,6 @@ class _TrendingScreenState extends State<TrendingScreen>
   @override
   void initState() {
     super.initState();
-    // Initialize Service (simple dependency injection)
-    // We need SpotifyService from Provider or singleton?
-    // It's not a provider in main, but instantiated in others?
-    // Wait, SpotifyService is usually just instantiated or passed.
-    // In `RadioProvider` it seems to be used.
-    // Let's rely on creating a fresh one or getting from context if available.
-    // Actually, `SpotifyService` holds state (tokens). Creating a new one might need re-login.
-    // `RadioProvider` likely has one.
-    // Let's implement `didChangeDependencies` to get it safe.
 
     _selectedCountryCode = _detectCountry();
     _systemCountryCode = _selectedCountryCode;
@@ -149,10 +139,7 @@ class _TrendingScreenState extends State<TrendingScreen>
         languageCode: langProvider.resolvedLanguageCode,
       );
 
-      final spotify = SpotifyService();
-      await spotify.init(); // Load tokens
-
-      _trendingService = TrendingService(spotify);
+      _trendingService = TrendingService();
 
       final results = await _trendingService.searchTrending(
         // Robust extraction: Handle "🇮🇹 Italy" vs "Italy" vs legacy
@@ -1123,10 +1110,6 @@ class _TrendingScreenState extends State<TrendingScreen>
     Color color;
 
     switch (provider.toUpperCase()) {
-      case 'SPOTIFY':
-        icon = FontAwesomeIcons.spotify;
-        color = const Color(0xFF1DB954);
-        break;
       case 'YOUTUBE':
         icon = FontAwesomeIcons.youtube;
         color = const Color(0xFFFF0000);
@@ -1137,10 +1120,7 @@ class _TrendingScreenState extends State<TrendingScreen>
         break;
       case 'DEEZER':
         icon = FontAwesomeIcons.deezer;
-        color = Colors
-            .black; // Deezer logo is often black or rainbow. Black implies dark logo? Actually white on black.
-        // Let's use a standard Deezer color, or just black if on white background.
-        // Since the badge background is white (see line 468), black icon is fine.
+        color = Colors.black;
         break;
       default:
         icon = Icons.radio;

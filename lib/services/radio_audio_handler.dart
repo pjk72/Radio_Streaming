@@ -3044,8 +3044,7 @@ class RadioAudioHandler extends BaseAudioHandler
           );
         }
 
-        final isSpotify = p.id.startsWith('spotify_');
-        final subTitle = isSpotify ? 'Spotify Playlist' : 'Playlist';
+        const subTitle = 'Playlist';
 
         return MediaItem(
           id: 'playlist_${p.id}',
@@ -3057,9 +3056,6 @@ class RadioAudioHandler extends BaseAudioHandler
             'android.media.metadata.DISPLAY_ICON_URI': artUri.toString(),
             'android.media.metadata.ART_URI': artUri.toString(),
             'android.media.metadata.ALBUM_ART_URI': artUri.toString(),
-            if (isSpotify)
-              'style':
-                  'list_item', // Optional: Ensure it looks distinct if supported
           },
         );
       });
@@ -3875,8 +3871,6 @@ class RadioAudioHandler extends BaseAudioHandler
         final item = mediaItem.value;
         if (item != null) {
           final newExtras = Map<String, dynamic>.from(item.extras ?? {});
-          if (links.containsKey('spotify'))
-            newExtras['spotifyUrl'] = links['spotify'];
           if (links.containsKey('youtube'))
             newExtras['youtubeUrl'] = links['youtube'];
 
