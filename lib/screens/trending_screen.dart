@@ -30,7 +30,7 @@ class _TrendingScreenState extends State<TrendingScreen>
   String? _systemCountryCode;
 
   final TextEditingController _customQueryController = TextEditingController();
-  bool _useCustomQuery = false;
+  final TextEditingController _filterController = TextEditingController();
 
   bool _isLoading = false;
   List<TrendingPlaylist> _playlists = [];
@@ -95,6 +95,26 @@ class _TrendingScreenState extends State<TrendingScreen>
   @override
   bool get wantKeepAlive => true;
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final langProvider = Provider.of<LanguageProvider>(context);
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    final countryMap = _getCountryMap(langProvider);
+    final countryName = countryMap[_selectedCountryCode]!.contains(' ')
+        ? countryMap[_selectedCountryCode]!.substring(
+            countryMap[_selectedCountryCode]!.indexOf(' ') + 1,
+          )
+        : countryMap[_selectedCountryCode] ?? 'USA';
+
+    provider.preFetchForYou(
+      countryCode: _selectedCountryCode,
+      countryName: countryName,
+      languageCode: langProvider.resolvedLanguageCode,
+    );
+  }
+
   String _detectCountry() {
     try {
       final String systemLocale = Platform.localeName;
@@ -113,6 +133,11 @@ class _TrendingScreenState extends State<TrendingScreen>
   }
 
   Future<void> _fetchTrending() async {
+    // Dismiss keyboard safely if a search is being performed
+    if (_customQueryController.text.isNotEmpty) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -152,7 +177,7 @@ class _TrendingScreenState extends State<TrendingScreen>
         DateTime.now().year.toString(),
         countryCode:
             _selectedCountryCode, // ISO code (IT, US, etc.) for Apple Music
-        customQuery: _useCustomQuery && _customQueryController.text.isNotEmpty
+        customQuery: _customQueryController.text.isNotEmpty
             ? _customQueryController.text
             : null,
       );
@@ -162,18 +187,6 @@ class _TrendingScreenState extends State<TrendingScreen>
           _playlists = results;
         });
 
-        // Auto-scroll to providers when doing a custom search
-        if (_useCustomQuery && _customQueryController.text.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_providersKey.currentContext != null) {
-              Scrollable.ensureVisible(
-                _providersKey.currentContext!,
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeInOut,
-              );
-            }
-          });
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -182,6 +195,25 @@ class _TrendingScreenState extends State<TrendingScreen>
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+
+        // Auto-scroll to the search results/bar when doing a custom search
+        if (_customQueryController.text.isNotEmpty) {
+          // Robust scrolling: Delay + PostFrameCallback ensures the dynamic list has settled
+          Future.delayed(const Duration(milliseconds: 400), () {
+            if (mounted) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_providersKey.currentContext != null) {
+                  Scrollable.ensureVisible(
+                    _providersKey.currentContext!,
+                    duration: const Duration(milliseconds: 1000),
+                    curve: Curves.fastOutSlowIn,
+                    alignment: 0.0, // Bring it to the top
+                  );
+                }
+              });
+            }
+          });
+        }
       }
     }
   }
@@ -190,6 +222,7 @@ class _TrendingScreenState extends State<TrendingScreen>
   void dispose() {
     // _trendingService.dispose(); // If we kept it around
     _customQueryController.dispose();
+    _filterController.dispose();
     super.dispose();
   }
 
@@ -252,107 +285,81 @@ class _TrendingScreenState extends State<TrendingScreen>
         color: Colors.transparent,
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(0)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          // Row 1: Country Selection + Custom Search Toggle
-          Row(
-            children: [
-              Container(
-                width: 150, // Reduced width as requested
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white10),
+          Container(
+            width: 150, // Reduced width as requested
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedCountryCode,
+                isExpanded: true,
+                dropdownColor: Theme.of(context).cardColor,
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedCountryCode,
-                    isExpanded: true,
-                    dropdownColor: Theme.of(context).cardColor,
-                    style: TextStyle(
-                      color: Theme.of(context).textTheme.bodyLarge?.color,
+                items: sortedCountries.map((e) {
+                  return DropdownMenuItem(
+                    value: e.key,
+                    child: Text(
+                      e.value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    items: sortedCountries.map((e) {
-                      return DropdownMenuItem(
-                        value: e.key,
-                        child: Text(
-                          e.value,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedCountryCode = val;
-                          _useCustomQuery = false;
-                        });
-                        _fetchTrending();
-                      }
-                    },
-                  ),
-                ),
-              ),
-              const Spacer(),
-              // Toggle for custom search
-              TextButton.icon(
-                icon: Icon(
-                  _useCustomQuery ? Icons.close : Icons.tune,
-                  size: 16,
-                ),
-                label: Text(
-                  _useCustomQuery
-                      ? langProvider.translate('use_default')
-                      : langProvider.translate('custom_search'),
-                ),
-                onPressed: () {
-                  setState(() {
-                    _useCustomQuery = !_useCustomQuery;
-                    if (!_useCustomQuery) {
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _selectedCountryCode = val;
                       _customQueryController.clear();
-                      _fetchTrending();
-                    }
-                  });
+                    });
+                    _fetchTrending();
+                  }
                 },
               ),
-            ],
-          ),
-
-          if (_useCustomQuery) ...[
-            const SizedBox(height: 12),
-            TextField(
-              controller: _customQueryController,
-              decoration: InputDecoration(
-                hintText: langProvider.translate('custom_search_hint'),
-                filled: true,
-                fillColor: Theme.of(context).scaffoldBackgroundColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        _isListening ? Icons.mic : Icons.mic_none,
-                        color: _isListening ? Colors.red : null,
-                      ),
-                      onPressed: _toggleListening,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.search),
-                      onPressed: _fetchTrending,
-                    ),
-                  ],
-                ),
-              ),
-              onSubmitted: (_) => _fetchTrending(),
             ),
-          ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              height: 48,
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: TextField(
+                controller: _filterController,
+                style: const TextStyle(fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: langProvider.translate('search'),
+                  prefixIcon: const Icon(Icons.filter_list, size: 18, color: Colors.white54),
+                  suffixIcon: _filterController.text.isNotEmpty 
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          onPressed: () {
+                            setState(() {
+                              _filterController.clear();
+                            });
+                          },
+                        ) 
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onChanged: (_) {
+                  setState(() {}); // Trigger local filtering
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
         ],
       ),
     );
@@ -435,13 +442,26 @@ class _TrendingScreenState extends State<TrendingScreen>
         List<Map<String, dynamic>> unifiedRecent = provider
             .getUnifiedRecentSongs();
 
-        // 2. Prepare Trending Playlists by Provider
+        // 2. Prepare Trending Playlists by Provider (with filter)
+        final String filterText = _filterController.text.toLowerCase();
         final Map<String, List<TrendingPlaylist>> groupedTrending = {};
         for (var p in _playlists) {
-          groupedTrending.putIfAbsent(p.provider, () => []).add(p);
+          if (filterText.isNotEmpty) {
+            final title = p.title.toLowerCase();
+            final owner = p.owner?.toLowerCase() ?? '';
+            final provider = p.provider.toLowerCase();
+            if (!title.contains(filterText) && 
+                !owner.contains(filterText) && 
+                !provider.contains(filterText)) {
+              continue;
+            }
+          }
+          final groupKey = p.categoryTitle ?? p.provider;
+          groupedTrending.putIfAbsent(groupKey, () => []).add(p);
         }
 
         return ListView(
+          cacheExtent: 3000, // Pre-render more children to ensure keys are available for scrolling
           padding: const EdgeInsets.symmetric(vertical: 16),
           children: [
             // Top Artists Section
@@ -464,13 +484,17 @@ class _TrendingScreenState extends State<TrendingScreen>
             if (provider.forYouList.isNotEmpty)
               _buildHorizontalSection(
                 title: '✨ ${langProvider.translate('for_you')}',
+                height: 180, // Compact height
                 items: provider.forYouList,
                 itemBuilder: (data) {
                   final item = data as TrendingPlaylist?;
                   if (item == null) {
                     return _buildShimmerCard();
                   }
-                  return _buildMixCard(item, false, langProvider);
+                  return SizedBox(
+                    width: 125, // Compact width
+                    child: _buildMixCard(item, false, langProvider),
+                  );
                 },
               ),
 
@@ -478,38 +502,76 @@ class _TrendingScreenState extends State<TrendingScreen>
             if (unifiedRecent.isNotEmpty)
               _buildHorizontalSection(
                 title: langProvider.translate('recently_played'),
-                topPadding: 8, // Reduced spacing
+                topPadding: 8,
+                height: 180, // Compact height
                 items: unifiedRecent.take(30).toList(),
                 itemBuilder: (data) {
                   final item = data as Map<String, dynamic>;
-                  return _buildSongCard(
-                    item['song'] as SavedSong,
-                    provider,
-                    langProvider,
-                    showCarIcon: item['isLastFromAA'] == true,
+                  return SizedBox(
+                    width: 125, // Compact width
+                    child: _buildSongCard(
+                      item['song'] as SavedSong,
+                      provider,
+                      langProvider,
+                      showCarIcon: item['isLastFromAA'] == true,
+                    ),
                   );
                 },
               ),
 
             // Trending Playlists by Category
-            SizedBox(key: _providersKey),
-            ...groupedTrending.entries.map((entry) {
-              return _buildHorizontalSection(
-                title:
-                    "${entry.key} ${langProvider.translate('playlists_suffix')}",
-                items: entry.value,
-                itemBuilder: (playlist) {
-                  final item = playlist as TrendingPlaylist;
-                  final isPlaying =
-                      provider.currentPlayingPlaylistId ==
-                      'trending_${item.id}';
-                  return SizedBox(
-                    width: 130, // Narrower, more modern width
-                    child: _buildCard(item, isPlaying, langProvider),
-                  );
-                },
-              );
-            }).toList(),
+            ...() {
+              final List<Widget> sections = [];
+              bool ytSeen = false;
+
+              final entries = groupedTrending.entries.toList();
+              // Check if YouTube exists in our map
+              final hasYouTube = entries.any((e) => e.key == 'YouTube');
+
+              for (final entry in entries) {
+                final String key = entry.key;
+
+                // Move Search Bar just before YouTube
+                if (key == 'YouTube' || (!hasYouTube && !ytSeen && key == 'AUDIUS')) {
+                  ytSeen = true;
+                  sections.add(_buildInlineSearchCard(context, langProvider));
+                }
+
+                // ALL playlist rows should now be compact (125x180)
+                const double currentHeight = 180;
+                const double currentWidth = 125;
+
+                final String translated = langProvider.translate(key);
+                final String sectionTitle = (translated != key) 
+                    ? translated 
+                    : "$key ${langProvider.translate('playlists_suffix')}";
+
+                sections.add(_buildHorizontalSection(
+                  title: sectionTitle,
+                  showTitle: false, // Remove titles as requested
+                  topPadding: 16,   // Compact padding
+                  height: currentHeight,
+                  items: entry.value,
+                  itemBuilder: (playlist) {
+                    final item = playlist as TrendingPlaylist;
+                    final isPlaying =
+                        provider.currentPlayingPlaylistId ==
+                        'trending_${item.id}';
+                    return SizedBox(
+                      width: currentWidth,
+                      child: _buildCard(item, isPlaying, langProvider),
+                    );
+                  },
+                ));
+              }
+
+              // Fallback if YouTube wasn't found (add at the end)
+              if (!ytSeen) {
+                sections.add(_buildInlineSearchCard(context, langProvider));
+              }
+
+              return sections;
+            }(),
 
             const SizedBox(height: 90), // bottom padding for player
           ],
@@ -524,18 +586,21 @@ class _TrendingScreenState extends State<TrendingScreen>
     required Widget Function(dynamic) itemBuilder,
     double height = 190,
     double topPadding = 24,
+    bool showTitle = true,
   }) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: EdgeInsets.fromLTRB(16, topPadding, 16, 12),
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        SizedBox(height: topPadding),
+        if (showTitle)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              title,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
           ),
-        ),
         SizedBox(
           height: height,
           child: ListView.separated(
@@ -547,6 +612,66 @@ class _TrendingScreenState extends State<TrendingScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildInlineSearchCard(
+    BuildContext context,
+    LanguageProvider langProvider,
+  ) {
+    return Padding(
+      key: _providersKey,
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            langProvider.translate('custom_search'),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: TextField(
+              controller: _customQueryController,
+              decoration: InputDecoration(
+                hintText: langProvider.translate('custom_search_hint'),
+                prefixIcon: const Icon(Icons.search, color: Colors.orangeAccent),
+                border: InputBorder.none,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _isListening ? Icons.mic : Icons.mic_none,
+                        color: _isListening ? Colors.red : Colors.white70,
+                      ),
+                      onPressed: _toggleListening,
+                    ),
+                    if (_customQueryController.text.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54),
+                        onPressed: () {
+                          setState(() {
+                            _customQueryController.clear();
+                            _fetchTrending();
+                          });
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              onSubmitted: (_) => _fetchTrending(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -574,11 +699,9 @@ class _TrendingScreenState extends State<TrendingScreen>
           ),
         );
       },
-      child: SizedBox(
-        width: 130, // Square layout width
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             Expanded(
               flex: 5,
               child: Container(
@@ -660,7 +783,6 @@ class _TrendingScreenState extends State<TrendingScreen>
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -760,11 +882,9 @@ class _TrendingScreenState extends State<TrendingScreen>
           ),
         );
       },
-      child: SizedBox(
-        width: 130,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             Expanded(
               flex: 5,
               child: Container(
@@ -814,22 +934,6 @@ class _TrendingScreenState extends State<TrendingScreen>
                                 ), // More visible
                               ),
                             ),
-                            Positioned(
-                              top: 10,
-                              left: 10,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Icon(
-                                  Icons.auto_awesome,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
                             Positioned.fill(
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -842,7 +946,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                                       height: 15,
                                     ), // Offset title higher
                                     Text(
-                                      item.title,
+                                      langProvider.translate(item.title),
                                       textAlign: TextAlign.center,
                                       maxLines: 4,
                                       softWrap: true,
@@ -931,7 +1035,6 @@ class _TrendingScreenState extends State<TrendingScreen>
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -1003,12 +1106,6 @@ class _TrendingScreenState extends State<TrendingScreen>
                       ),
                     ),
 
-                    // Provider Badge (Top Right)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: _buildProviderBadge(item.provider),
-                    ),
 
                     // Active Status Overlay
                     if (isPlaying)
@@ -1051,7 +1148,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        item.title,
+                        langProvider.translate(item.title),
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
@@ -1110,48 +1207,6 @@ class _TrendingScreenState extends State<TrendingScreen>
     );
   }
 
-  Widget _buildProviderBadge(String provider) {
-    IconData icon;
-    Color color;
-
-    switch (provider.toUpperCase()) {
-      case 'APPLEMUSIC':
-        icon = FontAwesomeIcons.apple;
-        color = const Color(0xFFFC3C44); // Apple Music red
-        break;
-      case 'YOUTUBE':
-        icon = FontAwesomeIcons.youtube;
-        color = const Color(0xFFFF0000);
-        break;
-      case 'AUDIUS':
-        icon = FontAwesomeIcons.music;
-        color = const Color(0xFFCC00FF);
-        break;
-      case 'DEEZER':
-        icon = FontAwesomeIcons.deezer;
-        color = Colors.black;
-        break;
-      default:
-        icon = Icons.radio;
-        color = Colors.blue;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9), // Slightly transparent
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Icon(icon, color: color, size: 12),
-    );
-  }
 
   Widget _buildShimmerCard() {
     final theme = Theme.of(context);

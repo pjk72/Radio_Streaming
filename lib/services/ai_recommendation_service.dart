@@ -6,6 +6,7 @@ import '../l10n/app_translations.dart';
 
 class AIRecommendationService {
   final MusicMetadataService _metadataService = MusicMetadataService();
+  final TrendingService _trendingService = TrendingService();
 
   /// Main entry point: Generates a list of tailored playlists
   /// Generates a list of tailored playlists (Backward compatibility)
@@ -95,9 +96,9 @@ class AIRecommendationService {
 
       await _recoverMissingImages(weeklyTracks);
       yield _assemblePlaylist(
-        _t('weekly_mix', languageCode: languageCode),
+        'weekly_mix',
         weeklyTracks,
-        owner: _t('weekly_mix_owner', languageCode: languageCode),
+        owner: 'weekly_mix_owner',
       );
     }
 
@@ -116,7 +117,7 @@ class AIRecommendationService {
       if (topArtists.length > 10) topArtists.removeRange(10, topArtists.length);
 
       final discovery = await _createDynamicPlaylist(
-        title: _t('discovery_mix', languageCode: languageCode),
+        title: 'discovery_mix',
         query: topArtists.join('|'),
         countryCode: countryCode,
         countryName: countryName,
@@ -129,17 +130,39 @@ class AIRecommendationService {
     }
 
     // 0.3 "Latest Hits" - Always 3rd
-    final latestHits = await _createDynamicPlaylist(
-      title: _t('latest_hits', languageCode: languageCode),
-      query: 'Latest Hits',
-      countryCode: countryCode,
-      countryName: countryName,
-      languageCode: languageCode,
-      history: [],
-      globalSeenIds: globalSeenIds,
-      globalSeenTitles: globalSeenTitles,
-      periodFilter: 'Latest',
-    );
+    TrendingPlaylist? latestHits;
+    if (countryCode != null) {
+      final appleCC = countryCode.toLowerCase();
+      // Use the pre-defined chart type for top-songs
+      final chart = TrendingService.appleChartTypes.firstWhere(
+        (c) => c.type == 'most-played' && !c.isPlaylist,
+        orElse: () => TrendingService.appleChartTypes.last,
+      );
+      latestHits = await _trendingService.fetchAppleMusicChart(
+        appleCC,
+        countryName ?? '',
+        chart,
+      );
+      if (latestHits != null) {
+        latestHits.title = 'latest_hits';
+        // Ensure it keeps the AI provider to maintain consistent "For You" card style
+        latestHits.provider = 'AI';
+      }
+    }
+
+    if (latestHits == null) {
+      latestHits = await _createDynamicPlaylist(
+        title: 'latest_hits',
+        query: 'Latest Hits',
+        countryCode: countryCode,
+        countryName: countryName,
+        languageCode: languageCode,
+        history: [],
+        globalSeenIds: globalSeenIds,
+        globalSeenTitles: globalSeenTitles,
+        periodFilter: 'Latest',
+      );
+    }
     if (latestHits != null) yield latestHits;
 
     // 1. GENRE MIXES & DECADES
@@ -240,7 +263,7 @@ class AIRecommendationService {
     ];
 
     for (var sec in sections) {
-      final String title = sec['title']!;
+      final String title = sec['key']!;
       // "Mix Latin" keeps user history, while others are 100% chart-based
       final bool useHistory = title == 'Mix Latin';
 
@@ -566,7 +589,7 @@ class AIRecommendationService {
   TrendingPlaylist _assemblePlaylist(
     String title,
     List<Map<String, dynamic>> tracks, {
-    String owner = "AI Discovery",
+    String owner = "ai_discovery",
   }) {
     return TrendingPlaylist(
       id: "ai_${title.hashCode}_${_getWeeklySeed()}",

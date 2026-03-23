@@ -460,6 +460,12 @@ final Map<String, String> it = {
 
   // Missing keys
   'top_songs': 'Brani Principali',
+  'most_played_playlists': 'Playlist Più Ascoltate',
+  'top_playlists': 'Playlist Principali',
+  'recent_releases_playlists': 'Nuove Uscite (Playlist)',
+  'hot_tracks_playlists': 'Playlist del Momento',
+  'new_music_playlists': 'Nuova Musica',
+  'best_hits_playlists': 'Migliori Successi',
   'song_removed_from_library': 'Brano rimosso dalla libreria',
   'song_removed_from_playlist': 'Brano rimosso dalla playlist',
   'delete_playlist_title': 'Elimina Playlist',
@@ -473,4 +479,10 @@ final Map<String, String> it = {
   'delete_from_device_confirm': 'Eliminare \'{0}\' dal dispositivo?',
   'undo': 'Annulla',
   'copy_to_title': 'Copia in...',
+  'ai_discovery': 'AI Discovery',
+  'YouTube': 'YouTube',
+  'AUDIUS': 'Audius',
+  'DEEZER': 'Deezer',
+  'APPLEMUSIC': 'Apple Music',
+  'AI': 'AI',
 };

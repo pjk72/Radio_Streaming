@@ -6,11 +6,12 @@ import 'log_service.dart';
 class TrendingPlaylist {
   final String id;
   String title; // Not final, allowed to update during scrape
-  final String provider; // YouTube, AUDIUS, DEEZER, APPLEMUSIC, AI
+  String provider; // YouTube, AUDIUS, DEEZER, APPLEMUSIC, AI
   final List<String> imageUrls;
   final String? externalUrl;
   int trackCount; // Not final, can update after counting
   final String? owner;
+  final String? categoryTitle;
   final List<Map<String, dynamic>>? predefinedTracks;
 
   TrendingPlaylist({
@@ -21,6 +22,7 @@ class TrendingPlaylist {
     this.externalUrl,
     this.trackCount = -1,
     this.owner,
+    this.categoryTitle,
     this.predefinedTracks,
   });
 }
@@ -50,10 +52,10 @@ class TrendingService {
     }
 
     final results = await Future.wait([
+      _searchAppleMusic(customQuery, countryCode ?? country),
       _searchYouTube(customQuery ?? "Top $country $year"),
       _searchAudius(customQuery ?? country),
       _searchDeezer(customQuery ?? "Top $country"),
-      _searchAppleMusic(customQuery, countryCode ?? country),
     ]);
 
     final Set<String> seenImages = {};
@@ -61,7 +63,7 @@ class TrendingService {
 
     for (var sublist in results) {
       int countForThisSource = 0;
-      const int maxForSource = 10;
+      const int maxForSource = 100;
 
       for (var p in sublist) {
         // Allow playlists with tracks, predefined tracks, OR external URLs (for lazy-load)
@@ -129,12 +131,17 @@ class TrendingService {
   };
 
   /// Chart types available from the Apple Music RSS API.
-  static const _appleChartTypes = [
+  static const appleChartTypes = [
     _AppleChartType(
       type: 'most-played',
-      titleEn: 'Top Playlists',
-      titleKey: 'top_playlists',
+      titleEn: 'Apple Music Playlists',
+      titleKey: 'most_played_playlists',
       isPlaylist: true,
+    ),
+    _AppleChartType(
+      type: 'most-played',
+      titleEn: 'Most Played Songs',
+      titleKey: 'top_songs',
     ),
     _AppleChartType(
       type: 'top-songs',
@@ -155,11 +162,11 @@ class TrendingService {
     // Fetch multiple chart types in parallel
     // NOTE: Some charts return a SINGLE virtual playlist (built from songs),
     // while others (isPlaylist: true) return a LIST of real playlists.
-    final futures = _appleChartTypes.map((chart) async {
+    final futures = appleChartTypes.map((chart) async {
       if (chart.isPlaylist) {
-        return await _fetchApplePlaylists(cc, country, chart);
+        return await fetchApplePlaylists(cc, country, chart);
       } else {
-        final p = await _fetchAppleMusicChart(cc, country, chart);
+        final p = await fetchAppleMusicChart(cc, country, chart);
         return p != null ? [p] : <TrendingPlaylist>[];
       }
     });
@@ -173,14 +180,14 @@ class TrendingService {
   }
 
   /// Fetches real Apple Music playlists from the RSS feed.
-  Future<List<TrendingPlaylist>> _fetchApplePlaylists(
+  Future<List<TrendingPlaylist>> fetchApplePlaylists(
     String appleCC,
     String appCountry,
     _AppleChartType chart,
   ) async {
-    const int limit = 20;
+    const int limit = 100; // Fetch enough for 5 rows of 15 (75 total)
     final url = Uri.parse(
-      'https://rss.applemarketingtools.com/api/v2/$appleCC'
+      'https://rss.marketingtools.apple.com/api/v2/$appleCC'
       '/music/${chart.type}/$limit/playlists.json',
     );
 
@@ -195,7 +202,9 @@ class TrendingService {
       final feed = data['feed'] as Map<String, dynamic>? ?? {};
       final results = (feed['results'] as List?) ?? [];
 
-      final playlists = results.map<TrendingPlaylist>((item) {
+      final List<TrendingPlaylist> playlists = [];
+      for (int i = 0; i < results.length; i++) {
+        final item = results[i];
         final title = item['name']?.toString() ?? 'Playlist';
         final id = item['id']?.toString() ?? '';
         final extUrl = item['url']?.toString() ?? '';
@@ -203,30 +212,42 @@ class TrendingService {
             .replaceAll('100x100bb', '600x600bb')
             .replaceAll('100x100', '600x600');
 
-        return TrendingPlaylist(
-          id: id,
-          title: title,
-          provider: 'APPLEMUSIC',
-          imageUrls: [artUrl],
-          owner: item['artistName']?.toString() ?? 'Apple Music',
-          externalUrl: extUrl,
-          trackCount: -1, // Unknown until scraped
+        // Split into 3 categories (rows) based on index
+        // Split into 6 categories (rows) of 15 based on index
+        String category = 'most_played_playlists';
+        if (i >= 15 && i < 30) category = 'top_playlists';
+        if (i >= 30 && i < 45) category = 'recent_releases_playlists';
+        if (i >= 45 && i < 60) category = 'hot_tracks_playlists';
+        if (i >= 60 && i < 75) category = 'new_music_playlists';
+        if (i >= 75) category = 'best_hits_playlists';
+
+        playlists.add(
+          TrendingPlaylist(
+            id: id,
+            title: title,
+            provider: 'APPLEMUSIC',
+            imageUrls: [artUrl],
+            owner: item['artistName']?.toString() ?? 'Apple Music',
+            externalUrl: extUrl,
+            trackCount: -1,
+            categoryTitle: category,
+          ),
         );
-      }).toList();
+      }
       return playlists;
     } catch (e) {
       return [];
     }
   }
 
-  Future<TrendingPlaylist?> _fetchAppleMusicChart(
+  Future<TrendingPlaylist?> fetchAppleMusicChart(
     String appleCC,
     String appCountry,
     _AppleChartType chart,
   ) async {
     const int limit = 50;
     final url = Uri.parse(
-      'https://rss.applemarketingtools.com/api/v2/$appleCC'
+      'https://rss.marketingtools.apple.com/api/v2/$appleCC'
       '/music/${chart.type}/$limit/songs.json',
     );
 
@@ -290,6 +311,7 @@ class TrendingService {
         trackCount: tracks.length,
         owner: 'Apple Music',
         externalUrl: 'https://music.apple.com/$appleCC/browse',
+        categoryTitle: 'top_songs',
         predefinedTracks: tracks,
       );
     } catch (e) {
@@ -700,11 +722,11 @@ class TrendingService {
           final parts = playlist.id.split('_');
           final appleCC = parts.length >= 4 ? parts.last : 'us';
           final chartType = parts.length >= 3 ? parts[2] : 'most-played';
-          final chart = _appleChartTypes.firstWhere(
+          final chart = TrendingService.appleChartTypes.firstWhere(
             (c) => c.type == chartType && !c.isPlaylist,
-            orElse: () => _appleChartTypes.first,
+            orElse: () => TrendingService.appleChartTypes.first,
           );
-          final result = await _fetchAppleMusicChart(
+          final result = await fetchAppleMusicChart(
             appleCC,
             appleCC.toUpperCase(),
             chart,
