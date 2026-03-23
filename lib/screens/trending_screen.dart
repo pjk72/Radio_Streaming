@@ -150,6 +150,8 @@ class _TrendingScreenState extends State<TrendingScreen>
               )
             : countryMap[_selectedCountryCode] ?? 'USA',
         DateTime.now().year.toString(),
+        countryCode:
+            _selectedCountryCode, // ISO code (IT, US, etc.) for Apple Music
         customQuery: _useCustomQuery && _customQueryController.text.isNotEmpty
             ? _customQueryController.text
             : null,
@@ -942,13 +944,14 @@ class _TrendingScreenState extends State<TrendingScreen>
     const borderRadius = BorderRadius.all(Radius.circular(16));
 
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => TrendingDetailsScreen(playlist: item),
           ),
         );
+        if (mounted) setState(() {});
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
@@ -1080,7 +1083,9 @@ class _TrendingScreenState extends State<TrendingScreen>
                                   .translate('songs_count')
                                   .replaceAll(
                                     '{0}',
-                                    item.trackCount.toString(),
+                                    item.trackCount == -1
+                                        ? "?"
+                                        : item.trackCount.toString(),
                                   ),
                               style: TextStyle(
                                 fontSize: 10,
@@ -1110,6 +1115,10 @@ class _TrendingScreenState extends State<TrendingScreen>
     Color color;
 
     switch (provider.toUpperCase()) {
+      case 'APPLEMUSIC':
+        icon = FontAwesomeIcons.apple;
+        color = const Color(0xFFFC3C44); // Apple Music red
+        break;
       case 'YOUTUBE':
         icon = FontAwesomeIcons.youtube;
         color = const Color(0xFFFF0000);

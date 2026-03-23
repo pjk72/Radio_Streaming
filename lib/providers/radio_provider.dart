@@ -2697,6 +2697,15 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   bool _ignoringPause = false;
 
+  /// Returns true if [playlistId] refers to a remote/streaming playlist
+  /// (trending sources: YouTube/Audius/Deezer/Apple Music).
+  /// Such playlists should never have their songs marked invalid.
+  bool _isRemotePlaylistId(String playlistId) {
+    if (playlistId.startsWith('trending_')) return true;
+    if (playlistId.startsWith('apple_')) return true;
+    return false;
+  }
+
   // Shuffle Logic
   List<int> _shuffledIndices = [];
 
@@ -3223,7 +3232,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                             _lastMonitoredPosition) {
                       final bool isRemotePlaylist =
                           _currentPlayingPlaylistId != null &&
-                          _currentPlayingPlaylistId!.startsWith('trending_');
+                          _isRemotePlaylistId(_currentPlayingPlaylistId!);
 
                       if (isRemotePlaylist) {
                         debugPrint(
@@ -3432,7 +3441,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
           final bool isRemotePlaylist =
               _currentPlayingPlaylistId != null &&
-              _currentPlayingPlaylistId!.startsWith('trending_');
+              _isRemotePlaylistId(_currentPlayingPlaylistId!);
 
           if (isRemotePlaylist) {
             LogService().log(
@@ -4654,7 +4663,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             return;
           }
 
-          if (playlistId.startsWith('trending_')) {
+          if (_isRemotePlaylistId(playlistId)) {
             LogService().log(
               "Trending Playlist: Cannot resolve video ID for ${song.title}. Skipping without marking as invalid.",
             );
@@ -5662,8 +5671,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
     }
 
-    // Trending Check: Do NOT mark invalid if from a remote trending playlist
-    if (_currentPlayingPlaylistId?.startsWith('trending_') == true) {
+    // Remote Check: Do NOT mark invalid if from a remote trending/Spotify playlist
+    if (_currentPlayingPlaylistId != null &&
+        _isRemotePlaylistId(_currentPlayingPlaylistId!)) {
       LogService().log(
         "Blocking 'Mark Invalid' - Song is from a trending playlist",
       );

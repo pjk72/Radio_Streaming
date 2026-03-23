@@ -762,6 +762,18 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             ),
           ],
 
+          if (widget.playlist?.trackCount != null &&
+              widget.playlist!.trackCount != -1) ...[
+            const SizedBox(height: 6),
+            Text(
+              langProvider.translate('songs_count').replaceAll(
+                    '{0}',
+                    widget.playlist!.trackCount.toString(),
+                  ),
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+          ],
+
           const SizedBox(height: 24),
 
           // Actions Row
