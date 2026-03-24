@@ -440,20 +440,7 @@ final Map<String, String> pt = {
   'weekly_mix': 'Mix Semanal',
   'discovery_mix': 'Mix de Descoberta',
   'latest_hits': 'Últimos Hits',
-  'mix_pop': 'Mix Pop',
-  'mix_rock': 'Mix Rock',
-  'mix_dance': 'Mix Dance',
-  'mix_latin': 'Mix Latino',
-  'mix_hip_hop': 'Mix Hip-Hop',
-  'mix_rb': 'Mix R&B',
-  'mix_rap': 'Mix Rap',
-  'mix_country': 'Mix Country',
-  'mix_jazz': 'Mix Jazz',
-  'mix_chillout': 'Mix Chillout',
-  'hits_90s': 'Hits dos anos 90',
-  'hits_80s': 'Hits dos anos 80',
-  'hits_70s': 'Hits dos anos 70',
-  'hits_60s': 'Hits dos anos 60',
+
   'weekly_mix_owner': 'Seu mix semanal',
 
   // Missing keys

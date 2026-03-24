@@ -99,6 +99,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Map<String, String> _lastSourceMap = {}; // songId -> 'car' or 'phone'
   List<dynamic> _weeklyPlayLog = [];
 
+  static const String _keyPromotedPlaylists = 'promoted_playlists';
+  final List<TrendingPlaylist> _promotedPlaylists = [];
+  List<TrendingPlaylist> get promotedPlaylists => _promotedPlaylists;
+
   Map<String, int> get userPlayHistory => _userPlayHistory;
   Map<String, int> get aaUserPlayHistory => _aaUserPlayHistory;
   Map<String, SavedSong> get historyMetadata => _historyMetadata;
@@ -426,6 +430,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _followedAlbums.clear();
       _followedAlbums.addAll(savedAlbums);
     }
+
+    await _loadPromotedPlaylists();
 
     if (jsonStr != null) {
       try {
@@ -811,7 +817,36 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<List<TrendingPlaylist>>? _forYouFuture;
   Future<List<TrendingPlaylist>>? get forYouFuture => _forYouFuture;
   List<TrendingPlaylist?> _forYouList = [];
-  List<TrendingPlaylist?> get forYouList => _forYouList;
+  List<TrendingPlaylist?> get forYouList {
+    if (_forYouList.isEmpty && _promotedPlaylists.isEmpty) return [];
+
+    final List<TrendingPlaylist?> result = [];
+    
+    // Position: After "Latest Hits" (Ultime Hit) or earlier if needed
+    int latestHitsIndex = _forYouList.indexWhere((p) => p?.title == 'latest_hits');
+
+    for (int i = 0; i < _forYouList.length; i++) {
+      result.add(_forYouList[i]);
+      if (i == latestHitsIndex && latestHitsIndex != -1) {
+        for (var p in _promotedPlaylists) {
+          result.add(p);
+        }
+      }
+    }
+    
+    if (latestHitsIndex == -1 && _forYouList.isNotEmpty) {
+       int discoveryIndex = _forYouList.indexWhere((p) => p?.title == 'discovery_mix');
+       if (discoveryIndex != -1) {
+          result.insertAll(discoveryIndex + 2, _promotedPlaylists);
+       } else {
+          result.addAll(_promotedPlaylists);
+       }
+    } else if (_forYouList.isEmpty) {
+        result.addAll(_promotedPlaylists);
+    }
+
+    return result;
+  }
   StreamSubscription? _forYouSubscription;
   String? _lastForYouCountryCode;
   String? _lastForYouLanguageCode;
@@ -946,6 +981,103 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       'JP': 'Japan',
     };
     return map[code] ?? 'International';
+  }
+
+  // --- Promoted Playlists (Favorites to For You) ---
+
+  void togglePromotedPlaylist(TrendingPlaylist playlist) {
+    final index = _promotedPlaylists.indexWhere((p) => p.id == playlist.id);
+    if (index != -1) {
+      _promotedPlaylists.removeAt(index);
+    } else {
+      // Clone to avoid side effects if original changes
+      final clone = TrendingPlaylist(
+        id: playlist.id,
+        title: playlist.title,
+        provider: playlist.provider, // Store original provider
+        imageUrls: List.from(playlist.imageUrls),
+        externalUrl: playlist.externalUrl,
+        trackCount: playlist.trackCount,
+        owner: playlist.owner,
+        categoryTitle: playlist.categoryTitle,
+        predefinedTracks: playlist.predefinedTracks != null
+            ? List<Map<String, dynamic>>.from(playlist.predefinedTracks!)
+            : null,
+      );
+      _promotedPlaylists.add(clone);
+
+      // Background scrape if needed
+      if (clone.predefinedTracks == null || clone.predefinedTracks!.isEmpty) {
+        _scrapeAndLinkPromoted(clone);
+      }
+    }
+    _savePromotedPlaylists();
+    notifyListeners();
+  }
+
+  void _scrapeAndLinkPromoted(TrendingPlaylist p) async {
+    try {
+      final service = TrendingService();
+      final tracks = await service.getPlaylistTracks(p);
+      service.dispose();
+
+      if (tracks.isNotEmpty) {
+        p.trackCount = tracks.length;
+        p.predefinedTracks = tracks.map((t) => Map<String, dynamic>.from(t)).toList();
+        _savePromotedPlaylists();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("Error scraping promoted: $e");
+    }
+  }
+
+  bool isPlaylistPromoted(String id) => _promotedPlaylists.any((p) => p.id == id);
+
+  Future<void> _savePromotedPlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<Map<String, dynamic>> list = _promotedPlaylists.map((p) => {
+      'id': p.id,
+      'title': p.title,
+      'provider': p.provider,
+      'imageUrls': p.imageUrls,
+      'externalUrl': p.externalUrl,
+      'trackCount': p.trackCount,
+      'owner': p.owner,
+      'categoryTitle': p.categoryTitle,
+      'predefinedTracks': p.predefinedTracks,
+    }).toList();
+    await prefs.setString(_keyPromotedPlaylists, jsonEncode(list));
+  }
+
+  Future<void> _loadPromotedPlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? jsonStr = prefs.getString(_keyPromotedPlaylists);
+    if (jsonStr != null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(jsonStr);
+        _promotedPlaylists.clear();
+        for (var item in decoded) {
+          _promotedPlaylists.add(TrendingPlaylist(
+            id: item['id'],
+            title: item['title'],
+            provider: item['provider'],
+            imageUrls: List<String>.from(item['imageUrls']),
+            externalUrl: item['externalUrl'],
+            trackCount: item['trackCount'] ?? -1,
+            owner: item['owner'],
+            categoryTitle: item['categoryTitle'],
+            predefinedTracks: item['predefinedTracks'] != null
+                ? (item['predefinedTracks'] as List)
+                    .map((t) => Map<String, dynamic>.from(t as Map))
+                    .toList()
+                : null,
+          ));
+        }
+      } catch (e) {
+        debugPrint("Error loading promoted playlists: $e");
+      }
+    }
   }
 
   Future<void> toggleFollowArtist(String artist) async {

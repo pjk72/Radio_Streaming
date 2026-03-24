@@ -12,7 +12,7 @@ class TrendingPlaylist {
   int trackCount; // Not final, can update after counting
   final String? owner;
   final String? categoryTitle;
-  final List<Map<String, dynamic>>? predefinedTracks;
+  List<Map<String, dynamic>>? predefinedTracks;
 
   TrendingPlaylist({
     required this.id,

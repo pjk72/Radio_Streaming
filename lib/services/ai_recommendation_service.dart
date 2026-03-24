@@ -165,122 +165,7 @@ class AIRecommendationService {
     }
     if (latestHits != null) yield latestHits;
 
-    // 1. GENRE MIXES & DECADES
-    final sections = [
-      {
-        'title': _t('mix_pop', languageCode: languageCode),
-        'key': 'mix_pop',
-        'query': 'Pop',
-        'genre': 'Pop',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_rock', languageCode: languageCode),
-        'key': 'mix_rock',
-        'query': 'Rock',
-        'genre': 'Rock',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_dance', languageCode: languageCode),
-        'key': 'mix_dance',
-        'query': 'Dance',
-        'genre': 'Dance',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_latin', languageCode: languageCode),
-        'key': 'mix_latin',
-        'query': 'Latin',
-        'genre': 'Latin',
-      },
-      {
-        'title': _t('mix_hip_hop', languageCode: languageCode),
-        'key': 'mix_hip_hop',
-        'query': 'Hip-Hop',
-        'genre': 'Hip-Hop',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_rb', languageCode: languageCode),
-        'key': 'mix_rb',
-        'query': 'R&B',
-        'genre': 'R&B',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_rap', languageCode: languageCode),
-        'key': 'mix_rap',
-        'query': 'Rap',
-        'genre': 'Rap',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_country', languageCode: languageCode),
-        'key': 'mix_country',
-        'query': 'Country',
-        'genre': 'Country',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_jazz', languageCode: languageCode),
-        'key': 'mix_jazz',
-        'query': 'Jazz',
-        'genre': 'Jazz',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('mix_chillout', languageCode: languageCode),
-        'key': 'mix_chillout',
-        'query': 'Chillout',
-        'genre': 'Chillout',
-        'period': 'Latest',
-      },
-      {
-        'title': _t('hits_90s', languageCode: languageCode),
-        'key': 'hits_90s',
-        'query': '1990s',
-        'period': '1990s',
-      },
-      {
-        'title': _t('hits_80s', languageCode: languageCode),
-        'key': 'hits_80s',
-        'query': '1980s',
-        'period': '1980s',
-      },
-      {
-        'title': _t('hits_70s', languageCode: languageCode),
-        'key': 'hits_70s',
-        'query': '1970s',
-        'period': '1970s',
-      },
-      {
-        'title': _t('hits_60s', languageCode: languageCode),
-        'key': 'hits_60s',
-        'query': '1960s',
-        'period': '1960s',
-      },
-    ];
 
-    for (var sec in sections) {
-      final String title = sec['key']!;
-      // "Mix Latin" keeps user history, while others are 100% chart-based
-      final bool useHistory = title == 'Mix Latin';
-
-      final p = await _createDynamicPlaylist(
-        title: title,
-        query: sec['query']!,
-        countryCode: countryCode,
-        countryName: countryName,
-        languageCode: languageCode,
-        history: useHistory ? sortedHistory : [],
-        globalSeenIds: globalSeenIds,
-        globalSeenTitles: globalSeenTitles,
-        periodFilter: sec['period'],
-        genreFilter: sec['genre'],
-      );
-      if (p != null) yield p;
-    }
   }
 
   /// Creates a single playlist by blending history (if allowed) and search results
@@ -303,9 +188,7 @@ class AIRecommendationService {
     // 1. FILL FROM USER HISTORY
     final bool isChartBased = title.contains('Mix') || title.contains('Hits');
 
-    // "Mix Latin" is an exception that allowed a mix of history and charts
-    final bool isLatin = title.toLowerCase().contains('latin');
-    final int historyLimit = (isChartBased && !isLatin) ? 0 : 10;
+    final int historyLimit = isChartBased ? 0 : 10;
     if (historyLimit > 0) {
       for (var s in history) {
         if (tracks.length >= historyLimit) break;
@@ -471,57 +354,6 @@ class AIRecommendationService {
         ]);
       }
       q.addAll(["Global Top $year", "Viral 50 $year"]);
-      return q;
-    }
-
-    if (base == 'Latin') {
-      final List<String> q = [
-        "Top Merengue Hits",
-        "Top Bachata Hits",
-        "Top Salsa Hits",
-        "Top Latin Pop",
-      ];
-      return q;
-    }
-
-    if (base == 'Pop' ||
-        base == 'Hip-Hop' ||
-        base == 'R&B' ||
-        base == 'Rap' ||
-        base == 'Country') {
-      final year = DateTime.now().year;
-      final List<String> q = ["Top 50 $base $year", "Top $base Hits"];
-      if (country != null) {
-        q.insert(0, "Top $base $country");
-        q.insert(1, "Hits $base $country $year");
-      }
-      return q;
-    }
-
-    if (base == 'Jazz') {
-      final year = DateTime.now().year;
-      final List<String> q = ["Top 50 $base", "Classic $base Hits"];
-      if (country != null) {
-        q.insert(0, "Top $base $country");
-        q.insert(1, "Hits $base $country $year");
-      }
-      return q;
-    }
-
-    if (base == 'Rock') {
-      final year = DateTime.now().year;
-      final List<String> q = [
-        "Hard Rock $year",
-        "Heavy Metal",
-        "Modern Rock Hits",
-      ];
-      if (country != null) {
-        q.insertAll(0, [
-          "Hard Rock $country",
-          "Heavy Metal $country",
-          "Rock $country $year",
-        ]);
-      }
       return q;
     }
 

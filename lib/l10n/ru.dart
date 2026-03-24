@@ -439,20 +439,7 @@ final Map<String, String> ru = {
   'weekly_mix': 'Еженедельный микс',
   'discovery_mix': 'Микс открытий',
   'latest_hits': 'Последние хиты',
-  'mix_pop': 'Поп микс',
-  'mix_rock': 'Рок микс',
-  'mix_dance': 'Танцевальный микс',
-  'mix_latin': 'Латинский микс',
-  'mix_hip_hop': 'Хип-хоп микс',
-  'mix_rb': 'R&B микс',
-  'mix_rap': 'Рэп микс',
-  'mix_country': 'Кантри микс',
-  'mix_jazz': 'Джаз микс',
-  'mix_chillout': 'Чилаут микс',
-  'hits_90s': 'Хиты 90-х',
-  'hits_80s': 'Хиты 80-х',
-  'hits_70s': 'Хиты 70-х',
-  'hits_60s': 'Хиты 60-х',
+
   'weekly_mix_owner': 'Твой еженедельный микс',
 
   // Missing keys

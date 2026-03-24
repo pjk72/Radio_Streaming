@@ -431,20 +431,7 @@ final Map<String, String> zh = {
   'weekly_mix': '每周推荐',
   'discovery_mix': '探索发现',
   'latest_hits': '最新流行',
-  'mix_pop': '流行精选',
-  'mix_rock': '摇滚精选',
-  'mix_dance': '舞曲精选',
-  'mix_latin': '拉丁精选',
-  'mix_hip_hop': '嘻哈精选',
-  'mix_rb': 'R&B精选',
-  'mix_rap': '说唱精选',
-  'mix_country': '乡村精选',
-  'mix_jazz': '爵士精选',
-  'mix_chillout': '慢节奏精选',
-  'hits_90s': '90年代金曲',
-  'hits_80s': '80年代金曲',
-  'hits_70s': '70年代金曲',
-  'hits_60s': '60年代金曲',
+
   'weekly_mix_owner': '您的每周专属推荐',
 
   // Missing keys

@@ -528,7 +528,8 @@ class _TrendingScreenState extends State<TrendingScreen>
               // Check if YouTube exists in our map
               final hasYouTube = entries.any((e) => e.key == 'YouTube');
 
-              for (final entry in entries) {
+              for (int i = 0; i < entries.length; i++) {
+                final entry = entries[i];
                 final String key = entry.key;
 
                 // Move Search Bar just before YouTube
@@ -548,7 +549,7 @@ class _TrendingScreenState extends State<TrendingScreen>
 
                 sections.add(_buildHorizontalSection(
                   title: sectionTitle,
-                  showTitle: false, // Remove titles as requested
+                  showTitle: i == 0, // Show title only for the first line after Recently Played
                   topPadding: 16,   // Compact padding
                   height: currentHeight,
                   items: entry.value,
@@ -870,7 +871,7 @@ class _TrendingScreenState extends State<TrendingScreen>
     final String mainImageUrl = item.imageUrls.isNotEmpty
         ? item.imageUrls.first
         : '';
-    final bool isAI = item.provider == 'AI';
+    final bool isAI = item.provider == 'AI' || item.provider == 'APPLEMUSIC';
     final List<Color> gradientColors = _generateGradient(item.title);
 
     return GestureDetector(
@@ -999,8 +1000,38 @@ class _TrendingScreenState extends State<TrendingScreen>
                             ),
                           ],
                         ),
-                      )
-                    else if (mainImageUrl.isEmpty)
+                      ),
+
+                    // Heart button overlay for Promoted Apple Playlists in For You
+                    if (item.provider == 'APPLEMUSIC')
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Consumer<RadioProvider>(
+                          builder: (context, radioProvider, _) {
+                            final isPromoted = radioProvider.isPlaylistPromoted(item.id);
+                            return GestureDetector(
+                              onTap: () {
+                                radioProvider.togglePromotedPlaylist(item);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  isPromoted ? Icons.favorite : Icons.favorite_border,
+                                  color: isPromoted ? Colors.red : Colors.white70,
+                                  size: 16,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                    if (!isAI && mainImageUrl.isEmpty)
                       const Center(
                         child: Icon(
                           Icons.auto_awesome,
@@ -1132,6 +1163,35 @@ class _TrendingScreenState extends State<TrendingScreen>
                               ),
                             ),
                           ),
+                        ),
+                      ),
+
+                    // Heart button overlay for Apple Music Playlists
+                    if (item.provider == 'APPLEMUSIC')
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Consumer<RadioProvider>(
+                          builder: (context, radioProvider, _) {
+                            final isPromoted = radioProvider.isPlaylistPromoted(item.id);
+                            return GestureDetector(
+                              onTap: () {
+                                radioProvider.togglePromotedPlaylist(item);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  isPromoted ? Icons.favorite : Icons.favorite_border,
+                                  color: isPromoted ? Colors.red : Colors.white70,
+                                  size: 14,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
                   ],
