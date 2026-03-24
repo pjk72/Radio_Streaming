@@ -257,6 +257,7 @@ final Map<String, String> it = {
   'no_playlists': 'Nessuna playlist',
   'no_playlists_search': 'Nessuna playlist corrisponde alla ricerca',
   'local_music': 'Musica Locale',
+  'offline': 'Offline',
   'add_folders_device': 'Aggiungi cartelle dal tuo dispositivo',
   'no_artists_found': 'Nessun artista trovato',
   'no_albums_found': 'Nessun album trovato',

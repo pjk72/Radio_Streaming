@@ -258,6 +258,7 @@ final Map<String, String> en = {
   'no_playlists_search': 'No playlists match your search',
 
   'local_music': 'Local Music',
+  'offline': 'Offline',
   'add_folders_device': 'Add folders from your device',
   'no_artists_found': 'No artists found',
   'no_albums_found': 'No albums found',
