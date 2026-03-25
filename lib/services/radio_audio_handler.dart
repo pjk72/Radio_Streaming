@@ -3348,7 +3348,7 @@ class RadioAudioHandler extends BaseAudioHandler
           }
 
           _currentPlayingPlaylistId = 'trending_${mix.id}';
-          _isShuffleMode = false;
+          _isShuffleMode = true; // Auto-shuffle for trending playlists in For You
 
           _playlistQueue = tracks.map((t) {
             final ps = SavedSong(
@@ -3367,6 +3367,8 @@ class RadioAudioHandler extends BaseAudioHandler
               mediaIdOverride: 'ctx_trending_${mix.id}_$pId',
             );
           }).toList();
+
+          if (_isShuffleMode) _playlistQueue.shuffle();
 
           if (_playlistQueue.isNotEmpty) {
             _playlistIndex = 0;
