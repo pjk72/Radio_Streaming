@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'backup_service.dart';
 import 'log_service.dart';
 
@@ -11,7 +12,10 @@ class EntitlementService extends ChangeNotifier {
   final BackupService _backupService;
 
   final String _localConfigPath = "lib/utils/json/config.json";
-  final String _remoteConfigKey = "entitlements_json";
+  final String _remoteConfigKey = "_entitlements_json";
+  static const String _cacheConfigKey = "cached_entitlements";
+  static const String _cacheUserEmailKey = "cached_user_email";
+  static const String _cacheUserNameKey = "cached_user_name";
 
   Map<String, dynamic> _config = {};
   bool _isLoading = false;
@@ -23,6 +27,7 @@ class EntitlementService extends ChangeNotifier {
     _backupService.addListener(_onAuthChanged);
     _initializeRemoteConfig();
     _setupConnectivityListener();
+    _logCachedData();
   }
 
   void _setupConnectivityListener() {
@@ -75,8 +80,33 @@ class EntitlementService extends ChangeNotifier {
   bool get isUsingLocalConfig => _isUsingLocalConfig;
 
   void _onAuthChanged() {
-    // When login status changes, we might want to re-evaluate UI
+    // When login status changes, we update the cache with new user info
+    _updateUserCache();
     notifyListeners();
+  }
+
+  Future<void> _updateUserCache() async {
+    try {
+      final user = _backupService.currentUser;
+      final prefs = await SharedPreferences.getInstance();
+      if (user != null) {
+        await prefs.setString(_cacheUserEmailKey, user.email);
+        await prefs.setString(_cacheUserNameKey, user.displayName ?? "");
+        LogService().log(
+          "EntitlementService: User info updated in cache (Logged In).",
+        );
+      } else {
+        // Handle guest/logout by storing explicit "GUEST" value
+        await prefs.setString(_cacheUserEmailKey, "GUEST");
+        await prefs.setString(_cacheUserNameKey, "GUEST");
+        LogService().log(
+          "EntitlementService: User info updated in cache (Guest / Logged Out).",
+        );
+      }
+      _logCachedData();
+    } catch (e) {
+      LogService().log("EntitlementService: Error updating user cache: $e");
+    }
   }
 
   Future<void> refreshConfig() async {
@@ -115,6 +145,9 @@ class EntitlementService extends ChangeNotifier {
         LogService().log(
           "EntitlementService: Config updated from Remote Config.",
         );
+
+        // Cache the config and user info
+        _cacheConfigAndUser(jsonStr);
       } else {
         // Debug: Print all available keys to see what we actually fetched
         final allKeys = remoteConfig.getAll();
@@ -128,6 +161,36 @@ class EntitlementService extends ChangeNotifier {
       }
     } catch (e) {
       await _loadLocalConfig("Error parsing Remote Config JSON: $e");
+    }
+  }
+
+  Future<void> _cacheConfigAndUser(String jsonStr) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cacheConfigKey, jsonStr);
+      LogService().log("EntitlementService: Config cached.");
+
+      // Always update user info as well to ensure it's in sync
+      await _updateUserCache();
+    } catch (e) {
+      LogService().log("EntitlementService: Error caching config: $e");
+    }
+  }
+
+  Future<void> _logCachedData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedConfig = prefs.getString(_cacheConfigKey);
+      final cachedEmail = prefs.getString(_cacheUserEmailKey);
+      final cachedName = prefs.getString(_cacheUserNameKey);
+
+      LogService().log("--- CACHE DATA START ---");
+      LogService().log("[Cached] Config: ${cachedConfig ?? 'None'}");
+      LogService().log("[Cached] User Email: ${cachedEmail ?? 'None'}");
+      LogService().log("[Cached] User Name: ${cachedName ?? 'None'}");
+      LogService().log("--- CACHE DATA END ---");
+    } catch (e) {
+      LogService().log("EntitlementService: Error reading cache for log: $e");
     }
   }
 
