@@ -433,15 +433,13 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     // Extract metadata
     String mainImage = "";
     String title = "";
-    String subtitle = widget.playlist?.provider == 'AI' 
-        ? langProvider.translate(widget.playlist?.owner ?? '') 
-        : (widget.playlist?.owner ?? "");
-
+    String subtitle = "";
     if (widget.playlist != null) {
       mainImage = widget.playlist!.imageUrls.isNotEmpty
           ? widget.playlist!.imageUrls.first
           : '';
       title = langProvider.translate(widget.playlist!.title);
+      subtitle = langProvider.translate('for_you');
     } else {
       mainImage =
           widget.artworkUrl ??

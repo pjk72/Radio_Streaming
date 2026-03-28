@@ -9,7 +9,6 @@ import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import '../models/station.dart';
 import '../utils/genre_mapper.dart';
-import '../services/log_service.dart';
 import '../utils/glass_utils.dart';
 
 class TutorialCreateRadioWizard extends StatefulWidget {
@@ -151,24 +150,16 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     });
   }
 
-  Future<void> _addStationToProvider(
+  Future<Station> _createStationObject(
     dynamic data,
     String? customLogo,
     bool isFavorite,
   ) async {
-    final provider = Provider.of<RadioProvider>(context, listen: false);
-
-    final name = data['name'] ?? 'Unknown Radio';
-    final url = data['url_resolved'] ?? data['url'] ?? '';
+    final name = (data['name']?.toString() ?? 'Unknown Radio').trim();
+    final url = (data['url_resolved'] ?? data['url'] ?? '').toString().trim();
     final genre = (data['tags'] ?? '').toString().replaceAll(',', ' | ');
     final String? apiIcon = data['favicon'];
-
-    // Log the click count and votes as requested
-    final clicks = data['clickcount']?.toString() ?? '0';
-    final votes = data['votes']?.toString() ?? '0';
-    LogService().log(
-      "Station Inserted: $name (Clicks: $clicks, Votes: $votes)",
-    );
+    final String? uuid = data['stationuuid']?.toString();
 
     // Priority: Custom -> API -> Genre Generated
     String? finalLogo = customLogo;
@@ -188,11 +179,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     if (finalLogo != null && finalLogo.isNotEmpty) {
       finalColor = await _extractColor(finalLogo);
     }
-
-    // Check Duplicates in Provider
-    final existingIndex = provider.stations.indexWhere(
-      (s) => s.name.toLowerCase() == name.toLowerCase(),
-    );
 
     // Determine Category: Selection -> Device Locale -> Default
     String? effectiveCode = _selectedCountryCode;
@@ -215,10 +201,22 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       category = data['country'].toString();
     }
 
-    final newStation = Station(
-      id: existingIndex != -1
-          ? provider.stations[existingIndex].id
-          : DateTime.now().millisecondsSinceEpoch + name.hashCode,
+    // Robust ID Generation:
+    // If UUID exists from API, hash it. Otherwise fallback to Time + Name Hash.
+    // We mix it with bits of the URL too for extreme uniqueness.
+    int id;
+    if (uuid != null && uuid.isNotEmpty) {
+      // Station UUID is a string from Radio-Browser (36 chars)
+      id = uuid.hashCode;
+    } else {
+      id = (DateTime.now().microsecondsSinceEpoch + name.hashCode) ^ url.hashCode;
+    }
+
+    // Ensure it's not negative as some UI components prefer positive IDs
+    id = id.abs();
+
+    return Station(
+      id: id,
       name: name,
       url: url,
       genre: genre.isNotEmpty ? genre : 'Pop',
@@ -226,59 +224,36 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       category: category,
       color: finalColor,
       icon: 'radio',
+      countryCode: effectiveCode,
     );
-
-    if (existingIndex != -1) {
-      await provider.editStation(newStation);
-    } else {
-      await provider.addStation(newStation);
-    }
-
-    // Handle Favorites
-    if (isFavorite) {
-      if (!provider.favorites.contains(newStation.id)) {
-        provider.toggleFavorite(newStation.id);
-      }
-    }
   }
 
   Map<String, String> get _countryMap {
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
-    return {
-      "ALL": langProvider.translate('country_ALL'),
-      "IT": langProvider.translate('country_IT'),
-      "US": langProvider.translate('country_US'),
-      "GB": langProvider.translate('country_GB'),
-      "FR": langProvider.translate('country_FR'),
-      "DE": langProvider.translate('country_DE'),
-      "ES": langProvider.translate('country_ES'),
-      "CA": langProvider.translate('country_CA'),
-      "AU": langProvider.translate('country_AU'),
-      "BR": langProvider.translate('country_BR'),
-      "JP": langProvider.translate('country_JP'),
-      "RU": langProvider.translate('country_RU'),
-      "CN": langProvider.translate('country_CN'),
-      "IN": langProvider.translate('country_IN'),
-      "MX": langProvider.translate('country_MX'),
-      "AR": langProvider.translate('country_AR'),
-      "NL": langProvider.translate('country_NL'),
-      "BE": langProvider.translate('country_BE'),
-      "CH": langProvider.translate('country_CH'),
-      "SE": langProvider.translate('country_SE'),
-      "NO": langProvider.translate('country_NO'),
-      "DK": langProvider.translate('country_DK'),
-      "FI": langProvider.translate('country_FI'),
-      "PL": langProvider.translate('country_PL'),
-      "AT": langProvider.translate('country_AT'),
-      "PT": langProvider.translate('country_PT'),
-      "GR": langProvider.translate('country_GR'),
-      "TR": langProvider.translate('country_TR'),
-      "ZA": langProvider.translate('country_ZA'),
-      "KR": langProvider.translate('country_KR'),
-      "IE": langProvider.translate('country_IE'),
-      "NZ": langProvider.translate('country_NZ'),
-      "MA": langProvider.translate('country_MA'),
-    };
+    final codes = [
+      "ALL", "AL", "DZ", "AD", "AO", "SA", "AR", "AM", "AU", "AT", "AZ",
+      "BH", "BD", "BE", "BY", "BO", "BR", "BG", "CA", "CL", "CN",
+      "CY", "CO", "KR", "CR", "HR", "CU", "DK", "EC", "EG", "AE",
+      "EE", "PH", "FI", "FR", "GE", "DE", "JP", "JM", "JO", "GR",
+      "GT", "HN", "IN", "ID", "IR", "IQ", "IE", "IS", "IL", "IT",
+      "KZ", "KE", "KW", "LV", "LB", "LT", "LU", "MY", "MT", "MA",
+      "MX", "MD", "MC", "ME", "NG", "NO", "NZ", "NL", "PK", "PA",
+      "PY", "PE", "PL", "PT", "QA", "GB", "CZ", "DO", "RO", "RU",
+      "SG", "SI", "SK", "ES", "US", "ZA", "SE", "CH", "TH", "TN",
+      "TR", "UA", "HU", "UY", "VE", "VN"
+    ];
+
+    final Map<String, String> map = {};
+    for (var code in codes) {
+      final name = langProvider.translate('country_$code');
+      map[code] = name;
+    }
+
+    // Sort entries alphabetically by translated name
+    final sortedEntries = map.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+
+    return Map.fromEntries(sortedEntries);
   }
 
   String _getFlag(String countryCode) {
@@ -741,33 +716,49 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   void _finish() async {
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
-
-    int count = 0;
+    final provider = Provider.of<RadioProvider>(context, listen: false);
 
     // Show loading
     setState(() => _isLoading = true);
+
+    final List<Station> stationsToAdd = [];
+    final List<int> favoritesToAdd = [];
 
     try {
       // 1. Process Main Search Selections
       for (int i = 0; i < _searchResults.length; i++) {
         if (_selectedIndices[i] == true) {
           final data = _searchResults[i];
-          await _addStationToProvider(
+          final station = await _createStationObject(
             data,
             _customLogos[i],
             _favoriteIndices[i] == true,
           );
-          count++;
+          stationsToAdd.add(station);
+          if (_favoriteIndices[i] == true) {
+            favoritesToAdd.add(station.id);
+          }
         }
       }
 
       // 2. Process Preview Selections
       for (final previewData in _selectedPreviewRadios) {
-        // Apply custom logo if set, set as favorite by default as requested
         final String? customLogo = _previewCustomLogos[previewData];
-        await _addStationToProvider(previewData, customLogo, true);
-        count++;
+        final station = await _createStationObject(previewData, customLogo, true);
+        stationsToAdd.add(station);
+        favoritesToAdd.add(station.id);
       }
+
+      // 3. Bulk Add to Provider
+      if (stationsToAdd.isNotEmpty) {
+        await provider.addStations(stationsToAdd);
+        if (favoritesToAdd.isNotEmpty) {
+          await provider.toggleFavoritesBulk(favoritesToAdd, true);
+        }
+      }
+
+    } catch (e) {
+      debugPrint("Error finishing wizard: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -778,10 +769,18 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           content: Text(
             langProvider
                 .translate('processed_count')
-                .replaceAll('{0}', count.toString()),
+                .replaceAll('{0}', stationsToAdd.length.toString()),
           ),
+          duration: const Duration(seconds: 2),
         ),
       );
+      
+      // Delay slightly so user sees the snackbar/success before closing if it was a push
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      });
     }
   }
 

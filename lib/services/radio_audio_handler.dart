@@ -52,6 +52,7 @@ class RadioAudioHandler extends BaseAudioHandler
   List<MediaItem> _playlistQueue = [];
   int _playlistIndex = -1;
   bool _isShuffleMode = false;
+  String? _cachedLanguageCode;
   static const int _maxRetries = 5;
   int _currentSessionId = 0;
   final double _volume = 1.0;
@@ -582,6 +583,8 @@ class RadioAudioHandler extends BaseAudioHandler
             .where((e) => e != -1)
             .toList();
       }
+      _cachedLanguageCode = prefs.getString('app_language_code');
+
       // 3. Determine Category Ranks based on Custom Order
       // The category order should follow the order of stations in the Favorites list.
       // i.e. if the first station is "Pop", then "Pop" is the first category.
@@ -2816,10 +2819,15 @@ class RadioAudioHandler extends BaseAudioHandler
         });
       }
       final langCode = _detectLanguageCode();
-      final String forYouLabel = AppTranslations.translations[langCode]?['for_you'] ?? 'Per Te';
-      final String playlistsLabel = AppTranslations.translations[langCode]?['tab_playlists'] ?? 'Playlist';
-      final String radioLabel = AppTranslations.translations[langCode]?['tab_radio'] ?? 'Radio';
-      final String offlineLabel = AppTranslations.translations[langCode]?['offline'] ?? 'Offline';
+      final String forYouLabel =
+          AppTranslations.translations[langCode]?['for_you'] ?? 'Per Te';
+      final String playlistsLabel =
+          AppTranslations.translations[langCode]?['tab_playlists'] ??
+          'Playlist';
+      final String radioLabel =
+          AppTranslations.translations[langCode]?['tab_radio'] ?? 'Radio';
+      final String offlineLabel =
+          AppTranslations.translations[langCode]?['offline'] ?? 'Offline';
 
       return [
         MediaItem(
@@ -2960,8 +2968,8 @@ class RadioAudioHandler extends BaseAudioHandler
                   categoryTitle: item['categoryTitle'],
                   predefinedTracks: item['predefinedTracks'] != null
                       ? (item['predefinedTracks'] as List)
-                          .map((t) => Map<String, dynamic>.from(t as Map))
-                          .toList()
+                            .map((t) => Map<String, dynamic>.from(t as Map))
+                            .toList()
                       : null,
                 );
               }).toList();
@@ -2981,13 +2989,14 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       final langCode = _detectLanguageCode();
-      final String forYouLabel = AppTranslations.translations[langCode]?['for_you'] ?? 'Per Te';
+      final String forYouLabel =
+          AppTranslations.translations[langCode]?['for_you'] ?? 'Per Te';
 
       return _cachedForYouMixes.map((mix) {
         final artUri = mix.imageUrls.isNotEmpty
             ? Uri.parse(mix.imageUrls.first)
             : null;
-        
+
         // Translate title if it's a known AI key (e.g. weekly_mix, discovery_mix)
         String displayTitle = mix.title;
         try {
@@ -2996,10 +3005,13 @@ class RadioAudioHandler extends BaseAudioHandler
         } catch (_) {}
 
         return MediaItem(
-          id: mix.provider == 'AI' ? 'ai_playlist_${mix.id}' : 'trending_${mix.id}',
+          id: mix.provider == 'AI'
+              ? 'ai_playlist_${mix.id}'
+              : 'trending_${mix.id}',
           title: displayTitle,
           album: '✨ $forYouLabel', // Perfectly match the area name ("✨ Per Te")
-          artist: '✨ $forYouLabel', // Standardize artist as well for subtext consistency
+          artist:
+              '✨ $forYouLabel', // Standardize artist as well for subtext consistency
           playable: false, // It's a folder
           artUri: artUri,
           extras: {
@@ -3041,11 +3053,15 @@ class RadioAudioHandler extends BaseAudioHandler
 
         // Add Play All Item at the top
         if (songItems.isNotEmpty) {
+          final langCode = _detectLanguageCode();
+          final String playAllLabel =
+              AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
+
           songItems.insert(
             0,
             MediaItem(
               id: 'play_all_ai_${mix.id}',
-              title: 'Play All',
+              title: playAllLabel,
               playable: true,
               artUri: Uri.parse(
                 "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
@@ -3099,11 +3115,15 @@ class RadioAudioHandler extends BaseAudioHandler
 
         // Add Play All Item at the top
         if (songItems.isNotEmpty) {
+          final langCode = _detectLanguageCode();
+          final String playAllLabel =
+              AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
+
           songItems.insert(
             0,
             MediaItem(
               id: 'play_all_trending_${mix.id}',
-              title: 'Play All',
+              title: playAllLabel,
               playable: true,
               artUri: Uri.parse(
                 "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
@@ -3122,9 +3142,28 @@ class RadioAudioHandler extends BaseAudioHandler
     // 2. Radio Section (All Stations)
     if (parentMediaId == 'all_stations') {
       await _loadStationsFromPrefs();
-      return _stations.map((s) {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Load current favorites list
+      final favStr = prefs.getStringList('favorites') ?? [];
+      final favIds = favStr
+          .map((e) => int.tryParse(e) ?? -1)
+          .where((e) => e != -1)
+          .toSet();
+
+      // Show ONLY favorites if any exist, otherwise fall back to all (or an empty list if preferrd)
+      final stationsToShow = favIds.isEmpty
+          ? _stations
+          : _stations.where((s) => favIds.contains(s.id)).toList();
+
+      return stationsToShow.map((s) {
         final item = _stationToMediaItem(s);
-        return item.copyWith(extras: {...?item.extras, 'origin': 'all'});
+        return item.copyWith(
+          extras: {
+            ...?item.extras,
+            'origin': favIds.isEmpty ? 'all' : 'favorites',
+          },
+        );
       }).toList();
     }
 
@@ -3159,7 +3198,9 @@ class RadioAudioHandler extends BaseAudioHandler
           );
         }
 
-        const subTitle = 'Playlist';
+        final langCode = _detectLanguageCode();
+        final String subTitle =
+            AppTranslations.translations[langCode]?['playlist'] ?? 'Playlist';
 
         return MediaItem(
           id: 'playlist_${p.id}',
@@ -3194,11 +3235,15 @@ class RadioAudioHandler extends BaseAudioHandler
 
         // Add Play All Item at the top
         if (songItems.isNotEmpty) {
+          final langCode = _detectLanguageCode();
+          final String playAllLabel =
+              AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
+
           songItems.insert(
             0,
             MediaItem(
               id: 'play_all_${playlist.id}',
-              title: 'Play All',
+              title: playAllLabel,
               playable: true,
               artUri: Uri.parse(
                 "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
@@ -3344,11 +3389,14 @@ class RadioAudioHandler extends BaseAudioHandler
             tracks = mix.predefinedTracks!;
           } else {
             final rawTracks = await _trendingService.getPlaylistTracks(mix);
-            tracks = rawTracks.map((t) => Map<String, dynamic>.from(t)).toList();
+            tracks = rawTracks
+                .map((t) => Map<String, dynamic>.from(t))
+                .toList();
           }
 
           _currentPlayingPlaylistId = 'trending_${mix.id}';
-          _isShuffleMode = true; // Auto-shuffle for trending playlists in For You
+          _isShuffleMode =
+              true; // Auto-shuffle for trending playlists in For You
 
           _playlistQueue = tracks.map((t) {
             final ps = SavedSong(
@@ -3419,7 +3467,7 @@ class RadioAudioHandler extends BaseAudioHandler
         _currentPlayingPlaylistId = playlist.id;
 
         if (isShuffle || mediaId.startsWith('play_all_')) {
-          _isShuffleMode = true; 
+          _isShuffleMode = true;
         }
 
         _playlistQueue = playlist.songs
@@ -3499,7 +3547,8 @@ class RadioAudioHandler extends BaseAudioHandler
               );
 
               final bool queueIsReady = extras?['queue_ready'] == true;
-              if (!queueIsReady && _currentPlayingPlaylistId != 'ai_${mix.id}') {
+              if (!queueIsReady &&
+                  _currentPlayingPlaylistId != 'ai_${mix.id}') {
                 _currentPlayingPlaylistId = 'ai_${mix.id}';
                 _isShuffleMode = true;
                 _playlistQueue = mix.predefinedTracks!.map((t) {
@@ -3526,7 +3575,8 @@ class RadioAudioHandler extends BaseAudioHandler
               _playlistIndex = _playlistQueue.indexWhere(
                 (item) => item.id == mediaId,
               );
-              final String videoId = _extractVideoId(song.youtubeUrl ?? '') ?? '';
+              final String videoId =
+                  _extractVideoId(song.youtubeUrl ?? '') ?? '';
               await _playYoutubeVideo(videoId, song, 'ai_${mix.id}');
               return;
             }
@@ -3539,17 +3589,21 @@ class RadioAudioHandler extends BaseAudioHandler
           for (var mix in _cachedForYouMixes) {
             if (suffix.startsWith('${mix.id}_')) {
               final realMediaId = suffix.substring('${mix.id}_'.length);
-              
+
               List<Map<String, dynamic>> tracks = [];
               if (mix.predefinedTracks != null) {
                 tracks = mix.predefinedTracks!;
               } else {
                 final rawTracks = await _trendingService.getPlaylistTracks(mix);
-                tracks = rawTracks.map((t) => Map<String, dynamic>.from(t)).toList();
+                tracks = rawTracks
+                    .map((t) => Map<String, dynamic>.from(t))
+                    .toList();
               }
 
               final track = tracks.firstWhere(
-                (t) => (t['youtubeUrl'] ?? t['url'] ?? 'song_${t['id']}') == realMediaId,
+                (t) =>
+                    (t['youtubeUrl'] ?? t['url'] ?? 'song_${t['id']}') ==
+                    realMediaId,
               );
 
               final song = SavedSong(
@@ -3563,7 +3617,8 @@ class RadioAudioHandler extends BaseAudioHandler
               );
 
               final bool queueIsReady = extras?['queue_ready'] == true;
-              if (!queueIsReady && _currentPlayingPlaylistId != 'trending_${mix.id}') {
+              if (!queueIsReady &&
+                  _currentPlayingPlaylistId != 'trending_${mix.id}') {
                 _currentPlayingPlaylistId = 'trending_${mix.id}';
                 _isShuffleMode = false;
                 _playlistQueue = tracks.map((t) {
@@ -3589,7 +3644,8 @@ class RadioAudioHandler extends BaseAudioHandler
               _playlistIndex = _playlistQueue.indexWhere(
                 (item) => item.id == mediaId,
               );
-              final String videoId = _extractVideoId(song.youtubeUrl ?? '') ?? '';
+              final String videoId =
+                  _extractVideoId(song.youtubeUrl ?? '') ?? '';
               await _playYoutubeVideo(videoId, song, 'trending_${mix.id}');
               return;
             }
@@ -3603,7 +3659,13 @@ class RadioAudioHandler extends BaseAudioHandler
             final realMediaId = mediaId.substring(prefix.length);
             final song = p.songs.firstWhere(
               (s) => (s.youtubeUrl ?? 'song_${s.id}') == realMediaId,
-              orElse: () => SavedSong(id: '', title: '', artist: '', album: '', dateAdded: DateTime.now()),
+              orElse: () => SavedSong(
+                id: '',
+                title: '',
+                artist: '',
+                album: '',
+                dateAdded: DateTime.now(),
+              ),
             );
 
             if (song.id.isNotEmpty) {
@@ -3613,16 +3675,22 @@ class RadioAudioHandler extends BaseAudioHandler
                 _isShuffleMode = true;
                 _playlistQueue = p.songs.map((ps) {
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
-                  return _songToMediaItem(ps, p.id, mediaIdOverride: 'ctx_${p.id}_$pId',);
+                  return _songToMediaItem(
+                    ps,
+                    p.id,
+                    mediaIdOverride: 'ctx_${p.id}_$pId',
+                  );
                 }).toList();
                 if (_isShuffleMode) _playlistQueue.shuffle();
                 queue.add(_playlistQueue);
               }
 
-              _playlistIndex = _playlistQueue.indexWhere((item) => item.id == mediaId,);
+              _playlistIndex = _playlistQueue.indexWhere(
+                (item) => item.id == mediaId,
+              );
               String? finalUrl = song.youtubeUrl;
               if (finalUrl == null) {
-                 // skip YT resolution here for brevity, assume caller knows or fallback searched later
+                // skip YT resolution here for brevity, assume caller knows or fallback searched later
               }
               final String videoId = _extractVideoId(finalUrl ?? '') ?? '';
               if (videoId.isNotEmpty) {
@@ -3650,7 +3718,11 @@ class RadioAudioHandler extends BaseAudioHandler
             _currentPlayingPlaylistId = p.id;
             _playlistQueue = p.songs.map((ps) {
               final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
-              return _songToMediaItem(ps, p.id, mediaIdOverride: 'ctx_${p.id}_$pId',);
+              return _songToMediaItem(
+                ps,
+                p.id,
+                mediaIdOverride: 'ctx_${p.id}_$pId',
+              );
             }).toList();
             if (_isShuffleMode) _playlistQueue.shuffle();
             queue.add(_playlistQueue);
@@ -3662,13 +3734,20 @@ class RadioAudioHandler extends BaseAudioHandler
           } else if (s.youtubeUrl == null) {
             try {
               final yt = YoutubeExplode();
-              final results = await yt.search.search("${s.artist} - ${s.title}");
-              if (results.isEmpty) { yt.close(); return; }
+              final results = await yt.search.search(
+                "${s.artist} - ${s.title}",
+              );
+              if (results.isEmpty) {
+                yt.close();
+                return;
+              }
               final video = results.first;
               videoId = video.id.value;
               finalUrl = "https://www.youtube.com/watch?v=$videoId";
               yt.close();
-            } catch (_) { return; }
+            } catch (_) {
+              return;
+            }
           } else {
             finalUrl = s.youtubeUrl!;
             videoId = _extractVideoId(finalUrl) ?? '';
@@ -3676,7 +3755,11 @@ class RadioAudioHandler extends BaseAudioHandler
           }
 
           _playlistIndex = _playlistQueue.indexWhere((item) => item.id == mId);
-          await _playYoutubeVideo(videoId, s.copyWith(youtubeUrl: finalUrl), p.id);
+          await _playYoutubeVideo(
+            videoId,
+            s.copyWith(youtubeUrl: finalUrl),
+            p.id,
+          );
           return;
         }
       }
@@ -3689,9 +3772,13 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   MediaItem _stationToMediaItem(Station s) {
+    final langCode = _detectLanguageCode();
+    final String liveRadioLabel =
+        AppTranslations.translations[langCode]?['live_radio'] ?? 'Live Radio';
+
     return MediaItem(
       id: s.url,
-      album: "Live Radio",
+      album: liveRadioLabel,
       title: s.name,
       artist: s.genre,
       artUri: _sanitizeArtUri(s.logo, s.genre.isNotEmpty ? s.genre : s.name),
@@ -4215,6 +4302,9 @@ class RadioAudioHandler extends BaseAudioHandler
 
   String _detectLanguageCode() {
     try {
+      if (_cachedLanguageCode != null && _cachedLanguageCode != 'system') {
+        return _cachedLanguageCode!;
+      }
       final String systemLocale = Platform.localeName;
       return systemLocale.split('_').first.split('-').first.toLowerCase();
     } catch (_) {

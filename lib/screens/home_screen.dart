@@ -93,7 +93,30 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           // Floating Glass Player Bar
-          const Positioned(left: 0, right: 0, bottom: 0, child: PlayerBar()),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Consumer<RadioProvider>(
+              builder: (context, radio, child) {
+                // Hide player bar only if:
+                // 1. We are on the first tab (Radio) AND the wizard is active due to no stations
+                // 2. OR the wizard is explicitly open (e.g. from Manage Stations)
+                
+                // Logic for "auto-wizard" in MusicStreamHome:
+                final bool isHomeWizard = _navIndex == 0 && 
+                  radio.stations.where((s) => radio.favorites.contains(s.id)).isEmpty;
+                
+                // The isWizardOpen flag is also set when opening from Manage Stations
+                final bool shouldHide = isHomeWizard || radio.isWizardOpen;
+
+                return Visibility(
+                  visible: !shouldHide,
+                  child: const PlayerBar(),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );

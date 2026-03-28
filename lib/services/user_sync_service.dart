@@ -16,6 +16,15 @@ class UserSyncService {
   UserSyncService(this._backupService);
 
   Future<void> syncUserInfo() async {
+    // Overall timeout for the entire sync process to avoid blocking startup
+    try {
+      await _performSync().timeout(const Duration(seconds: 15));
+    } catch (e) {
+      debugPrint('SyncUserInfo timed out or failed: $e');
+    }
+  }
+
+  Future<void> _performSync() async {
     try {
       final token = await NotificationService().getFcmToken();
       if (token == null) return;

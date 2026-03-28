@@ -44,40 +44,41 @@ class _TrendingScreenState extends State<TrendingScreen>
   final GlobalKey _providersKey = GlobalKey();
 
   Map<String, String> _getCountryMap(LanguageProvider langProvider) {
-    return {
-      "IT": "🇮🇹 ${langProvider.translate('country_IT')}",
-      "US": "🇺🇸 ${langProvider.translate('country_US')}",
-      "GB": "🇬🇧 ${langProvider.translate('country_GB')}",
-      "FR": "🇫🇷 ${langProvider.translate('country_FR')}",
-      "DE": "🇩🇪 ${langProvider.translate('country_DE')}",
-      "ES": "🇪🇸 ${langProvider.translate('country_ES')}",
-      "CA": "🇨🇦 ${langProvider.translate('country_CA')}",
-      "AU": "🇦🇺 ${langProvider.translate('country_AU')}",
-      "BR": "🇧🇷 ${langProvider.translate('country_BR')}",
-      "JP": "🇯🇵 ${langProvider.translate('country_JP')}",
-      "RU": "🇷🇺 ${langProvider.translate('country_RU')}",
-      "CN": "🇨🇳 ${langProvider.translate('country_CN')}",
-      "IN": "🇮🇳 ${langProvider.translate('country_IN')}",
-      "MX": "🇲🇽 ${langProvider.translate('country_MX')}",
-      "AR": "🇦🇷 ${langProvider.translate('country_AR')}",
-      "NL": "🇳🇱 ${langProvider.translate('country_NL')}",
-      "BE": "🇧🇪 ${langProvider.translate('country_BE')}",
-      "CH": "🇨🇭 ${langProvider.translate('country_CH')}",
-      "SE": "🇸🇪 ${langProvider.translate('country_SE')}",
-      "NO": "🇳🇴 ${langProvider.translate('country_NO')}",
-      "DK": "🇩🇰 ${langProvider.translate('country_DK')}",
-      "FI": "🇫🇮 ${langProvider.translate('country_FI')}",
-      "PL": "🇵🇱 ${langProvider.translate('country_PL')}",
-      "AT": "🇦🇹 ${langProvider.translate('country_AT')}",
-      "PT": "🇵🇹 ${langProvider.translate('country_PT')}",
-      "GR": "🇬🇷 ${langProvider.translate('country_GR')}",
-      "TR": "🇹🇷 ${langProvider.translate('country_TR')}",
-      "ZA": "🇿🇦 ${langProvider.translate('country_ZA')}",
-      "KR": "🇰🇷 ${langProvider.translate('country_KR')}",
-      "IE": "🇮🇪 ${langProvider.translate('country_IE')}",
-      "NZ": "🇳🇿 ${langProvider.translate('country_NZ')}",
-      "MA": "🇲🇦 ${langProvider.translate('country_MA')}",
-    };
+    final codes = [
+      "ALL", "AL", "DZ", "AD", "AO", "SA", "AR", "AM", "AU", "AT", "AZ",
+      "BH", "BD", "BE", "BY", "BO", "BR", "BG", "CA", "CL", "CN",
+      "CY", "CO", "KR", "CR", "HR", "CU", "DK", "EC", "EG", "AE",
+      "EE", "PH", "FI", "FR", "GE", "DE", "JP", "JM", "JO", "GR",
+      "GT", "HN", "IN", "ID", "IR", "IQ", "IE", "IS", "IL", "IT",
+      "KZ", "KE", "KW", "LV", "LB", "LT", "LU", "MY", "MT", "MA",
+      "MX", "MD", "MC", "ME", "NG", "NO", "NZ", "NL", "PK", "PA",
+      "PY", "PE", "PL", "PT", "QA", "GB", "CZ", "DO", "RO", "RU",
+      "SG", "SI", "SK", "ES", "US", "ZA", "SE", "CH", "TH", "TN",
+      "TR", "UA", "HU", "UY", "VE", "VN"
+    ];
+
+    final Map<String, String> map = {};
+    for (var code in codes) {
+      final name = langProvider.translate('country_$code');
+      if (code == "ALL") {
+        map[code] = "🌍 $name";
+      } else {
+        map[code] = "${_getFlag(code)} $name";
+      }
+    }
+
+    // Sort alphabetically by name
+    final sortedEntries = map.entries.toList()
+      ..sort((a, b) => a.value.substring(5).compareTo(b.value.substring(5)));
+
+    return Map.fromEntries(sortedEntries);
+  }
+
+  String _getFlag(String countryCode) {
+    return countryCode.toUpperCase().replaceAllMapped(
+      RegExp(r'[A-Z]'),
+      (match) => String.fromCharCode(match.group(0)!.codeUnitAt(0) + 127397),
+    );
   }
 
   @override
@@ -240,17 +241,8 @@ class _TrendingScreenState extends State<TrendingScreen>
 
               // List
               Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _errorMessage != null
-                    ? Center(
-                        child: Text(
-                          langProvider
-                              .translate('error_prefix')
-                              .replaceAll('{0}', _errorMessage!),
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      )
+                child: (_isLoading && _playlists.isEmpty)
+                    ? _buildSkeletonLoading(context, langProvider)
                     : _buildGrid(context, langProvider),
               ),
             ],
@@ -318,6 +310,8 @@ class _TrendingScreenState extends State<TrendingScreen>
                     setState(() {
                       _selectedCountryCode = val;
                       _customQueryController.clear();
+                      _playlists.clear(); // Clear to show full-screen loader
+                      _errorMessage = null; 
                     });
                     _fetchTrending();
                   }
@@ -464,6 +458,37 @@ class _TrendingScreenState extends State<TrendingScreen>
           cacheExtent: 3000, // Pre-render more children to ensure keys are available for scrolling
           padding: const EdgeInsets.symmetric(vertical: 16),
           children: [
+            // Error Message (if any)
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          langProvider
+                              .translate('error_prefix')
+                              .replaceAll('{0}', _errorMessage!),
+                          style: const TextStyle(color: Colors.red, fontSize: 13),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                        onPressed: () => setState(() => _errorMessage = null),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             // Top Artists Section
             if (topArtists.isNotEmpty)
               _buildHorizontalSection(
@@ -519,6 +544,16 @@ class _TrendingScreenState extends State<TrendingScreen>
                 },
               ),
 
+            // Search skeleton (for custom queries)
+            if (_isLoading && _customQueryController.text.isNotEmpty)
+              _buildHorizontalSection(
+                title: langProvider.translate('custom_search'),
+                height: 180,
+                items: List.generate(5, (_) => null),
+                itemBuilder: (_) => _buildShimmerCard(),
+                topPadding: 16,
+              ),
+
             // Trending Playlists by Category
             ...() {
               final List<Widget> sections = [];
@@ -549,7 +584,7 @@ class _TrendingScreenState extends State<TrendingScreen>
 
                 sections.add(_buildHorizontalSection(
                   title: sectionTitle,
-                  showTitle: i == 0, // Show title only for the first line after Recently Played
+                  showTitle: i == 0 && _customQueryController.text.isEmpty, // Show title only for the first line after Recently Played (hide if searching)
                   topPadding: 16,   // Compact padding
                   height: currentHeight,
                   items: entry.value,
@@ -641,13 +676,22 @@ class _TrendingScreenState extends State<TrendingScreen>
               controller: _customQueryController,
               decoration: InputDecoration(
                 hintText: langProvider.translate('custom_search_hint'),
-                prefixIcon: const Icon(Icons.search, color: Colors.orangeAccent),
+                prefixIcon: Icon(Icons.search, color: Theme.of(context).primaryColor),
                 border: InputBorder.none,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_isLoading)
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+                        ),
+                      ),
                     IconButton(
                       icon: Icon(
                         _isListening ? Icons.mic : Icons.mic_none,
@@ -1267,6 +1311,22 @@ class _TrendingScreenState extends State<TrendingScreen>
     );
   }
 
+
+  Widget _buildSkeletonLoading(BuildContext context, LanguageProvider langProvider) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      itemCount: 4,
+      itemBuilder: (context, index) {
+        return _buildHorizontalSection(
+          title: "        ", // Hidden title shimmer
+          height: 180,
+          items: List.generate(5, (_) => null),
+          itemBuilder: (_) => _buildShimmerCard(),
+          topPadding: 16,
+        );
+      },
+    );
+  }
 
   Widget _buildShimmerCard() {
     final theme = Theme.of(context);

@@ -373,11 +373,19 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool get currentSongIsSaved => _currentSongIsSaved;
 
   bool _isRecognizing = false;
-
+  bool _isWizardOpen = false;
   bool _showGlobalBanner = true;
 
   bool get isRecognizing => _isRecognizing;
   bool get showGlobalBanner => _showGlobalBanner;
+  bool get isWizardOpen => _isWizardOpen;
+
+  void setWizardOpen(bool value) {
+    if (_isWizardOpen != value) {
+      _isWizardOpen = value;
+      notifyListeners();
+    }
+  }
 
   void setShowGlobalBanner(bool value) {
     if (_showGlobalBanner != value) {
@@ -666,8 +674,55 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
+  Future<void> addStations(List<Station> newStations) async {
+    for (final s in newStations) {
+      final index = stations.indexWhere((existing) => 
+        existing.url == s.url || 
+        (existing.name.toLowerCase() == s.name.toLowerCase() && existing.category == s.category)
+      );
+      
+      if (index != -1) {
+        stations[index] = s;
+      } else {
+        stations.add(s);
+        if (!_stationOrder.contains(s.id)) {
+          _stationOrder.add(s.id);
+        }
+      }
+    }
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _keyStationOrder,
+      _stationOrder.map((e) => e.toString()).toList(),
+    );
+    await _saveStations();
+  }
+
+  Future<void> toggleFavoritesBulk(List<int> ids, bool favorite) async {
+    for (final id in ids) {
+      if (favorite) {
+        if (!_favorites.contains(id)) _favorites.add(id);
+      } else {
+        _favorites.remove(id);
+      }
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _keyFavorites,
+      _favorites.map((e) => e.toString()).toList(),
+    );
+  }
+
   Future<void> addStation(Station s) async {
-    stations.add(s);
+    final index = stations.indexWhere((existing) => existing.id == s.id);
+    if (index != -1) {
+      stations[index] = s;
+    } else {
+      stations.add(s);
+    }
+    
     // Explicitly add to order list to ensure it exists for reordering immediately
     if (!_stationOrder.contains(s.id)) {
       _stationOrder.add(s.id);
@@ -823,28 +878,24 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     final List<TrendingPlaylist?> result = [];
     
     // Position: After "Latest Hits" (Ultime Hit) or earlier if needed
-    int latestHitsIndex = _forYouList.indexWhere((p) => p?.title == 'latest_hits');
+    int latestHitsIndex = _forYouList.indexWhere((p) => p != null && p.title == 'latest_hits');
 
-    for (int i = 0; i < _forYouList.length; i++) {
-      result.add(_forYouList[i]);
-      if (i == latestHitsIndex && latestHitsIndex != -1) {
-        for (var p in _promotedPlaylists) {
-          result.add(p);
+    if (latestHitsIndex != -1) {
+      for (int i = 0; i < _forYouList.length; i++) {
+        result.add(_forYouList[i]);
+        if (i == latestHitsIndex) {
+          result.addAll(_promotedPlaylists);
         }
       }
+    } else {
+      // Latest hits (AI) not yet available or all elements are null placeholders.
+      // Prioritize promoted playlists if they exist, then append AI list.
+      if (_promotedPlaylists.isNotEmpty) {
+        result.addAll(_promotedPlaylists);
+      }
+      result.addAll(_forYouList);
     }
     
-    if (latestHitsIndex == -1 && _forYouList.isNotEmpty) {
-       int discoveryIndex = _forYouList.indexWhere((p) => p?.title == 'discovery_mix');
-       if (discoveryIndex != -1) {
-          result.insertAll(discoveryIndex + 2, _promotedPlaylists);
-       } else {
-          result.addAll(_promotedPlaylists);
-       }
-    } else if (_forYouList.isEmpty) {
-        result.addAll(_promotedPlaylists);
-    }
-
     return result;
   }
   StreamSubscription? _forYouSubscription;
@@ -1735,6 +1786,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool _isSyncingDownloads = false;
 
   Future<void> _loadPlaylists() async {
+    LogService().log("[RadioProvider] _loadPlaylists started...");
     final result = await _playlistService.loadPlaylistsResult();
     _playlists = result.playlists;
     _allUniqueSongs = result.uniqueSongs;
@@ -1743,6 +1795,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     if (!_isSyncingDownloads) {
       _isSyncingDownloads = true;
       try {
+        LogService().log("[RadioProvider] Starting syncAllDownloadStatuses...");
         await syncAllDownloadStatuses();
       } finally {
         _isSyncingDownloads = false;
@@ -1752,6 +1805,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     refreshAudioHandlerPlaylists(); // Force AA update
     checkIfCurrentSongIsSaved();
     notifyListeners();
+    LogService().log("[RadioProvider] _loadPlaylists finished.");
   }
 
   Future<Playlist> createPlaylist(String name, {List<SavedSong>? songs}) async {
@@ -5370,8 +5424,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'recent_songs_order': _recentSongsOrder,
         'followed_artists': _followedArtists.toList(),
         'followed_albums': _followedAlbums.toList(),
+        'promoted_playlists': _promotedPlaylists.map((p) => p.toJson()).toList(),
         'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'version': 2,
+        'version': 3, // Increment version
         'type': isAuto ? 'auto' : 'manual',
       };
 
@@ -5401,10 +5456,15 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
 
     try {
-      final jsonStr = await _backupService.downloadBackup();
+      LogService().log("[RadioProvider] Starting restoreBackup...");
+      final jsonStr = await _backupService.downloadBackup().timeout(
+        const Duration(seconds: 25),
+        onTimeout: () => throw Exception("Backup download timed out"),
+      );
       if (jsonStr == null) {
         throw Exception("No backup found");
       }
+      LogService().log("[RadioProvider] Backup downloaded, length: ${jsonStr.length}");
 
       final data = jsonDecode(jsonStr);
 
@@ -5478,6 +5538,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setStringList(_keyInvalidSongIds, _invalidSongIds);
+      }
+
+      // Restore Promoted Playlists (Favorites from Trending)
+      if (data['promoted_playlists'] != null) {
+        final List<dynamic> ppList = data['promoted_playlists'];
+        _promotedPlaylists.clear();
+        _promotedPlaylists.addAll(
+          ppList.map((e) => TrendingPlaylist.fromJson(e)).toList(),
+        );
+        LogService().log("[RadioProvider] Restored ${_promotedPlaylists.length} promoted playlists.");
+        await _savePromotedPlaylists();
       }
 
       // Restore Play History & Metadata
@@ -5573,20 +5644,34 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _hasPerformedRestore = true;
       await _saveHasPerformedRestore();
 
+      // Automatically set backup frequency correctly after restore
+      if (_backupFrequency == 'manual') {
+        LogService().log("[RadioProvider] Switching backup frequency to 'daily' after restore.");
+        await setBackupFrequency('daily');
+      }
+
       // Update last backup timestamp to current time to prevent immediate automatic backup
       _lastBackupTs = DateTime.now().millisecondsSinceEpoch;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('last_backup_ts', _lastBackupTs);
 
-      // Automatically set backup frequency to daily after first restore
-      await setBackupFrequency('daily');
-
+      LogService().log("[RadioProvider] Finalizing restore: updating local state...");
       await _loadPlaylists(); // Refresh state
-      await ensureLocalPermissions();
 
+      // Manual trigger for AI recommendations to ensure "For You" is ready
+      final code = _detectLanguageCode();
+      preFetchForYou(languageCode: code);
+
+      // Dismiss spinner BEFORE potential permission dialog
       _isRestoring = false;
       notifyListeners();
-    } catch (e) {
+      
+      LogService().log("[RadioProvider] Checking permissions...");
+      await ensureLocalPermissions();
+
+      LogService().log("[RadioProvider] restoreBackup completed successfully.");
+    } catch (e, stack) {
+      LogService().log("[RadioProvider] restoreBackup FAILED: $e\n$stack");
       _isRestoring = false;
       notifyListeners();
       if (e.toString().contains("No backup found")) {

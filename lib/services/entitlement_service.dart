@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,23 +10,40 @@ import 'log_service.dart';
 class EntitlementService extends ChangeNotifier {
   final BackupService _backupService;
 
-  final String _localConfigPath = "lib/utils/json/config.json";
-  final String _remoteConfigKey = "_entitlements_json";
+  final String _remoteConfigKey = "entitlements_json";
   static const String _cacheConfigKey = "cached_entitlements";
   static const String _cacheUserEmailKey = "cached_user_email";
   static const String _cacheUserNameKey = "cached_user_name";
 
   Map<String, dynamic> _config = {};
   bool _isLoading = false;
-  bool _isUsingLocalConfig = false;
+  bool _isUsingCachedConfig = false;
+  String? _cachedUserEmail;
+  String? _cachedUserName;
+
+  /// Public getters for the cached user info
+  String? get cachedUserEmail => _cachedUserEmail;
+  String? get cachedUserName => _cachedUserName;
+
   StreamSubscription? _remoteConfigSubscription;
   StreamSubscription? _connectivitySubscription;
 
   EntitlementService(this._backupService) {
     _backupService.addListener(_onAuthChanged);
+    _loadUserIdentityFromCache();
     _initializeRemoteConfig();
     _setupConnectivityListener();
-    _logCachedData();
+  }
+
+  Future<void> _loadUserIdentityFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _cachedUserEmail = prefs.getString(_cacheUserEmailKey);
+      _cachedUserName = prefs.getString(_cacheUserNameKey);
+      // No log or notify here to keep it silent unless config also arrives/fails
+    } catch (e) {
+      LogService().log("EntitlementService: Error loading user identity: $e");
+    }
   }
 
   void _setupConnectivityListener() {
@@ -35,7 +51,7 @@ class EntitlementService extends ChangeNotifier {
       results,
     ) {
       final hasConnection = !results.contains(ConnectivityResult.none);
-      if (hasConnection && _isUsingLocalConfig && !_isLoading) {
+      if (hasConnection && _isUsingCachedConfig && !_isLoading) {
         LogService().log(
           "EntitlementService: Connection restored. Forcing remote config refresh...",
         );
@@ -72,12 +88,14 @@ class EntitlementService extends ChangeNotifier {
         await _updateConfigFromRemote();
       });
     } catch (e) {
-      await _loadLocalConfig("Failed to initialize Remote Config: $e");
+      await _loadCachedConfig("Failed to initialize Remote Config: $e");
     }
   }
 
   bool get isLoading => _isLoading;
-  bool get isUsingLocalConfig => _isUsingLocalConfig;
+  bool get isUsingCachedConfig => _isUsingCachedConfig;
+  bool get isUsingLocalConfig =>
+      _isUsingCachedConfig; // For backward compatibility
 
   void _onAuthChanged() {
     // When login status changes, we update the cache with new user info
@@ -103,6 +121,11 @@ class EntitlementService extends ChangeNotifier {
           "EntitlementService: User info updated in cache (Guest / Logged Out).",
         );
       }
+
+      // Update memory values
+      _cachedUserEmail = prefs.getString(_cacheUserEmailKey);
+      _cachedUserName = prefs.getString(_cacheUserNameKey);
+
       _logCachedData();
     } catch (e) {
       LogService().log("EntitlementService: Error updating user cache: $e");
@@ -121,7 +144,7 @@ class EntitlementService extends ChangeNotifier {
       );
       await _updateConfigFromRemote();
     } catch (e) {
-      await _loadLocalConfig("Failed to fetch Remote Config: $e");
+      await _loadCachedConfig("Failed to fetch Remote Config: $e");
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -133,14 +156,10 @@ class EntitlementService extends ChangeNotifier {
       final remoteConfig = FirebaseRemoteConfig.instance;
       final jsonStr = remoteConfig.getString(_remoteConfigKey);
 
-      LogService().log(
-        "EntitlementService: Raw config string for key '$_remoteConfigKey': ${jsonStr.isEmpty ? '(empty)' : '${jsonStr.length} chars'}",
-      );
-
       if (jsonStr.isNotEmpty) {
         final newConfig = jsonDecode(jsonStr);
         _config = newConfig;
-        _isUsingLocalConfig = false;
+        _isUsingCachedConfig = false;
         notifyListeners();
         LogService().log(
           "EntitlementService: Config updated from Remote Config.",
@@ -152,15 +171,23 @@ class EntitlementService extends ChangeNotifier {
         // Debug: Print all available keys to see what we actually fetched
         final allKeys = remoteConfig.getAll();
         LogService().log(
-          "EntitlementService: Key '$_remoteConfigKey' not found. Available keys: ${allKeys.keys.toList()}",
+          "EntitlementService: ERROR - Key '$_remoteConfigKey' is empty or missing.",
+        );
+        LogService().log(
+          "EntitlementService: All available keys found on this client: ${allKeys.keys.toList()}",
         );
 
-        await _loadLocalConfig(
+        // Also log sources to see if we are getting real remote data
+        allKeys.forEach((key, value) {
+          LogService().log("Config Item: $key (Source: ${value.source})");
+        });
+
+        await _loadCachedConfig(
           "Remote Config value is empty for key '$_remoteConfigKey'",
         );
       }
     } catch (e) {
-      await _loadLocalConfig("Error parsing Remote Config JSON: $e");
+      await _loadCachedConfig("Error parsing Remote Config JSON: $e");
     }
   }
 
@@ -184,6 +211,10 @@ class EntitlementService extends ChangeNotifier {
       final cachedEmail = prefs.getString(_cacheUserEmailKey);
       final cachedName = prefs.getString(_cacheUserNameKey);
 
+      // Sync with memory
+      _cachedUserEmail = cachedEmail;
+      _cachedUserName = cachedName;
+
       LogService().log("--- CACHE DATA START ---");
       LogService().log("[Cached] Config: ${cachedConfig ?? 'None'}");
       LogService().log("[Cached] User Email: ${cachedEmail ?? 'None'}");
@@ -194,17 +225,32 @@ class EntitlementService extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadLocalConfig(String reason) async {
+  Future<void> _loadCachedConfig(String reason) async {
     try {
       LogService().log(
-        "EntitlementService: $reason. Falling back to local config.",
+        "EntitlementService: $reason. Falling back to cached config.",
       );
-      final String localContent = await rootBundle.loadString(_localConfigPath);
-      _config = jsonDecode(localContent);
-      _isUsingLocalConfig = true;
-      LogService().log("EntitlementService: Local config loaded successfully.");
+      final prefs = await SharedPreferences.getInstance();
+      final String? cachedContent = prefs.getString(_cacheConfigKey);
+
+      if (cachedContent != null && cachedContent.isNotEmpty) {
+        _config = jsonDecode(cachedContent);
+        _isUsingCachedConfig = true;
+        LogService().log(
+          "EntitlementService: Cached config loaded successfully.",
+        );
+      } else {
+        LogService().log("EntitlementService: No cached config available.");
+        // If no cache, we might stay empty or handle as error
+      }
+
+      // Also ensure memory values for user are updated on config load
+      _cachedUserEmail = prefs.getString(_cacheUserEmailKey);
+      _cachedUserName = prefs.getString(_cacheUserNameKey);
+
+      notifyListeners();
     } catch (e) {
-      LogService().log("EntitlementService: Error loading local config: $e");
+      LogService().log("EntitlementService: Error loading cached config: $e");
     }
   }
 
@@ -244,7 +290,16 @@ class EntitlementService extends ChangeNotifier {
     }
 
     final currentUser = _backupService.currentUser;
-    final userEmail = currentUser?.email;
+    String? userEmail = currentUser?.email;
+
+    // Fallback to cache (for Android Auto or background states where BackupService may be null)
+    if (userEmail == null || userEmail.isEmpty) {
+      if (_cachedUserEmail != null &&
+          _cachedUserEmail != "GUEST" &&
+          _cachedUserEmail != "None") {
+        userEmail = _cachedUserEmail;
+      }
+    }
 
     // 2. Check "All Login" (Any logged in user)
     if (userEmail != null &&
@@ -294,7 +349,17 @@ class EntitlementService extends ChangeNotifier {
       featureData,
     );
     final currentUser = _backupService.currentUser;
-    final userEmail = currentUser?.email;
+    String? userEmail = currentUser?.email;
+
+    // Fallback to cache (for Android Auto or background states where BackupService may be null)
+    if (userEmail == null || userEmail.isEmpty) {
+      if (_cachedUserEmail != null &&
+          _cachedUserEmail != "GUEST" &&
+          _cachedUserEmail != "None") {
+        userEmail = _cachedUserEmail;
+      }
+    }
+
     final groups = _config['groups'] as Map<String, dynamic>?;
 
     int maxLimit = 0; // Default to blocked

@@ -25,6 +25,38 @@ class TrendingPlaylist {
     this.categoryTitle,
     this.predefinedTracks,
   });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'provider': provider,
+      'imageUrls': imageUrls,
+      'externalUrl': externalUrl,
+      'trackCount': trackCount,
+      'owner': owner,
+      'categoryTitle': categoryTitle,
+      'predefinedTracks': predefinedTracks,
+    };
+  }
+
+  factory TrendingPlaylist.fromJson(Map<String, dynamic> json) {
+    return TrendingPlaylist(
+      id: json['id'],
+      title: json['title'],
+      provider: json['provider'],
+      imageUrls: List<String>.from(json['imageUrls']),
+      externalUrl: json['externalUrl'],
+      trackCount: json['trackCount'] ?? -1,
+      owner: json['owner'],
+      categoryTitle: json['categoryTitle'],
+      predefinedTracks: json['predefinedTracks'] != null
+          ? (json['predefinedTracks'] as List)
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList()
+          : null,
+    );
+  }
 }
 
 class TrendingService {

@@ -1706,7 +1706,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   ),
                                   textAlignVertical: TextAlignVertical.center,
                                   decoration: InputDecoration(
-                                    hintText: "Search...",
+                                    hintText: lang.translate('search'),
                                     hintStyle: TextStyle(
                                       color: Theme.of(context)
                                           .textTheme
@@ -2123,9 +2123,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 Colors.orangeAccent,
                 () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const LocalLibraryScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const LocalLibraryScreen()),
                 ),
                 const ValueKey('inv_local'),
               );
@@ -3272,10 +3270,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   )
                   .timeout(const Duration(seconds: 20));
               audioUrl = links['youtube'];
-              
+
               if (audioUrl == null) {
                 // Last Resort: Search YouTube directly by title + artist
-                audioUrl = await provider.searchYoutubeVideo(song.title, song.artist);
+                audioUrl = await provider.searchYoutubeVideo(
+                  song.title,
+                  song.artist,
+                );
               }
             }
 
@@ -3542,7 +3543,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       }
     }
   }
-
 
   Widget _buildDirectAccessCard(
     BuildContext context,

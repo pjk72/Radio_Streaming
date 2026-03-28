@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'providers/radio_provider.dart';
@@ -139,29 +140,43 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   }
 
   Future<void> _initApp() async {
-    try {
-      // 2.5 seconds of splash screen time
-      await Future.delayed(const Duration(milliseconds: 2500));
+    // 1. Start the minimum splash timer immediately (2.5s)
+    final splashTimer = Future.delayed(const Duration(milliseconds: 2500));
 
+    try {
+      // 2. CRITICAL INITIALIZATIONS
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        MobileAds.instance.initialize();
+        try {
+          await MobileAds.instance
+              .initialize()
+              .timeout(const Duration(seconds: 5));
+        } catch (_) {}
       }
 
-      final entitlements = Provider.of<EntitlementService>(
-        context,
-        listen: false,
-      );
+      final entitlements = Provider.of<EntitlementService>(context, listen: false);
       AppOpenAdManager().init(entitlements);
 
-      await _initNotifications();
-      await _checkForUpdate();
+      // 3. SECONDARY INITIALIZATIONS (Wait for these but with a safety timeout)
+      // This ensures the splash stays until they are done, but doesn't hang forever
+      await Future.wait([
+        _initNotifications().timeout(const Duration(seconds: 10)),
+        _checkForUpdate().timeout(const Duration(seconds: 10)),
+        splashTimer, // Ensure we stay at least 2.5s regardless
+      ]).catchError((e) {
+        debugPrint("Secondary initialization timed out or failed: $e");
+        return [];
+      });
 
       if (mounted) {
         setState(() => _isInitialized = true);
       }
     } catch (e) {
+      debugPrint("Startup Error: $e");
       if (mounted) {
-        setState(() => _error = e.toString());
+        setState(() {
+          _error = e.toString();
+          _isInitialized = true;
+        });
       }
     }
   }
@@ -232,6 +247,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final languageProvider = Provider.of<LanguageProvider>(context);
     final isDark = themeProvider.themeData.brightness == Brightness.dark;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -248,6 +264,23 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         title: 'MusicStream',
         debugShowCheckedModeBanner: false,
         theme: themeProvider.themeData,
+        locale: Locale(languageProvider.resolvedLanguageCode),
+        supportedLocales: const [
+          Locale('en'),
+          Locale('it'),
+          Locale('es'),
+          Locale('fr'),
+          Locale('de'),
+          Locale('ru'),
+          Locale('pt'),
+          Locale('zh'),
+          Locale('ar'),
+        ],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         builder: (context, child) {
           return Scaffold(
             body: Stack(

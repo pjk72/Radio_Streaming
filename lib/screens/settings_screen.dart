@@ -1214,52 +1214,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
           maxChildSize: 0.8,
           expand: false,
           builder: (ctx, scrollController) {
+            // Initial list of supported languages with their flags
+            final languages = [
+              {'code': 'en', 'label': langProvider.translate('english'), 'flag': '🇺🇸'},
+              {'code': 'it', 'label': langProvider.translate('italian'), 'flag': '🇮🇹'},
+              {'code': 'es', 'label': langProvider.translate('spanish'), 'flag': '🇪🇸'},
+              {'code': 'fr', 'label': langProvider.translate('french'), 'flag': '🇫🇷'},
+              {'code': 'de', 'label': langProvider.translate('german'), 'flag': '🇩🇪'},
+              {'code': 'ru', 'label': langProvider.translate('russian'), 'flag': '🇷🇺'},
+              {'code': 'pt', 'label': langProvider.translate('portuguese'), 'flag': '🇵🇹'},
+              {'code': 'zh', 'label': langProvider.translate('chinese'), 'flag': '🇨🇳'},
+              {'code': 'ar', 'label': langProvider.translate('arabic'), 'flag': '🇸🇦'},
+            ];
+
+            // Sort languages alphabetically by their translated label
+            languages.sort((a, b) => a['label']!.compareTo(b['label']!));
+
             final options = [
               {
                 'code': 'system',
                 'label': langProvider.translate('system'),
                 'flag': '🌐',
               },
-              {
-                'code': 'en',
-                'label': langProvider.translate('english'),
-                'flag': '🇺🇸',
-              },
-              {
-                'code': 'it',
-                'label': langProvider.translate('italian'),
-                'flag': '🇮🇹',
-              },
-              {
-                'code': 'es',
-                'label': langProvider.translate('spanish'),
-                'flag': '🇪🇸',
-              },
-              {
-                'code': 'fr',
-                'label': langProvider.translate('french'),
-                'flag': '🇫🇷',
-              },
-              {
-                'code': 'de',
-                'label': langProvider.translate('german'),
-                'flag': '🇩🇪',
-              },
-              {
-                'code': 'ru',
-                'label': langProvider.translate('russian'),
-                'flag': '🇷🇺',
-              },
-              {
-                'code': 'pt',
-                'label': langProvider.translate('portuguese'),
-                'flag': '🇵🇹',
-              },
-              {
-                'code': 'zh',
-                'label': langProvider.translate('chinese'),
-                'flag': '🇨🇳',
-              },
+              ...languages,
             ];
 
             final cardColor = Theme.of(context).cardColor;
