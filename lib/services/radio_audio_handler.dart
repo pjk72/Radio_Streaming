@@ -1514,10 +1514,25 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Future<void> _swapPlayers(String url, Map<String, dynamic> extras) async {
     // 1. Prepare Metadata
-    final String title = extras['title'] ?? "Song";
+    final String rawTitle = extras['title'] ?? "Song";
+    final String title = _getSongTitleWithIcons(rawTitle, extras['localPath']);
     final String artist = extras['artist'] ?? "Artist";
     final String album = extras['album'] ?? "Playlist";
     final String? artUri = extras['artUri'];
+
+    LogService().log("Gapless Swap Triggered: $title - $artist (Art: $artUri)");
+
+    final Uri? validArtUri = _sanitizeArtUri(artUri, "$title $artist");
+
+    // Add AA specific extras for better Dashboard/Now Playing compatibility
+    final Map<String, dynamic> updatedExtras = Map<String, dynamic>.from(extras);
+    if (validArtUri != null) {
+      final artStr = validArtUri.toString();
+      updatedExtras['android.media.metadata.DISPLAY_ICON_URI'] = artStr;
+      updatedExtras['android.media.metadata.ART_URI'] = artStr;
+      updatedExtras['android.media.metadata.ALBUM_ART_URI'] = artStr;
+    }
+    updatedExtras['isCar'] = _isInAndroidAutoMode;
 
     MediaItem newItem = MediaItem(
       id: extras['stableId'] ?? url,
@@ -1527,9 +1542,9 @@ class RadioAudioHandler extends BaseAudioHandler
       duration: extras['duration'] != null
           ? Duration(seconds: extras['duration'])
           : null,
-      artUri: artUri != null ? Uri.parse(artUri) : null,
+      artUri: validArtUri,
       playable: true,
-      extras: extras,
+      extras: updatedExtras,
     );
     mediaItem.add(newItem);
 
@@ -1768,6 +1783,8 @@ class RadioAudioHandler extends BaseAudioHandler
     final String album = extras['album'] ?? "Playlist";
     final String? artUri = extras['artUri'];
 
+    LogService().log("Playback Start: $title - $artist (Art: $artUri)");
+
     // Use sanitized URI helper to ensure AA compatibility
     final Uri? validArtUri = _sanitizeArtUri(artUri, "$title $artist");
 
@@ -1783,6 +1800,16 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     }
 
+    // Add AA specific extras for better Dashboard/Now Playing compatibility
+    final Map<String, dynamic> updatedExtras = Map<String, dynamic>.from(extras);
+    if (validArtUri != null) {
+      final artStr = validArtUri.toString();
+      updatedExtras['android.media.metadata.DISPLAY_ICON_URI'] = artStr;
+      updatedExtras['android.media.metadata.ART_URI'] = artStr;
+      updatedExtras['android.media.metadata.ALBUM_ART_URI'] = artStr;
+    }
+    updatedExtras['isCar'] = _isInAndroidAutoMode;
+
     // Set MediaItem
     MediaItem newItem = MediaItem(
       id: extras['stableId'] ?? url,
@@ -1794,7 +1821,7 @@ class RadioAudioHandler extends BaseAudioHandler
           : null,
       artUri: validArtUri,
       playable: true,
-      extras: extras,
+      extras: updatedExtras,
     );
     mediaItem.add(newItem);
 
@@ -2776,6 +2803,20 @@ class RadioAudioHandler extends BaseAudioHandler
             : AudioServiceShuffleMode.none,
       ),
     );
+
+    // Android Auto Metadata Sync Pulse:
+    // If we are in AA mode and just transitioned to playing/ready, re-push mediaItem after a delay
+    // to ensure the system UI refreshes its information (Dashboard view fix).
+    if (_isInAndroidAutoMode && pState == AudioProcessingState.ready && playing) {
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (mediaItem.value != null &&
+            playbackState.value.playing &&
+            playbackState.value.processingState == AudioProcessingState.ready) {
+          LogService().log("Android Auto Sync: Pulsing mediaItem for UI refresh");
+          mediaItem.add(mediaItem.value!);
+        }
+      });
+    }
   }
 
   @override
