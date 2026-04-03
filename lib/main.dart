@@ -61,7 +61,7 @@ Future<void> main() async {
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+  if (!kIsWeb) {
     Workmanager().initialize(callbackDispatcher, isInDebugMode: !kReleaseMode);
   }
 
@@ -145,7 +145,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
 
     try {
       // 2. CRITICAL INITIALIZATIONS
-      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      if (!kIsWeb) {
         try {
           await MobileAds.instance
               .initialize()

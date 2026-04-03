@@ -14,16 +14,12 @@ class _AdMobBannerWidgetState extends State<AdMobBannerWidget> {
   BannerAd? _bannerAd;
   bool _isLoaded = false;
 
-  bool get _isSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  bool get _isSupported => !kIsWeb && Platform.isAndroid;
 
-  // Test IDs from Google:
-  // Android: ca-app-pub-3940256099942544/6300978111
-  // iOS: ca-app-pub-3940256099942544/2934735716
+  // Test ID: ca-app-pub-3940256099942544/6300978111
   final String _adUnitId = kReleaseMode
       ? 'ca-app-pub-3351319116434923/3527481038'
-      : (Platform.isAndroid
-            ? 'ca-app-pub-3940256099942544/6300978111'
-            : 'ca-app-pub-3940256099942544/2934735716');
+      : 'ca-app-pub-3940256099942544/6300978111';
 
   @override
   void initState() {

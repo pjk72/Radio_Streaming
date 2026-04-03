@@ -13,11 +13,9 @@ class AppOpenAdManager {
   bool _isFirstAdShown = false;
   EntitlementService? _entitlements;
 
-  final String adUnitId = kIsWeb
-      ? ''
-      : (Platform.isAndroid
-            ? 'ca-app-pub-3351319116434923/1642535796'
-            : 'ca-app-pub-3351319116434923/1642535796');
+  final String adUnitId = kReleaseMode 
+      ? 'ca-app-pub-3351319116434923/1642535796'
+      : 'ca-app-pub-3940256099942544/9257395915'; // Android App Open Test ID
 
   void init(EntitlementService entitlements) {
     _entitlements = entitlements;
@@ -26,7 +24,7 @@ class AppOpenAdManager {
   }
 
   void loadAd() {
-    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return;
+    if (kIsWeb || !Platform.isAndroid) return;
 
     AppOpenAd.load(
       adUnitId: adUnitId,

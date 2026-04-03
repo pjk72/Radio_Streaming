@@ -1,5 +1,4 @@
-import java.util.Properties
-import java.io.FileInputStream
+import java.util.Properties;
 
 plugins {
     id("com.android.application")
@@ -14,7 +13,7 @@ val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
     println("Loading keystore properties from: ${keystorePropertiesFile.absolutePath}")
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) } 
 } else {
     println("Warning: key.properties not found at ${keystorePropertiesFile.absolutePath}")
 }
@@ -31,7 +30,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17"
     }
 
     defaultConfig {

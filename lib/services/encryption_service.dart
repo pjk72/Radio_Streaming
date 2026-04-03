@@ -45,16 +45,10 @@ class EncryptionService {
 
     // If request.url.path is already decoded by shelf, calling decodeFull again on a path with % might break it UNLESS we caused it.
     // Let's rely on standard decoding.
-    String filePath = request.url.path;
-    if (Platform.isWindows && filePath.startsWith('/')) {
-      filePath = filePath.substring(1);
-    }
-
-    // On Android, the path from request.url.path might need decoding if we manually encoded it in getUrl
-    filePath = Uri.decodeComponent(filePath);
+    String filePath = Uri.decodeComponent(request.url.path);
 
     // Fix for absolute paths on Android potentially missing the leading / when coming from URI parsing
-    if (!filePath.startsWith('/') && !Platform.isWindows) {
+    if (!filePath.startsWith('/')) {
       filePath = '/' + filePath;
     }
 

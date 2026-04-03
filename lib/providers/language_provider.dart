@@ -34,15 +34,11 @@ class LanguageProvider with ChangeNotifier {
 
   void _resolveSystemLanguage() {
     if (_currentLanguageCode == 'system') {
-      if (!kIsWeb) {
-        try {
-          final platformLocaleName = Platform.localeName;
-          final code = platformLocaleName.split('_').first;
-          _resolvedLanguageCode = _isSupported(code) ? code : 'en';
-        } catch (e) {
-          _resolvedLanguageCode = 'en';
-        }
-      } else {
+      try {
+        final platformLocaleName = Platform.localeName;
+        final code = platformLocaleName.split('_').first;
+        _resolvedLanguageCode = _isSupported(code) ? code : 'en';
+      } catch (e) {
         _resolvedLanguageCode = 'en';
       }
     } else {

@@ -2,34 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Flutter: Chrome",
+            "name": "Flutter: Android",
             "request": "launch",
             "type": "dart",
-            "flutterMode": "debug",
-            "args": [
-                "-d",
-                "chrome"
-            ]
-        },
-        {
-            "name": "Flutter: Edge",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "debug",
-            "args": [
-                "-d",
-                "edge"
-            ]
-        },
-        {
-            "name": "Flutter: Windows",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "debug",
-            "args": [
-                "-d",
-                "windows"
-            ]
+            "flutterMode": "debug"
         }
     ]
 }
