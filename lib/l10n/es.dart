@@ -489,9 +489,7 @@ final Map<String, String> es = {
   'find_new_music': 'Buscar nueva música',
   'unknown_title': 'Título desconocido',
   'share': 'Compartir',
-  'share_song_text':
-      '🎵 Compartido desde *MusicStream* - {0} de {1}:\n{2}\n\n📱 Descarga la aplicación MusicStream:\n{3}',
-
+  
   // Update
   'update_available': 'Actualización Disponible',
   'update_desc':
@@ -543,4 +541,6 @@ final Map<String, String> es = {
   'live_radio': 'Radio en Vivo',
   'playlist': 'Lista de reproducción',
   'arabic': 'árabe',
+  'share_song_text': '{0}\n\n📱 Ascolta con MusicStream:\n{3}',
+  'shared_songs': 'Canciones compartidas',
 };

@@ -492,8 +492,7 @@ final Map<String, String> it = {
   'find_new_music': 'Trova nuova musica',
   'unknown_title': 'Titolo sconosciuto',
   'share': 'Condividi',
-  'share_song_text':
-      '🎵 Condivisa da *MusicStream* - {0} di {1}:\n{2}\n\n📱 Scarica l\'app MusicStream:\n{3}',
+  'share_song_text': '{0}\n\n📱 Ascolta con MusicStream:\n{3}',
 
   // Update
   'update_available': 'Aggiornamento Disponibile',
@@ -522,7 +521,8 @@ final Map<String, String> it = {
   'song_removed_from_library': 'Brano rimosso dalla libreria',
   'song_removed_from_playlist': 'Brano rimosso dalla playlist',
   'delete_playlist_title': 'Elimina Playlist',
-  'delete_playlist_desc': 'Eliminare \'{0}\'? I brani al suo interno andranno persi.',
+  'delete_playlist_desc':
+      'Eliminare \'{0}\'? I brani al suo interno andranno persi.',
   'system_logs': 'Log di Sistema',
   'api_debug_title': 'API Debug',
   'api_debug_desc': 'Visualizza le risposte JSON grezze',
@@ -541,4 +541,5 @@ final Map<String, String> it = {
   'play_all': 'Riproduci Tutto',
   'live_radio': 'Radio dal Vivo',
   'playlist': 'Playlist',
+  'shared_songs': 'Brani Condivisi',
 };

@@ -40,11 +40,18 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/upgrade_proposal.dart';
 import '../services/local_playlist_service.dart';
+import 'package:app_links/app_links.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   List<Station> stations = [];
   static const String _keySavedStations = 'saved_stations';
   Timer? _metadataTimer;
+  
+  // External Intent Handling
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSubscription;
+  StreamSubscription? _sharingSubscription;
 
   // --- Song Duration Tracking (ACRCloud) ---
   Duration? _currentSongDuration;
@@ -778,6 +785,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _metadataTimer?.cancel();
+    _linkSubscription?.cancel();
+    _sharingSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -1542,6 +1552,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       Future.delayed(const Duration(seconds: 3), _scanForLocalUpgrades);
       // Check and request permissions if local content is present
       ensureLocalPermissions();
+      // Initialize sharing handlers only AFTER data (playlists) is ready
+      _initExternalHandlers();
     });
   }
 
@@ -3231,6 +3243,32 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _isPlaying = true;
       // _isLoading = false; // LET AUDIO HANDLER STATE CONTROL LOADING
       // notifyListeners();
+
+      // --- Metadata Enrichment (Deep Check) ---
+      // If we have incomplete data (unknown artist, generic title, missing art), 
+      // trigger real-time enrichment in background.
+      final lowerTitle = title.toLowerCase();
+      final hasExtension = lowerTitle.endsWith('.mp3') || lowerTitle.endsWith('.m4a') || 
+                           lowerTitle.endsWith('.wav') || lowerTitle.endsWith('.flac') || 
+                           lowerTitle.endsWith('.ogg');
+                           
+      final isGeneric = title == "Shared Song" || title == "Audio" || 
+                        artist == "Unknown" || artist == "YouTube" || 
+                        artist == "Local File" || hasExtension;
+                        
+      final isMissingArt = artwork == null || artwork.isEmpty || artwork.contains('placeholder');
+      
+      if (isGeneric || isMissingArt) {
+        // Run in background without awaiting
+        _enrichCurrentMetadata(
+          videoId: videoId,
+          songId: songId,
+          playlistId: playlistId,
+          currentTitle: title,
+          currentArtist: artist,
+          isLocal: isLocal,
+        );
+      }
 
       // Clean up old controller if it exists
       if (_hiddenAudioController != null) {
@@ -6621,6 +6659,610 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       return null;
     } finally {
       yt.close();
+    }
+  }
+
+  // --- External Intent Handlers ---
+  void _initExternalHandlers() {
+    // 1. Deep Links (app_links)
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) async {
+      await _handleExternalUri(uri);
+    });
+    _appLinks.getInitialLink().then((uri) async {
+      if (uri != null) await _handleExternalUri(uri);
+    }).catchError((e) {
+      debugPrint("app_links error: $e");
+      return null;
+    });
+
+    // 2. Share Target (receive_sharing_intent)
+    _sharingSubscription = ReceiveSharingIntent.instance.getMediaStream().listen((files) async {
+      LogService().log("ReceiveSharingIntent Stream: ${files.length} items found.");
+      if (files.isNotEmpty) {
+        for (var file in files) {
+          LogService().log("Shared Item: type=${file.type}, path='${file.path}'");
+          if (file.type == SharedMediaType.text || file.type == SharedMediaType.url) {
+            await _handleSharedText(file.path);
+          } else if (file.type == SharedMediaType.file) {
+            _handleSharedFile(file.path);
+          }
+        }
+      }
+    }, onError: (Object err) {
+      debugPrint("getIntentDataStream error: $err");
+    });
+
+    ReceiveSharingIntent.instance.getInitialMedia().then((files) async {
+      LogService().log("ReceiveSharingIntent Initial: ${files.length} items found.");
+      if (files.isNotEmpty) {
+        for (var file in files) {
+          LogService().log("Initial Shared Item: type=${file.type}, path='${file.path}'");
+          if (file.type == SharedMediaType.text || file.type == SharedMediaType.url) {
+            await _handleSharedText(file.path);
+          } else if (file.type == SharedMediaType.file) {
+            _handleSharedFile(file.path);
+          }
+        }
+      }
+    }).catchError((e) {
+       debugPrint("getInitialMedia error: $e");
+    });
+  }
+
+  void _handleSharedFile(String path) {
+    debugPrint("Handling Shared File: $path");
+    // Check if it's an audio file by extension
+    final lowerPath = path.toLowerCase();
+    if (lowerPath.endsWith('.mp3') || 
+        lowerPath.endsWith('.m4a') || 
+        lowerPath.endsWith('.wav') || 
+        lowerPath.endsWith('.flac') || 
+        lowerPath.endsWith('.ogg')) {
+      
+      // In this app, local files provided via intent-filter VIEW are played
+      // using playYoutubeAudio with isLocal: true.
+      playYoutubeAudio(
+        path,
+        path, // Using path as unique songId for session
+        overrideTitle: path.split('/').last,
+        overrideArtist: "Local File",
+        isLocal: true,
+      );
+    }
+  }
+
+  Future<void> _handleSharedText(String text) async {
+    LogService().log("RAW Shared Text: '$text'");
+    debugPrint("Handling Shared Text: $text");
+    
+    // 1. Check if it's our deep link
+    if (text.contains('pjk72.github.io/musicstream/share.html') || text.startsWith('musicstream://')) {
+      final urlRegExp = RegExp(r'(https?:\/\/[^\s]+|musicstream:\/\/[^\s]+)');
+      final match = urlRegExp.firstMatch(text);
+      if (match != null) {
+        final uri = Uri.tryParse(match.group(0)!);
+        if (uri != null) {
+          await _handleExternalUri(uri);
+          return;
+        }
+      }
+    }
+
+    // 2. Check if it's a YouTube link
+    final String? videoId = YoutubePlayer.convertUrlToId(text);
+    if (videoId != null) {
+      _importVideoFromId(videoId, sharedText: text);
+      return;
+    }
+
+    // 3. Check for other music providers (Apple Music, Spotify, Amazon)
+    final lowerText = text.toLowerCase();
+    if (lowerText.contains("music.apple.com") || 
+        lowerText.contains("spotify.com") || 
+        lowerText.contains("spotify.link") || 
+        lowerText.contains("spotify:") ||
+        lowerText.contains("spotify") ||
+        lowerText.contains("amazon.com") ||
+        lowerText.contains("amazon.it") ||
+        lowerText.contains("amazon.de") ||
+        lowerText.contains("amazon.fr") ||
+        lowerText.contains("amazon.es") ||
+        lowerText.contains("music.amazon.")) {
+       LogService().log("Multi-provider Music Link detected: $text");
+       await _handleMusicLinkShare(text);
+       return;
+    }
+    
+    LogService().log("Shared text not recognized as Music Link: $text");
+  }
+
+  Future<void> _handleMusicLinkShare(String text) async {
+    debugPrint("Resolving Music Link via SongLink: $text");
+    
+    // 1. Extract URL (more robustly)
+    final urlMatch = RegExp(r'(https?:\/\/[^\s<>"]+)').firstMatch(text);
+    if (urlMatch == null) {
+       LogService().log("SongLink: No URL found in text: $text");
+       return;
+    }
+    String url = urlMatch.group(0)!;
+    
+    // Clean URL (remove trailing punctuation that might have been caught)
+    while (url.endsWith('.') || url.endsWith(',') || url.endsWith(')') || url.endsWith('!')) {
+      url = url.substring(0, url.length - 1);
+    }
+    
+    LogService().log("SongLink: Resolved URL: $url");
+    
+    // Pre-Processing: Clean URL (Remove query parameters and region prefixes)
+    if (url.contains("spotify.com") || url.contains("amazon.")) {
+      // Remove query string: ?si=... etc.
+      if (url.contains('?')) {
+        url = url.split('?').first;
+      }
+      
+      if (url.contains("spotify.com/intl-")) {
+        url = url.replaceFirst(RegExp(r'/intl-[a-z-]+/'), '/');
+      }
+      LogService().log("SongLink: Normalized URL: $url");
+    }
+
+    try {
+       // 2. Resolve across platforms using Odesli
+       final countryCode = _detectCountryCode();
+       final links = await _songLinkService.fetchLinks(url: url, countryCode: countryCode);
+       
+       final title = links['title'];
+       final artist = links['artist'];
+       final youtubeUrl = links['youtube'] ?? links['youtubeMusic'];
+       final artwork = links['thumbnailUrl'];
+
+       if (title != null && title.isNotEmpty && artist != null && artist.isNotEmpty) {
+          LogService().log("SongLink: Resolution Success: $title by $artist. YouTube: $youtubeUrl");
+          
+          // FALLBACK: If Odesli doesn't provide a YouTube link, we search for it manually!
+          String? finalYoutubeUrl = youtubeUrl;
+          if (finalYoutubeUrl == null) {
+             LogService().log("SongLink: No direct YouTube link. Searching manually for $title by $artist...");
+             final searchUrl = await searchYoutubeVideo(title, artist);
+             if (searchUrl != null) {
+                finalYoutubeUrl = searchUrl;
+                LogService().log("SongLink: Manual Search Success: $finalYoutubeUrl");
+             }
+          }
+           
+          final songId = DateTime.now().millisecondsSinceEpoch.toString();
+           
+          // 3. Import to Shared Songs and Trigger Playback
+          await _importSharedSong(
+             id: songId,
+             title: title,
+             artist: artist,
+             album: "Shared Link",
+             artUri: artwork,
+             youtubeUrl: finalYoutubeUrl,
+          );
+          return;
+       } else {
+          LogService().log("SongLink: Resolution succeeded but metadata (title/artist) is missing. Trying manual fallback...");
+          _handleMusicLinkShareManual(text);
+          return;
+       }
+    } catch (e) {
+       LogService().log("SongLink Resolution failed: $e. Falling back to pattern parsing.");
+       // Fallback to our manual pattern parsing if API fails
+       _handleMusicLinkShareManual(text);
+    }
+  }
+
+  void _handleMusicLinkShareManual(String text) {
+    debugPrint("Parsing Alternative Music Link (Manual): $text");
+    
+    // Pattern extraction: Many shares use "Title by Artist" or "Artist - Title"
+    String? title;
+    String? artist;
+    
+    // Pattern 1: "{Title} by {Artist}" (Apple/Spotify style - multilingual)
+    final byPattern = RegExp(r'(.+?)\s+(by|di|von|de|por)\s+(.+?)(\s+(on|su|auf|sur|en)\s+|-|\n|$)', caseSensitive: false);
+    final byMatch = byPattern.firstMatch(text);
+    if (byMatch != null) {
+      title = byMatch.group(1)?.trim();
+      artist = byMatch.group(3)?.trim();
+    } else {
+      // Pattern 2: "{Artist} - {Title}"
+      final dashPattern = RegExp(r'(.+?)\s+-\s+(.+?)(\s+(on|su|auf|sur|en)\s+|$)');
+      final dashMatch = dashPattern.firstMatch(text);
+      if (dashMatch != null) {
+        artist = dashMatch.group(1)?.trim();
+        title = dashMatch.group(2)?.trim();
+      }
+    }
+    
+    // Pattern 3: Amazon Music style "I'm listening to [Title] by [Artist] on Amazon Music"
+    // Already handled by Pattern 1 if it has "by" or "di", but let's be safe.
+    if (title == null || artist == null) {
+       final amazonExpr = RegExp(r'(sto ascoltando|listening to|écoute|escuchando|escuto)\s+(.+?)\s+(by|di|von|de|por)\s+(.+?)(\s+|$)', caseSensitive: false);
+       final match = amazonExpr.firstMatch(text);
+       if (match != null) {
+          title = match.group(2)?.trim();
+          artist = match.group(4)?.trim();
+       }
+    }
+
+    // Cleanup: remove "Check out", "Listen to", "Ascolta", URLs, or "on Spotify" if regex captured too much
+    if (title != null) {
+       title = title.replaceAll(RegExp(r'(Check out|Listen to|Ascolta|Hör dir|Ecouter|Escucha|Escute|Suono di|Sto ascoltando|I am listening to)[:\s]*', caseSensitive: false), "").trim();
+       if (title.contains("http")) title = null; // Guard against bad capture
+    }
+
+    if (title != null && artist != null) {
+       LogService().log("Manual Extraction Success: $title by $artist");
+       
+       // Trigger async search and import
+       _importSharedSongFromMetadata(title, artist, text);
+    } else {
+       LogService().log("Manual Extraction failed for patterns. Trying Meta-Tag Scraping...");
+       _handleMusicLinkShareScrape(text);
+    }
+  }
+
+  Future<void> _handleMusicLinkShareScrape(String text) async {
+    // 1. Extract URL
+    final urlMatch = RegExp(r'(https?:\/\/[^\s<>"]+)').firstMatch(text);
+    if (urlMatch == null) return;
+    String url = urlMatch.group(0)!;
+    
+    try {
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final html = response.body;
+        
+        // Extract og:title and og:description
+        final titleMatch = RegExp(r'<meta property="og:title" content="([^"]+)"').firstMatch(html);
+        final descMatch = RegExp(r'<meta property="og:description" content="([^"]+)"').firstMatch(html);
+        
+        String? scrapedTitle = titleMatch?.group(1);
+        String? scrapedArtist = descMatch?.group(1);
+        
+        if (scrapedTitle != null && scrapedTitle.isNotEmpty) {
+           // Spotify: Description often has "[Artist] · Song · [Year]" or "Listen to [Song] on Spotify. [Artist] · [Year]"
+           // We'll try to clean it
+           if (scrapedArtist != null) {
+              scrapedArtist = scrapedArtist.split(' · ').first;
+              scrapedArtist = scrapedArtist.replaceAll("Listen to ", "").replaceAll("Ascolta ", "");
+           }
+           
+           LogService().log("Meta-Tag Scraping Success: $scrapedTitle by $scrapedArtist");
+           await _importSharedSongFromMetadata(scrapedTitle, scrapedArtist ?? "Shared Artist", text);
+           return;
+        }
+      }
+    } catch (e) {
+      LogService().log("Meta-Tag Scraping failed: $e");
+    }
+    
+    LogService().log("Meta-Tag Scraping failed to yield metadata. Trying Deep Fallback...");
+    // Deep Fallback (final attempt)
+    final urlRegExp = RegExp(r'https?:\/\/[^\s]+');
+    final textNoUrl = text.replaceAll(urlRegExp, "").replaceAll("\n", " ").trim();
+    if (textNoUrl.length > 3) {
+       _importSharedSongFromMetadata(textNoUrl, "Shared Artist", text);
+    }
+  }
+
+  Future<void> _importSharedSongFromMetadata(String title, String artist, String originalText) async {
+    // 1. Search for a playable YouTube video
+    final youtubeUrl = await searchYoutubeVideo(title, artist);
+    if (youtubeUrl == null) {
+      LogService().log("Manual Metadata Flow: Failed to find YouTube video for $title by $artist");
+      return;
+    }
+
+    final songId = DateTime.now().millisecondsSinceEpoch.toString();
+    
+    // 2. Import and Play
+    await _importSharedSong(
+      id: songId,
+      title: title,
+      artist: artist,
+      album: "Shared Link",
+      youtubeUrl: youtubeUrl,
+    );
+  }
+
+  Future<void> _importVideoFromId(String videoId, {String? sharedText}) async {
+    final yt = yt_explode.YoutubeExplode();
+    try {
+      final video = await yt.videos.get(videoId);
+      
+      // Try to parse Artist - Title from video title if possible
+      String title = video.title;
+      String artist = video.author;
+      
+      if (video.title.contains(' - ')) {
+        final parts = video.title.split(' - ');
+        artist = parts[0].trim();
+        title = parts[1].trim();
+      }
+
+      await _importSharedSong(
+        id: videoId,
+        title: title,
+        artist: artist,
+        album: "YouTube Share",
+        artUri: video.thumbnails.highResUrl,
+      );
+    } catch (e) {
+      debugPrint("Error fetching video metadata for share: $e");
+      // Fallback: use limited info if metadata fetch fails
+      await _importSharedSong(
+        id: videoId,
+        title: "Shared Song",
+        artist: "Unknown",
+      );
+    } finally {
+      yt.close();
+    }
+  }
+
+  Future<void> _handleExternalUri(Uri uri) async {
+    debugPrint("Processing External URI: $uri");
+    if (uri.path.contains('share.html') || uri.scheme == 'musicstream') {
+      final params = uri.queryParameters;
+      final type = params['type'];
+      if (type == 'song') {
+        await _importSharedSong(
+          id: params['id'],
+          title: params['title'],
+          artist: params['artist'],
+          album: params['album'],
+          artUri: params['artUri'],
+        );
+      }
+    }
+  }
+
+  Future<void> _importSharedSong({
+    String? id,
+    String? title,
+    String? artist,
+    String? album,
+    String? artUri,
+    String? youtubeUrl,
+  }) async {
+    if (title == null || artist == null) return;
+
+    LogService().log("Importing Shared Song: $title by $artist");
+
+    // 1. Ensure "Shared Songs" playlist exists
+    Playlist? sharedPlaylist;
+    try {
+      sharedPlaylist = _playlists.firstWhere(
+        (p) => p.name == "Shared Songs" || p.id == "shared_songs",
+      );
+    } catch (_) {
+      // Create it if not found
+      final newPlaylist = Playlist(
+        id: "shared_songs",
+        name: "Shared Songs",
+        songs: [],
+        createdAt: DateTime.now(),
+        creator: 'app',
+      );
+      await _playlistService.addPlaylist(newPlaylist);
+      await _loadPlaylists();
+      sharedPlaylist = newPlaylist;
+    }
+
+    // 2. Prepare song object
+    final songId = id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final song = SavedSong(
+      id: songId,
+      title: title,
+      artist: artist,
+      album: album ?? "Imported",
+      artUri: artUri,
+      youtubeUrl: youtubeUrl ?? ((id != null && id.length == 11)
+          ? "https://youtube.com/watch?v=$id"
+          : null),
+      dateAdded: DateTime.now(),
+    );
+
+    // 3. Add to playlist
+    await _playlistService.addSongToPlaylist(sharedPlaylist.id, song);
+    await _loadPlaylists();
+    
+    // Safety delay for state sync
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    // 4. Trigger playback
+    if (song.youtubeUrl != null) {
+      final vId = YoutubePlayer.convertUrlToId(song.youtubeUrl!);
+      LogService().log("Shared Song Playback: YouTube Video ID: $vId for ${song.title}");
+      if (vId != null) {
+        await playYoutubeAudio(
+          vId,
+          song.id,
+          playlistId: sharedPlaylist.id,
+          overrideTitle: song.title,
+          overrideArtist: song.artist,
+          overrideArtUri: song.artUri,
+          overrideAlbum: song.album,
+        );
+      }
+    } else {
+      // Search fallback if no direct ID
+       final results = await searchMusic("${song.title} ${song.artist}");
+       if (results.isNotEmpty) {
+          final best = results.first.song;
+          final vId = best.youtubeUrl != null ? YoutubePlayer.convertUrlToId(best.youtubeUrl!) : null;
+          if (vId != null) {
+            await playYoutubeAudio(
+              vId,
+              song.id,
+              playlistId: sharedPlaylist.id,
+              overrideTitle: song.title,
+              overrideArtist: song.artist,
+              overrideArtUri: best.artUri ?? song.artUri,
+              overrideAlbum: best.album,
+            );
+          }
+       }
+    }
+  }
+  Future<void> _enrichCurrentMetadata({
+    required String videoId,
+    required String songId,
+    String? playlistId,
+    required String currentTitle,
+    required String currentArtist,
+    bool isLocal = false,
+  }) async {
+    // Wait a brief moment to let playback stabilize
+    await Future.delayed(const Duration(seconds: 2));
+    
+    // Safety check: is this still the song we are playing?
+    if (_audioOnlySongId != songId) return;
+
+    LogService().log("Metadata Enrichment: Searching for '$currentTitle' by '$currentArtist'");
+    
+    // 1. Clean Title for searching
+    String cleanTitle = currentTitle;
+    if (isLocal) {
+      // Remove extension (e.g. .mp3, .m4a)
+      final lastDot = cleanTitle.lastIndexOf('.');
+      if (lastDot != -1 && (cleanTitle.length - lastDot) < 6) {
+        cleanTitle = cleanTitle.substring(0, lastDot).trim();
+      }
+      // Replace underscores/hyphens with spaces
+      cleanTitle = cleanTitle.replaceAll('_', ' ').replaceAll('-', ' ').trim();
+    }
+
+    String query = cleanTitle;
+    if (currentArtist != "Unknown" && currentArtist != "YouTube" && currentArtist != "Local File") {
+      query = "$currentArtist $cleanTitle";
+    }
+
+    try {
+      final results = await _musicMetadataService.searchSongs(query: query, limit: 1);
+      if (results.isNotEmpty) {
+        final match = results.first.song;
+        LogService().log("Metadata Enrichment Match: ${match.title} by ${match.artist}");
+        
+        // 2. Map discovered data
+        final String newTitle = match.title;
+        final String newArtist = match.artist;
+        final String? newArtwork = match.artUri;
+        final String newAlbum = match.album;
+
+        // 3. Update internal state if currently playing
+        if (_audioOnlySongId == songId) {
+          _currentTrack = newTitle;
+          _currentArtist = newArtist;
+          _currentAlbum = newAlbum;
+          if (newArtwork != null && newArtwork.isNotEmpty) {
+            _currentAlbumArt = newArtwork;
+          }
+          // 4. Update artist image specifically (for circular avatars/backgrounds)
+          fetchArtistImage(newArtist).then((img) {
+             if (_audioOnlySongId == songId) {
+                _currentArtistImage = img;
+                notifyListeners();
+             }
+          });
+          
+          // 5. BRAODCAST TO AUDIO SERVICE / ANDROID AUTO
+          _audioHandler.updateMediaItem(
+            MediaItem(
+              id: isLocal ? videoId : "youtube://$videoId",
+              title: newTitle,
+              artist: newArtist,
+              album: newAlbum,
+              artUri: newArtwork != null ? Uri.tryParse(newArtwork) : null,
+              extras: {
+                'url': isLocal ? videoId : "youtube://$videoId",
+                'type': 'playlist_song',
+                'songId': songId,
+                'playlistId': playlistId,
+                'isLocal': isLocal,
+              },
+            ),
+          );
+          
+          notifyListeners();
+          LogService().log("Live Metadata Enrichment Applied!");
+
+          // 5. Optionally PERSIST to the playlist if it was a saved song
+          if (playlistId != null) {
+            bool found = false;
+            for (int i = 0; i < _playlists.length; i++) {
+              if (_playlists[i].id == playlistId) {
+                final songs = List<SavedSong>.from(_playlists[i].songs);
+                final idx = songs.indexWhere((s) => s.id == songId);
+                if (idx != -1) {
+                  songs[idx] = songs[idx].copyWith(
+                    title: newTitle,
+                    artist: newArtist,
+                    album: newAlbum,
+                    artUri: newArtwork,
+                  );
+                  _playlists[i] = _playlists[i].copyWith(songs: songs);
+                  found = true;
+                  break;
+                }
+              }
+            }
+            if (found) {
+                await _playlistService.saveAll(_playlists);
+                LogService().log("Metadata Enrichment: Persisted to playlist $playlistId");
+            }
+          }
+        }
+      } else {
+        // Fallback: If no metadata service match, try to fetch from YouTube specifically
+        if (!isLocal) {
+            LogService().log("Metadata Enrichment: No music service match, trying YouTube metadata fallback.");
+            final yt = yt_explode.YoutubeExplode();
+            try {
+              final video = await yt.videos.get(videoId);
+              if (_audioOnlySongId == songId) {
+                 String ytTitle = video.title;
+                 String ytArtist = video.author;
+                 if (video.title.contains(' - ')) {
+                    final parts = video.title.split(' - ');
+                    ytArtist = parts[0].trim();
+                    ytTitle = parts[1].trim();
+                 }
+                 
+                 _currentTrack = ytTitle;
+                 _currentArtist = ytArtist;
+                 _currentAlbumArt = video.thumbnails.highResUrl;
+                 
+                 // Update the current MediaItem too
+                 _audioHandler.updateMediaItem(
+                    MediaItem(
+                      id: "youtube://$videoId",
+                      title: ytTitle,
+                      artist: ytArtist,
+                      artUri: Uri.tryParse(video.thumbnails.highResUrl),
+                      extras: {
+                        'url': "youtube://$videoId",
+                        'type': 'playlist_song',
+                        'songId': songId,
+                        'playlistId': playlistId,
+                        'isLocal': false,
+                      },
+                    ),
+                  );
+
+                 notifyListeners();
+                 LogService().log("Metadata Enrichment: YouTube metadata fallback applied.");
+              }
+            } catch (_) {} finally { yt.close(); }
+        }
+      }
+    } catch (e) {
+      LogService().log("Metadata Enrichment Error: $e");
     }
   }
 }

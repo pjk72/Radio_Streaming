@@ -448,7 +448,7 @@ final Map<String, String> ar = {
   'find_new_music': 'ابحث عن موسيقى جديدة',
   'unknown_title': 'العنوان غير معروف',
   'share': 'يشارك',
-  'share_song_text': '🎵 تمت مشاركته بواسطة *MusicStream* -{0}بواسطة{1}:\n{2}\n\n📱 قم بتنزيل تطبيق MusicStream:\n{3}',
+  
   'update_available': 'التحديث متاح',
   'update_desc': 'يتوفر إصدار جديد من التطبيق. هل تريد الترقية الآن؟',
   'update_now': 'التحديث الآن',
@@ -491,4 +491,6 @@ final Map<String, String> ar = {
   'play_all': 'العب الكل',
   'live_radio': 'راديو مباشر',
   'playlist': 'قائمة التشغيل',
+  'share_song_text': '{0}\n\n📱 Ascolta con MusicStream:\n{3}',
+  'shared_songs': 'الأغاني المشتركة',
 };

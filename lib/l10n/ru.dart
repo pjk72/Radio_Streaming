@@ -489,8 +489,6 @@ final Map<String, String> ru = {
   'find_new_music': 'Найти новую музыку',
   'unknown_title': 'Неизвестное название',
   'share': 'Поделиться',
-  'share_song_text':
-      '🎵 Поделился из *MusicStream* — {0} от {1}:\n{2}\n\n📱 Скачать приложение MusicStream:\n{3}',
 
   // Update
   'update_available': 'Доступно обновление',
@@ -538,4 +536,6 @@ final Map<String, String> ru = {
   'play_all': 'Воспроизвести все',
   'live_radio': 'Живое радио',
   'playlist': 'Плейлист',
+  'share_song_text': '{0}\n\n📱 Слушайте с MusicStream:\n{3}',
+  'shared_songs': 'Общие песни',
 };

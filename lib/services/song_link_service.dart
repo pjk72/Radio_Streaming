@@ -31,9 +31,9 @@ class SongLinkService {
 
       if (response.statusCode == 200) {
         _lastRawJson += response.body; // Append raw response
-        // LogService().log(
-        //   "SongLink (Odesli) Response: ${response.body}",
-        // ); // Log JSON
+        LogService().log(
+           "SongLink (Odesli) Response: ${response.body}",
+        ); // Log JSON
         final json = jsonDecode(response.body);
         final links = json['linksByPlatform'] as Map<String, dynamic>?;
 
@@ -47,6 +47,8 @@ class SongLinkService {
             String? entityId;
             if (links.containsKey('appleMusic')) {
               entityId = links['appleMusic']['entityUniqueId'];
+            } else if (links.containsKey('spotify')) {
+              entityId = links['spotify']['entityUniqueId'];
             } else if (links.containsKey('youtube')) {
               entityId = links['youtube']['entityUniqueId'];
             }
@@ -60,15 +62,19 @@ class SongLinkService {
               final entities = json['entitiesByUniqueId'];
               if (entities != null && entities[entityId] != null) {
                 final entity = entities[entityId];
+                
+                // Extract Core Metadata
+                result['title'] = entity['title'] ?? "";
+                result['artist'] = entity['artistName'] ?? "";
+
                 final thumb = entity['thumbnailUrl'];
                 if (thumb != null) {
                   result['thumbnailUrl'] = thumb;
                 }
-                // Also try to get artist image? Odesli usually only gives album art.
               }
             }
           } catch (e) {
-            LogService().log("Error extracting thumbnail: $e");
+            LogService().log("Error extracting metadata in SongLink: $e");
           }
 
 
@@ -90,28 +96,10 @@ class SongLinkService {
             result['youtubeMusic'] = data['nativeAppUriMobile'] ?? data['url'];
           }
 
-          // Deezer
-          if (links.containsKey('deezer')) {
-            final data = links['deezer'];
-            result['deezer'] = data['nativeAppUriMobile'] ?? data['url'];
-          }
-
-          // Tidal
-          if (links.containsKey('tidal')) {
-            final data = links['tidal'];
-            result['tidal'] = data['nativeAppUriMobile'] ?? data['url'];
-          }
-
           // Amazon Music
           if (links.containsKey('amazonMusic')) {
             final data = links['amazonMusic'];
             result['amazonMusic'] = data['nativeAppUriMobile'] ?? data['url'];
-          }
-
-          // Napster
-          if (links.containsKey('napster')) {
-            final data = links['napster'];
-            result['napster'] = data['nativeAppUriMobile'] ?? data['url'];
           }
         }
       } else {

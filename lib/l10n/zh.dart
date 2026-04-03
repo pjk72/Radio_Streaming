@@ -481,8 +481,6 @@ final Map<String, String> zh = {
   'find_new_music': '寻找新音乐',
   'unknown_title': '未知标题',
   'share': '分享',
-  'share_song_text':
-      '🎵 分享自 *MusicStream* - {1} 的 {0}：\n{2}\n\n📱 下载 MusicStream 应用：\n{3}',
 
   // Update
   'update_available': '可用更新',
@@ -530,4 +528,6 @@ final Map<String, String> zh = {
   'play_all': '播放全部',
   'live_radio': '现场广播',
   'playlist': '播放列表',
+  'share_song_text': '{0}\n\n📱 Ascolta 与 MusicStream:\n{3}',
+  'shared_songs': '共享歌曲',
 };

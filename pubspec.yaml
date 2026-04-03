@@ -90,6 +90,8 @@ dependencies:
   device_info_plus: ^11.3.0
   firebase_crashlytics: ^4.3.10
   firebase_performance: ^0.10.1+1
+  app_links: ^7.0.0
+  receive_sharing_intent: ^1.8.1
 
 
 dev_dependencies:

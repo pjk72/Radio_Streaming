@@ -1,5 +1,7 @@
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.AppExtension
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 allprojects {
     repositories {

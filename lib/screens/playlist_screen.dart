@@ -5052,33 +5052,53 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   rootNavigator: true,
                                 ).pop();
 
-                                String youtubeStr = '';
+                                String deepLink = '';
                                 final youtubeLink =
                                     links['youtube'] ?? song.youtubeUrl;
+                                String videoId = '';
                                 if (youtubeLink != null) {
-                                  final videoId = YoutubePlayer.convertUrlToId(
+                                  final vId = YoutubePlayer.convertUrlToId(
                                     youtubeLink,
                                   );
-                                  if (videoId != null) {
-                                    youtubeStr = 'https://youtu.be/$videoId';
-                                  } else {
-                                    youtubeStr = youtubeLink;
-                                  }
+                                  if (vId != null) videoId = vId;
                                 }
 
-                                final appLink =
-                                    'https://play.google.com/store/apps/details?id=com.fazio.musicstream';
+                                // Generate Deep Link with metadata
+                                final baseUrl =
+                                    'https://pjk72.github.io/musicstream/share.html';
+                                final encodedTitle = Uri.encodeComponent(
+                                  song.title,
+                                );
+                                final encodedArtist = Uri.encodeComponent(
+                                  song.artist,
+                                );
+                                final encodedAlbum = Uri.encodeComponent(
+                                  song.album,
+                                );
+                                final encodedArt = song.artUri != null
+                                    ? Uri.encodeComponent(song.artUri!)
+                                    : '';
 
+                                deepLink =
+                                    '$baseUrl?type=song&id=$videoId&title=$encodedTitle&artist=$encodedArtist&album=$encodedAlbum&artUri=$encodedArt';
+
+                                String youtubeLinkStr = videoId.isNotEmpty
+                                    ? 'https://youtu.be/$videoId'
+                                    : (youtubeLink ?? '');
+
+                                // Order: YouTube first, then Deep Link
+                                final String shareText = youtubeLinkStr;
+                              
                                 final rawText = Provider.of<LanguageProvider>(
                                   context,
                                   listen: false,
                                 ).translate('share_song_text');
 
                                 final String text = rawText
-                                    .replaceAll('{0}', song.title)
-                                    .replaceAll('{1}', song.artist)
-                                    .replaceAll('{2}', youtubeStr.trim())
-                                    .replaceAll('{3}', appLink);
+                                    .replaceAll('{0}', shareText)
+                                    .replaceAll('{1}', song.title)
+                                    .replaceAll('{2}', song.artist)
+                                    .replaceAll('{3}', deepLink);
 
                                 await Share.share(text);
                               } catch (e) {
