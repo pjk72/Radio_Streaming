@@ -54,7 +54,12 @@ class Playlist {
       songs: songs ?? this.songs,
       createdAt: createdAt ?? this.createdAt,
       creator: creator ?? this.creator,
-      customImageUrl: customImageUrl ?? this.customImageUrl,
-    );
+      );
+  }
+
+  String getDisplayName(String Function(String) translate) {
+    if (id == 'favorites') return translate('favorites');
+    if (id == 'recently_played') return translate('recently_played_title');
+    return name;
   }
 }

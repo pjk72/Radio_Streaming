@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widget_previews.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +13,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart'
     as ye
     hide Playlist;
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/encryption_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,6 +75,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   bool _hasShownUpgradeDialog = false;
   bool _sortAlphabetical = false;
   bool _showPlaylistSearch = false;
+  StreamSubscription? _enrichmentSub;
+  bool _isShowingSyncDialog = false;
 
   @override
   void initState() {
@@ -84,6 +87,62 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         _searchQuery = _searchController.text.toLowerCase();
       });
     });
+
+    _enrichmentSub = Provider.of<RadioProvider>(context, listen: false)
+        .onEnrichmentComplete
+        .listen((completion) {
+      if (!_isShowingSyncDialog && completion.failCount > 0) {
+        _isShowingSyncDialog = true;
+        _showSyncCompleteDialog(completion);
+      }
+    });
+  }
+
+  void _showSyncCompleteDialog(EnrichmentCompletion completion) {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          lang.translate('sync_complete_title'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          lang.translate('sync_complete_msg')
+              .replaceAll('{0}', completion.playlistName)
+              .replaceAll('{1}', completion.successCount.toString())
+              .replaceAll('{2}', completion.failCount.toString()),
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              _isShowingSyncDialog = false;
+
+              // Remove unsynced songs
+              final playlist = provider.playlists.firstWhere((p) => p.id == completion.playlistId);
+              final fetchingTag = lang.translate('syncing_yt'); // Use the placeholder tag we set
+              final toRemove = playlist.songs
+                  .where((s) => s.artist == fetchingTag || (s.artUri == null || s.artUri!.isEmpty))
+                  .map((s) => s.id)
+                  .toList();
+
+              if (toRemove.isNotEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(lang.translate('sync_failed_removal'))),
+                );
+                await provider.removeSongsFromPlaylist(completion.playlistId, toRemove);
+              }
+            },
+            child: Text(lang.translate('close')),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -130,34 +189,47 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Found ${proposals.length} songs that are available on your device. Select the ones you want to switch to offline versions for better performance.",
+                      Provider.of<LanguageProvider>(context, listen: false)
+                          .translate('local_files_desc')
+                          .replaceAll('{0}', proposals.length.toString()),
                       style: const TextStyle(color: Colors.white70),
                     ),
                     const SizedBox(height: 12),
-                    // "Select All" / "Deselect All" convenience
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              if (selectedProposalIds.length ==
-                                  proposals.length) {
-                                selectedProposalIds.clear();
-                              } else {
-                                selectedProposalIds.addAll(
-                                  proposals.map(
-                                    (p) => "${p.playlistId}_${p.songId}",
-                                  ),
-                                );
-                              }
-                            });
+                        Builder(
+                          builder: (context) {
+                            final lang = Provider.of<LanguageProvider>(
+                              context,
+                              listen: false,
+                            );
+                            final bool isAllSelected =
+                                selectedProposalIds.length == proposals.length;
+                            return TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  if (isAllSelected) {
+                                    selectedProposalIds.clear();
+                                  } else {
+                                    selectedProposalIds.addAll(
+                                      proposals.map(
+                                        (p) => "${p.playlistId}_${p.songId}",
+                                      ),
+                                    );
+                                  }
+                                });
+                              },
+                              child: Text(
+                                isAllSelected
+                                    ? lang.translate('deselect_all')
+                                    : lang.translate('select_all'),
+                                style: const TextStyle(
+                                  color: Colors.blueAccent,
+                                ),
+                              ),
+                            );
                           },
-                          child: Text(
-                            selectedProposalIds.length == proposals.length
-                                ? "Deselect All"
-                                : "Select All",
-                          ),
                         ),
                       ],
                     ),
@@ -222,7 +294,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 TextButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    // Clear proposals so we don't ask again this session
                     provider.upgradeProposals.clear();
                   },
                   child: Text(
@@ -265,7 +336,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     disabledBackgroundColor: Colors.grey.withValues(alpha: 0.5),
                   ),
                   child: Text(
-                    "Update Selected (${selectedProposalIds.length})",
+                    Provider.of<LanguageProvider>(context, listen: false)
+                        .translate('update_selected_count')
+                        .replaceAll(
+                          '{0}',
+                          selectedProposalIds.length.toString(),
+                        ),
                     style: const TextStyle(color: Colors.white),
                   ),
                 ),
@@ -310,7 +386,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       try {
         return provider.playlists
             .firstWhere((p) => p.id == _selectedPlaylistId)
-            .name;
+            .getDisplayName(lang.translate);
       } catch (_) {
         return lang.translate('tab_playlists');
       }
@@ -342,6 +418,23 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   Playlist? get effectivePlaylist => _getEffectivePlaylist(applyFilter: true);
   Playlist? get rawEffectivePlaylist =>
       _getEffectivePlaylist(applyFilter: false);
+
+  bool get hasInvalidSongs {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    return rawEffectivePlaylist?.songs.any(
+          (s) => !s.isValid || provider.invalidSongIds.contains(s.id),
+        ) ??
+        false;
+  }
+
+  bool get hasLocalSongs {
+    final rawPlaylist = rawEffectivePlaylist;
+    return (rawPlaylist?.creator == 'local') ||
+        (rawPlaylist?.songs.any(
+              (s) => s.localPath != null || s.id.startsWith('local_'),
+            ) ??
+            false);
+  }
 
   Playlist? _getEffectivePlaylist({required bool applyFilter}) {
     final provider = Provider.of<RadioProvider>(context, listen: false);
@@ -450,6 +543,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     });
   }
 
+
   Future<void> _persistArtistFilter(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('filter_followed_artists', value);
@@ -467,6 +561,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     _artistsScrollController.dispose();
     _albumsScrollController.dispose();
     _unlockTimer?.cancel();
+    _enrichmentSub?.cancel();
     super.dispose();
   }
 
@@ -569,9 +664,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             if (!hideOnline) const Divider(color: Colors.white10),
             ListTile(
               leading: const Icon(Icons.refresh_rounded, color: Colors.green),
-              title: const Text(
-                "Try Again & Unlock",
-                style: TextStyle(color: Colors.white),
+              title: Text(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('try_again_unlock_all'),
+                style: const TextStyle(color: Colors.greenAccent),
               ),
               onTap: () {
                 Navigator.pop(ctx);
@@ -584,9 +682,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   Icons.lock_open_rounded,
                   color: Colors.green,
                 ),
-                title: const Text(
-                  "Force Unlock",
-                  style: TextStyle(color: Colors.white),
+                title: Text(
+                  Provider.of<LanguageProvider>(
+                    context,
+                    listen: false,
+                  ).translate('force_unlock'),
+                  style: const TextStyle(color: Colors.orangeAccent),
                 ),
                 onTap: () async {
                   Navigator.pop(ctx);
@@ -610,9 +711,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               ),
             ListTile(
               leading: const Icon(Icons.info_outline, color: Colors.blueAccent),
-              title: const Text(
-                "View Song Details",
-                style: TextStyle(color: Colors.white),
+              title: Text(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('view_song_details'),
+                style: const TextStyle(color: Colors.blueAccent),
               ),
               onTap: () {
                 Navigator.pop(ctx);
@@ -625,47 +729,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   Icons.delete_outline,
                   color: Colors.redAccent,
                 ),
-                title: const Text(
-                  "Remove from Library",
-                  style: TextStyle(color: Colors.white),
+                title: Text(
+                  Provider.of<LanguageProvider>(
+                    context,
+                    listen: false,
+                  ).translate('remove_from_library'),
+                  style: const TextStyle(color: Colors.redAccent),
                 ),
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final confirmed = await GlassUtils.showGlassDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      backgroundColor: const Color(0xFF222222),
-                      title: const Text(
-                        "Remove Song",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      content: const Text(
-                        "Remove this song from your library permanently?",
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: Text(
-                            Provider.of<LanguageProvider>(
-                              context,
-                              listen: false,
-                            ).translate('cancel'),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text(
-                            "Remove",
-                            style: TextStyle(color: Colors.redAccent),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirmed == true) {
-                    provider.removeSongFromLibrary(song.id);
-                  }
+                  _confirmRemoveSong(context, provider, song, playlistId);
                 },
               ),
             const SizedBox(height: 12),
@@ -673,6 +746,119 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _confirmRemoveSong(
+    BuildContext context,
+    RadioProvider provider,
+    SavedSong song,
+    String playlistId,
+  ) async {
+    final confirmed = await GlassUtils.showGlassDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF222222),
+        title: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('remove_song'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('remove_song_desc'),
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('cancel'),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              Provider.of<LanguageProvider>(
+                context,
+                listen: false,
+              ).translate('delete'),
+              style: const TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      provider.removeSongFromLibrary(song.id);
+    }
+  }
+
+  void _showQRScanner(BuildContext context, RadioProvider provider) async {
+    final status = await Permission.camera.request();
+    if (status.isDenied || status.isPermanentlyDenied) {
+      if (mounted) {
+        final lang = Provider.of<LanguageProvider>(context, listen: false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(lang.translate('permission_camera_denied'))),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    
+    // Tiny delay to ensure the OS permission update is fully recognized by the camera driver
+    await Future.delayed(const Duration(milliseconds: 250));
+
+    if (context.mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (ctx) => _QRScannerScreen(
+            onCodeDetected: (data) async {
+              Navigator.pop(ctx);
+              
+              // Handle Cloud Tokens vs Song Deep Links vs Legacy Base64
+              if (data.startsWith('http') || data.startsWith('musicstream://')) {
+                final uri = Uri.tryParse(data);
+                if (uri != null) {
+                  await provider.handleExternalUri(uri);
+                }
+              } else {
+                // Legacy Base64 protocol
+                await provider.importSharedPlaylist(data);
+              }
+              
+              if (context.mounted) {
+                final lang = Provider.of<LanguageProvider>(context, listen: false);
+                GlassUtils.showGlassDialog(
+                  context: context,
+                  builder: (dialogCtx) => AlertDialog(
+                    backgroundColor: const Color(0xFF1a1a2e),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: Text(lang.translate('success'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    content: Text(lang.translate('imported_playlist'), style: const TextStyle(color: Colors.white70)),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx),
+                        child: Text(lang.translate('close'), style: const TextStyle(color: Colors.blueAccent)),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _testAndUnlockTrack(
@@ -857,22 +1043,61 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         surfaceTintColor: Colors.transparent,
-        title: const Text(
-          "Song Details",
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('song_details_title'),
+          style: const TextStyle(color: Colors.white),
         ),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _detailItem("Title", song.title),
-              _detailItem("Artist", song.artist),
-              _detailItem("Album", song.album),
-              _detailItem("ID", song.id),
-              _detailItem("Date Added", song.dateAdded.toString()),
+              _detailItem(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('song_title'),
+                song.title,
+              ),
+              _detailItem(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('artist_name'),
+                song.artist,
+              ),
+              _detailItem(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('label_album'),
+                song.album,
+              ),
+              _detailItem(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('label_id'),
+                song.id,
+              ),
+              _detailItem(
+                Provider.of<LanguageProvider>(
+                  context,
+                  listen: false,
+                ).translate('label_date_added'),
+                song.dateAdded.toString(),
+              ),
               if (song.youtubeUrl != null)
-                _detailItem("YouTube URL", song.youtubeUrl!),
+                _detailItem(
+                  Provider.of<LanguageProvider>(
+                    context,
+                    listen: false,
+                  ).translate('label_youtube_url'),
+                  song.youtubeUrl!,
+                ),
             ],
           ),
         ),
@@ -929,6 +1154,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     _unlockTimer = null;
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -947,26 +1174,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         }
       }
     }
-
-    // Use rawEffectivePlaylist to check for invalid songs so the menu option
-    // remains visible even if the current filtered view is empty (preventing "trap").
-    final rawPlaylist = rawEffectivePlaylist;
-    final hasInvalidSongs =
-        rawPlaylist?.songs.any(
-          (s) => !s.isValid || provider.invalidSongIds.contains(s.id),
-        ) ??
-        false;
-
-    final bool isLocalPlaylist = rawPlaylist?.creator == 'local';
-    final hasLocalSongs =
-        isLocalPlaylist ||
-        (rawPlaylist?.songs.any(
-              (s) => s.localPath != null || s.id.startsWith('local_'),
-            ) ??
-            false);
-
-    final currentSongs = currentSongList;
-
+    
     // 4. Filter Playlists by Search (only if view mode is playlists and no selection)
     // NOTE: We use the natural order from provider (User Defined) for playlists
     // 4. Filter Playlists by Search (only if view mode is playlists and no selection)
@@ -1109,245 +1317,149 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (hasLocalSongs || _showOnlyLocal)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
-                            child: Tooltip(
-                              message: _showOnlyLocal
-                                  ? "Show All Songs"
-                                  : "Show Local Only",
-                              child: IconButton(
-                                icon: Icon(
-                                  Icons.smartphone_rounded,
-                                  color: _showOnlyLocal
-                                      ? Theme.of(context).primaryColor
-                                      : headerContrastColor,
-                                  size: 20,
-                                ),
-                                style: IconButton.styleFrom(
-                                  backgroundColor: _showOnlyLocal
-                                      ? Theme.of(
-                                          context,
-                                        ).primaryColor.withValues(alpha: 0.2)
-                                      : null,
-                                  padding: const EdgeInsets.all(8),
-                                  minimumSize: const Size(36, 36),
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _showOnlyLocal = !_showOnlyLocal;
-                                  });
-                                },
+                        // Status Indicators
+                        if (hasLocalSongs)
+                          GestureDetector(
+                            onTap: () => _handleAction('toggle_local'),
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 6, left: 4),
+                              child: Icon(
+                                Icons.smartphone_rounded,
+                                color: _showOnlyLocal ? Theme.of(context).primaryColor : headerContrastColor.withValues(alpha: 0.5),
+                                size: 16,
                               ),
                             ),
                           ),
-                        if (hasInvalidSongs || _showOnlyInvalid)
-                          if (!_isBulkChecking)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
-                              child: Tooltip(
-                                message: _showOnlyInvalid
-                                    ? "Show All Songs"
-                                    : "Show Invalid Only",
-                                child: IconButton(
-                                  icon: Icon(
-                                    _showOnlyInvalid
-                                        ? Icons.warning_rounded
-                                        : Icons.warning_amber_rounded,
-                                    color: Colors.orangeAccent,
-                                    size: 20,
-                                  ),
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: _showOnlyInvalid
-                                        ? Colors.orangeAccent.withValues(
-                                            alpha: 0.15,
-                                          )
-                                        : null,
-                                    padding: const EdgeInsets.all(8),
-                                    minimumSize: const Size(36, 36),
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _showOnlyInvalid = !_showOnlyInvalid;
-                                    });
-                                  },
-                                ),
+                        if (hasInvalidSongs)
+                          GestureDetector(
+                            onTap: () => _handleAction('toggle_invalid'),
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 6, left: 2),
+                              child: Icon(
+                                Icons.warning_rounded,
+                                color: _showOnlyInvalid ? Colors.orangeAccent : headerContrastColor.withValues(alpha: 0.5),
+                                size: 16,
                               ),
                             ),
-                        if (isSelectionActive) ...[
-                          if (_isBulkChecking)
-                            const Padding(
-                              padding: EdgeInsets.only(right: 16.0),
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.greenAccent,
-                                ),
-                              ),
-                            ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.playlist_play_rounded,
-                              size: 32,
-                              color: headerContrastColor,
-                            ),
-                            tooltip: "Play All",
-                            onPressed: () {
-                              if (_selectedPlaylistId != null) {
-                                _playPlaylist(provider, effectivePlaylist!);
-                              } else {
-                                _playSongs(
-                                  provider,
-                                  currentSongList,
-                                  headerTitle,
-                                );
-                              }
-                            },
                           ),
-                          if (effectivePlaylist != null &&
-                              (effectivePlaylist!.id == 'favorites' ||
-                                  effectivePlaylist!.creator != 'local') &&
-                              Provider.of<EntitlementService>(
-                                    context,
-                                    listen: false,
-                                  ).getFeatureLimit('download_songs') !=
-                                  0)
-                            IconButton(
-                              icon: Icon(
-                                Icons.download_rounded,
-                                size: 32,
-                                color: headerContrastColor,
+                        if (_isBulkChecking)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 8.0),
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.greenAccent,
                               ),
-                              tooltip: Provider.of<LanguageProvider>(
-                                context,
-                                listen: false,
-                              ).translate('download'),
-                              onPressed: () {
-                                _downloadPlaylist(
-                                  context,
-                                  provider,
-                                  effectivePlaylist!,
-                                );
-                              },
                             ),
-                          PopupMenuButton<String>(
-                            icon: Icon(
-                              Icons.more_vert_rounded,
-                              color: headerContrastColor,
-                            ),
-                            tooltip: "Options",
-                            surfaceTintColor: Colors.transparent,
-                            onSelected: (value) {
-                              if (value == 'sort') {
-                                setState(() {
-                                  _sortAlphabetical = !_sortAlphabetical;
-                                });
-                              } else if (value == 'search') {
-                                setState(() {
-                                  _showPlaylistSearch = !_showPlaylistSearch;
-                                  if (!_showPlaylistSearch) {
-                                    _searchController.clear();
-                                  }
-                                });
-                              } else if (value == 'group_album') {
-                                setState(
-                                  () => _groupingMode =
-                                      PlaylistGroupingMode.album,
-                                );
-                              } else if (value == 'group_artist') {
-                                setState(
-                                  () => _groupingMode =
-                                      PlaylistGroupingMode.artist,
-                                );
-                              } else if (value == 'group_none') {
-                                setState(
-                                  () =>
-                                      _groupingMode = PlaylistGroupingMode.none,
-                                );
-                              } else if (value == 'shuffle') {
-                                provider.toggleShuffle();
-                              } else if (value == 'duplicates') {
-                                scanForDuplicates(
-                                  context,
-                                  provider,
-                                  effectivePlaylist!,
-                                );
-                              } else if (value == 'bulk_check') {
-                                _processAllInvalidTracks(
-                                  provider,
-                                  currentSongs,
-                                  _selectedPlaylistId,
-                                );
-                              }
-                            },
-                            itemBuilder: (context) {
-                              // Use onSurface for text to ensure visibility against the menu background
-                              final onSurfaceColor = Theme.of(
-                                context,
-                              ).colorScheme.onSurface;
-                              final iconColor =
-                                  Theme.of(context).iconTheme.color ??
-                                  onSurfaceColor.withValues(alpha: 0.7);
-                              final primaryColor = Theme.of(
-                                context,
-                              ).primaryColor;
-                              final lang = Provider.of<LanguageProvider>(
-                                context,
-                                listen: false,
-                              );
+                          ),
+                        // Pinned Actions (Max 3 visible)
+                        ... (isSelectionActive ? provider.pinnedPlaylistActions : provider.pinnedLibraryActions)
+                            .where((id) => _isActionVisible(id))
+                            .take(3)
+                            .map((id) => _buildHeaderActionButton(id, headerContrastColor)),
 
-                              return [
-                                PopupMenuItem(
-                                  value: 'sort',
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.sort_by_alpha,
-                                        color: _sortAlphabetical
-                                            ? primaryColor
-                                            : iconColor,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        lang.translate('sort_alphabetically'),
-                                        style: TextStyle(
-                                          color: _sortAlphabetical
-                                              ? primaryColor
-                                              : onSurfaceColor,
+                        // Consolidated 3-dot menu for ALL actions
+                        PopupMenuButton<String>(
+                          icon: Icon(
+                            Icons.more_vert_rounded,
+                            color: headerContrastColor,
+                            size: 20,
+                          ),
+                          padding: const EdgeInsets.all(4),
+                          tooltip: lang.translate('settings'),
+                          surfaceTintColor: Colors.transparent,
+                          onSelected: (id) => _handleAction(id, fromMenu: true),
+                          itemBuilder: (context) {
+                            final onSurfaceColor = Theme.of(context).colorScheme.onSurface;
+                            final iconColor = Theme.of(context).iconTheme.color ?? onSurfaceColor.withValues(alpha: 0.7);
+                            final primaryColor = Theme.of(context).primaryColor;
+
+                            final List<PopupMenuEntry<String>> items = [
+                              PopupMenuItem<String>(
+                                value: null, // Zero value to avoid auto-close on selection from standard behavior
+                                child: Consumer<RadioProvider>(
+                                  builder: (context, provider, _) => GestureDetector(
+                                    onTap: () => _handleAction('toggle_pin_mode', fromMenu: true),
+                                    behavior: HitTestBehavior.opaque,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          provider.isPinningMode ? Icons.edit_off_rounded : Icons.edit_rounded,
+                                          color: primaryColor,
                                         ),
-                                      ),
-                                    ],
+                                        const SizedBox(width: 12),
+                                        Text(
+                                          provider.isPinningMode ? lang.translate('stop_customizing') : lang.translate('customize_header'),
+                                          style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                                PopupMenuItem(
-                                  value: 'search',
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        _showPlaylistSearch
-                                            ? Icons.search_off
-                                            : Icons.search,
-                                        color: _showPlaylistSearch
-                                            ? primaryColor
-                                            : iconColor,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        _showPlaylistSearch
-                                            ? lang.translate('hide_find')
-                                            : lang.translate(
-                                                'find_in_playlist',
-                                              ),
-                                        style: TextStyle(
-                                          color: _showPlaylistSearch
-                                              ? primaryColor
-                                              : onSurfaceColor,
-                                        ),
-                                      ),
-                                    ],
+                              ),
+                              const PopupMenuDivider(),
+                            ];
+
+                            if (isSelectionActive) {
+                              // Context: INSIDE A PLAYLIST/ARTIST/ALBUM
+                              items.addAll([
+                                _buildActionItem(
+                                  id: 'play_all',
+                                  icon: Icons.playlist_play_rounded,
+                                  label: lang.translate('play_all'),
+                                  isSelectionActive: true,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                ),
+                                if (effectivePlaylist != null &&
+                                    (effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
+                                    Provider.of<EntitlementService>(context, listen: false).getFeatureLimit('download_songs') != 0)
+                                  _buildActionItem(
+                                    id: 'download',
+                                    icon: Icons.download_rounded,
+                                    label: lang.translate('download'),
+                                    isSelectionActive: true,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
                                   ),
+                                if (effectivePlaylist != null && effectivePlaylist!.creator != 'local')
+                                  _buildActionItem(
+                                    id: 'share_playlist',
+                                    icon: Icons.share_rounded,
+                                    label: lang.translate('share_playlist'),
+                                    isSelectionActive: true,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                  ),
+                                const PopupMenuDivider(),
+                                _buildActionItem(
+                                  id: 'sort',
+                                  icon: Icons.sort_by_alpha,
+                                  label: lang.translate('sort_alphabetically'),
+                                  isSelectionActive: true,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                  overrideIconColor: _sortAlphabetical ? primaryColor : null,
+                                  overrideTextColor: _sortAlphabetical ? primaryColor : null,
+                                ),
+                                _buildActionItem(
+                                  id: 'search',
+                                  icon: _showPlaylistSearch ? Icons.search_off : Icons.search,
+                                  label: _showPlaylistSearch ? lang.translate('hide_find') : lang.translate('find_in_playlist'),
+                                  isSelectionActive: true,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                  overrideIconColor: _showPlaylistSearch ? primaryColor : null,
+                                  overrideTextColor: _showPlaylistSearch ? primaryColor : null,
                                 ),
                                 const PopupMenuDivider(),
                                 PopupMenuItem(
@@ -1355,307 +1467,171 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   height: 32,
                                   child: Text(
                                     lang.translate('group_by').toUpperCase(),
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).hintColor,
-                                    ),
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).hintColor),
                                   ),
                                 ),
-                                PopupMenuItem(
-                                  value: 'group_album',
-                                  height: 48,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.album,
-                                        color:
-                                            _groupingMode ==
-                                                PlaylistGroupingMode.album
-                                            ? primaryColor
-                                            : iconColor,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        lang.translate('label_album'),
-                                        style: TextStyle(
-                                          color:
-                                              _groupingMode ==
-                                                  PlaylistGroupingMode.album
-                                              ? primaryColor
-                                              : onSurfaceColor,
-                                        ),
-                                      ),
-                                      if (_groupingMode ==
-                                          PlaylistGroupingMode.album) ...[
-                                        const Spacer(),
-                                        Icon(
-                                          Icons.check,
-                                          size: 16,
-                                          color: primaryColor,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                                _buildActionItem(
+                                  id: 'group_album',
+                                  icon: Icons.album,
+                                  label: lang.translate('label_album'),
+                                  isSelectionActive: true,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                  overrideIconColor: _groupingMode == PlaylistGroupingMode.album ? primaryColor : null,
+                                  overrideTextColor: _groupingMode == PlaylistGroupingMode.album ? primaryColor : null,
                                 ),
-                                PopupMenuItem(
-                                  value: 'group_artist',
-                                  height: 48,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.person,
-                                        color:
-                                            _groupingMode ==
-                                                PlaylistGroupingMode.artist
-                                            ? primaryColor
-                                            : iconColor,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        lang.translate('label_artist'),
-                                        style: TextStyle(
-                                          color:
-                                              _groupingMode ==
-                                                  PlaylistGroupingMode.artist
-                                              ? primaryColor
-                                              : onSurfaceColor,
-                                        ),
-                                      ),
-                                      if (_groupingMode ==
-                                          PlaylistGroupingMode.artist) ...[
-                                        const Spacer(),
-                                        Icon(
-                                          Icons.check,
-                                          size: 16,
-                                          color: primaryColor,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                                _buildActionItem(
+                                  id: 'group_artist',
+                                  icon: Icons.person,
+                                  label: lang.translate('label_artist'),
+                                  isSelectionActive: true,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                  overrideIconColor: _groupingMode == PlaylistGroupingMode.artist ? primaryColor : null,
+                                  overrideTextColor: _groupingMode == PlaylistGroupingMode.artist ? primaryColor : null,
                                 ),
-                                PopupMenuItem(
-                                  value: 'group_none',
-                                  height: 48,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.list,
-                                        color:
-                                            _groupingMode ==
-                                                PlaylistGroupingMode.none
-                                            ? primaryColor
-                                            : iconColor,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        lang.translate('none'),
-                                        style: TextStyle(
-                                          color:
-                                              _groupingMode ==
-                                                  PlaylistGroupingMode.none
-                                              ? primaryColor
-                                              : onSurfaceColor,
-                                        ),
-                                      ),
-                                      if (_groupingMode ==
-                                          PlaylistGroupingMode.none) ...[
-                                        const Spacer(),
-                                        Icon(
-                                          Icons.check,
-                                          size: 16,
-                                          color: primaryColor,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                                _buildActionItem(
+                                  id: 'group_none',
+                                  icon: Icons.list,
+                                  label: lang.translate('none'),
+                                  isSelectionActive: true,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                  overrideIconColor: _groupingMode == PlaylistGroupingMode.none ? primaryColor : null,
+                                  overrideTextColor: _groupingMode == PlaylistGroupingMode.none ? primaryColor : null,
                                 ),
                                 const PopupMenuDivider(),
-                                PopupMenuItem(
-                                  value: 'shuffle',
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.shuffle_rounded,
-                                        color: provider.isShuffleMode
-                                            ? Colors.redAccent
-                                            : iconColor,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        lang.translate('shuffle'),
-                                        style: TextStyle(
-                                          color: provider.isShuffleMode
-                                              ? Colors.redAccent
-                                              : onSurfaceColor,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildActionItem(
+                                  id: 'shuffle',
+                                  icon: Icons.shuffle_rounded,
+                                  label: lang.translate('shuffle'),
+                                  isSelectionActive: true,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                  overrideIconColor: provider.isShuffleMode ? primaryColor : null,
+                                  overrideTextColor: provider.isShuffleMode ? primaryColor : null,
                                 ),
-                                if (_selectedPlaylistId != null) ...[
-                                  PopupMenuItem(
-                                    value: 'duplicates',
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.cleaning_services_rounded,
-                                          color: iconColor,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          lang.translate('scan_duplicates'),
-                                          style: TextStyle(
-                                            color: onSurfaceColor,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                if (_selectedPlaylistId != null)
+                                  _buildActionItem(
+                                    id: 'duplicates',
+                                    icon: Icons.cleaning_services_rounded,
+                                    label: lang.translate('scan_duplicates'),
+                                    isSelectionActive: true,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                  ),
+                                if (hasInvalidSongs || _showOnlyInvalid)
+                                  _buildActionItem(
+                                    id: 'bulk_check',
+                                    icon: Icons.playlist_add_check_circle_rounded,
+                                    label: lang.translate('try_again_unlock_all'),
+                                    isSelectionActive: true,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                    enabled: !_isBulkChecking,
+                                  ),
+                              ]);
+                            } else {
+                              // Context: MAIN LIBRARY VIEW (Grid)
+                              items.addAll([
+                                _buildActionItem(
+                                  id: 'search_add_song',
+                                  icon: Icons.library_music_rounded,
+                                  label: lang.translate('search_add_song'),
+                                  isSelectionActive: false,
+                                  iconColor: iconColor,
+                                  onSurfaceColor: onSurfaceColor,
+                                  primaryColor: primaryColor,
+                                ),
+                                if (_viewMode == MetadataViewMode.playlists) ...[
+                                  _buildActionItem(
+                                    id: 'create_playlist',
+                                    icon: Icons.add_rounded,
+                                    label: lang.translate('create_playlist_tooltip'),
+                                    isSelectionActive: false,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                  ),
+                                  _buildActionItem(
+                                    id: 'scan_qr',
+                                    icon: Icons.qr_code_scanner_rounded,
+                                    label: lang.translate('scan_qr'),
+                                    isSelectionActive: false,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                  ),
+                                  _buildActionItem(
+                                    id: 'sort_mode',
+                                    icon: _sortMode == PlaylistSortMode.custom ? Icons.sort : Icons.sort_by_alpha,
+                                    label: _sortMode == PlaylistSortMode.custom ? lang.translate('custom_order_tooltip') : lang.translate('alphabetical_order_tooltip'),
+                                    isSelectionActive: false,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
                                   ),
                                 ],
-                                if (hasInvalidSongs || _showOnlyInvalid) ...[
-                                  if (hasInvalidSongs)
-                                    PopupMenuItem(
-                                      value: 'bulk_check',
-                                      enabled: !_isBulkChecking,
-                                      child: Row(
-                                        children: [
-                                          if (_isBulkChecking)
-                                            const SizedBox(
-                                              width: 24,
-                                              height: 24,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                          else
-                                            const Icon(
-                                              Icons
-                                                  .playlist_add_check_circle_rounded,
-                                              color: Colors.greenAccent,
-                                            ),
-                                          const SizedBox(width: 12),
-                                          Text(
-                                            _isBulkChecking
-                                                ? lang.translate('processing')
-                                                : lang.translate(
-                                                    'try_again_unlock_all',
-                                                  ),
-                                            style: TextStyle(
-                                              color: onSurfaceColor,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                ],
-                              ];
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                        ] else ...[
-                          IconButton(
-                            icon: const Icon(
-                              Icons.library_music_rounded,
-                              size: 28,
-                            ),
-                            color: Theme.of(
-                              context,
-                            ).appBarTheme.foregroundColor,
-                            tooltip: "Search & Add Song",
-                            onPressed: () =>
-                                _showAddSongDialog(context, provider),
-                          ),
-                          const SizedBox(width: 8),
-                          if (_viewMode == MetadataViewMode.playlists) ...[
-                            IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  if (_sortMode == PlaylistSortMode.custom) {
-                                    _sortMode = PlaylistSortMode.alphabetical;
-                                  } else {
-                                    _sortMode = PlaylistSortMode.custom;
-                                  }
-                                });
-                              },
-                              icon: Icon(
-                                _sortMode == PlaylistSortMode.custom
-                                    ? Icons.sort
-                                    : Icons.sort_by_alpha,
-                              ),
-                              tooltip: _sortMode == PlaylistSortMode.custom
-                                  ? "Custom Order (Drag to Reorder)"
-                                  : "Alphabetical Order",
-                              color: Theme.of(
-                                context,
-                              ).appBarTheme.foregroundColor,
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.add_rounded, size: 28),
-                              color: Theme.of(
-                                context,
-                              ).appBarTheme.foregroundColor,
-                              tooltip: "Create Playlist",
-                              onPressed: () =>
-                                  _showCreatePlaylistDialog(context, provider),
-                            ),
-                          ],
-                          if (_viewMode == MetadataViewMode.artists) ...[
-                            IconButton(
-                              icon: Icon(
-                                _showFollowedArtistsOnly
-                                    ? Icons.how_to_reg
-                                    : Icons.person_add_alt,
-                                color: _showFollowedArtistsOnly
-                                    ? Theme.of(context).primaryColor
-                                    : Theme.of(
-                                        context,
-                                      ).appBarTheme.foregroundColor,
-                                size: 24,
-                              ),
-                              tooltip: _showFollowedArtistsOnly
-                                  ? "Show All Artists"
-                                  : "Show Followed Only",
-                              onPressed: () {
-                                setState(() {
-                                  _showFollowedArtistsOnly =
-                                      !_showFollowedArtistsOnly;
-                                });
-                                _persistArtistFilter(_showFollowedArtistsOnly);
-                              },
-                            ),
-                          ],
-                          if (_viewMode == MetadataViewMode.albums)
-                            IconButton(
-                              icon: Icon(
-                                _showFollowedAlbumsOnly
-                                    ? Icons.bookmark
-                                    : Icons.bookmark_border,
-                                color: _showFollowedAlbumsOnly
-                                    ? Theme.of(context).primaryColor
-                                    : Theme.of(context)
-                                          .appBarTheme
-                                          .foregroundColor
-                                          ?.withValues(alpha: 0.5),
-                                size: 24,
-                              ),
-                              tooltip: _showFollowedAlbumsOnly
-                                  ? "Show All Albums"
-                                  : "Show Bookmarked Only",
-                              onPressed: () {
-                                setState(() {
-                                  _showFollowedAlbumsOnly =
-                                      !_showFollowedAlbumsOnly;
-                                });
-                                _persistAlbumFilter(_showFollowedAlbumsOnly);
-                              },
-                            ),
-                          const SizedBox(width: 8),
-                        ],
+                                if (_viewMode == MetadataViewMode.artists)
+                                  _buildActionItem(
+                                    id: 'toggle_artists',
+                                    icon: _showFollowedArtistsOnly ? Icons.how_to_reg : Icons.person_add_alt,
+                                    label: lang.translate('followed_artists_only'),
+                                    isSelectionActive: false,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                    overrideIconColor: _showFollowedArtistsOnly ? primaryColor : null,
+                                    overrideTextColor: _showFollowedArtistsOnly ? primaryColor : null,
+                                  ),
+                                if (_viewMode == MetadataViewMode.albums)
+                                  _buildActionItem(
+                                    id: 'toggle_albums',
+                                    icon: _showFollowedAlbumsOnly ? Icons.bookmark : Icons.bookmark_border,
+                                    label: lang.translate('followed_albums_only'),
+                                    isSelectionActive: false,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                    overrideIconColor: _showFollowedAlbumsOnly ? primaryColor : null,
+                                    overrideTextColor: _showFollowedAlbumsOnly ? primaryColor : null,
+                                  ),
+                                if (hasLocalSongs || _showOnlyLocal)
+                                  _buildActionItem(
+                                    id: 'toggle_local',
+                                    icon: Icons.smartphone_rounded,
+                                    label: lang.translate('filter_local_device'),
+                                    isSelectionActive: false,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                    overrideIconColor: _showOnlyLocal ? primaryColor : null,
+                                    overrideTextColor: _showOnlyLocal ? primaryColor : null,
+                                  ),
+                                if (hasInvalidSongs || _showOnlyInvalid)
+                                  _buildActionItem(
+                                    id: 'toggle_invalid',
+                                    icon: Icons.warning_rounded,
+                                    label: lang.translate('filter_invalid_tracks'),
+                                    isSelectionActive: false,
+                                    iconColor: iconColor,
+                                    onSurfaceColor: onSurfaceColor,
+                                    primaryColor: primaryColor,
+                                    overrideIconColor: _showOnlyInvalid ? primaryColor : null,
+                                    overrideTextColor: _showOnlyInvalid ? primaryColor : null,
+                                  ),
+                              ]);
+                            }
+                            return items;
+                          },
+                        ),
+                        const SizedBox(width: 8),
                       ],
                     ),
                     if (!isSelectionActive)
@@ -1788,7 +1764,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             ),
                             textAlignVertical: TextAlignVertical.center,
                             decoration: InputDecoration(
-                              hintText: "Search in playlist...",
+                              hintText: lang.translate('find_in_playlist'),
                               hintStyle: TextStyle(
                                 color: Theme.of(context)
                                     .textTheme
@@ -1832,7 +1808,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           ),
                         ),
                       ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 2),
                   ],
                 ),
               ),
@@ -1930,6 +1906,64 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             ],
           ),
         ),
+        // QR PREPARATION SPINNER OVERLAY (Non-blocking)
+        if (provider.isPreparingQR &&
+            provider.preparingPlaylist != null &&
+            !provider.isSilentPreparation)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 80,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).primaryColor.withValues(alpha: 0.5),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(
+                        context,
+                      ).primaryColor.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      lang.translate('sharing_cloud_prepping'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -2200,7 +2234,24 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         provider.validateLocalSongsInPlaylist(playlist.id);
 
         setState(() {
-          _selectedPlaylistId = playlist.id;
+          if (_selectedPlaylistId != playlist.id) {
+            _selectedPlaylistId = playlist.id;
+            _showOnlyInvalid = false;
+            _showOnlyLocal = false;
+            // TRIGGER PROACTIVE RESOLUTION
+            if (_selectedPlaylistId != null) {
+              final pl = Provider.of<RadioProvider>(context, listen: false)
+                  .playlists
+                  .firstWhere(
+                    (p) => p.id == _selectedPlaylistId,
+                    orElse: () => playlist,
+                  );
+              Provider.of<RadioProvider>(
+                context,
+                listen: false,
+              ).proactiveResolvePlaylist(pl);
+            }
+          }
           _searchController.clear();
           _lastScrolledSongId = null;
         });
@@ -2309,6 +2360,32 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 ),
               ),
 
+            // Background Enrichment Indicator (Animated Sync Icon)
+            if (provider.enrichingPlaylists.contains(playlist.id))
+              Positioned(
+                top: 8,
+                right: 32, // Offset from menu button
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const _SpinningSyncIcon(),
+                      const SizedBox(width: 4),
+                      Text(
+                        "${playlist.songs.where((s) => s.artUri != null && s.artUri!.isNotEmpty).length}/${playlist.songs.length}",
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+
             // MENU
             Positioned(
               top: 0,
@@ -2390,6 +2467,28 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           ],
                         ),
                       ),
+                      PopupMenuItem(
+                        value: 'share',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.share_rounded,
+                              size: 18,
+                              color: Colors.orangeAccent,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              ).translate('share_playlist'),
+                              style: const TextStyle(
+                                color: Colors.orangeAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ] else ...[
                       if (playlist.creator != 'local')
                         PopupMenuItem(
@@ -2461,6 +2560,28 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         ),
                       ),
                       PopupMenuItem(
+                        value: 'share',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.share_rounded,
+                              size: 18,
+                              color: Colors.orangeAccent,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              ).translate('share_playlist'),
+                              style: const TextStyle(
+                                color: Colors.orangeAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
                         value: 'delete',
                         child: Row(
                           children: [
@@ -2491,6 +2612,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       _showDeletePlaylistDialog(context, provider, playlist);
                     } else if (value == 'copy') {
                       _showCopyPlaylistDialog(context, provider, playlist);
+                    } else if (value == 'share') {
+                      _showSharePlaylistDialog(context, provider, playlist);
                     } else if (value == 'clean_all') {
                       _showClearFavoritesDialog(context, provider);
                     }
@@ -2782,10 +2905,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       ),
                     ),
                   ),
+                const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.5),
+                    color: Colors.blueAccent.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: Colors.blueAccent.withValues(alpha: 0.5),
@@ -3685,21 +3809,15 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           onTap: () {
                             Navigator.pop(context);
                             _showCreatePlaylistDialog(context, provider);
-                            // Ideally we should pass a callback to create and then copy, but for now simple workflow.
-                            // Improvements: Show create dialog, then copy immediately.
-                            // Let's keep it simple: "Create New" just opens create dialog. User has to copy after.
-                            // Actually, that's bad UX.
-                            // Let's implement immediate copy after creation if I can.
-                            // Given constraint, I'll just skip 'Create New' magic and rely on user creating it first, OR implement inline creation.
-                            // I'll stick to listing existing playlists for now to be safe and robust.
                           },
                         );
                       }
                       final p = playlists[index - 1];
                       return ListTile(
-                        leading: Icon(
-                          Icons.queue_music,
-                          color: Theme.of(context).iconTheme.color,
+                        leading: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Center(child: _buildDialogIcon(context, p)),
                         ),
                         title: Text(
                           p.name,
@@ -3753,13 +3871,19 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         surfaceTintColor: Colors.transparent,
-        title: const Text(
-          "Clear Favorites?",
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('clear_favorites'),
+          style: const TextStyle(color: Colors.white),
         ),
-        content: const Text(
-          "Are you sure you want to remove all songs from your Favorites?",
-          style: TextStyle(color: Colors.white70),
+        content: Text(
+          Provider.of<LanguageProvider>(
+            context,
+            listen: false,
+          ).translate('clear_favorites_desc'),
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
@@ -4159,7 +4283,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     if (scrollIndex == -1) {
       return ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: listItems.length,
         itemBuilder: (context, index) {
@@ -4184,7 +4308,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
 
     return ScrollablePositionedList.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: listItems.length,
       itemScrollController: _itemScrollController,
@@ -4476,6 +4600,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         ? Colors.black
         : Colors.white;
 
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
     // Check if song is in favorites
     final favPlaylist = provider.playlists.firstWhere(
       (p) => p.id == 'favorites',
@@ -4502,6 +4628,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 song.artist.trim().toLowerCase() ==
                     provider.currentArtist.trim().toLowerCase()));
 
+    final isSyncing = song.artist == lang.translate('syncing_yt') || song.artist == "SINC_METADATA";
+
     return Container(
       margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -4526,7 +4654,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             : null,
       ),
 
-      child: Listener(
+      child: Opacity(
+        opacity: isSyncing ? 0.5 : 1.0,
+        child: IgnorePointer(
+          ignoring: isSyncing,
+          child: Listener(
         onPointerDown: isInvalid
             ? (_) => _startUnlockTimer(provider, song, playlist.id)
             : null,
@@ -4537,7 +4669,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ListTile(
-              onTap: isInvalid
+              onTap: isSyncing
+                  ? null
+                  : isInvalid
                   ? () => _showInvalidTrackOptions(
                       context,
                       provider,
@@ -4617,6 +4751,22 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                         ),
                                       ),
                                     )
+                                  : song.artist == "SINC_METADATA"
+                                  ? Container(
+                                      width: 48,
+                                      height: 48,
+                                      color: Colors.grey[900],
+                                      child: const Center(
+                                        child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.blueAccent,
+                                          ),
+                                        ),
+                                      ),
+                                    )
                                   : Container(
                                       width: 48,
                                       height: 48,
@@ -4664,35 +4814,60 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          song.title,
-                          style: TextStyle(
-                            color:
-                                (provider.audioOnlySongId == song.id ||
-                                    (provider.currentTrack.isNotEmpty &&
-                                        song.title.trim().toLowerCase() ==
-                                            provider.currentTrack
-                                                .trim()
-                                                .toLowerCase() &&
-                                        song.artist.trim().toLowerCase() ==
-                                            provider.currentArtist
-                                                .trim()
-                                                .toLowerCase()))
-                                ? Theme.of(context).primaryColor
-                                : (isInvalid
-                                      ? contrastColor.withValues(alpha: 0.5)
-                                      : contrastColor),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                        if (song.artist == "SINC_METADATA")
+                          Row(
+                            children: [
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.blueAccent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                lang.translate('fetching_metadata'),
+                                style: TextStyle(
+                                  color: contrastColor.withValues(alpha: 0.6),
+                                  fontSize: 14,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Text(
+                            song.title,
+                            style: TextStyle(
+                              color:
+                                  (provider.audioOnlySongId == song.id ||
+                                      (provider.currentTrack.isNotEmpty &&
+                                          song.title.trim().toLowerCase() ==
+                                              provider.currentTrack
+                                                  .trim()
+                                                  .toLowerCase() &&
+                                          song.artist.trim().toLowerCase() ==
+                                              provider.currentArtist
+                                                  .trim()
+                                                  .toLowerCase()))
+                                  ? Theme.of(context).primaryColor
+                                  : (isInvalid
+                                        ? contrastColor.withValues(alpha: 0.5)
+                                        : contrastColor),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
                         if (!isGrouped)
                           Padding(
                             padding: const EdgeInsets.only(top: 2.0),
                             child: Text(
-                              song.artist,
+                              song.artist == "SINC_METADATA"
+                                  ? lang.translate('syncing_yt')
+                                  : song.artist,
                               style: TextStyle(
                                 color: contrastColor.withValues(alpha: 0.5),
                                 fontWeight: FontWeight.normal,
@@ -4709,7 +4884,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (playlist.id != 'favorites' && !isInvalid) ...[
+                      if (playlist.id != 'favorites' &&
+                          !isInvalid &&
+                          !isSyncing) ...[
                         GestureDetector(
                           onTap: () async {
                             if (isFavorite) {
@@ -4776,7 +4953,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         songId: song.id,
                         isStaticInvalid: !song.isValid,
                       ),
-                      if (!isInvalid) ...[
+                      if (!isInvalid && !isSyncing) ...[
                         PopupMenuButton<String>(
                           surfaceTintColor: Colors.transparent,
                           icon: Icon(
@@ -5088,7 +5265,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
                                 // Order: YouTube first, then Deep Link
                                 final String shareText = youtubeLinkStr;
-                              
+
                                 final rawText = Provider.of<LanguageProvider>(
                                   context,
                                   listen: false,
@@ -5100,7 +5277,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     .replaceAll('{2}', song.artist)
                                     .replaceAll('{3}', deepLink);
 
-                                await Share.share(text);
+                                if (!mounted) return;
+                                _showFinalSongQRDialog(
+                                  context,
+                                  song,
+                                  deepLink,
+                                  text,
+                                );
                               } catch (e) {
                                 if (mounted) {
                                   Navigator.of(
@@ -5234,6 +5417,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 ),
               ),
           ],
+        ),
+      ),
         ),
       ),
     );
@@ -5657,7 +5842,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     List<Playlist> allPlaylists,
   ) {
     final lang = Provider.of<LanguageProvider>(context, listen: false);
-    print("Building global search results: query='$_searchQuery'");
     // 1. Filter Playlists by name
     final matchedPlaylists = allPlaylists
         .where((p) => p.name.toLowerCase().contains(_searchQuery))
@@ -6096,6 +6280,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   _selectedPlaylistId = null;
                   _selectedAlbum = null;
                   _searchController.clear();
+                  _showOnlyInvalid = false;
+                  _showOnlyLocal = false;
 
                   if (isGroup) {
                     _selectedArtist = groupKey; // key for filtering
@@ -6291,6 +6477,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   _selectedArtist = null;
                   _selectedPlaylistId = null;
                   _searchController.clear();
+                  _showOnlyInvalid = false;
+                  _showOnlyLocal = false;
 
                   if (isGroup) {
                     _selectedAlbum = groupKey;
@@ -6532,6 +6720,686 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       createdAt: DateTime.now(),
     );
     provider.playAdHocPlaylist(playlist, null);
+  }
+
+  void _showSharePlaylistDialog(
+    BuildContext context,
+    RadioProvider provider,
+    Playlist playlist,
+  ) {
+    // Start background preparation
+    provider.startQRPreparation(playlist, (deepLink) {
+      if (!context.mounted) return;
+
+      // AUTO-SHOW the dialog when ready!
+      _showFinalQRDialog(context, playlist, deepLink);
+
+      // Optional SnackBar confirmation
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('playlist_ready_share'),
+          ),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
+  }
+
+  void _showFinalQRDialog(
+    BuildContext context,
+    Playlist playlist,
+    String deepLink,
+  ) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16),
+        backgroundColor: const Color(0xFF1a1a2e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          width: double.maxFinite,
+          constraints: BoxConstraints(
+            maxWidth: 500,
+            minWidth: MediaQuery.of(context).size.width * 0.9,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "${lang.translate('share')} ${lang.translate('playlist')}",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                playlist.name,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 16,
+                  fontStyle: FontStyle.italic,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                lang
+                    .translate('songs_count')
+                    .replaceAll('{0}', playlist.songs.length.toString()),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 13,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              if (deepLink.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: Colors.redAccent,
+                        size: 48,
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        lang.translate('no_yt_songs_found'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: QrImageView(
+                    data: deepLink,
+                    version: QrVersions.auto,
+                    size: MediaQuery.of(context).size.width - 96,
+                    gapless: false,
+                    errorCorrectionLevel: QrErrorCorrectLevel.L,
+                  ),
+                ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      lang.translate('cancel'),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                  _buildShareIconBtn(
+                    context: context,
+                    icon: Icons.copy,
+                    label: lang.translate('copy'),
+                    color: Colors.blueAccent,
+                    onPressed: deepLink.isEmpty
+                        ? null
+                        : () {
+                            Clipboard.setData(ClipboardData(text: deepLink));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(lang.translate('link_copied')),
+                              ),
+                            );
+                          },
+                  ),
+                  _buildShareIconBtn(
+                    context: context,
+                    icon: Icons.share,
+                    label: lang.translate('share'),
+                    color: Colors.orangeAccent,
+                    onPressed: deepLink.isEmpty
+                        ? null
+                        : () {
+                            provider.sharePlaylistText(playlist, deepLink);
+                          },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    });
+  }
+
+  void _showFinalSongQRDialog(
+    BuildContext context,
+    SavedSong song,
+    String deepLink,
+    String shareText,
+  ) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16),
+        backgroundColor: const Color(0xFF1a1a2e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          width: double.maxFinite,
+          constraints: BoxConstraints(
+            maxWidth: 500,
+            minWidth: MediaQuery.of(context).size.width * 0.9,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                lang.translate('share_song'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "${song.title} - ${song.artist}",
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 16,
+                  fontStyle: FontStyle.italic,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 24),
+              if (deepLink.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.redAccent,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        lang.translate('no_yt_songs_found'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: QrImageView(
+                    data: deepLink,
+                    version: QrVersions.auto,
+                    size: MediaQuery.of(context).size.width - 96,
+                    gapless: false,
+                    errorCorrectionLevel: QrErrorCorrectLevel.L,
+                  ),
+                ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      lang.translate('cancel'),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                  _buildShareIconBtn(
+                    context: context,
+                    icon: Icons.copy,
+                    label: lang.translate('copy'),
+                    color: Colors.blueAccent,
+                    onPressed: deepLink.isEmpty
+                        ? null
+                        : () {
+                            Clipboard.setData(ClipboardData(text: deepLink));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(lang.translate('link_copied')),
+                              ),
+                            );
+                          },
+                  ),
+                  _buildShareIconBtn(
+                    context: context,
+                    icon: Icons.share,
+                    label: lang.translate('share'),
+                    color: Colors.orangeAccent,
+                    onPressed: deepLink.isEmpty
+                        ? null
+                        : () {
+                            Share.share(shareText);
+                          },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    });
+  }
+
+  // Helper for consistent small QR dialog action buttons
+  Widget _buildShareIconBtn({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required Color color,
+    VoidCallback? onPressed,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          onPressed: onPressed,
+          icon: Icon(icon, color: color, size: 24),
+          style: IconButton.styleFrom(
+            backgroundColor: color.withValues(alpha: 0.1),
+            padding: const EdgeInsets.all(12),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: TextStyle(color: color, fontSize: 10)),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _buildActionItem({
+    required String id,
+    required IconData icon,
+    required String label,
+    required bool isSelectionActive,
+    required Color iconColor,
+    required Color onSurfaceColor,
+    required Color primaryColor,
+    bool enabled = true,
+    Color? overrideIconColor,
+    Color? overrideTextColor,
+  }) {
+    return PopupMenuItem<String>(
+      value: null, // Zero value to handle close behavior manually in _handleAction
+      enabled: enabled,
+      child: Consumer<RadioProvider>(
+        builder: (context, provider, _) {
+          final pinnedList = isSelectionActive
+              ? provider.pinnedPlaylistActions
+              : provider.pinnedLibraryActions;
+          final isPinned = pinnedList.contains(id);
+          
+          return GestureDetector(
+            onTap: provider.isPinningMode 
+                ? () => _handleAction('pin_$id', fromMenu: true) 
+                : () => _handleAction(id, fromMenu: true),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  color: overrideIconColor ?? (provider.isPinningMode && isPinned ? primaryColor : iconColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: overrideTextColor ?? (provider.isPinningMode && isPinned ? primaryColor : onSurfaceColor),
+                    ),
+                  ),
+                ),
+                if (provider.isPinningMode)
+                  Icon(
+                    isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                    size: 16,
+                    color: isPinned ? primaryColor : onSurfaceColor.withValues(alpha: 0.3),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHeaderActionButton(String actionId, Color color) {
+    IconData? icon;
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    switch (actionId) {
+      case 'play_all':
+        icon = Icons.playlist_play_rounded;
+        break;
+      case 'download':
+        if (effectivePlaylist != null &&
+            (effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
+            Provider.of<EntitlementService>(context, listen: false).getFeatureLimit('download_songs') != 0) {
+          icon = Icons.download_rounded;
+        }
+        break;
+      case 'share_playlist':
+         if (effectivePlaylist != null && effectivePlaylist!.creator != 'local') {
+           icon = Icons.share_rounded;
+         }
+        break;
+      case 'shuffle':
+        icon = Icons.shuffle_rounded;
+        color = provider.isShuffleMode ? Theme.of(context).primaryColor : color;
+        break;
+      case 'sort':
+        icon = Icons.sort_by_alpha;
+        color = _sortAlphabetical ? Theme.of(context).primaryColor : color;
+        break;
+      case 'search':
+        icon = Icons.search;
+        color = _showPlaylistSearch ? Theme.of(context).primaryColor : color;
+        break;
+      case 'duplicates':
+        if (_selectedPlaylistId != null) icon = Icons.cleaning_services_rounded;
+        break;
+      case 'bulk_check':
+        if (hasInvalidSongs || _showOnlyInvalid) {
+          if (_isBulkChecking) return const SizedBox(width: 32, height: 32, child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))));
+          icon = Icons.playlist_add_check_circle_rounded;
+        }
+        break;
+      case 'search_add_song':
+        icon = Icons.library_music_rounded;
+        break;
+      case 'create_playlist':
+        if (_viewMode == MetadataViewMode.playlists) icon = Icons.add_rounded;
+        break;
+      case 'scan_qr':
+        if (_viewMode == MetadataViewMode.playlists) icon = Icons.qr_code_scanner_rounded;
+        break;
+      case 'sort_mode':
+        if (_viewMode == MetadataViewMode.playlists) icon = _sortMode == PlaylistSortMode.custom ? Icons.sort : Icons.sort_by_alpha;
+        break;
+      case 'toggle_artists':
+        if (_viewMode == MetadataViewMode.artists) icon = _showFollowedArtistsOnly ? Icons.how_to_reg : Icons.person_add_alt;
+        break;
+      case 'toggle_albums':
+        if (_viewMode == MetadataViewMode.albums) icon = _showFollowedAlbumsOnly ? Icons.bookmark : Icons.bookmark_border;
+        break;
+      case 'toggle_local':
+        if (hasLocalSongs || _showOnlyLocal) icon = Icons.smartphone_rounded;
+        color = _showOnlyLocal ? Theme.of(context).primaryColor : color;
+        break;
+      case 'toggle_invalid':
+        if (hasInvalidSongs || _showOnlyInvalid) icon = Icons.warning_rounded;
+        color = _showOnlyInvalid ? Colors.orangeAccent : color;
+        break;
+    }
+    if (icon == null) return const SizedBox.shrink();
+
+    return IconButton(
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.all(4),
+      constraints: const BoxConstraints(),
+      icon: Icon(icon, color: color, size: 20),
+      tooltip: _getTooltipForAction(actionId),
+      onPressed: () => _handleAction(actionId, fromMenu: false),
+    );
+  }
+
+  bool _isActionVisible(String actionId) {
+    switch (actionId) {
+      case 'play_all':
+      case 'sort':
+      case 'search':
+      case 'shuffle':
+      case 'search_add_song':
+        return true;
+      case 'download':
+        return effectivePlaylist != null &&
+            (effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
+            Provider.of<EntitlementService>(context, listen: false).getFeatureLimit('download_songs') != 0;
+      case 'share_playlist':
+         return effectivePlaylist != null && effectivePlaylist!.creator != 'local';
+      case 'duplicates':
+        return _selectedPlaylistId != null;
+      case 'bulk_check':
+      case 'toggle_invalid':
+        return hasInvalidSongs || _showOnlyInvalid;
+      case 'create_playlist':
+      case 'scan_qr':
+      case 'sort_mode':
+        return _viewMode == MetadataViewMode.playlists;
+      case 'toggle_artists':
+        return _viewMode == MetadataViewMode.artists;
+      case 'toggle_albums':
+        return _viewMode == MetadataViewMode.albums;
+      case 'toggle_local':
+        return hasLocalSongs || _showOnlyLocal;
+      default:
+        return false;
+    }
+  }
+
+  String _getTooltipForAction(String actionId) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    switch (actionId) {
+      case 'play_all': return lang.translate('play_all');
+      case 'download': return lang.translate('download');
+      case 'share_playlist': return lang.translate('share_playlist');
+      case 'sort': return lang.translate('sort_alphabetically');
+      case 'search': return lang.translate('find_in_playlist');
+      case 'shuffle': return lang.translate('shuffle');
+      case 'duplicates': return lang.translate('scan_duplicates');
+      case 'bulk_check': return lang.translate('try_again_unlock_all');
+      case 'search_add_song': return lang.translate('search_add_song');
+      case 'create_playlist': return lang.translate('create_playlist_tooltip');
+      case 'scan_qr': return lang.translate('scan_qr');
+      case 'sort_mode': return lang.translate('alphabetical_order_tooltip');
+      case 'toggle_artists': return lang.translate('followed_artists_only');
+      case 'toggle_albums': return lang.translate('followed_albums_only');
+      case 'toggle_local': return lang.translate('filter_local_device');
+      case 'toggle_invalid': return lang.translate('filter_invalid_tracks');
+      default: return '';
+    }
+  }
+
+  void _handleAction(String rawActionId, {bool fromMenu = false}) {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    if (rawActionId == 'toggle_pin_mode') {
+      final newMode = !provider.isPinningMode;
+      provider.setPinningMode(newMode);
+      if (!newMode && fromMenu) {
+        Navigator.pop(context); // Close the menu when stopping customization
+      }
+      return;
+    }
+
+    final String actionId = rawActionId.startsWith('pin_') ? rawActionId.substring(4) : rawActionId;
+
+    if (provider.isPinningMode) {
+      // Toggle Pin
+      final list = isSelectionActive ? provider.pinnedPlaylistActions : provider.pinnedLibraryActions;
+      if (list.contains(actionId)) {
+        provider.togglePinnedAction(actionId, !isSelectionActive);
+      } else {
+        int visibleCount = list.where((id) => _isActionVisible(id)).length;
+        if (visibleCount < 3) {
+          provider.togglePinnedAction(actionId, !isSelectionActive);
+        } else {
+           ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(lang.translate('max_pinned_reached')), duration: const Duration(seconds: 1)),
+          );
+        }
+      }
+      return;
+    }
+
+    final currentSongs = this.currentSongList;
+
+    switch (actionId) {
+      case 'play_all':
+        if (_selectedPlaylistId != null && effectivePlaylist != null) {
+          _playPlaylist(provider, effectivePlaylist!);
+        } else if (currentSongs.isNotEmpty) {
+          _playSongs(provider, currentSongs, headerTitle);
+        }
+        break;
+      case 'download':
+        if (effectivePlaylist != null) {
+          _downloadPlaylist(context, provider, effectivePlaylist!);
+        }
+        break;
+      case 'share_playlist':
+        if (effectivePlaylist != null) {
+           _showSharePlaylistDialog(context, provider, effectivePlaylist!);
+        }
+        break;
+      case 'sort':
+        setState(() => _sortAlphabetical = !_sortAlphabetical);
+        break;
+      case 'search':
+        setState(() {
+          _showPlaylistSearch = !_showPlaylistSearch;
+          if (!_showPlaylistSearch) _searchController.clear();
+        });
+        if (fromMenu) Navigator.pop(context); // Close for search
+        break;
+      case 'group_album':
+        setState(() => _groupingMode = PlaylistGroupingMode.album);
+        break;
+      case 'group_artist':
+        setState(() => _groupingMode = PlaylistGroupingMode.artist);
+        break;
+      case 'group_none':
+        setState(() => _groupingMode = PlaylistGroupingMode.none);
+        break;
+      case 'shuffle':
+        provider.toggleShuffle();
+        break;
+      case 'duplicates':
+        if (effectivePlaylist != null) {
+          scanForDuplicates(context, provider, effectivePlaylist!);
+        }
+        if (fromMenu) Navigator.pop(context);
+        break;
+      case 'bulk_check':
+        _processAllInvalidTracks(provider, currentSongs, _selectedPlaylistId);
+        if (fromMenu) Navigator.pop(context);
+        break;
+      case 'search_add_song':
+        _showAddSongDialog(context, provider);
+        if (fromMenu) Navigator.pop(context);
+        break;
+      case 'create_playlist':
+        _showCreatePlaylistDialog(context, provider);
+        if (fromMenu) Navigator.pop(context);
+        break;
+      case 'scan_qr':
+        _showQRScanner(context, provider);
+        if (fromMenu) Navigator.pop(context);
+        break;
+      case 'sort_mode':
+        setState(() {
+          _sortMode = (_sortMode == PlaylistSortMode.custom) ? PlaylistSortMode.alphabetical : PlaylistSortMode.custom;
+        });
+        break;
+      case 'toggle_artists':
+        setState(() => _showFollowedArtistsOnly = !_showFollowedArtistsOnly);
+        _persistArtistFilter(_showFollowedArtistsOnly);
+        break;
+      case 'toggle_albums':
+        setState(() => _showFollowedAlbumsOnly = !_showFollowedAlbumsOnly);
+        _persistAlbumFilter(_showFollowedAlbumsOnly);
+        break;
+      case 'toggle_local':
+        setState(() => _showOnlyLocal = !_showOnlyLocal);
+        break;
+      case 'toggle_invalid':
+        setState(() => _showOnlyInvalid = !_showOnlyInvalid);
+        break;
+    }
+
+    // Default close for actions that usually finish the interaction
+    if (fromMenu && ['play_all', 'download', 'share_playlist'].contains(actionId)) {
+        Navigator.pop(context);
+    }
   }
 }
 
@@ -6804,8 +7672,11 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                               ),
                               SizedBox(width: 8),
                               Text(
-                                "Delete",
-                                style: TextStyle(color: Colors.red),
+                                Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                ).translate('delete'),
+                                style: const TextStyle(color: Colors.red),
                               ),
                             ],
                           ),
@@ -7209,7 +8080,9 @@ class _DuplicateResolutionDialogState
           ),
           const SizedBox(height: 4),
           Text(
-            "Found ${widget.duplicates.length} sets of duplicates",
+            Provider.of<LanguageProvider>(context, listen: false)
+                .translate('found_duplicates_count')
+                .replaceAll('{0}', widget.duplicates.length.toString()),
             style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
         ],
@@ -7394,7 +8267,6 @@ class _DuplicateResolutionDialogState
   }
 }
 
-@Preview()
 Widget invalidSongIndicatorPreview() {
   return MaterialApp(
     theme: ThemeData.dark(),
@@ -7421,4 +8293,93 @@ Widget invalidSongIndicatorPreview() {
       ),
     ),
   );
+}
+
+class _QRScannerScreen extends StatefulWidget {
+  final Function(String) onCodeDetected;
+  const _QRScannerScreen({required this.onCodeDetected});
+
+  @override
+  State<_QRScannerScreen> createState() => _QRScannerScreenState();
+}
+
+class _QRScannerScreenState extends State<_QRScannerScreen> {
+  final MobileScannerController controller = MobileScannerController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: Text(lang.translate('scan_qr')),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: MobileScanner(
+        controller: controller,
+        onDetect: (capture) {
+          final List<Barcode> barcodes = capture.barcodes;
+          for (final barcode in barcodes) {
+            final String? code = barcode.rawValue;
+            if (code != null) {
+              // Pass the raw code directly. 
+              // RadioProvider's handleExternalUri will handle both 
+              // deep link URLs and legacy raw Base64 data.
+              widget.onCodeDetected(code);
+              return;
+            }
+          }
+        },
+      ),
+    );
+  }
+}
+
+class _SpinningSyncIcon extends StatefulWidget {
+  const _SpinningSyncIcon();
+
+  @override
+  State<_SpinningSyncIcon> createState() => _SpinningSyncIconState();
+}
+
+class _SpinningSyncIconState extends State<_SpinningSyncIcon> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RotationTransition(
+      turns: _controller,
+      child: const Icon(
+        Icons.sync_rounded,
+        color: Colors.white,
+        size: 10,
+      ),
+    );
+  }
 }

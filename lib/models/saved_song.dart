@@ -113,4 +113,13 @@ class SavedSong {
         path.endsWith('.mst') ||
         path.contains('offline_music');
   }
+
+  bool get isYoutubeArt {
+    if (artUri == null || artUri!.isEmpty) return false;
+    final uri = artUri!.toLowerCase();
+    return uri.contains('ytimg.com') ||
+        uri.contains('ggpht.com') ||
+        uri.contains('googleusercontent.com') ||
+        uri.contains('img.youtube.com');
+  }
 }
