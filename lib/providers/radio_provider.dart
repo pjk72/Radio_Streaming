@@ -1541,7 +1541,34 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         metadataChanged = true;
       }
 
-      if (metadataChanged) {
+      // Sync Duration and Recognizing state (CRITICAL for Radio Progress Bar)
+      bool stateChanged = false;
+      final bool newRecognizing = item.extras?['isSearching'] == true;
+      if (_isRecognizing != newRecognizing) {
+        _isRecognizing = newRecognizing;
+        stateChanged = true;
+      }
+
+      if (_currentPlayingPlaylistId == null) {
+        // Radio Mode: Sync duration to show progress bar after identification
+        if (item.duration != _currentSongDuration) {
+          _currentSongDuration = item.duration;
+          stateChanged = true;
+        }
+
+        // Sync initial offset if provided (ACRCloud/Shazam matches)
+        final double? offsetSec = item.extras?['offset'];
+        if (offsetSec != null) {
+          final newOffset = Duration(milliseconds: (offsetSec * 1000).toInt());
+          if (_initialSongOffset != newOffset) {
+            _initialSongOffset = newOffset;
+            _songSyncTime = DateTime.now();
+            stateChanged = true;
+          }
+        }
+      }
+
+      if (metadataChanged || stateChanged) {
         // Only set start time if we are already in 'ready' state.
         // If we are buffering/loading, leave it null so playback listener can trigger it when ready.
         final processingState =
