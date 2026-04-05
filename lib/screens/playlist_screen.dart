@@ -822,37 +822,58 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         context,
         MaterialPageRoute(
           builder: (ctx) => _QRScannerScreen(
-            onCodeDetected: (data) async {
+            onCodeDetected: (qrData) async {
               Navigator.pop(ctx);
+              final data = qrData.trim();
               
+              bool success = false;
               // Handle Cloud Tokens vs Song Deep Links vs Legacy Base64
               if (data.startsWith('http') || data.startsWith('musicstream://')) {
                 final uri = Uri.tryParse(data);
                 if (uri != null) {
-                  await provider.handleExternalUri(uri);
+                  success = await provider.handleExternalUri(uri);
                 }
               } else {
                 // Legacy Base64 protocol
-                await provider.importSharedPlaylist(data);
+                success = await provider.importSharedPlaylist(data);
               }
               
               if (context.mounted) {
                 final lang = Provider.of<LanguageProvider>(context, listen: false);
-                GlassUtils.showGlassDialog(
-                  context: context,
-                  builder: (dialogCtx) => AlertDialog(
-                    backgroundColor: const Color(0xFF1a1a2e),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    title: Text(lang.translate('success'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    content: Text(lang.translate('imported_playlist'), style: const TextStyle(color: Colors.white70)),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogCtx),
-                        child: Text(lang.translate('close'), style: const TextStyle(color: Colors.blueAccent)),
-                      ),
-                    ],
-                  ),
-                );
+                
+                if (success) {
+                  GlassUtils.showGlassDialog(
+                    context: context,
+                    builder: (dialogCtx) => AlertDialog(
+                      backgroundColor: const Color(0xFF1a1a2e),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: Text(lang.translate('success'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      content: Text(lang.translate('imported_playlist'), style: const TextStyle(color: Colors.white70)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogCtx),
+                          child: Text(lang.translate('close'), style: const TextStyle(color: Colors.blueAccent)),
+                        ),
+                      ],
+                    ),
+                  );
+                } else {
+                  GlassUtils.showGlassDialog(
+                    context: context,
+                    builder: (dialogCtx) => AlertDialog(
+                      backgroundColor: const Color(0xFF1a1a2e),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: Text(lang.translate('qr_scan_error'), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                      content: Text(lang.translate('qr_scan_invalid'), style: const TextStyle(color: Colors.white70)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogCtx),
+                          child: Text(lang.translate('close'), style: const TextStyle(color: Colors.blueAccent)),
+                        ),
+                      ],
+                    ),
+                  );
+                }
               }
             },
           ),

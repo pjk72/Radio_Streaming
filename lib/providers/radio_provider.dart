@@ -7086,6 +7086,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // 1. Check if it's our deep link
     if (text.contains('pjk72.github.io/musicstream/share.html') ||
+        text.contains('pjk72.github.io/musicstream/playlist.html') ||
         text.startsWith('musicstream://')) {
       final urlRegExp = RegExp(r'(https?:\/\/[^\s]+|musicstream:\/\/[^\s]+)');
       final match = urlRegExp.firstMatch(text);
@@ -7427,30 +7428,35 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<void> handleExternalUri(Uri uri) async {
+  Future<bool> handleExternalUri(Uri uri) async {
     // Prevent duplicate processing (some OS events fire twice)
     final linkStr = uri.toString();
     if (_lastProcessedLink == linkStr &&
         _lastLinkTime != null &&
         DateTime.now().difference(_lastLinkTime!) <
             const Duration(seconds: 2)) {
-      return;
+      return false;
     }
     _lastProcessedLink = linkStr;
     _lastLinkTime = DateTime.now();
 
     debugPrint("Processing External URI: $uri");
-    if (uri.path.contains('share.html') || uri.scheme == 'musicstream') {
+    if (uri.path.contains('share.html') ||
+        uri.path.contains('playlist.html') ||
+        uri.scheme == 'musicstream') {
       final params = uri.queryParameters;
       final host = uri.host.toLowerCase();
-      final type =
-          params['type'] ??
-          (host.startsWith('playlist')
+      final type = params['type'] ??
+          (params.containsKey('token') ||
+                  host.startsWith('playlist') ||
+                  uri.path.contains('playlist.html')
               ? 'playlist'
-              : (host == 'song' ? 'song' : null));
+              : (host == 'song' || uri.path.contains('share.html')
+                  ? 'song'
+                  : null));
 
       if (type == 'song') {
-        await _importSharedSong(
+        return await _importSharedSong(
           id: params['id'],
           title: params['title'],
           artist: params['artist'],
@@ -7461,16 +7467,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         final data = params['data'];
         final token = params['token'];
 
-        if (token != null) {
-          await importPlaylistByToken(token);
-        } else if (data != null) {
-          await importSharedPlaylist(data);
+        if (token != null && token.trim().isNotEmpty) {
+          return await importPlaylistByToken(token.trim());
+        } else if (data != null && data.trim().isNotEmpty) {
+          return await importSharedPlaylist(data.trim());
         }
       }
     }
+    return false;
   }
 
-  Future<void> _importSharedSong({
+  Future<bool> _importSharedSong({
     String? id,
     String? title,
     String? artist,
@@ -7478,7 +7485,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String? artUri,
     String? youtubeUrl,
   }) async {
-    if (title == null || artist == null) return;
+    if (title == null || artist == null) return false;
 
     LogService().log("Importing Shared Song: $title by $artist");
 
@@ -7567,6 +7574,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         }
       }
     }
+    return true;
   }
 
   Future<void> _enrichCurrentMetadata({
@@ -7845,7 +7853,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<void> importPlaylistByToken(String token) async {
+  Future<bool> importPlaylistByToken(String token) async {
     try {
       LogService().log("Importing Cloud Playlist with token: $token");
 
@@ -7856,7 +7864,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       if (!doc.exists) {
         LogService().log("Shared playlist not found or expired.");
-        return;
+        return false;
       }
 
       final data = doc.data()!;
@@ -7910,8 +7918,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       LogService().log(
         "Cloud Playlist Imported Successfully: ${playlist.name}",
       );
+      return true;
     } catch (e) {
       LogService().log("Failed to import cloud playlist: $e");
+      return false;
     }
   }
 
@@ -7940,7 +7950,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     });
   }
 
-  Future<void> importSharedPlaylist(String base64Data) async {
+  Future<bool> importSharedPlaylist(String base64Data) async {
     try {
       // 1. Decode and Decompress
       final compressedBytes = base64Url.decode(base64Data);
@@ -8072,9 +8082,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       // Ensure background recovery for ALL imported lists (v3, v4, v5, full JSON) to recover artworks and missing titles.
       _startBackgroundEnrichment(newId, newPlaylist.songs);
 
-      LogService().log("Playlist Imported Successfully: ${newPlaylist.name}");
+      return true;
     } catch (e) {
       LogService().log("Failed to import shared playlist: $e");
+      return false;
     }
   }
 
