@@ -25,7 +25,7 @@ import '../services/trending_service.dart';
 import 'package:workmanager/workmanager.dart';
 import '../services/background_tasks.dart';
 import '../services/backup_service.dart';
-import '../services/shazam_api_service.dart';
+import '../services/recognition_api_service.dart';
 import '../utils/genre_mapper.dart';
 import '../services/song_link_service.dart';
 import '../services/music_metadata_service.dart';
@@ -917,7 +917,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   final SongLinkService _songLinkService = SongLinkService();
   final MusicMetadataService _musicMetadataService = MusicMetadataService();
   final LyricsService _lyricsService = LyricsService();
-  final ShazamApiService _shazamApiService = ShazamApiService();
+  final RecognitionApiService _recognitionApiService = RecognitionApiService();
   final LocalPlaylistService _localPlaylistService = LocalPlaylistService();
 
   List<Playlist> _playlists = [];
@@ -6455,7 +6455,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     );
     notifyListeners();
 
-    final result = await _shazamApiService.identifyStream(_currentStation!.url);
+    final result = await _recognitionApiService.identifyStream(_currentStation!.url);
     _isRecognizing = false; // Stop loading state
     notifyListeners();
 

@@ -1,15 +1,14 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:file_picker/file_picker.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'log_service.dart';
 
 class RecognitionApiService {
   final String _host = 'shazam-song-recognition-api.p.rapidapi.com';
-  // RapidAPI Key (Shazam Core)
-  final String _apiKey = '65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828';
+  // Backup key in case Remote Config is unavailable
+  final String _defaultApiKey = '65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828';
 
   static bool _isGlobalRecognizing = false;
   http.Client? _activeClient;
@@ -28,7 +27,11 @@ class RecognitionApiService {
       if (_activeClient == null) return null;
       LogService().log("RecognitionAPI: Resolved URL: $resolvedUrl");
 
-      // Download ~3 seconds of the stream (roughly 80KB of mp3)
+      // 1. Get the best API key based on global usage
+      final apiKey = await _getBestApiKey();
+      LogService().log("RecognitionAPI: Using key: ${apiKey.substring(0, 8)}...");
+
+      // 2. Download ~3 seconds of the stream (roughly 80KB of mp3)
       final Uint8List? audioData = await _downloadStreamChunk(
         resolvedUrl,
         80 * 1024,
@@ -40,23 +43,32 @@ class RecognitionApiService {
         return null;
       }
 
-      // 4. Send MP3 straight to recognition service (Shazam API)
+      // 3. Send MP3 straight to recognition service (Shazam API)
       final uri = Uri.https(_host, '/recognize/file');
 
       if (_activeClient == null) return null;
       final response = await _activeClient!.post(
         uri,
         headers: {
-          'x-rapidapi-key': _apiKey,
+          'x-rapidapi-key': apiKey,
           'x-rapidapi-host': _host,
           'Content-Type': 'application/octet-stream',
         },
         body: audioData,
       );
 
+      // 4. Update usage in Firestore after attempt (regardless of result)
+      _incrementKeyUsage(apiKey);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data; // Return raw recognition JSON (Shazam format)
+      } else if (response.statusCode == 429 || 
+                 (response.body.toLowerCase().contains("you have exceeded") || 
+                  response.body.toLowerCase().contains("quota"))) {
+        // DETECT EXHAUSTED CREDITS
+        LogService().log("RecognitionAPI [MultiKey]: Key $apiKey EXHAUSTED. Disabling for today.");
+        _disableKey(apiKey);
       } else {
         LogService().log(
           "RecognitionAPI HTTP Error: ${response.statusCode} - ${response.body}",
@@ -74,6 +86,139 @@ class RecognitionApiService {
       _isGlobalRecognizing = false;
     }
     return null;
+  }
+
+  /// Fetches the list of keys from Remote Config and selects the one with the lowest usage in Firestore.
+  /// Automatically resets usage and reactivates keys if they haven't been used today.
+  Future<String> _getBestApiKey() async {
+    try {
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      // Fetch keys from Remote Config (parameter: 'shazam_api_keys' as JSON list)
+      await remoteConfig.fetchAndActivate().timeout(const Duration(seconds: 5));
+      final String keysJson = remoteConfig.getString('shazam_api_keys');
+      
+      List<String> keys = [_defaultApiKey];
+      if (keysJson.isNotEmpty) {
+        try {
+          final dynamic decoded = jsonDecode(keysJson);
+          if (decoded is Map && decoded.containsKey('recognition_key')) {
+            final List<dynamic> keyList = decoded['recognition_key'] as List;
+            if (keyList.isNotEmpty) {
+              keys = keyList.map((e) => e.toString()).toList();
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (keys.length == 1) return keys[0];
+
+      // Query Firestore for global usage counts
+      final firestore = FirebaseFirestore.instance;
+      final snapshot = await firestore.collection('api_keys_usage').get().timeout(const Duration(seconds: 5));
+      
+      final now = DateTime.now();
+      final Map<String, int> usageMap = {};
+      final List<String> activeKeys = [];
+
+      for (var key in keys) {
+        // Find data for this key if it exists in Firestore
+        final doc = snapshot.docs.where((d) => d.id == key).firstOrNull;
+        
+        if (doc != null) {
+          final Map<String, dynamic> data = doc.data();
+          final bool isDisabled = data['is_disabled'] ?? false;
+          final Timestamp? lastUsedTs = data['last_used'] as Timestamp?;
+          final DateTime? lastUsed = lastUsedTs?.toDate();
+
+          // DAILY RESET LOGIC:
+          // If the key wasn't used today, or was disabled on a previous day, reactivate and reset count.
+          bool isDifferentDay = lastUsed == null || 
+                               lastUsed.year != now.year || 
+                               lastUsed.month != now.month || 
+                               lastUsed.day != now.day;
+
+          if (isDifferentDay) {
+            // Reset count for the day and reactivate
+            usageMap[key] = 0;
+            activeKeys.add(key);
+            // Non-blocking update in Firestore to keep it clean
+            _resetKeyUsage(key);
+          } else if (!isDisabled) {
+            // Key is still active from today
+            usageMap[key] = (data['count'] as num).toInt();
+            activeKeys.add(key);
+          } else {
+            // Key is explicitly disabled for today - Do not add to activeKeys
+            LogService().log("RecognitionAPI [MultiKey]: Key ${key.substring(0, 8)}... skipped (EXHAUSTED).");
+          }
+        } else {
+          // New key never seen before
+          usageMap[key] = 0;
+          activeKeys.add(key);
+        }
+      }
+
+      // If all keys are exhausted, fallback to default or first key as desperate attempt
+      if (activeKeys.isEmpty) {
+        LogService().log("RecognitionAPI [MultiKey]: ALL KEYS EXHAUSTED! Trying first key anyway.");
+        return keys[0];
+      }
+
+      // Pick the active key with minimum usage
+      String bestKey = activeKeys[0];
+      int minUsage = usageMap[bestKey] ?? 0;
+
+      for (var key in activeKeys) {
+        final usage = usageMap[key] ?? 0;
+        if (usage < minUsage) {
+          minUsage = usage;
+          bestKey = key;
+        }
+      }
+
+      return bestKey;
+    } catch (e) {
+      LogService().log("RecognitionAPI [MultiKey]: Error selecting key: $e. Falling back to default.");
+      return _defaultApiKey;
+    }
+  }
+
+  /// Increments the usage counter in Firestore for a specific key.
+  void _incrementKeyUsage(String key) {
+    try {
+      FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
+        'count': FieldValue.increment(1),
+        'last_used': FieldValue.serverTimestamp(),
+        'is_disabled': false, // Ensure it stays active while incrementing
+      }, SetOptions(merge: true));
+    } catch (e) {
+      LogService().log("RecognitionAPI [MultiKey]: Failed to increment usage for key: $e");
+    }
+  }
+
+  /// Disables a key in Firestore until the next day reset.
+  void _disableKey(String key) {
+    try {
+      FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
+        'is_disabled': true,
+        'disabled_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      LogService().log("RecognitionAPI [MultiKey]: Failed to disable key: $e");
+    }
+  }
+
+  /// Resets usage and reactivates a key for a new day.
+  void _resetKeyUsage(String key) {
+    try {
+      FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
+        'count': 0,
+        'is_disabled': false,
+        'last_reset': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      LogService().log("RecognitionAPI [MultiKey]: Failed to reset key: $e");
+    }
   }
 
   void cancel() {
@@ -168,95 +313,5 @@ class RecognitionApiService {
       }
     }
     return currentUrl;
-  }
-}
-
-class MusicIdentifier extends StatefulWidget {
-  @override
-  _MusicIdentifierState createState() => _MusicIdentifierState();
-}
-
-class _MusicIdentifierState extends State<MusicIdentifier> {
-  String _result = "Seleziona un file audio per iniziare";
-  bool _isLoading = false;
-
-  final String _host = 'shazam-song-recognition-api.p.rapidapi.com';
-  // API Key RapidAPI
-  final String _apiKey = '65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828';
-
-  Future<void> _identifyMusic() async {
-    // 1. Seleziona il file audio
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-    );
-
-    if (result != null) {
-      setState(() => _isLoading = true);
-      File file = File(result.files.single.path!);
-
-      try {
-        // 2. Leggi il file come byte
-        final audioBytes = await file.readAsBytes();
-
-        // 3. Invia la richiesta a Shazam RapidAPI
-        final uri = Uri.https(_host, '/recognize/file');
-        final response = await http.post(
-          uri,
-          headers: {
-            'x-rapidapi-key': _apiKey,
-            'x-rapidapi-host': _host,
-            'Content-Type': 'application/octet-stream',
-          },
-          body: audioBytes,
-        );
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data.containsKey('track') && data['track'] != null) {
-            final trackInfo = data['track'];
-            setState(() {
-              _result =
-                  "Trovata: ${trackInfo['title']} - ${trackInfo['subtitle']}";
-            });
-          } else {
-            setState(
-              () => _result = "Nessuna canzone riconosciuta in questo audio.",
-            );
-          }
-        } else {
-          setState(
-            () => _result =
-                "Errore API Shazam: ${response.statusCode}\n${response.body}",
-          );
-        }
-      } catch (e) {
-        setState(() => _result = "Errore: $e");
-      } finally {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Shazam Music ID")),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (_isLoading) CircularProgressIndicator(),
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Text(_result, textAlign: TextAlign.center),
-            ),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _identifyMusic,
-              child: Text("Seleziona Canzone"),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

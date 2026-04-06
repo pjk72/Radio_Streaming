@@ -9,6 +9,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 
 import '../models/station.dart';
@@ -209,8 +210,11 @@ class RadioAudioHandler extends BaseAudioHandler
     if (_isInitializing) return;
     _isInitializing = true;
 
-    // Ensure EncryptionService is ready (Critical for Background Isolate)
+    // Ensure EncryptionService and Firebase are ready (Critical for Background Isolate)
     await EncryptionService().init();
+    try {
+      await Firebase.initializeApp();
+    } catch (_) {}
 
     try {
       // 2. Clear Source/Stop instead of full dispose for tracks
