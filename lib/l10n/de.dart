@@ -618,4 +618,13 @@ final Map<String, String> de = {
   'filter_local_device': 'Nur Veranstaltungsorte anzeigen',
   'filter_invalid_tracks': 'Nur Ungültig anzeigen',
   'group_by_none_label': 'Ohne Gruppierung',
+  'ad_offer_title': 'Holen Sie sich Download-Credits',
+  'ad_offer_desc': 'Sehen Sie sich ein kurzes Werbevideo an, um 3 zusätzliche Credits für den Download Ihrer Lieblingssongs zu erhalten. Hinweis: Downloads sind nur über die MusicStream-App abspielbar.',
+  'loading_ad': 'Anzeige wird geladen...',
+  'ad_not_available': 'Die Ankündigung ist noch nicht fertig. Bitte versuchen Sie es in ein paar Sekunden noch einmal.',
+  'credits_earned_msg': 'Optimal! Sie haben{0}-Download-Credits erhalten.',
+  'watch_ad': 'Video ansehen',
+  'ad_offer_note': 'Hinweis: Downloads sind nur über die MusicStream-App abspielbar.',
+  'sync_complete_title': 'Synchronisierung abgeschlossen',
+  'sync_complete_msg': 'Die Playlist wurde erfolgreich synchronisiert.',
 };

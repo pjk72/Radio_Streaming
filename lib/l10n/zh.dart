@@ -602,4 +602,13 @@ final Map<String, String> zh = {
   'filter_local_device': '仅显示场地',
   'filter_invalid_tracks': '仅显示无效',
   'group_by_none_label': '不分组',
+  'ad_offer_title': '获取下载积分',
+  'ad_offer_desc': '观看简短的广告视频即可赚取 3 个额外积分来下载您最喜爱的歌曲。注意：下载内容只能通过 MusicStream 应用程序播放。',
+  'loading_ad': '正在加载广告...',
+  'ad_not_available': '该公告尚未准备好。请几秒钟后重试。',
+  'credits_earned_msg': '最佳的！您已获得{0}下载积分。',
+  'watch_ad': '观看视频',
+  'ad_offer_note': '注意：下载内容只能通过 MusicStream 应用程序播放。',
+  'sync_complete_title': '同步完成',
+  'sync_complete_msg': '播放列表已成功同步。',
 };

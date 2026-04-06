@@ -10,15 +10,14 @@ import 'package:share_plus/share_plus.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart'
-    as ye
-    hide Playlist;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as ye hide Playlist;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/encryption_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import '../services/rewarded_ad_service.dart';
 
 import '../providers/radio_provider.dart';
 import '../services/radio_audio_handler.dart';
@@ -1437,9 +1436,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   onSurfaceColor: onSurfaceColor,
                                   primaryColor: primaryColor,
                                 ),
-                                if (effectivePlaylist != null &&
-                                    (effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
-                                    Provider.of<EntitlementService>(context, listen: false).getFeatureLimit('download_songs') != 0)
+                                if (isSelectionActive &&
+                                    (effectivePlaylist == null || effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
+                                    (Provider.of<EntitlementService>(context).getFeatureLimit('download_songs') != 0 || Provider.of<EntitlementService>(context).getFeatureLimit('download_songs') == -99))
                                   _buildActionItem(
                                     id: 'download',
                                     icon: Icons.download_rounded,
@@ -2815,12 +2814,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     Playlist playlist,
   ) async {
     // Entitlement Check: download_songs
-    final entitlements = Provider.of<EntitlementService>(
-      context,
-      listen: false,
-    );
+    final entitlements = Provider.of<EntitlementService>(context, listen: false);
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
     final int downloadLimit = entitlements.getFeatureLimit('download_songs');
+    final int lifetimeCount = provider.lifetimeDownloadCount;
+    final int earnedCredits = provider.earnedDownloadCredits;
 
+    // Se il limite è 0 (Disabilitato) e non è -99 (Modo Pubblicità)
     if (downloadLimit == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2835,18 +2835,220 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       return;
     }
 
-    if (downloadLimit != -1 && provider.totalDownloadedSongs >= downloadLimit) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            Provider.of<LanguageProvider>(context, listen: false)
-                .translate('download_limit_reached')
-                .replaceAll('{0}', downloadLimit.toString()),
+    final int effectiveLimit = (downloadLimit == -99) ? 0 : downloadLimit;
+    final int remainingCredits = (effectiveLimit == -1) 
+        ? -1 // Illimitato
+        : (effectiveLimit + earnedCredits - lifetimeCount);
+
+    if (remainingCredits <= 0 && downloadLimit != -1) {
+      // Show an elegant popup to offer the rewarded ad
+      final bool? proceed = await GlassUtils.showGlassDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          contentPadding: EdgeInsets.zero,
+          content: Container(
+            width: double.maxFinite,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                  const Color(0xFF1a1a2e).withValues(alpha: 0.8),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                width: 1.5,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 24),
+                // Animated-like Icon Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.stars_rounded,
+                    color: Colors.amberAccent,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  lang.translate('ad_offer_title'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    lang.translate('ad_offer_desc'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 15,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Styled Note Box
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline_rounded,
+                          color: Colors.white.withValues(alpha: 0.6),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            lang.translate('ad_offer_note'),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Actions
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: Text(
+                            lang.translate('cancel'),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            lang.translate('watch_ad'),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         ),
       );
+
+      if (proceed == true) {
+        // Show loading indicator
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(lang.translate('loading_ad')),
+                ],
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+
+        final bool rewardEarned = await RewardedAdService().showAdIfAvailable(
+          onUserEarnedReward: (ad, reward) {
+             // Optional: log or handle specific reward amount if needed
+          },
+          onAdNotAvailable: () {
+            if (mounted) {
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(lang.translate('ad_not_available')),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
+          },
+        );
+
+        if (rewardEarned) {
+          await provider.addEarnedDownloadCredits(3);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("+3 Download Credits!")),
+          );
+          // Ricominciamo la funzione per aggiornare i calcoli
+          return await _downloadPlaylist(context, provider, playlist);
+        }
+      }
       return;
     }
+
 
     // 0. High Data Usage Confirmation
     final bool shouldProceed =
@@ -2907,24 +3109,86 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     height: 1.4,
                   ),
                 ),
-                const SizedBox(height: 16),
-                if (downloadLimit > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: Text(
-                      Provider.of<LanguageProvider>(context, listen: false)
-                          .translate('remaining_downloads')
-                          .replaceAll(
-                            '{0}',
-                            (downloadLimit - provider.totalDownloadedSongs)
-                                .toString(),
+                if (remainingCredits != -1)
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Text(
+                          lang.translate('remaining_downloads').replaceAll('{0}', remainingCredits.toString()),
+                          style: const TextStyle(
+                            color: Colors.greenAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
                           ),
-                      style: const TextStyle(
-                        color: Colors.greenAccent,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        ),
                       ),
-                    ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: InkWell(
+                          onTap: () async {
+                            bool earned = await RewardedAdService().showAdIfAvailable(
+                              onUserEarnedReward: (ad, reward) {},
+                              onAdNotAvailable: () {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(lang.translate('ad_not_available')),
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                  );
+                                }
+                              },
+                            );
+
+                            if (earned) {
+                              await provider.addEarnedDownloadCredits(3);
+                              if (mounted) {
+                                 ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(lang.translate('credits_earned_msg').replaceAll('{0}', '3')),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                 );
+                                 Navigator.pop(ctx, null); 
+                                 _downloadPlaylist(context, provider, playlist);
+                              }
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.amber.withValues(alpha: 0.1),
+                                  Colors.amber.withValues(alpha: 0.2),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.amber.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.stars_rounded, color: Colors.amber, size: 24),
+                                const SizedBox(width: 12),
+                                Text(
+                                  "+3 ${lang.translate('watch_ad')}",
+                                  style: const TextStyle(
+                                    color: Colors.amber,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 const SizedBox(height: 16),
                 Container(
@@ -3387,14 +3651,17 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           if (isJobCancelled) break;
 
           // Check limit again before downloading a BRAND NEW song
-          if (downloadLimit != -1 &&
-              provider.totalDownloadedSongs >= downloadLimit) {
+          final currentRemaining = (effectiveLimit == -1)
+              ? -1
+              : (effectiveLimit + provider.earnedDownloadCredits - provider.lifetimeDownloadCount);
+
+          if (currentRemaining != -1 && currentRemaining <= 0) {
             statusNotifier.value = "Limit Reached";
             if (mounted && !isDismissed) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    "Download limit of $downloadLimit songs reached. Skipping remaining.",
+                    "Download limit reached. Skipping remaining.",
                   ),
                   duration: const Duration(seconds: 3),
                 ),
@@ -3586,6 +3853,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       anyUpdate = true;
                       successCount++;
                       downloadSuccess = true;
+                      
+                      // CONSUMA CREDITO PERMANENTE
+                      await provider.incrementLifetimeDownloadCount();
+
                       // Sync this status to all other playlists
                       await provider.updateSongDownloadStatusGlobally(
                         updatedSongs[i],
@@ -7171,9 +7442,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         icon = Icons.playlist_play_rounded;
         break;
       case 'download':
-        if (effectivePlaylist != null &&
-            (effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
-            Provider.of<EntitlementService>(context, listen: false).getFeatureLimit('download_songs') != 0) {
+        final dLimit = Provider.of<EntitlementService>(context).getFeatureLimit('download_songs');
+        if (isSelectionActive &&
+            (effectivePlaylist == null || effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
+            (dLimit != 0 || dLimit == -99)) {
           icon = Icons.download_rounded;
         }
         break;
@@ -7251,9 +7523,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       case 'search_add_song':
         return true;
       case 'download':
-        return effectivePlaylist != null &&
-            (effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
-            Provider.of<EntitlementService>(context, listen: false).getFeatureLimit('download_songs') != 0;
+        final dLimit = Provider.of<EntitlementService>(context).getFeatureLimit('download_songs');
+        // Visible if selection is active AND (not local playlist OR Artist/Album view)
+        return isSelectionActive &&
+            (effectivePlaylist == null || effectivePlaylist!.id == 'favorites' || effectivePlaylist!.creator != 'local') &&
+            (dLimit != 0 || dLimit == -99);
       case 'share_playlist':
          return effectivePlaylist != null && effectivePlaylist!.creator != 'local';
       case 'duplicates':

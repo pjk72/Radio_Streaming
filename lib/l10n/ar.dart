@@ -565,4 +565,13 @@ final Map<String, String> ar = {
   'filter_local_device': 'عرض الأماكن فقط',
   'filter_invalid_tracks': 'عرض غير صالح فقط',
   'group_by_none_label': 'بدون تجميع',
+  'ad_offer_title': 'احصل على اعتمادات التنزيل',
+  'ad_offer_desc': 'شاهد فيديو إعلاني قصير لتربح 3 أرصدة إضافية لتنزيل أغانيك المفضلة. ملاحظة: لن تكون التنزيلات قابلة للتشغيل إلا عبر تطبيق MusicStream.',
+  'loading_ad': 'جارٍ تحميل الإعلان...',
+  'ad_not_available': 'الإعلان ليس جاهزا بعد. يرجى المحاولة مرة أخرى في بضع ثوان.',
+  'credits_earned_msg': 'أفضل! لقد حصلت على أرصدة تنزيل{0}.',
+  'watch_ad': 'شاهد الفيديو',
+  'ad_offer_note': 'ملاحظة: لن تكون التنزيلات قابلة للتشغيل إلا عبر تطبيق MusicStream.',
+  'sync_complete_title': 'اكتملت المزامنة',
+  'sync_complete_msg': 'تمت مزامنة قائمة التشغيل بنجاح.',
 };

@@ -99,6 +99,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   static const String _keyAARecentSongsOrder = 'aa_recent_songs_order';
   static const String _keyLastSourceMap = 'last_source_map';
   static const String _keyWeeklyPlayLog = 'weekly_play_log';
+  static const String _keyLifetimeDownloadCount = 'lifetime_download_count';
+  static const String _keyEarnedDownloadCredits = 'earned_download_credits';
+
+  int _lifetimeDownloadCount = 0;
+  int _earnedDownloadCredits = 0;
+
+  int get lifetimeDownloadCount => _lifetimeDownloadCount;
+  int get earnedDownloadCredits => _earnedDownloadCredits;
 
   String _languageCode = 'en';
   void updateLanguageCode(String code) {
@@ -545,6 +553,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _pinnedPlaylistActions.addAll(pPlay);
     }
 
+    _lifetimeDownloadCount = prefs.getInt(_keyLifetimeDownloadCount) ?? 0;
+    _earnedDownloadCredits = prefs.getInt(_keyEarnedDownloadCredits) ?? 0;
+
     await _loadPromotedPlaylists();
 
     if (jsonStr != null) {
@@ -917,7 +928,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   List<SavedSong> get allUniqueSongs => _allUniqueSongs;
 
   /// Returns the total number of unique songs currently downloaded (including local media)
-  int get totalDownloadedSongs {
+  int get currentDownloadedSongsCount {
     final Set<String> downloadedIds = {};
     for (var playlist in _playlists) {
       for (var song in playlist.songs) {
@@ -927,6 +938,22 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
     }
     return downloadedIds.length;
+  }
+
+  /// Increments the persistent lifetime download count and saves to storage
+  Future<void> incrementLifetimeDownloadCount() async {
+    _lifetimeDownloadCount++;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyLifetimeDownloadCount, _lifetimeDownloadCount);
+    notifyListeners();
+  }
+
+  /// Adds extra download credits (e.g. from Rewarded Ads) and saves to storage
+  Future<void> addEarnedDownloadCredits(int count) async {
+    _earnedDownloadCredits += count;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyEarnedDownloadCredits, _earnedDownloadCredits);
+    notifyListeners();
   }
 
   Playlist? _tempPlaylist;

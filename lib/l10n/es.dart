@@ -615,4 +615,13 @@ final Map<String, String> es = {
   'filter_local_device': 'Mostrar solo lugares',
   'filter_invalid_tracks': 'Mostrar sólo Inválido',
   'group_by_none_label': 'Sin agrupar',
+  'ad_offer_title': 'Obtenga créditos de descarga',
+  'ad_offer_desc': 'Mire un video publicitario corto para ganar 3 créditos adicionales para descargar sus canciones favoritas. Nota: Las descargas solo se podrán reproducir a través de la aplicación MusicStream.',
+  'loading_ad': 'Cargando anuncio...',
+  'ad_not_available': 'El anuncio aún no está listo. Inténtelo de nuevo en unos segundos.',
+  'credits_earned_msg': '¡Óptimo! Has obtenido créditos de descarga de{0}.',
+  'watch_ad': 'Ver vídeo',
+  'ad_offer_note': 'Nota: Las descargas solo se podrán reproducir a través de la aplicación MusicStream.',
+  'sync_complete_title': 'Sincronización completa',
+  'sync_complete_msg': 'La lista de reproducción se sincronizó correctamente.',
 };

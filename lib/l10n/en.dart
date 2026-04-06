@@ -612,5 +612,14 @@ final Map<String, String> en = {
   'filter_local_device': 'Show only Venues',
   'filter_invalid_tracks': 'Show only Invalid',
   'group_by_none_label': 'Without Grouping',
+  'ad_offer_title': 'Get Download Credits',
+  'ad_offer_desc': 'Watch a short advertising video to earn 3 extra credits to download your favorite songs. Note: Downloads will only be playable via the MusicStream app.',
+  'loading_ad': 'Loading ad...',
+  'ad_not_available': 'The announcement is not yet ready. Please try again in a few seconds.',
+  'credits_earned_msg': 'Optimal! You have earned{0}download credits.',
+  'watch_ad': 'Watch Video',
+  'ad_offer_note': 'Note: Downloads will only be playable via the MusicStream app.',
+  'sync_complete_title': 'Synchronization Complete',
+  'sync_complete_msg': 'The playlist was synced successfully.',
 };
 

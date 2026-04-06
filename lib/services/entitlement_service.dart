@@ -317,10 +317,11 @@ class EntitlementService extends ChangeNotifier {
     // 4. Check Groups
     final groups = _config['groups'] as Map<String, dynamic>?;
     if (groups != null) {
+      final String normalizedUserEmail = userEmail.toLowerCase().trim();
       for (final entity in allowedEntities) {
         if (groups.containsKey(entity)) {
           final groupEmails = List<String>.from(groups[entity] ?? []);
-          if (groupEmails.contains(userEmail)) {
+          if (groupEmails.any((email) => email.toLowerCase().trim() == normalizedUserEmail)) {
             return true;
           }
         }
@@ -361,6 +362,7 @@ class EntitlementService extends ChangeNotifier {
     }
 
     final groups = _config['groups'] as Map<String, dynamic>?;
+    final String? normalizedUserEmail = userEmail?.toLowerCase().trim();
 
     int maxLimit = 0; // Default to blocked
 
@@ -372,14 +374,17 @@ class EntitlementService extends ChangeNotifier {
 
       if (entity.toLowerCase() == "all") {
         matches = true;
-      } else if (userEmail != null) {
-        if (entity.toLowerCase() == "all login") {
+      } else if (normalizedUserEmail != null) {
+        // Normalize the entity name too just in case (though it should be the group name or email key)
+        final String normalizedEntity = entity.toLowerCase().trim();
+        
+        if (normalizedEntity == "all login") {
           matches = true;
-        } else if (entity == userEmail) {
+        } else if (normalizedEntity == normalizedUserEmail) {
           matches = true;
         } else if (groups != null && groups.containsKey(entity)) {
           final groupEmails = List<String>.from(groups[entity] ?? []);
-          if (groupEmails.contains(userEmail)) {
+          if (groupEmails.any((email) => email.toLowerCase().trim() == normalizedUserEmail)) {
             matches = true;
           }
         }
@@ -388,8 +393,18 @@ class EntitlementService extends ChangeNotifier {
       if (matches) {
         if (currentLimit == -1) {
           maxLimit = -1;
-        } else if (maxLimit != -1 && currentLimit > maxLimit) {
-          maxLimit = currentLimit;
+        } else if (maxLimit != -1) {
+          // Priority logic:
+          // 1. Positive numbers/ -1 always win.
+          // 2. -99 wins over 0.
+          // 3. 0 is the absolute minimum.
+          if (currentLimit == -99 && (maxLimit == 0)) {
+            maxLimit = -99;
+          } else if (currentLimit > 0 && (maxLimit <= 0)) {
+            maxLimit = currentLimit;
+          } else if (currentLimit > maxLimit && maxLimit != -99) {
+             maxLimit = currentLimit;
+          }
         }
       }
     });
