@@ -31,6 +31,7 @@ import 'services/encryption_service.dart';
 import 'services/entitlement_service.dart';
 import 'widgets/admin_debug_overlay.dart';
 import 'services/app_open_ad_manager.dart';
+import 'services/rewarded_ad_service.dart';
 import 'services/notification_service.dart';
 import 'services/user_sync_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -161,6 +162,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
           await MobileAds.instance
               .initialize()
               .timeout(const Duration(seconds: 5));
+          await RewardedAdService.init(); // Carica il valore del premio salvato
         } catch (_) {}
       }
 

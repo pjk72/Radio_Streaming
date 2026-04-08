@@ -2903,7 +2903,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
-                    lang.translate('ad_offer_desc'),
+                    lang.translate('ad_offer_desc').replaceAll('{0}', RewardedAdService.rewardAmount.toString()),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.8),
@@ -3020,9 +3020,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           );
         }
 
+        int earnedAmount = 0;
         final bool rewardEarned = await RewardedAdService().showAdIfAvailable(
           onUserEarnedReward: (ad, reward) {
-             // Optional: log or handle specific reward amount if needed
+             earnedAmount = reward.amount.toInt();
           },
           onAdNotAvailable: () {
             if (mounted) {
@@ -3038,9 +3039,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         );
 
         if (rewardEarned) {
-          await provider.addEarnedDownloadCredits(3);
+          final int bonus = earnedAmount > 0 ? earnedAmount : RewardedAdService.rewardAmount;
+          await provider.addEarnedDownloadCredits(bonus);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("+3 Download Credits!")),
+            SnackBar(
+              content: Text(lang.translate('credits_earned_msg').replaceAll('{0}', bonus.toString())),
+              backgroundColor: Colors.green,
+            ),
           );
           // Ricominciamo la funzione per aggiornare i calcoli
           return await _downloadPlaylist(context, provider, playlist);
@@ -3127,8 +3132,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: InkWell(
                           onTap: () async {
+                            int earnedAmount = 0;
                             bool earned = await RewardedAdService().showAdIfAvailable(
-                              onUserEarnedReward: (ad, reward) {},
+                              onUserEarnedReward: (ad, reward) {
+                                earnedAmount = reward.amount.toInt();
+                              },
                               onAdNotAvailable: () {
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -3142,11 +3150,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             );
 
                             if (earned) {
-                              await provider.addEarnedDownloadCredits(3);
+                              final int bonus = earnedAmount > 0 ? earnedAmount : RewardedAdService.rewardAmount;
+                              await provider.addEarnedDownloadCredits(bonus);
                               if (mounted) {
                                  ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text(lang.translate('credits_earned_msg').replaceAll('{0}', '3')),
+                                      content: Text(lang.translate('credits_earned_msg').replaceAll('{0}', bonus.toString())),
                                       backgroundColor: Colors.green,
                                     ),
                                  );
@@ -3170,21 +3179,21 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 color: Colors.amber.withValues(alpha: 0.4),
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.stars_rounded, color: Colors.amber, size: 24),
-                                const SizedBox(width: 12),
-                                Text(
-                                  "+3 ${lang.translate('watch_ad')}",
-                                  style: const TextStyle(
-                                    color: Colors.amber,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.stars_rounded, color: Colors.amber, size: 24),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      "+${RewardedAdService.rewardAmount} ${lang.translate('watch_ad')}",
+                                      style: const TextStyle(
+                                        color: Colors.amber,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
                           ),
                         ),
                       ),

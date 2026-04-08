@@ -355,12 +355,15 @@ final Map<String, String> it = {
   'no_permission_download': 'Non hai i permessi per scaricare i brani.',
   'download_cancelled': 'Download annullato',
   'ad_offer_title': 'Ottieni Crediti Download',
-  'ad_offer_desc': 'Guarda un breve video pubblicitario per guadagnare 3 crediti extra per scaricare i tuoi brani preferiti.',
-  'ad_offer_note': 'Nota: i download saranno riproducibili esclusivamente tramite l\'app MusicStream.',
+  'ad_offer_desc':
+      'Guarda un breve video pubblicitario per guadagnare {0} crediti extra per scaricare i tuoi brani preferiti.',
+  'ad_offer_note':
+      'Nota: i download saranno riproducibili esclusivamente tramite l\'app MusicStream.',
   'sync_complete_title': 'Sincronizzazione Completata',
   'sync_complete_msg': 'La playlist è stata sincronizzata correttamente.',
   'loading_ad': 'Caricamento annuncio...',
-  'ad_not_available': 'L\'annuncio non è ancora pronto. Riprova tra pochi secondi.',
+  'ad_not_available':
+      'L\'annuncio non è ancora pronto. Riprova tra pochi secondi.',
   'credits_earned_msg': 'Ottimo! Hai guadagnato {0} crediti download.',
   'watch_ad': 'Guarda Video',
   'clear_selection': 'Cancella Selezione',
@@ -617,7 +620,8 @@ final Map<String, String> it = {
   'alphabetical_order': 'Ordine Alfabetico',
   'favorites': 'Preferiti',
   'recently_played_title': 'Ascoltati di recente',
-  'permission_camera_denied': 'Il permesso della fotocamera è necessario per scansionare i codici QR',
+  'permission_camera_denied':
+      'Il permesso della fotocamera è necessario per scansionare i codici QR',
   'followed_artists_only': 'Solo Artisti Seguiti',
   'followed_albums_only': 'Solo Album Seguiti',
   'filter_local_device': 'Mostra solo Locali',
@@ -629,4 +633,3 @@ final Map<String, String> it = {
   'sharing_cloud_prepping': 'Preparazione Cloud...',
   'cloud_playlist_imported': 'Playlist Cloud Importata!',
 };
-
