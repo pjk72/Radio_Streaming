@@ -10,6 +10,7 @@ class AppOpenAdManager {
 
   AppOpenAd? _appOpenAd;
   bool _isShowingAd = false;
+  bool get isShowingAd => _isShowingAd;
   bool _isFirstAdShown = false;
   EntitlementService? _entitlements;
 

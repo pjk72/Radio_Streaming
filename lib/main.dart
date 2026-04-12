@@ -242,6 +242,14 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   }
 
   Future<void> _checkForUpdate() async {
+    // Add a delay to ensure the splash screen is gone and the initial screen is visible
+    await Future.delayed(const Duration(seconds: 3));
+
+    // Wait if an App Open Ad is showing to avoid covering the dialog
+    while (AppOpenAdManager().isShowingAd) {
+      await Future.delayed(const Duration(seconds: 1));
+    }
+
     if (!kIsWeb && Platform.isAndroid) {
       try {
         final info = await InAppUpdate.checkForUpdate();
