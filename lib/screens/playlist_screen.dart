@@ -1361,14 +1361,19 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         else
                           Padding(
                             padding: const EdgeInsets.all(8.0),
-                            child: Icon(
-                              _viewMode == MetadataViewMode.artists
-                                  ? Icons.people
-                                  : _viewMode == MetadataViewMode.albums
-                                  ? Icons.album
-                                  : Icons.collections_bookmark_rounded,
-                              color: headerContrastColor,
-                            ),
+                            child: provider.isSyncingMetadata
+                                ? _SpinningSyncIcon(
+                                    size: 20,
+                                    color: headerContrastColor,
+                                  )
+                                : Icon(
+                                    _viewMode == MetadataViewMode.artists
+                                        ? Icons.people
+                                        : _viewMode == MetadataViewMode.albums
+                                            ? Icons.album
+                                            : Icons.collections_bookmark_rounded,
+                                    color: headerContrastColor,
+                                  ),
                           ),
                         
                         // Case 1: Library Title (anchored to the left icon)
@@ -1680,16 +1685,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   builder: (context) {
                     if (isSelectionActive) {
                       return RefreshIndicator(
+                        color: Colors.transparent,
+                        backgroundColor: Colors.transparent,
                         onRefresh: () async {
                           if (_selectedPlaylistId != null) {
                             // Call background refresh that checks local file structure and video links
-                            await provider.refreshPlaylistInBackground(
-                              _selectedPlaylistId!,
-                            );
-                            await provider.reloadPlaylists();
+                            provider.refreshPlaylistInBackground(_selectedPlaylistId!);
+                            provider.reloadPlaylists();
                           } else {
-                            await provider.reloadPlaylists();
-                            await provider.findMissingArtworks();
+                            provider.reloadPlaylists();
+                            provider.findMissingArtworks();
                           }
                         },
                         child: _buildSongList(
@@ -1728,12 +1733,15 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     switch (_viewMode) {
                       case MetadataViewMode.playlists:
                         return RefreshIndicator(
+                          color: Colors.transparent,
+                          backgroundColor: Colors.transparent,
                           onRefresh: () async {
-                            await provider.reloadPlaylists();
-                            await provider.findMissingArtworks();
+                            provider.reloadPlaylists();
+                            provider.findMissingArtworks();
                           },
                           child: ListView(
                             controller: _playlistsScrollController,
+                            physics: const AlwaysScrollableScrollPhysics(),
                             key: const PageStorageKey('playlists_list'),
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                             children: [
@@ -1747,17 +1755,21 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         );
                       case MetadataViewMode.artists:
                         return RefreshIndicator(
+                          color: Colors.transparent,
+                          backgroundColor: Colors.transparent,
                           onRefresh: () async {
-                            await provider.reloadPlaylists();
-                            await provider.findMissingArtworks();
+                            provider.reloadPlaylists();
+                            provider.findMissingArtworks();
                           },
                           child: _buildArtistsGrid(context, provider, filteredAllSongs),
                         );
                       case MetadataViewMode.albums:
                         return RefreshIndicator(
+                          color: Colors.transparent,
+                          backgroundColor: Colors.transparent,
                           onRefresh: () async {
-                            await provider.reloadPlaylists();
-                            await provider.findMissingArtworks();
+                            provider.reloadPlaylists();
+                            provider.findMissingArtworks();
                           },
                           child: _buildAlbumsGrid(context, provider, filteredAllSongs),
                         );
@@ -6477,7 +6489,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
         return GridView.builder(
           shrinkWrap: isSearch,
-          physics: isSearch ? const NeverScrollableScrollPhysics() : null,
+          physics: isSearch
+              ? const NeverScrollableScrollPhysics()
+              : const AlwaysScrollableScrollPhysics(),
           controller: isSearch ? null : _artistsScrollController,
           key: isSearch ? null : const PageStorageKey('artists_grid'),
           padding: isSearch
@@ -6676,7 +6690,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
         return GridView.builder(
           shrinkWrap: isSearch,
-          physics: isSearch ? const NeverScrollableScrollPhysics() : null,
+          physics: isSearch
+              ? const NeverScrollableScrollPhysics()
+              : const AlwaysScrollableScrollPhysics(),
           controller: isSearch ? null : _albumsScrollController,
           key: isSearch ? null : const PageStorageKey('albums_grid'),
           padding: isSearch
@@ -8540,7 +8556,12 @@ class _QRScannerScreenState extends State<_QRScannerScreen> {
 }
 
 class _SpinningSyncIcon extends StatefulWidget {
-  const _SpinningSyncIcon();
+  final double size;
+  final Color color;
+  const _SpinningSyncIcon({
+    this.size = 10,
+    this.color = Colors.white,
+  });
 
   @override
   State<_SpinningSyncIcon> createState() => _SpinningSyncIconState();
@@ -8568,10 +8589,10 @@ class _SpinningSyncIconState extends State<_SpinningSyncIcon> with SingleTickerP
   Widget build(BuildContext context) {
     return RotationTransition(
       turns: _controller,
-      child: const Icon(
+      child: Icon(
         Icons.sync_rounded,
-        color: Colors.white,
-        size: 10,
+        color: widget.color,
+        size: widget.size,
       ),
     );
   }

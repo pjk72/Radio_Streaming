@@ -361,6 +361,7 @@ final Map<String, String> it = {
       'Nota: i download saranno riproducibili esclusivamente tramite l\'app MusicStream.',
   'sync_complete_title': 'Sincronizzazione Completata',
   'sync_complete_msg': 'La playlist è stata sincronizzata correttamente.',
+  'sync_failed_removal': 'Sincronizzazione fallita: rimozione dei brani non validi.',
   'loading_ad': 'Caricamento annuncio...',
   'ad_not_available':
       'L\'annuncio non è ancora pronto. Riprova tra pochi secondi.',

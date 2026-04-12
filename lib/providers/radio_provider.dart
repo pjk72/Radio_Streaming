@@ -927,6 +927,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   List<SavedSong> _allUniqueSongs = [];
   List<SavedSong> get allUniqueSongs => _allUniqueSongs;
 
+  bool _isSyncingMetadata = false;
+  bool get isSyncingMetadata => _isSyncingMetadata;
+
   /// Returns the total number of unique songs currently downloaded (including local media)
   int get currentDownloadedSongsCount {
     final Set<String> downloadedIds = {};
@@ -2296,11 +2299,15 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<void> refreshPlaylistInBackground(String playlistId) async {
+    _isSyncingMetadata = true;
+    notifyListeners();
     // 1. Locate the playlist
     Playlist? target;
     try {
       target = _playlists.firstWhere((p) => p.id == playlistId);
     } catch (_) {
+      _isSyncingMetadata = false;
+      notifyListeners();
       return;
     }
 
@@ -2340,9 +2347,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // 3. Chain to Video Link resolution (passes the now-updated songs)
     try {
       final latestPlaylist = _playlists.firstWhere((p) => p.id == playlistId);
-      resolvePlaylistLinksInBackground(playlistId, latestPlaylist.songs);
+      await resolvePlaylistLinksInBackground(playlistId, latestPlaylist.songs);
     } catch (_) {
       // Playlist might have been deleted
+    } finally {
+      _isSyncingMetadata = false;
+      notifyListeners();
     }
   }
 
@@ -2940,10 +2950,18 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     );
     if (playlist.id.isEmpty) return;
 
+    _isSyncingMetadata = true;
+    notifyListeners();
+
     List<SavedSong> songsToProcess = playlist.songs
         .where((s) => s.artUri == null || s.artUri!.isEmpty)
         .toList();
-    if (songsToProcess.isEmpty) return;
+
+    if (songsToProcess.isEmpty) {
+      _isSyncingMetadata = false;
+      notifyListeners();
+      return;
+    }
 
     bool anyChanged = false;
     List<SavedSong> updatedSongs = List.from(playlist.songs);
@@ -2994,6 +3012,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       );
       await _loadPlaylists();
     }
+
+    _isSyncingMetadata = false;
+    notifyListeners();
   }
 
   // ... rest of class
@@ -6740,6 +6761,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<void> findMissingArtworks({String? playlistId}) async {
+    _isSyncingMetadata = true;
+    notifyListeners();
+    try {
     final List<SavedSong> toProcess = [];
     if (playlistId != null) {
       try {
@@ -6930,8 +6954,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       await Future.delayed(const Duration(milliseconds: 300));
     }
 
-    if (anyChanged) {
-      await _playlistService.saveAll(_playlists);
+      if (anyChanged) {
+        await _playlistService.saveAll(_playlists);
+        notifyListeners();
+      }
+    } finally {
+      _isSyncingMetadata = false;
       notifyListeners();
     }
   }

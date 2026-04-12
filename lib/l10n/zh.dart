@@ -611,4 +611,5 @@ final Map<String, String> zh = {
   'ad_offer_note': '注意：下载内容只能通过 MusicStream 应用程序播放。',
   'sync_complete_title': '同步完成',
   'sync_complete_msg': '播放列表已成功同步。',
+  'sync_failed_removal': '同步失败：删除无效曲目。',
 };

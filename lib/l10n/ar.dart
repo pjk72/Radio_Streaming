@@ -574,4 +574,5 @@ final Map<String, String> ar = {
   'sync_complete_title': 'اكتملت المزامنة',
   'sync_complete_msg': 'تمت مزامنة قائمة التشغيل بنجاح.',
   'ad_offer_note': 'ملاحظة: لن تكون التنزيلات قابلة للتشغيل إلا عبر تطبيق MusicStream.',
+  'sync_failed_removal': 'فشلت المزامنة: إزالة المسارات غير الصالحة.',
 };

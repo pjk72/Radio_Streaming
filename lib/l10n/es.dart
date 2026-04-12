@@ -624,4 +624,5 @@ final Map<String, String> es = {
   'ad_offer_note': 'Nota: Las descargas solo se podrán reproducir a través de la aplicación MusicStream.',
   'sync_complete_title': 'Sincronización completa',
   'sync_complete_msg': 'La lista de reproducción se sincronizó correctamente.',
+  'sync_failed_removal': 'Error de sincronización: eliminando pistas no válidas.',
 };

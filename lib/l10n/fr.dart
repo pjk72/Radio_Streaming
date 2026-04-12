@@ -628,4 +628,5 @@ final Map<String, String> fr = {
   'credits_earned_msg': 'Super ! Vous avez gagné {0} crédits de téléchargement.',
   'watch_ad': 'Regarder la vidéo',
   'ad_offer_note': 'Remarque : les téléchargements ne seront lisibles que via l\'application MusicStream.',
+  'sync_failed_removal': 'Échec de la synchronisation : suppression des pistes invalides.',
 };

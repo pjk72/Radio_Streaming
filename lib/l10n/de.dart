@@ -627,4 +627,5 @@ final Map<String, String> de = {
   'ad_offer_note': 'Hinweis: Downloads sind nur über die MusicStream-App abspielbar.',
   'sync_complete_title': 'Synchronisierung abgeschlossen',
   'sync_complete_msg': 'Die Playlist wurde erfolgreich synchronisiert.',
+  'sync_failed_removal': 'Synchronisierung fehlgeschlagen: Ungültige Titel werden entfernt.',
 };
