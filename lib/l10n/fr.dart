@@ -620,7 +620,7 @@ final Map<String, String> fr = {
   'filter_invalid_tracks': 'Afficher uniquement Invalide',
   'group_by_none_label': 'Sans regroupement',
   'ad_offer_title': 'Obtenez des crédits de téléchargement',
-  'ad_offer_desc': 'Regardez une courte vidéo publicitaire pour gagner {0} crédits supplémentaires per vos chansons préférées.',
+  'ad_offer_desc': 'Regardez une courte vidéo publicitaire pour gagner des crédits supplémentaires per vos chansons préférées.',
   'sync_complete_title': 'Synchronisation Terminée',
   'sync_complete_msg': 'La playlist a été synchronisée avec succès.',
   'loading_ad': 'Chargement de l\'annonce...',

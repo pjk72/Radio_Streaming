@@ -356,7 +356,7 @@ final Map<String, String> it = {
   'download_cancelled': 'Download annullato',
   'ad_offer_title': 'Ottieni Crediti Download',
   'ad_offer_desc':
-      'Guarda un breve video pubblicitario per guadagnare {0} crediti extra per scaricare i tuoi brani preferiti.',
+      'Guarda un breve video pubblicitario per guadagnare crediti extra per scaricare i tuoi brani preferiti.',
   'ad_offer_note':
       'Nota: i download saranno riproducibili esclusivamente tramite l\'app MusicStream.',
   'sync_complete_title': 'Sincronizzazione Completata',

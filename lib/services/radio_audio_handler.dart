@@ -11,6 +11,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 import '../models/station.dart';
 import '../models/saved_song.dart';
@@ -217,11 +218,23 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (_) {}
 
     try {
-      // 2. Clear Source/Stop instead of full dispose for tracks
-      try {
-        await _player.stop();
-        await _player.release();
-      } catch (_) {}
+      // 2. Abandon old players and create new ones immediately
+      // This prevents the initialization from blocking if the old player instances are deadlocked in native code.
+      final oldPlayer = _player;
+      final oldNextPlayer = _nextPlayer;
+
+      _player = AudioPlayer();
+      _nextPlayer = AudioPlayer();
+
+      // Trigger disposal of old players in a non-awaited future to avoid blocking the Main Thread
+      Future.microtask(() async {
+        try {
+          await oldPlayer.dispose().timeout(const Duration(seconds: 2));
+        } catch (_) {}
+        try {
+          await oldNextPlayer.dispose().timeout(const Duration(seconds: 2));
+        } catch (_) {}
+      });
 
       // 3. Configure (Use defaults to match Test Screen, add minimal config)
 
@@ -257,7 +270,13 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> seek(Duration position) async {
-    await _player.seek(position);
+    try {
+      // FATAL FIX: Add timeout to seek to prevent indefinite hangs
+      // which cause TimeoutException in some Android devices/OS versions.
+      await _player.seek(position).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      LogService().log("Seek error or timeout: $e");
+    }
     _currentPosition = position;
     _broadcastState(_player.state);
   }
@@ -286,11 +305,21 @@ class RadioAudioHandler extends BaseAudioHandler
         }
 
         String es = e.toString();
-        if (es.contains("-1005") || es.contains("what:1")) {
+        if (es.contains("-1005") ||
+            es.contains("what:1") ||
+            es.contains("100") || // MEDIA_ERROR_SERVER_DIED
+            es.contains("SERVER_DIED") ||
+            es.contains("extra:1")) {
           LogService().log(
             "Critical Player Error Detected: $es. Triggering recovery...",
           );
-          _handleConnectionError("Connection failed (Error -1005)");
+          FirebaseCrashlytics.instance.recordError(
+            e,
+            null,
+            reason: "Non-fatal Audio Engine Error Recovery: $es",
+            fatal: false,
+          );
+          _handleFatalPlayerError("Audio Engine Error ($es)");
         }
       },
     );
@@ -816,6 +845,13 @@ class RadioAudioHandler extends BaseAudioHandler
     _broadcastState(PlayerState.stopped);
   }
 
+  Future<void> _handleFatalPlayerError(String message) async {
+    LogService().log("FATAL PLAYER ERROR: $message. Re-initializing...");
+    _expectingStop = true; // Prevent current player from firing more events
+    await _initializePlayer();
+    _handleConnectionError(message);
+  }
+
   void _handleConnectionError(String message) {
     if (_expectingStop) return;
 
@@ -1235,7 +1271,12 @@ class RadioAudioHandler extends BaseAudioHandler
     // If paused, just resume without reloading
     if (_player.state == PlayerState.paused) {
       _expectingStop = false;
-      await _player.resume();
+      try {
+        await _player.resume();
+      } catch (e) {
+        _handleFatalPlayerError("Resume failed (State mismatch): $e");
+        return;
+      }
       // State will be updated by listener, but we can force it for responsiveness
       if (logEvent) {
         _logAnalyticsEvent('toggle_play', {'action': 'play'});
@@ -1583,7 +1624,12 @@ class RadioAudioHandler extends BaseAudioHandler
     _nextPlayerSourceUrl = null; // Clear warm flag
 
     // 3. Start the NEW main player
-    await _player.resume();
+    try {
+      await _player.resume();
+    } catch (e) {
+      _handleFatalPlayerError("Swap resume failed: $e");
+      return;
+    }
     _setupPlayerListeners(); // Re-attach listeners to the new main
     _isSwapping = false;
     _expectingStop = false;
@@ -1945,10 +1991,8 @@ class RadioAudioHandler extends BaseAudioHandler
         // ReleaseMode.release can dispose the player on Windows/Android when finished.
         await _player.setReleaseMode(ReleaseMode.stop);
 
-        // Explicit Clean Stop before source change
-        try {
-          await _player.stop();
-        } catch (_) {}
+        // Explicit Source Swap (Reduced stop() calls to avoid Android Main Thread Deadlock)
+        // audioplayers handles stopping previous source internally during setSource.
 
         if (isLocal) {
           // Stop any existing playback first to ensure clean state
@@ -2022,7 +2066,7 @@ class RadioAudioHandler extends BaseAudioHandler
                   throw Exception("Decrypted temp file is invalid or empty");
                 }
 
-                await _player.stop(); // Force stop to clear buffers
+                // Force stop removed to avoid potential MediaHTTPConnection deadlock on Android
                 LogService().log(
                   "LOCAL PLAYBACK: Set Source: ${tempFile.path}",
                 );
@@ -2060,7 +2104,9 @@ class RadioAudioHandler extends BaseAudioHandler
 
         if (extras['startAt'] != null && extras['startAt'] is Duration) {
           try {
-            await _player.seek(extras['startAt']);
+            await _player
+                .seek(extras['startAt'])
+                .timeout(const Duration(seconds: 5));
           } catch (_) {}
         }
 
@@ -2101,6 +2147,12 @@ class RadioAudioHandler extends BaseAudioHandler
               category = "Link Expired (403)";
             else if (errorStr.contains("-1005"))
               category = "Network Socket Error (-1005)";
+            else if (errorStr.contains("100") ||
+                errorStr.contains("SERVER_DIED") ||
+                errorStr.contains("extra:1")) {
+              _handleFatalPlayerError("Internal Player Error ($errorStr)");
+              return;
+            }
 
             LogService().log("Playback Failure Category: $category");
 

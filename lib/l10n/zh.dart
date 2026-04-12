@@ -603,7 +603,7 @@ final Map<String, String> zh = {
   'filter_invalid_tracks': '仅显示无效',
   'group_by_none_label': '不分组',
   'ad_offer_title': '获取下载积分',
-  'ad_offer_desc': '观看简短的广告视频即可赚取 {0} 个额外积分来下载您最喜爱的歌曲。',
+  'ad_offer_desc': '观看简短的广告视频即可赚取额外积分来下载您最喜爱的歌曲。',
   'loading_ad': '正在加载广告...',
   'ad_not_available': '该公告尚未准备好。请几秒钟后重试。',
   'credits_earned_msg': '最佳的！您已获得{0}下载积分。',

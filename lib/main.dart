@@ -37,19 +37,53 @@ import 'services/user_sync_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'utils/glass_utils.dart';
 
+import 'utils/http_overrides.dart';
+
 late AudioHandler audioHandler;
 
 @pragma('vm:entry-point')
 Future<void> main() async {
+  HttpOverrides.global = RadioHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
+  bool isNonFatalError(dynamic error) {
+    final String errorStr = error.toString();
+    return errorStr.contains("Failed to load font") ||
+        errorStr.contains("fonts.gstatic.com") ||
+        errorStr.contains("SocketException") ||
+        errorStr.contains("HandshakeException") ||
+        errorStr.contains("TimeoutException") ||
+        errorStr.contains("MEDIA_ERROR_SERVER_DIED") ||
+        errorStr.contains("PermissionHandler") ||
+        errorStr.contains("HTTP request failed") ||
+        errorStr.contains("NetworkImage") ||
+        errorStr.contains("statusCode:") ||
+        errorStr.contains("Network is unreachable") ||
+        errorStr.contains("googleusercontent.com") ||
+        errorStr.contains("Unable to load asset") ||
+        errorStr.contains("asset: \"null\"") ||
+        errorStr.contains("errno = 101");
+  }
+
   FlutterError.onError = (errorDetails) {
-    FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+    if (isNonFatalError(errorDetails.exception)) {
+      FirebaseCrashlytics.instance.recordError(
+        errorDetails.exception,
+        errorDetails.stack,
+        fatal: false,
+      );
+    } else {
+      FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+    }
   };
 
   PlatformDispatcher.instance.onError = (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    FirebaseCrashlytics.instance.recordError(
+      error,
+      stack,
+      fatal: !isNonFatalError(error),
+    );
     return true;
   };
 
@@ -141,6 +175,7 @@ class RadioApp extends StatefulWidget {
 }
 
 class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _isInitialized = false;
   String? _error;
 
@@ -173,7 +208,6 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       // This ensures the splash stays until they are done, but doesn't hang forever
       await Future.wait([
         _initNotifications().timeout(const Duration(seconds: 10)),
-        _checkForUpdate().timeout(const Duration(seconds: 10)),
         splashTimer, // Ensure we stay at least 2.5s regardless
       ]).catchError((e) {
         debugPrint("Secondary initialization timed out or failed: $e");
@@ -182,6 +216,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
 
       if (mounted) {
         setState(() => _isInitialized = true);
+        // Trigger update check after initialization is complete
+        // so the navigator is guaranteed to be in the tree
+        _checkForUpdate();
       }
     } catch (e) {
       debugPrint("Startup Error: $e");
@@ -208,20 +245,26 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
     if (!kIsWeb && Platform.isAndroid) {
       try {
         final info = await InAppUpdate.checkForUpdate();
+        debugPrint('Update available: ${info.updateAvailability}');
         if (info.updateAvailability == UpdateAvailability.updateAvailable) {
           if (mounted) _showUpdateDialog();
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Update check failed: $e');
+      }
     }
   }
 
   void _showUpdateDialog() {
+    final navContext = _navigatorKey.currentContext;
+    if (navContext == null) return;
+
     final languageProvider = Provider.of<LanguageProvider>(
-      context,
+      navContext,
       listen: false,
     );
     GlassUtils.showGlassDialog(
-      context: context,
+      context: navContext,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         surfaceTintColor: Colors.transparent,
@@ -274,6 +317,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
             : Brightness.dark,
       ),
       child: MaterialApp(
+        navigatorKey: _navigatorKey,
         title: 'MusicStream',
         debugShowCheckedModeBanner: false,
         theme: themeProvider.themeData,

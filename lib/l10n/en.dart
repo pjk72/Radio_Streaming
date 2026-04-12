@@ -613,7 +613,7 @@ final Map<String, String> en = {
   'filter_invalid_tracks': 'Show only Invalid',
   'group_by_none_label': 'Without Grouping',
   'ad_offer_title': 'Get Download Credits',
-  'ad_offer_desc': 'Watch a short advertising video to earn {0} extra credits to download your favorite songs.',
+  'ad_offer_desc': 'Watch a short advertising video to earn extra credits to download your favorite songs.',
   'loading_ad': 'Loading ad...',
   'ad_not_available': 'The announcement is not yet ready. Please try again in a few seconds.',
   'credits_earned_msg': 'Optimal! You have earned{0}download credits.',

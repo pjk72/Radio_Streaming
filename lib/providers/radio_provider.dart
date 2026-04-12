@@ -6040,36 +6040,52 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<void> ensureLocalPermissions() async {
     if (kIsWeb) return;
 
-    // Check if any playlist is local or contains local songs
-    bool hasLocalContent =
-        _playlists.any((p) => p.id.startsWith('local_')) ||
-        _playlists.any(
-          (p) => p.songs.any(
-            (s) => s.localPath != null && s.localPath!.isNotEmpty,
-          ),
-        );
-
-    if (!hasLocalContent) {
-      // Also check unique songs
-      hasLocalContent = _allUniqueSongs.any(
-        (s) => s.localPath != null && s.localPath!.isNotEmpty,
+    // FATAL FIX: Only request if app is in the foreground.
+    // Permission requests while backgrounded or during early initialization can cause:
+    // "Unable to detect current Android Activity" fatal crash.
+    final bool isResumed =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    if (!isResumed) {
+      LogService().log(
+        "[RadioProvider] Skipping permission request: App not in foreground.",
       );
+      return;
     }
 
-    if (hasLocalContent) {
-      if (Platform.isAndroid) {
-        // For Android 13+ (API 33+) we need Permission.audio
-        // For older, Permission.storage
-        final statusAudio = await Permission.audio.request();
-        if (statusAudio.isPermanentlyDenied) {
-          // Permanently denied, could show a snackbar or similar if needed.
-        } else if (statusAudio.isDenied) {
-          // Try legacy storage permission for older Androids
-          await Permission.storage.request();
-        }
-      } else if (Platform.isIOS) {
-        await Permission.mediaLibrary.request();
+    try {
+      // Check if any playlist is local or contains local songs
+      bool hasLocalContent =
+          _playlists.any((p) => p.id.startsWith('local_')) ||
+          _playlists.any(
+            (p) => p.songs.any(
+              (s) => s.localPath != null && s.localPath!.isNotEmpty,
+            ),
+          );
+
+      if (!hasLocalContent) {
+        // Also check unique songs
+        hasLocalContent = _allUniqueSongs.any(
+          (s) => s.localPath != null && s.localPath!.isNotEmpty,
+        );
       }
+
+      if (hasLocalContent) {
+        if (Platform.isAndroid) {
+          // For Android 13+ (API 33+) we need Permission.audio
+          // For older, Permission.storage
+          final statusAudio = await Permission.audio.request();
+          if (statusAudio.isPermanentlyDenied) {
+            // Permanently denied, could show a snackbar or similar if needed.
+          } else if (statusAudio.isDenied) {
+            // Try legacy storage permission for older Androids
+            await Permission.storage.request();
+          }
+        } else if (Platform.isIOS) {
+          await Permission.mediaLibrary.request();
+        }
+      }
+    } catch (e) {
+      LogService().log("[RadioProvider] Permission request failed: $e");
     }
   }
 
