@@ -4205,9 +4205,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       Navigator.of(context, rootNavigator: true).pop();
 
       String deepLink = '';
-      final youtubeLink = links['youtube'] ?? song.youtubeUrl;
+      var youtubeLink = links['youtube'] ?? song.youtubeUrl;
+      if (youtubeLink == null || youtubeLink.isEmpty) {
+        youtubeLink = await provider.searchYoutubeVideo(song.title, song.artist);
+      }
       String videoId = '';
-      if (youtubeLink != null) {
+      if (youtubeLink != null && youtubeLink.isNotEmpty) {
         final vId = YoutubePlayer.convertUrlToId(youtubeLink);
         if (vId != null) videoId = vId;
       }
