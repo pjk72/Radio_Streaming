@@ -1131,12 +1131,33 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           // Progress Bar (Youtube) - Above Controls
           if (provider.hiddenAudioController != null)
             _buildProgressBar(context, provider.hiddenAudioController!)
-          else if (provider.currentPlayingPlaylistId != null ||
+          else if (provider.isRecognizing ||
+              provider.currentPlayingPlaylistId != null ||
               ((provider.currentStation != null ||
                       provider.audioHandler.mediaItem.value?.duration !=
-                          null) &&
+                          null ||
+                      provider.audioHandler.mediaItem.value?.extras?['isRecognized'] == true) &&
                   provider.isACRCloudEnabled))
-            _buildNativeProgressBar(context, provider)
+            provider.isRecognizing
+                ? _buildIndeterminateProgressBar(
+                    context,
+                    provider,
+                    isFast: true,
+                  )
+                : (provider
+                          .audioHandler
+                          .mediaItem
+                          .value
+                          ?.extras?['hasExactOffset'] ??
+                      true)
+                ? _buildNativeProgressBar(context, provider)
+                : provider.isPlaying
+                ? _buildIndeterminateProgressBar(
+                    context,
+                    provider,
+                    isFast: false,
+                  )
+                : const SizedBox(height: 20)
           else
             const SizedBox(height: 20), // Space for Radio info separation
           // Controls
@@ -1525,6 +1546,60 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildIndeterminateProgressBar(
+    BuildContext context,
+    RadioProvider provider, {
+    bool isFast = false,
+  }) {
+    final duration =
+        provider.audioHandler.mediaItem.value?.duration ?? Duration.zero;
+    final durationLabel =
+        duration > Duration.zero ? _formatDuration(duration) : "--:--";
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Row(
+            children: [
+              Text(
+                isFast ? "--:--" : "00:00",
+                style: const TextStyle(color: Colors.white30, fontSize: 12),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: SizedBox(
+                      height: 4,
+                      child: _ScanningProgressBar(
+                        speed: isFast ? ScanningSpeed.fast : ScanningSpeed.slow,
+                        height: 4,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (isFast)
+                const Icon(
+                  Icons.sync_rounded,
+                  color: Colors.white30,
+                  size: 16,
+                )
+              else
+                Text(
+                  durationLabel,
+                  style: const TextStyle(color: Colors.white30, fontSize: 12),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 
@@ -2343,6 +2418,93 @@ class _DraggableSyncOverlayState extends State<_DraggableSyncOverlay> {
           style: const TextStyle(color: Colors.white38, fontSize: 10),
         ),
       ],
+    );
+  }
+}
+
+enum ScanningSpeed { fast, slow }
+
+class _ScanningProgressBar extends StatefulWidget {
+  final ScanningSpeed speed;
+  final double height;
+
+  const _ScanningProgressBar({required this.speed, this.height = 2});
+
+  @override
+  _ScanningProgressBarState createState() => _ScanningProgressBarState();
+}
+
+class _ScanningProgressBarState extends State<_ScanningProgressBar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    final duration = widget.speed == ScanningSpeed.fast
+        ? const Duration(milliseconds: 1000)
+        : const Duration(milliseconds: 12000);
+
+    _controller = AnimationController(vsync: this, duration: duration)
+      ..repeat(reverse: true);
+
+    _animation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void didUpdateWidget(_ScanningProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.speed != widget.speed) {
+      final newDuration = widget.speed == ScanningSpeed.fast
+          ? const Duration(milliseconds: 1000)
+          : const Duration(milliseconds: 12000);
+      _controller.duration = newDuration;
+      if (_controller.isAnimating) {
+        _controller.repeat(reverse: true);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).primaryColor;
+
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            Container(color: color.withValues(alpha: 0.05)),
+            Align(
+              alignment: Alignment(_animation.value * 2 - 1, 0),
+              child: Container(
+                width: 80,
+                height: widget.height,
+                decoration: BoxDecoration(
+                  color: color,
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.5),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

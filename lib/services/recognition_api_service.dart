@@ -8,12 +8,23 @@ import 'log_service.dart';
 class RecognitionApiService {
   final String _host = 'shazam-song-recognition-api.p.rapidapi.com';
   // Backup key in case Remote Config is unavailable
-  final String _defaultApiKey = '65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828';
+  final String _defaultApiKey =
+      '65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828';
+
+  // New API constants (Soluzione 2)
+  static const String _apiUrl2 =
+      "https://shazam-music-recognition1.p.rapidapi.com/api/recognize";
+  static const String _apiHost2 = "shazam-music-recognition1.p.rapidapi.com";
+  static const String _apiKey2 =
+      "937107fc2fmsh3f14e2e149d183cp1a7b28jsn5745ab269835";
 
   static bool _isGlobalRecognizing = false;
   http.Client? _activeClient;
 
-  Future<Map<String, dynamic>?> identifyStream(String streamUrl) async {
+  Future<Map<String, dynamic>?> identifyStream(
+    String streamUrl, {
+    String strategy = "soluzione 2",
+  }) async {
     if (_isGlobalRecognizing) {
       LogService().log(
         "RecognitionAPI: Global lock active, ignoring duplicate request.",
@@ -26,10 +37,6 @@ class RecognitionApiService {
       final resolvedUrl = await _resolveStreamUrl(streamUrl);
       if (_activeClient == null) return null;
       LogService().log("RecognitionAPI: Resolved URL: $resolvedUrl");
-
-      // 1. Get the best API key based on global usage
-      final apiKey = await _getBestApiKey();
-      LogService().log("RecognitionAPI: Using key: ${apiKey.substring(0, 8)}...");
 
       // 2. Download ~3 seconds of the stream (roughly 80KB of mp3)
       final Uint8List? audioData = await _downloadStreamChunk(
@@ -44,36 +51,50 @@ class RecognitionApiService {
       }
 
       // 3. Send MP3 straight to recognition service (Shazam API)
-      final uri = Uri.https(_host, '/recognize/file');
+      Map<String, dynamic>? result;
 
-      if (_activeClient == null) return null;
-      final response = await _activeClient!.post(
-        uri,
-        headers: {
-          'x-rapidapi-key': apiKey,
-          'x-rapidapi-host': _host,
-          'Content-Type': 'application/octet-stream',
-        },
-        body: audioData,
-      );
-
-      // 4. Update usage in Firestore after attempt (regardless of result)
-      _incrementKeyUsage(apiKey);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data; // Return raw recognition JSON (Shazam format)
-      } else if (response.statusCode == 429 || 
-                 (response.body.toLowerCase().contains("you have exceeded") || 
-                  response.body.toLowerCase().contains("quota"))) {
-        // DETECT EXHAUSTED CREDITS
-        LogService().log("RecognitionAPI [MultiKey]: Key $apiKey EXHAUSTED. Disabling for today.");
-        _disableKey(apiKey);
-      } else {
-        LogService().log(
-          "RecognitionAPI HTTP Error: ${response.statusCode} - ${response.body}",
+      if (strategy == "soluzione 1") {
+        final selection1 = await _getBestApiKey(
+          'recognition_key_1',
+          _defaultApiKey,
+          1,
         );
+        result = await _runSolution1(audioData, selection1['key']);
+      } else if (strategy == "soluzione 2") {
+        final selection2 = await _getBestApiKey(
+          'recognition_key_2',
+          _apiKey2,
+          2,
+        );
+        result = await _runSolution2(audioData, selection2['key']);
+      } else {
+        // "entrambi"
+        final selection1 = await _getBestApiKey(
+          'recognition_key_1',
+          _defaultApiKey,
+          1,
+        );
+        final bool sol1Exhausted = selection1['allExhausted'] as bool;
+
+        if (sol1Exhausted) {
+          LogService().log(
+            "RecognitionAPI: ALL Soluzione 1 keys exhausted. Falling back to Soluzione 2 directly.",
+          );
+          final selection2 = await _getBestApiKey(
+            'recognition_key_2',
+            _apiKey2,
+            2,
+          );
+          result = await _runSolution2(audioData, selection2['key']);
+        } else {
+          LogService().log(
+            "RecognitionAPI: Strategy 'entrambi' selected. Trying Soluzione 1...",
+          );
+          result = await _runSolution1(audioData, selection1['key']);
+        }
       }
+
+      return result;
     } catch (e) {
       if (_activeClient != null) {
         LogService().log("RecognitionAPI Exception: $e");
@@ -88,21 +109,154 @@ class RecognitionApiService {
     return null;
   }
 
+  Future<Map<String, dynamic>?> _runSolution1(
+    Uint8List audioData,
+    String apiKey,
+  ) async {
+    final uri = Uri.https(_host, '/recognize/file');
+
+    if (_activeClient == null) return null;
+    final response = await _activeClient!.post(
+      uri,
+      headers: {
+        'x-rapidapi-key': apiKey,
+        'x-rapidapi-host': _host,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: audioData,
+    );
+
+    // Update usage in Firestore after attempt (regardless of result)
+    _incrementKeyUsage(apiKey, 1);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+
+      // Inject is_exact_offset: true for Solution 1 matches to enable UI tracking
+      if (data is Map<String, dynamic> &&
+          data['matches'] != null &&
+          data['matches'] is List) {
+        for (var m in (data['matches'] as List)) {
+          if (m is Map<String, dynamic> &&
+              m.containsKey('offset') &&
+              m['offset'] != null) {
+            m['is_exact_offset'] = true;
+          }
+        }
+      }
+      return data;
+    } else if (response.statusCode == 429 ||
+        (response.body.toLowerCase().contains("you have exceeded") ||
+            response.body.toLowerCase().contains("quota"))) {
+      LogService().log(
+        "RecognitionAPI [MultiKey 1]: Key $apiKey EXHAUSTED. Disabling for today.",
+      );
+      _disableKey(apiKey, 1);
+    } else {
+      LogService().log(
+        "RecognitionAPI [Soluzione 1] HTTP Error: ${response.statusCode} - ${response.body}",
+      );
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _runSolution2(
+    Uint8List audioData,
+    String apiKey,
+  ) async {
+    if (_activeClient == null) return null;
+
+    var request = http.MultipartRequest('POST', Uri.parse(_apiUrl2));
+
+    request.headers.addAll({
+      "x-rapidapi-host": _apiHost2,
+      "x-rapidapi-key": apiKey,
+    });
+
+    request.files.add(
+      http.MultipartFile.fromBytes('audio', audioData, filename: "sample.mp3"),
+    );
+
+    try {
+      final streamedResponse = await _activeClient!.send(request);
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        LogService().log("RecognitionAPI [Soluzione 2] Result: $result");
+
+        // Update usage in Firestore for Solution 2 key
+        _incrementKeyUsage(apiKey, 2);
+
+        // Remap to match the old format expected by RadioProvider: { "track": { ... } }
+        if (result['data'] != null &&
+            result['data']['matches'] != null &&
+            (result['data']['matches'] as List).isNotEmpty) {
+          final firstMatch = result['data']['matches'][0];
+          if (firstMatch['track'] != null) {
+            // Map the matches array to guarantee the presence of 'offset'
+            // thus preventing 'null as num' exception in RadioAudioHandler.
+            final mappedMatches = (result['data']['matches'] as List).map((m) {
+              final newMatch = Map<String, dynamic>.from(m);
+              if (!newMatch.containsKey('offset') ||
+                  newMatch['offset'] == null) {
+                newMatch['offset'] = 0; // Fallback to 0
+                newMatch['is_exact_offset'] = false;
+              } else {
+                newMatch['is_exact_offset'] = true;
+              }
+              return newMatch;
+            }).toList();
+
+            return {'track': firstMatch['track'], 'matches': mappedMatches};
+          }
+        }
+
+        // Fallback in case the new API unexpectedly returns the old structure
+        if (result.containsKey('track')) {
+          return result;
+        }
+
+        return null;
+      } else if (response.statusCode == 429 ||
+          (response.body.toLowerCase().contains("you have exceeded") ||
+              response.body.toLowerCase().contains("quota"))) {
+        LogService().log(
+          "RecognitionAPI [Soluzione 2 MultiKey]: Key $apiKey EXHAUSTED. Disabling for today.",
+        );
+        _disableKey(apiKey, 2);
+        return null;
+      } else {
+        LogService().log(
+          "RecognitionAPI [Soluzione 2] HTTP Error: ${response.statusCode} - ${response.body}",
+        );
+        return null;
+      }
+    } catch (e) {
+      LogService().log("RecognitionAPI [Soluzione 2] Exception: $e");
+      return null;
+    }
+  }
+
   /// Fetches the list of keys from Remote Config and selects the one with the lowest usage in Firestore.
   /// Automatically resets usage and reactivates keys if they haven't been used today.
-  Future<String> _getBestApiKey() async {
+  Future<Map<String, dynamic>> _getBestApiKey(
+    String configKeyName,
+    String defaultKey,
+    int solutionIndex,
+  ) async {
     try {
       final remoteConfig = FirebaseRemoteConfig.instance;
       // Fetch keys from Remote Config (parameter: 'shazam_api_keys' as JSON list)
       await remoteConfig.fetchAndActivate().timeout(const Duration(seconds: 5));
       final String keysJson = remoteConfig.getString('shazam_api_keys');
-      
-      List<String> keys = [_defaultApiKey];
+
+      List<String> keys = [defaultKey];
       if (keysJson.isNotEmpty) {
         try {
           final dynamic decoded = jsonDecode(keysJson);
-          if (decoded is Map && decoded.containsKey('recognition_key')) {
-            final List<dynamic> keyList = decoded['recognition_key'] as List;
+          if (decoded is Map && decoded.containsKey(configKeyName)) {
+            final List<dynamic> keyList = decoded[configKeyName] as List;
             if (keyList.isNotEmpty) {
               keys = keyList.map((e) => e.toString()).toList();
             }
@@ -110,12 +264,15 @@ class RecognitionApiService {
         } catch (_) {}
       }
 
-      if (keys.length == 1) return keys[0];
+      // Note: We no longer return early here to ensure we check Firestore status even for a single key
 
       // Query Firestore for global usage counts
       final firestore = FirebaseFirestore.instance;
-      final snapshot = await firestore.collection('api_keys_usage').get().timeout(const Duration(seconds: 5));
-      
+      final snapshot = await firestore
+          .collection('api_keys_usage')
+          .get()
+          .timeout(const Duration(seconds: 5));
+
       final now = DateTime.now();
       final Map<String, int> usageMap = {};
       final List<String> activeKeys = [];
@@ -123,33 +280,38 @@ class RecognitionApiService {
       for (var key in keys) {
         // Find data for this key if it exists in Firestore
         final doc = snapshot.docs.where((d) => d.id == key).firstOrNull;
-        
+
         if (doc != null) {
           final Map<String, dynamic> data = doc.data();
-          final bool isDisabled = data['is_disabled'] ?? false;
-          final Timestamp? lastUsedTs = data['last_used'] as Timestamp?;
+          final bool isDisabled = data['is_disabled_$solutionIndex'] ?? false;
+          final Timestamp? lastUsedTs =
+              data['last_used_$solutionIndex'] as Timestamp?;
           final DateTime? lastUsed = lastUsedTs?.toDate();
 
           // DAILY RESET LOGIC:
           // If the key wasn't used today, or was disabled on a previous day, reactivate and reset count.
-          bool isDifferentDay = lastUsed == null || 
-                               lastUsed.year != now.year || 
-                               lastUsed.month != now.month || 
-                               lastUsed.day != now.day;
+          bool isDifferentDay =
+              lastUsed == null ||
+              lastUsed.year != now.year ||
+              lastUsed.month != now.month ||
+              lastUsed.day != now.day;
 
           if (isDifferentDay) {
             // Reset count for the day and reactivate
             usageMap[key] = 0;
             activeKeys.add(key);
             // Non-blocking update in Firestore to keep it clean
-            _resetKeyUsage(key);
+            _resetKeyUsage(key, solutionIndex);
           } else if (!isDisabled) {
             // Key is still active from today
-            usageMap[key] = (data['count'] as num).toInt();
+            usageMap[key] =
+                (data['count_$solutionIndex'] as num?)?.toInt() ?? 0;
             activeKeys.add(key);
           } else {
             // Key is explicitly disabled for today - Do not add to activeKeys
-            LogService().log("RecognitionAPI [MultiKey]: Key ${key.substring(0, 8)}... skipped (EXHAUSTED).");
+            LogService().log(
+              "RecognitionAPI [MultiKey $solutionIndex]: Key ${key.substring(0, 8)}... skipped (EXHAUSTED).",
+            );
           }
         } else {
           // New key never seen before
@@ -160,8 +322,10 @@ class RecognitionApiService {
 
       // If all keys are exhausted, fallback to default or first key as desperate attempt
       if (activeKeys.isEmpty) {
-        LogService().log("RecognitionAPI [MultiKey]: ALL KEYS EXHAUSTED! Trying first key anyway.");
-        return keys[0];
+        LogService().log(
+          "RecognitionAPI [MultiKey $solutionIndex]: ALL KEYS EXHAUSTED!",
+        );
+        return {'key': keys[0], 'allExhausted': true};
       }
 
       // Pick the active key with minimum usage
@@ -176,48 +340,57 @@ class RecognitionApiService {
         }
       }
 
-      return bestKey;
+      return {'key': bestKey, 'allExhausted': false};
     } catch (e) {
-      LogService().log("RecognitionAPI [MultiKey]: Error selecting key: $e. Falling back to default.");
-      return _defaultApiKey;
+      LogService().log(
+        "RecognitionAPI [MultiKey]: Error selecting key: $e. Falling back to default.",
+      );
+      return {'key': _defaultApiKey, 'allExhausted': false};
     }
   }
 
   /// Increments the usage counter in Firestore for a specific key.
-  void _incrementKeyUsage(String key) {
+  void _incrementKeyUsage(String key, int solutionIndex) {
     try {
       FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
-        'count': FieldValue.increment(1),
-        'last_used': FieldValue.serverTimestamp(),
-        'is_disabled': false, // Ensure it stays active while incrementing
+        'count_$solutionIndex': FieldValue.increment(1),
+        'last_used_$solutionIndex': FieldValue.serverTimestamp(),
+        'is_disabled_$solutionIndex':
+            false, // Ensure it stays active while incrementing
       }, SetOptions(merge: true));
     } catch (e) {
-      LogService().log("RecognitionAPI [MultiKey]: Failed to increment usage for key: $e");
+      LogService().log(
+        "RecognitionAPI [MultiKey $solutionIndex]: Failed to increment usage for key: $e",
+      );
     }
   }
 
   /// Disables a key in Firestore until the next day reset.
-  void _disableKey(String key) {
+  void _disableKey(String key, int solutionIndex) {
     try {
       FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
-        'is_disabled': true,
-        'disabled_at': FieldValue.serverTimestamp(),
+        'is_disabled_$solutionIndex': true,
+        'disabled_at_$solutionIndex': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      LogService().log("RecognitionAPI [MultiKey]: Failed to disable key: $e");
+      LogService().log(
+        "RecognitionAPI [MultiKey $solutionIndex]: Failed to disable key: $e",
+      );
     }
   }
 
   /// Resets usage and reactivates a key for a new day.
-  void _resetKeyUsage(String key) {
+  void _resetKeyUsage(String key, int solutionIndex) {
     try {
       FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
-        'count': 0,
-        'is_disabled': false,
-        'last_reset': FieldValue.serverTimestamp(),
+        'count_$solutionIndex': 0,
+        'is_disabled_$solutionIndex': false,
+        'last_reset_$solutionIndex': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      LogService().log("RecognitionAPI [MultiKey]: Failed to reset key: $e");
+      LogService().log(
+        "RecognitionAPI [MultiKey $solutionIndex]: Failed to reset key: $e",
+      );
     }
   }
 

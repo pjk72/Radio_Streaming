@@ -478,7 +478,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool _isWizardOpen = false;
   bool _showGlobalBanner = true;
 
-  bool get isRecognizing => _isRecognizing;
+  bool get isRecognizing =>
+      _isRecognizing ||
+      (_audioHandler.mediaItem.value?.extras?['isSearching'] == true);
   bool get showGlobalBanner => _showGlobalBanner;
   bool get isWizardOpen => _isWizardOpen;
 

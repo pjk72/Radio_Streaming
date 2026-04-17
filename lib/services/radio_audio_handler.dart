@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -99,6 +100,7 @@ class RadioAudioHandler extends BaseAudioHandler
   final RecognitionApiService _recognitionApiService = RecognitionApiService();
   final SongLinkService _songLinkService = SongLinkService();
   Timer? _recognitionTimer;
+  Timer? _uiAnimationTimer;
   bool _isSearching = false;
   Duration? _nextCheckDuration;
   DateTime? _lastRecognitionTime;
@@ -2908,26 +2910,88 @@ class RadioAudioHandler extends BaseAudioHandler
 
     final now = DateTime.now();
     Duration effectivePosition = _currentPosition;
-    if (mediaItem.value?.extras?['type'] == 'station') {
-      if (_isSearching) {
-        effectivePosition = Duration.zero;
-      } else if (_lastRecognitionTime != null) {
-        effectivePosition =
-            _lastRecognitionOffset + now.difference(_lastRecognitionTime!);
-        if (effectivePosition < Duration.zero)
-          effectivePosition = Duration.zero;
+    final bool isStation = mediaItem.value?.extras?['type'] == 'station';
+    final bool hasExactOffset = mediaItem.value?.extras?['hasExactOffset'] ?? true;
 
-        // Cap at item duration if available
-        final itemDur = mediaItem.value?.duration;
-        if (itemDur != null && effectivePosition > itemDur) {
-          effectivePosition = itemDur;
+    if (isStation) {
+      if (_isSearching) {
+        // --- OSCILLATION ONLY DURING ACTIVE SEARCH ---
+        final int periodMs = 6000; // Search period
+        final int ms = now.millisecondsSinceEpoch;
+        final double t = (ms % periodMs) / periodMs;
+        final double bounce = (sin(2 * pi * t - (pi / 2)) + 1.0) / 2.0;
+        
+        const double virtualDurationSec = 100.0;
+        effectivePosition = Duration(milliseconds: (bounce * virtualDurationSec * 1000).toInt());
+        
+        final Duration bufferOffset = const Duration(seconds: 10);
+        final Duration effectiveBufferedPosition = effectivePosition + bufferOffset;
+
+        if (_uiAnimationTimer == null && playing) {
+          _uiAnimationTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+            _broadcastState();
+          });
         }
+
+        playbackState.add(
+          PlaybackState(
+            controls: [
+              MediaControl.skipToPrevious,
+              if (playing) MediaControl.pause else MediaControl.play,
+              MediaControl.skipToNext,
+            ],
+            systemActions: const {
+              MediaAction.seek,
+              MediaAction.skipToNext,
+              MediaAction.skipToPrevious,
+            },
+            androidCompactActionIndices: const [0, 1, 2],
+            processingState: AudioProcessingState.ready,
+            playing: playing,
+            updateTime: now,
+            bufferedPosition: effectiveBufferedPosition,
+            queueIndex: index != -1 ? index : null,
+            repeatMode: AudioServiceRepeatMode.none,
+            shuffleMode: AudioServiceShuffleMode.none,
+            updatePosition: effectivePosition,
+            speed: 1.0, 
+          ),
+        );
+        return;
+      } else if (!hasExactOffset) {
+        // Solution 2: NO OSCILLATION on Android Auto. 
+        // We set duration to null in _attemptRecognition, making it a 'Live' state on AA.
+        _uiAnimationTimer?.cancel();
+        _uiAnimationTimer = null;
+        effectivePosition = Duration.zero;
+      } else {
+        // Solution 1: Calculate real progress based on offset
+        if (_lastRecognitionTime != null) {
+          effectivePosition =
+              _lastRecognitionOffset + now.difference(_lastRecognitionTime!);
+          if (effectivePosition < Duration.zero)
+            effectivePosition = Duration.zero;
+
+          // Cap at item duration if available
+          final itemDur = mediaItem.value?.duration;
+          if (itemDur != null && effectivePosition > itemDur) {
+            effectivePosition = itemDur;
+          }
+        }
+        
+        // Stop animation timer when in exact state
+        _uiAnimationTimer?.cancel();
+        _uiAnimationTimer = null;
       }
     }
 
     double speed = 1.0;
-    if (!playing ||
-        (mediaItem.value?.extras?['type'] == 'station' && _isSearching)) {
+    if (!playing) {
+      speed = 0.0;
+      _uiAnimationTimer?.cancel();
+      _uiAnimationTimer = null;
+    } else if (isStation && (_isSearching || !hasExactOffset)) {
+      // Set speed to 0.0 so the OS doesn't interpolate, we send absolute bounce positions
       speed = 0.0;
     }
 
@@ -4063,7 +4127,7 @@ class RadioAudioHandler extends BaseAudioHandler
       mediaItem.add(
         currentItem.copyWith(
           duration:
-              null, // Hide progress bar while identified info is being replaced
+              const Duration(seconds: 100), // Virtual duration for 'Bouncing 10%' effect on AA
           extras: newExtras,
         ),
       );
@@ -4112,10 +4176,17 @@ class RadioAudioHandler extends BaseAudioHandler
         newExtras['isFavorite'] = _isCurrentSongInFavorites;
         newExtras['isSearching'] = false; // Reset searching state
         final double offsetSeconds = (result['matches'] != null &&
+                result['matches'] is List &&
                 (result['matches'] as List).isNotEmpty)
-            ? (result['matches'][0]['offset'] as num).toDouble() / 1000.0
+            ? (result['matches'][0]['offset'] as num).toDouble()
             : 0.0;
+        final bool hasExactOffset = (result['matches'] != null &&
+                result['matches'] is List &&
+                (result['matches'] as List).isNotEmpty)
+            ? (result['matches'][0]['is_exact_offset'] ?? true) as bool
+            : true;
         newExtras['offset'] = offsetSeconds;
+        newExtras['hasExactOffset'] = hasExactOffset;
 
         final newMediaItem = currentItem.copyWith(
           title: title ?? "Unknown Title",
@@ -4141,29 +4212,26 @@ class RadioAudioHandler extends BaseAudioHandler
         );
 
         // Schedule Next Check
-        int nextCheckDelay = 60000; // 60s default
+        int nextCheckDelay = hasExactOffset ? 60000 : 45000;
 
         try {
-          double offsetSeconds = 0;
-          if (result['matches'] != null &&
-              result['matches'] is List &&
-              (result['matches'] as List).isNotEmpty) {
-            offsetSeconds = (result['matches'][0]['offset'] as num).toDouble();
-            if (offsetSeconds < 0) offsetSeconds = 0;
-          }
+          // Re-use the securely parsed offsetSeconds from above
           final durationMs = await _fetchItunesDuration(
             title ?? "",
             artists ?? "",
           );
           if (durationMs != null && durationMs > 0) {
             result['itunes_duration'] = durationMs; // Pass back for caller usage
-            final durationSeconds = durationMs / 1000.0;
-            final remainingSeconds = durationSeconds - offsetSeconds;
-
-            if (remainingSeconds > 0) {
-              nextCheckDelay = ((remainingSeconds + 5) * 1000).toInt();
-              if (nextCheckDelay > 240000) nextCheckDelay = 240000;
-              if (nextCheckDelay < 15000) nextCheckDelay = 15000;
+            
+            if (hasExactOffset) {
+              final durationSeconds = durationMs / 1000.0;
+              final remainingSeconds = durationSeconds - offsetSeconds;
+  
+              if (remainingSeconds > 0) {
+                nextCheckDelay = ((remainingSeconds + 5) * 1000).toInt();
+                if (nextCheckDelay > 240000) nextCheckDelay = 240000;
+                if (nextCheckDelay < 15000) nextCheckDelay = 15000;
+              }
             }
           }
         } catch (e) {
@@ -4175,7 +4243,9 @@ class RadioAudioHandler extends BaseAudioHandler
         );
 
         _lastRecognitionTime = DateTime.now();
-        _lastRecognitionOffset = Duration(seconds: offsetSeconds.toInt());
+        _lastRecognitionOffset = Duration(
+          milliseconds: (offsetSeconds * 1000).toInt(),
+        );
         _nextCheckDuration = Duration(milliseconds: nextCheckDelay);
 
         if (mediaItem.value != null) {
@@ -4184,7 +4254,12 @@ class RadioAudioHandler extends BaseAudioHandler
               ? Duration(milliseconds: result['itunes_duration'])
               : _nextCheckDuration;
 
-          mediaItem.add(mediaItem.value!.copyWith(duration: itunesDuration));
+          // Mirror Soluzione 1 vs Soluzione 2 logic for progress bar:
+          // Soluzione 1 (Exact): Show determinate duration for real progress
+          // Soluzione 2 (Estimated): Hide duration on AA (Live state) to satisfy user preference
+          mediaItem.add(mediaItem.value!.copyWith(
+            duration: hasExactOffset ? itunesDuration : null,
+          ));
         }
 
         _recognitionTimer?.cancel();
@@ -4223,6 +4298,7 @@ class RadioAudioHandler extends BaseAudioHandler
       );
       newExtras['isSearching'] = false;
       newExtras['isRecognized'] = false;
+      newExtras['hasExactOffset'] = true; // Use standard countdown UI for retries
       _isCurrentSongInFavorites = false;
 
       final newItem = mediaItem.value?.copyWith(
