@@ -215,46 +215,14 @@ class AppearanceScreen extends StatelessWidget {
     String initialKey,
     ThemeProvider provider,
   ) {
-    GlassUtils.showGlassBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        final cardColor = Theme.of(context).cardColor;
-        final contrastColor = cardColor.computeLuminance() > 0.5
-            ? Colors.black
-            : Colors.white;
-
-        return Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                cardColor.withValues(alpha: 0.4),
-                cardColor.withValues(alpha: 0.6),
-              ],
-            ),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(
-              top: BorderSide(
-                color: contrastColor.withValues(alpha: 0.1),
-                width: 0.5,
-              ),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 20,
-                offset: const Offset(0, -5),
-              ),
-            ],
-          ),
-          child: _AdvancedColorPicker(
-            initialKey: initialKey,
-            provider: provider,
-          ),
-        );
-      },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _AdvancedColorPicker(
+          initialKey: initialKey,
+          provider: provider,
+        ),
+      ),
     );
   }
 
@@ -441,8 +409,7 @@ class AppearanceScreen extends StatelessWidget {
                   : langProvider.translate('use_default'),
               style: const TextStyle(fontSize: 12),
             ),
-            trailing: const Icon(Icons.search, size: 20),
-            onTap: () => _showImageSearchDialog(context, provider),
+            onTap: () => _openImageSearch(context, provider),
           ),
           if (hasImage) ...[
             const Divider(height: 1, indent: 16, endIndent: 16),
@@ -464,317 +431,126 @@ class AppearanceScreen extends StatelessWidget {
     );
   }
 
-  void _showImageSearchDialog(BuildContext context, ThemeProvider provider) {
-    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
-    final stt.SpeechToText speech = stt.SpeechToText();
-    final TextEditingController controller = TextEditingController();
-    List<String> results = [];
-    bool isSearching = false;
-    bool isListening = false;
-
-    GlassUtils.showGlassBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) {
-          Future<void> performSearch() async {
-            if (controller.text.isEmpty) return;
-            setModalState(() {
-              isSearching = true;
-              results = [];
-            });
-            try {
-              final urls = await _searchImages(controller.text);
-              setModalState(() {
-                results = urls;
-                isSearching = false;
-              });
-              if (urls.isEmpty && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(langProvider.translate('no_images_found')),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              }
-            } catch (e) {
-              setModalState(() {
-                isSearching = false;
-              });
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Error searching images")),
-                );
-              }
-            }
-          } // Added missing closing brace for performSearch()
-
-          Future<void> listen() async {
-            if (!isListening) {
-              bool available = await speech.initialize(
-                onStatus: (val) {
-                  if (val == 'done' || val == 'notListening') {
-                    setModalState(() => isListening = false);
-                  }
-                },
-                onError: (val) => setModalState(() => isListening = false),
-              );
-              if (available) {
-                setModalState(() => isListening = true);
-                speech.listen(
-                  onResult: (val) {
-                    setModalState(() {
-                      controller.text = val.recognizedWords;
-                      if (val.finalResult) {
-                        isListening = false;
-                        performSearch();
-                      }
-                    });
-                  },
-                );
-              }
-            } else {
-              setModalState(() => isListening = false);
-              speech.stop();
-            }
-          }
-
-          final cardColor = Theme.of(context).cardColor;
-          final contrastColor = cardColor.computeLuminance() > 0.5
-              ? Colors.black
-              : Colors.white;
-
-          return Container(
-            height: MediaQuery.of(ctx).size.height * 0.85,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  cardColor.withValues(alpha: 0.4),
-                  cardColor.withValues(alpha: 0.6),
-                ],
-              ),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-              border: Border(
-                top: BorderSide(
-                  color: contrastColor.withValues(alpha: 0.1),
-                  width: 0.5,
-                ),
-              ),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: controller,
-                          autofocus: true,
-                          decoration: InputDecoration(
-                            hintText: langProvider.translate(
-                              'search_images_hint',
-                            ),
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (controller.text.isNotEmpty)
-                                  IconButton(
-                                    icon: const Icon(Icons.clear_rounded),
-                                    onPressed: () {
-                                      setModalState(() {
-                                        controller.clear();
-                                      });
-                                    },
-                                  ),
-                                IconButton(
-                                  icon: Icon(
-                                    isListening
-                                        ? Icons.mic_rounded
-                                        : Icons.mic_none_rounded,
-                                    color: isListening
-                                        ? Theme.of(context).primaryColor
-                                        : null,
-                                  ),
-                                  onPressed: listen,
-                                ),
-                              ],
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
-                            ),
-                          ),
-                          onChanged: (val) {
-                            setModalState(() {});
-                          },
-                          onSubmitted: (_) => performSearch(),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      IconButton(
-                        onPressed: performSearch,
-                        icon: const Icon(Icons.arrow_forward_rounded),
-                        style: IconButton.styleFrom(
-                          backgroundColor: Theme.of(context).primaryColor,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isSearching)
-                  const Expanded(
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (results.isEmpty)
-                  Expanded(
-                    child: Center(
-                      child: Text(langProvider.translate('no_images_found')),
-                    ),
-                  )
-                else
-                  Expanded(
-                    child: GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 0.7,
-                          ),
-                      itemCount: results.length,
-                      itemBuilder: (ctx, index) {
-                        return GestureDetector(
-                          onTap: () {
-                            provider.setCustomBackgroundImage(results[index]);
-                            Navigator.pop(context);
-                          },
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Image.network(
-                                  results[index],
-                                  fit: BoxFit.cover,
-                                  loadingBuilder:
-                                      (context, child, loadingProgress) {
-                                        if (loadingProgress == null)
-                                          return child;
-                                        return const Center(
-                                          child: CircularProgressIndicator(),
-                                        );
-                                      },
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: Colors.grey.withValues(alpha: 0.1),
-                                    child: const Icon(Icons.error_outline),
-                                  ),
-                                ),
-                                Positioned(
-                                  bottom: 0,
-                                  left: 0,
-                                  right: 0,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.bottomCenter,
-                                        end: Alignment.topCenter,
-                                        colors: [
-                                          Colors.black.withValues(alpha: 0.8),
-                                          Colors.transparent,
-                                        ],
-                                      ),
-                                    ),
-                                    child: Text(
-                                      langProvider.translate(
-                                        'select_as_background',
-                                      ),
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
+  void _openImageSearch(BuildContext context, ThemeProvider provider) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _ImageSearchPage(provider: provider),
       ),
     );
   }
+}
 
-  Future<List<String>> _searchImages(String query) async {
+class _ImageSearchPage extends StatefulWidget {
+  final ThemeProvider provider;
+  const _ImageSearchPage({required this.provider});
+
+  @override
+  State<_ImageSearchPage> createState() => _ImageSearchPageState();
+}
+
+class _ImageSearchPageState extends State<_ImageSearchPage> {
+  final stt.SpeechToText speech = stt.SpeechToText();
+  final TextEditingController controller = TextEditingController();
+  List<String> results = [];
+  bool isSearching = false;
+  bool isListening = false;
+
+  Future<void> performSearch() async {
+    if (controller.text.isEmpty) return;
+    setState(() {
+      isSearching = true;
+      results = [];
+    });
+    try {
+      final urls = await _searchImagesRemote(controller.text);
+      if (mounted) {
+        setState(() {
+          results = urls;
+          isSearching = false;
+        });
+        if (urls.isEmpty) {
+          final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(langProvider.translate('no_images_found')),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isSearching = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error searching images")),
+        );
+      }
+    }
+  }
+
+  Future<void> listen() async {
+    if (!isListening) {
+      bool available = await speech.initialize(
+        onStatus: (val) {
+          if (val == 'done' || val == 'notListening') {
+            if (mounted) setState(() => isListening = false);
+          }
+        },
+        onError: (val) => mounted ? setState(() => isListening = false) : null,
+      );
+      if (available) {
+        setState(() => isListening = true);
+        speech.listen(
+          onResult: (val) {
+            setState(() {
+              controller.text = val.recognizedWords;
+              if (val.finalResult) {
+                isListening = false;
+                performSearch();
+              }
+            });
+          },
+        );
+      }
+    } else {
+      setState(() => isListening = false);
+      speech.stop();
+    }
+  }
+
+  Future<List<String>> _searchImagesRemote(String query) async {
     try {
       final String encodedQuery = Uri.encodeComponent(query);
-
-      // We try 3 different variations of the Unsplash NAPI
       final endpoints = [
         'https://unsplash.com/napi/search/photos?query=$encodedQuery&per_page=30',
         'https://unsplash.com/napi/search?query=$encodedQuery&per_page=30',
         'https://unsplash.com/napi/search/photos?query=$encodedQuery&xp=search-trending:control',
       ];
-
       final headers = {
         'User-Agent':
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept': 'application/json',
         'Referer': 'https://unsplash.com/',
       };
-
       for (var endpoint in endpoints) {
         try {
           final url = Uri.parse(endpoint);
-          final res = await http
-              .get(url, headers: headers)
-              .timeout(const Duration(seconds: 8));
-
+          final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 8));
           if (res.statusCode == 200) {
             final data = jsonDecode(res.body);
-            dynamic results;
-
-            // Unsplash NAPI returns results in different places depending on endpoint
+            dynamic resultsData;
             if (data['results'] is List) {
-              results = data['results'];
+              resultsData = data['results'];
             } else if (data['photos']?['results'] is List) {
-              results = data['photos']['results'];
+              resultsData = data['photos']['results'];
             } else if (data['results']?['photos']?['results'] is List) {
-              results = data['results']['photos']['results'];
+              resultsData = data['results']['photos']['results'];
             }
-
-            if (results is List && results.isNotEmpty) {
-              return results
+            if (resultsData is List && resultsData.isNotEmpty) {
+              return resultsData
                   .map<String>((item) {
                     if (item is Map) {
                       final urls = item['urls'] as Map?;
@@ -790,7 +566,6 @@ class AppearanceScreen extends StatelessWidget {
             }
           }
         } catch (e) {
-          debugPrint("Search attempt failed for $endpoint: $e");
           continue;
         }
       }
@@ -798,6 +573,140 @@ class AppearanceScreen extends StatelessWidget {
       debugPrint("Global search error: $e");
     }
     return [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context);
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(langProvider.translate('background_image')),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: langProvider.translate('search_images_hint'),
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (controller.text.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear_rounded),
+                              onPressed: () => setState(() => controller.clear()),
+                            ),
+                          IconButton(
+                            icon: Icon(
+                              isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                              color: isListening ? Theme.of(context).primaryColor : null,
+                            ),
+                            onPressed: listen,
+                          ),
+                        ],
+                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    ),
+                    onSubmitted: (_) => performSearch(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                IconButton(
+                  onPressed: performSearch,
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isSearching)
+            const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (results.isEmpty)
+            Expanded(child: Center(child: Text(langProvider.translate('no_images_found'))))
+          else
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.7,
+                ),
+                itemCount: results.length,
+                itemBuilder: (ctx, index) {
+                  return GestureDetector(
+                    onTap: () {
+                      widget.provider.setCustomBackgroundImage(results[index]);
+                      Navigator.pop(context);
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            results[index],
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return const Center(child: CircularProgressIndicator());
+                            },
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey.withValues(alpha: 0.1),
+                              child: const Icon(Icons.error_outline),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.8),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                              child: Text(
+                                langProvider.translate('select_as_background'),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1092,63 +1001,37 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
     final color = _hsv.toColor();
     final langProvider = Provider.of<LanguageProvider>(context);
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      expand: false,
-      builder: (context, scrollController) {
-        return Column(
-          children: [
-            // Handle
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(langProvider.translate('edit_theme_colors')),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: ElevatedButton(
+              onPressed: _saveAll,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor:
+                    Theme.of(context).primaryColor.computeLuminance() > 0.5
+                        ? Colors.black
+                        : Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: Text(
+                langProvider.translate('save'),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    langProvider.translate('edit_theme_colors'),
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  ElevatedButton(
-                    onPressed: _saveAll,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      foregroundColor:
-                          Theme.of(context).primaryColor.computeLuminance() >
-                              0.5
-                          ? Colors.black
-                          : Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 0,
-                      ),
-                    ),
-                    child: Text(
-                      langProvider.translate('save'),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
             // Tabs
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1189,7 +1072,6 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
             const Divider(),
             Expanded(
               child: ListView(
-                controller: scrollController,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 10,
@@ -1476,9 +1358,8 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                 ],
               ),
             ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 

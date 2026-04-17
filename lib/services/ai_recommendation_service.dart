@@ -427,7 +427,7 @@ class AIRecommendationService {
       id: "ai_${title.hashCode}_${_getWeeklySeed()}",
       title: title,
       provider: 'AI',
-      trackCount: tracks.length,
+      trackCount: -1,
       owner: owner,
       predefinedTracks: tracks,
       imageUrls: tracks

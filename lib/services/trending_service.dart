@@ -101,6 +101,7 @@ class TrendingService {
         // Allow playlists with tracks, predefined tracks, OR external URLs (for lazy-load)
         final hasTracks =
             p.trackCount > 0 ||
+            p.trackCount == -1 ||
             (p.predefinedTracks != null && p.predefinedTracks!.isNotEmpty);
         final isLazyLoadable =
             p.externalUrl != null && p.externalUrl!.isNotEmpty;
@@ -340,7 +341,7 @@ class TrendingService {
         title: playlistTitle,
         provider: 'APPLEMUSIC',
         imageUrls: imageUrls,
-        trackCount: tracks.length,
+        trackCount: -1,
         owner: 'Apple Music',
         externalUrl: 'https://music.apple.com/$appleCC/browse',
         categoryTitle: 'top_songs',
@@ -634,7 +635,7 @@ class TrendingService {
               ? [p.thumbnails.last.url.toString()]
               : [],
           externalUrl: 'https://www.youtube.com/playlist?list=${p.id.value}',
-          trackCount: p.videoCount,
+          trackCount: -1,
         );
       }).toList();
     } catch (e) {
@@ -661,16 +662,12 @@ class TrendingService {
           if (artwork is Map) {
             img = artwork['1000x1000'] ?? artwork['480x480'];
           }
-          final tCount =
-              item['track_count'] ??
-              (item['playlist_contents'] as List?)?.length ??
-              1;
           return TrendingPlaylist(
             id: item['id'].toString(),
             title: item['playlist_name'],
             provider: 'AUDIUS',
             imageUrls: img != null ? [img] : [],
-            trackCount: tCount,
+            trackCount: -1,
             owner: item['user']?['name'],
           );
         }).toList();
@@ -701,7 +698,7 @@ class TrendingService {
             imageUrls: item['picture_medium'] != null
                 ? [item['picture_medium']]
                 : [],
-            trackCount: item['nb_tracks'] ?? 0,
+            trackCount: -1,
             owner: item['user']?['name'],
             externalUrl: item['link'],
           );

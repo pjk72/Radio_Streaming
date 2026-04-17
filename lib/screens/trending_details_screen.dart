@@ -166,6 +166,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     if (mounted) {
       setState(() {
+        // Essential: Sync the metadata count with the real tracks fetched
+        widget.playlist!.trackCount = tracks.length; 
+        
         _songs = tracks.map((t) => _trackToSavedSong(t)).toList();
         _isLoading = false;
         _buildItems();
