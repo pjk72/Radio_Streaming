@@ -6,7 +6,6 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/language_provider.dart';
-import '../utils/glass_utils.dart';
 
 class AppearanceScreen extends StatelessWidget {
   const AppearanceScreen({super.key});

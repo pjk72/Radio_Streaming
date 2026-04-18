@@ -4,6 +4,14 @@ import 'package:http/http.dart' as http;
 import 'package:palette_generator/palette_generator.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../services/recognition_api_service.dart';
+import '../models/saved_song.dart';
+import 'realistic_visualizer.dart';
 
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
@@ -28,8 +36,12 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   @override
   void dispose() {
+    _record.dispose();
     super.dispose();
   }
+
+  final AudioRecorder _record = AudioRecorder();
+  bool _isListening = false;
 
   int _step = 0; // 0: Country Selection, 1: Search & Select
   String? _selectedCountryCode;
@@ -54,24 +66,29 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   final Set<dynamic> _selectedPreviewRadios = {};
   final Map<dynamic, String> _previewCustomLogos = {};
   bool _isLoadingPreview = true;
+  String? _lastLoadedPreviewCountryCode;
 
   Future<void> _loadPreviewRadios([String? countryCode]) async {
-    setState(() => _isLoadingPreview = true);
-    String code = countryCode ?? "US"; // fallback
-
+    // 1. Risolviamo il codice effettivo (se null, prendiamo il locale del sistema)
+    String code = countryCode ?? "US"; 
     if (countryCode == null) {
       try {
         final locale = Platform.localeName;
         if (locale.contains('_')) {
           final parts = locale.split('_');
-          if (parts.length > 1) {
-            code = parts[1].toUpperCase();
-          }
+          if (parts.length > 1) code = parts[1].toUpperCase();
         } else if (locale.length == 2) {
           code = locale.toUpperCase();
         }
       } catch (_) {}
     }
+
+    // 2. Controllo se è già caricato
+    if (_lastLoadedPreviewCountryCode == code && _previewRadios.isNotEmpty) {
+      return; 
+    }
+
+    setState(() => _isLoadingPreview = true);
 
     try {
       for (int i = 1; i <= 5; i++) {
@@ -126,6 +143,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
               _previewCustomLogos.clear();
               _selectedPreviewRadios.clear();
               _isLoadingPreview = false;
+              _lastLoadedPreviewCountryCode = code; // Salviamo il codice effettivo caricato
             });
 
             // Start an async background task to find missing logos
@@ -225,6 +243,203 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       color: finalColor,
       icon: 'radio',
       countryCode: effectiveCode,
+    );
+  }
+
+  void _startListening() async {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    bool hasPermission = await _record.hasPermission();
+
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(lang.translate('shazam_mic_denied'))),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isListening = true);
+
+    final Directory tempDir = await getTemporaryDirectory();
+    final String tempPath = '${tempDir.path}/shazam_wizard_temp.m4a';
+
+    try {
+      await _record.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: tempPath,
+      );
+
+      await Future.delayed(const Duration(seconds: 5));
+
+      final path = await _record.stop();
+      
+      if (path != null) {
+        final File audioFile = File(path);
+        final Uint8List audioBytes = await audioFile.readAsBytes();
+
+        if (audioBytes.isNotEmpty && mounted) {
+          final result = await RecognitionApiService().identifyFromAudioBytes(audioBytes);
+          
+          if (mounted) setState(() => _isListening = false);
+
+          if (result != null && result['track'] != null) {
+            _showShazamResultPopup(result['track']);
+          } else {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(lang.translate('song_not_recognized'))),
+              );
+            }
+          }
+        } else {
+          if (mounted) setState(() => _isListening = false);
+        }
+      } else {
+        if (mounted) setState(() => _isListening = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isListening = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
+  }
+
+  void _showShazamResultPopup(Map<String, dynamic> trackData) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    
+    final title = trackData['title'] ?? 'Unknown';
+    final artist = trackData['subtitle'] ?? 'Unknown';
+    final cover = trackData['images']?['coverart'] ?? trackData['images']?['background'] ?? '';
+    
+    // Metadata
+    String album = '';
+    String year = '';
+    
+    if (trackData['sections'] != null) {
+      for (var section in trackData['sections']) {
+        if (section['type'] == 'SONG') {
+          if (section['metadata'] != null) {
+            for (var meta in section['metadata']) {
+              if (meta['title'] == 'Album') album = meta['text'] ?? '';
+              if (meta['title'] == 'Released') year = meta['text'] ?? '';
+            }
+          }
+        }
+      }
+    }
+
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (context) {
+        bool isFav = false;
+        try {
+          isFav = provider.playlists.any((playlist) => 
+              playlist.songs.any((s) => s.title == title && s.artist == artist)
+          );
+        } catch (_) {}
+
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (cover.isNotEmpty) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: CachedNetworkImage(
+                        imageUrl: cover,
+                        width: 220,
+                        height: 220,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    artist,
+                    style: const TextStyle(fontSize: 16, color: Colors.white70),
+                    textAlign: TextAlign.center,
+                  ),
+                  
+                  if (album.isNotEmpty || year.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.3), 
+                        borderRadius: BorderRadius.circular(12)
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (album.isNotEmpty) Text("${lang.translate('genre') == 'Genre' ? 'Album' : lang.translate('label_album')}: $album", style: const TextStyle(fontSize: 13, color: Colors.white60), textAlign: TextAlign.center),
+                          if (year.isNotEmpty) Text("${lang.translate('year')}: $year", style: const TextStyle(fontSize: 13, color: Colors.white60), textAlign: TextAlign.center),
+                        ]
+                      )
+                    )
+                  ],
+
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      IconButton(
+                        iconSize: 32,
+                        icon: Icon(
+                          isFav ? Icons.favorite : Icons.favorite_border, 
+                          color: isFav ? Colors.redAccent : Colors.white70
+                        ),
+                        onPressed: () async {
+                          if (isFav) return;
+                          
+                          final song = SavedSong(
+                            id: DateTime.now().millisecondsSinceEpoch.toString(),
+                            title: title,
+                            artist: artist,
+                            album: album.isNotEmpty ? album : 'Shazam',
+                            artUri: cover,
+                            dateAdded: DateTime.now(),
+                          );
+                          await provider.bulkToggleFavoriteSongs([song], true);
+                          setStateDialog(() { isFav = true; });
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                               SnackBar(content: Text(lang.translate('added_to_favorites'))),
+                            );
+                          }
+                        },
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(lang.translate('close')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }
+        );
+      },
     );
   }
 
@@ -812,8 +1027,47 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           mainAxisSize: MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(Icons.public, size: 48, color: Colors.blueAccent),
-            const SizedBox(height: 12),
+            // DEDICATED SHAZAM SECTION (Promosso in alto come header)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0088FF).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF0088FF).withValues(alpha: 0.15)),
+              ),
+              child: InkWell(
+                onTap: _isListening ? null : _startListening,
+                borderRadius: BorderRadius.circular(16),
+                child: Row(
+                  children: [
+                    _isListening 
+                      ? const SizedBox(
+                          width: 40, 
+                          height: 40, 
+                          child: Center(child: RealisticVisualizer(color: Color(0xFF0088FF), barCount: 4, volume: 1.0))
+                        )
+                      : const Icon(Icons.track_changes, color: Color(0xFF0088FF), size: 40),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            langProvider.translate('recognition_title'),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF0088FF)),
+                          ),
+                          Text(
+                            langProvider.translate('shazam_wizard_tip'),
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             Text(
               langProvider.translate('wizard_welcome'),
               style: Theme.of(context).textTheme.headlineSmall,
@@ -829,7 +1083,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 24),
@@ -1309,9 +1563,14 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text(
-              langProvider.translate('top_radios'),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  langProvider.translate('top_radios'),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
           ),
           Expanded(

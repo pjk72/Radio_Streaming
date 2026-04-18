@@ -11,9 +11,16 @@ import '../screens/artist_details_screen.dart';
 import 'realistic_visualizer.dart';
 
 import 'dart:convert';
-import 'package:http/http.dart' as http; // Add http import
+import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
-import '../screens/add_song_screen.dart';
+
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import '../services/recognition_api_service.dart';
+import '../models/saved_song.dart';
+import '../utils/glass_utils.dart';
 
 class NowPlayingHeader extends StatefulWidget {
   final double height;
@@ -36,6 +43,15 @@ class NowPlayingHeader extends StatefulWidget {
 class _NowPlayingHeaderState extends State<NowPlayingHeader> {
   String? _fetchedArtistImage;
   String? _lastArtistChecked;
+
+  bool _isListening = false;
+  final AudioRecorder _record = AudioRecorder();
+
+  @override
+  void dispose() {
+    _record.dispose();
+    super.dispose();
+  }
 
   // Removed redundant lifecycle methods as we handle check in build
 
@@ -79,13 +95,251 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         });
       }
     } catch (e) {
-      debugPrint("Error fetching artist image in header: $e");
+      debugPrint("Error fetching artist image in header: \$e");
       if (mounted && _lastArtistChecked == artistName) {
         setState(() {
           _fetchedArtistImage = null; // Clear on error
         });
       }
     }
+  }
+
+  void _startListening() async {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    bool hasPermission = await _record.hasPermission();
+
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              lang.translate('shazam_mic_denied'),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (hasPermission) {
+      setState(() => _isListening = true);
+
+      final Directory tempDir = await getTemporaryDirectory();
+      final String tempPath = '${tempDir.path}/shazam_temp.m4a';
+
+      try {
+        await _record.start(
+          const RecordConfig(encoder: AudioEncoder.aacLc),
+          path: tempPath,
+        );
+
+        // Fase 1: Registrazione (5 secondi)
+        await Future.delayed(const Duration(seconds: 5));
+
+        final path = await _record.stop();
+        
+        if (path != null) {
+          final File audioFile = File(path);
+          final Uint8List audioBytes = await audioFile.readAsBytes();
+
+          if (audioBytes.isNotEmpty && mounted) {
+            // Fase 2: Analisi (Il pulsante resta al centro e si muove)
+            // Non mostriamo il popup intermedio come richiesto, lasciamo il radar al centro
+            final result = await RecognitionApiService().identifyFromAudioBytes(
+              audioBytes,
+            );
+
+            // Una volta finito, il pulsante torna al suo posto
+            if (mounted) setState(() => _isListening = false);
+
+            if (result != null && result['track'] != null) {
+              // Fase 3: Risultato (Sfondo sfocato e popup glass)
+              _showShazamResultPopup(result['track']);
+            } else {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(lang.translate('song_not_recognized'))),
+                );
+              }
+            }
+          } else {
+            if (mounted) setState(() => _isListening = false);
+          }
+        } else {
+          if (mounted) setState(() => _isListening = false);
+        }
+      } catch (e) {
+        if (mounted) {
+            setState(() => _isListening = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text(lang.translate('mic_error').replaceAll('{0}', e.toString()))),
+            );
+        }
+        debugPrint('Record error: $e');
+      }
+    }
+  }
+
+  void _showShazamResultPopup(Map<String, dynamic> trackData) {
+    if (!mounted) return;
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+    
+    String title = trackData['title'] ?? lang.translate('unknown');
+    String artist = trackData['subtitle'] ?? lang.translate('unknown');
+    String cover = '';
+    if (trackData['images'] != null) {
+      cover = trackData['images']['coverart'] ?? trackData['images']['background'] ?? '';
+    }
+    
+    String album = '';
+    String year = '';
+    String genre = '';
+    
+    if (trackData['sections'] != null) {
+      for (var section in trackData['sections']) {
+        if (section['type'] == 'SONG') {
+          for (var meta in section['metadata'] ?? []) {
+            if (meta['title'] == 'Album') album = meta['text'];
+            if (meta['title'] == 'Released') year = meta['text'];
+            if (meta['title'] == 'Genre') genre = meta['text'];
+          }
+        }
+      }
+    }
+    if (genre.isEmpty && trackData['genres'] != null && trackData['genres']['primary'] != null) {
+      genre = trackData['genres']['primary'];
+    }
+
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            final provider = Provider.of<RadioProvider>(context, listen: false);
+            
+            bool isFav = false;
+            try {
+              isFav = provider.playlists.any((playlist) => 
+                  playlist.songs.any((s) => s.title == title && s.artist == artist)
+              );
+            } catch (e) {
+              isFav = false;
+            }
+
+            return AlertDialog(
+              backgroundColor: Theme.of(context).cardColor.withValues(alpha: 0.15),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+              ),
+              contentPadding: const EdgeInsets.all(24),
+              elevation: 0,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (cover.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20.0),
+                      child: CachedNetworkImage(
+                        imageUrl: cover,
+                        height: 220,
+                        width: 220,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    artist,
+                    style: const TextStyle(fontSize: 16, color: Colors.white70),
+                    textAlign: TextAlign.center,
+                  ),
+                  
+                  if (album.isNotEmpty || year.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.3), 
+                        borderRadius: BorderRadius.circular(12)
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (album.isNotEmpty) Text("${lang.translate('genre') == 'Genre' ? 'Album' : lang.translate('label_album')}: $album", style: const TextStyle(fontSize: 13, color: Colors.white60), textAlign: TextAlign.center),
+                          if (year.isNotEmpty) Text("${lang.translate('year')}: $year", style: const TextStyle(fontSize: 13, color: Colors.white60), textAlign: TextAlign.center),
+                        ]
+                      )
+                    )
+                  ],
+
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      IconButton(
+                        iconSize: 32,
+                        icon: Icon(
+                          isFav ? Icons.favorite : Icons.favorite_border, 
+                          color: isFav ? Colors.redAccent : Colors.white70
+                        ),
+                        tooltip: lang.translate('add_to_playlist'),
+                        onPressed: () async {
+                          if (isFav) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(lang.translate('already_in_favorites'))),
+                            );
+                            return;
+                          }
+                          
+                          final song = SavedSong(
+                            id: DateTime.now().millisecondsSinceEpoch.toString(),
+                            title: title,
+                            artist: artist,
+                            album: album.isNotEmpty ? album : 'Shazam',
+                            artUri: cover,
+                            dateAdded: DateTime.now(),
+                          );
+                          await provider.bulkToggleFavoriteSongs([song], true);
+                          setStateDialog(() { isFav = true; });
+                          
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                               SnackBar(content: Text(lang.translate('added_to_favorites'))),
+                            );
+                          }
+                        },
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(lang.translate('close')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }
+        );
+      },
+    );
   }
 
   @override
@@ -99,6 +353,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         ? ((widget.height - widget.minHeight) / range).clamp(0.0, 1.0)
         : 1.0;
 
+    final double screenWidth = MediaQuery.of(context).size.width;
     final provider = Provider.of<RadioProvider>(context);
     final lang = Provider.of<LanguageProvider>(context);
     final station = provider.currentStation;
@@ -200,10 +455,11 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
               decoration: BoxDecoration(
                 // Increase opacity when collapsed (t -> 0) to prevent background content mix
                 // Increase opacity when collapsed (t -> 0) to prevent background content mix
-                color: Theme.of(context).appBarTheme.backgroundColor ??
-                    Theme.of(context).scaffoldBackgroundColor.withValues(
-                      alpha: 0.3,
-                    ),
+                color:
+                    Theme.of(context).appBarTheme.backgroundColor ??
+                    Theme.of(
+                      context,
+                    ).scaffoldBackgroundColor.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(borderRadius),
                 border: Border.all(
                   color: Colors.white.withValues(
@@ -688,31 +944,62 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           ),
         ),
 
-        Positioned(
-          top: dynamicTopPadding,
-          right: 24.0,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.travel_explore_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-                tooltip: lang.translate('find_new_music'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AddSongScreen(),
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOutCirc,
+          top: _isListening 
+              ? (widget.height / 2) - 40 // Centrato verticalmente nella card
+              : (widget.topPadding * (1.0 - t)) + 8.0,
+          right: _isListening 
+              ? (screenWidth / 2) - 40 // Centrato orizzontalmente
+              : (20.0 * t) + 8.0,
+          child: Opacity(
+            opacity: _isListening ? 1.0 : 0.3 + (0.7 * t),
+            child: Transform.scale(
+              scale: _isListening ? 2.5 : 0.8 + (0.4 * t),
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _isListening 
+                        ? const Color(0xFF0088FF) 
+                        : const Color(0xFF0088FF).withValues(alpha: 0.8 * (1.0 - (t * 0.5))),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      if (t > 0.5 || _isListening) 
+                        BoxShadow(
+                          color: const Color(0xFF0088FF).withValues(alpha: _isListening ? 0.4 : 0.3),
+                          blurRadius: _isListening ? 30 : 12,
+                          spreadRadius: _isListening ? 10 : 2,
+                        ),
+                    ],
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: _isListening
+                          ? const SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: Center(
+                                child: RealisticVisualizer(
+                                  color: Colors.white,
+                                  barCount: 5,
+                                  volume: 1.0,
+                                ),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.track_changes,
+                              color: Colors.white,
+                              size: 26,
+                            ),
                     ),
-                  );
-                },
+                    tooltip: 'Shazam',
+                    onPressed: _isListening ? null : _startListening,
+                  ),
+                ),
               ),
             ),
           ),

@@ -21,6 +21,28 @@ class RecognitionApiService {
   static bool _isGlobalRecognizing = false;
   http.Client? _activeClient;
 
+  Future<Map<String, dynamic>?> identifyFromAudioBytes(Uint8List audioData) async {
+    _activeClient = http.Client();
+    try {
+      LogService().log("RecognitionAPI: Identifying from microphone bytes...");
+      
+      final selection2 = await _getBestApiKey(
+        'recognition_key_2',
+        _apiKey2,
+        2,
+      );
+      
+      final result = await _runSolution2(audioData, selection2['key']);
+      return result;
+    } catch (e) {
+      LogService().log("RecognitionAPI Exception (Microphone): $e");
+    } finally {
+      _activeClient?.close();
+      _activeClient = null;
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> identifyStream(
     String streamUrl, {
     String strategy = "soluzione 2",

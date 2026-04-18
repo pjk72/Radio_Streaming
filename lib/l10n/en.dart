@@ -622,5 +622,15 @@ final Map<String, String> en = {
   'sync_complete_title': 'Synchronization Complete',
   'sync_complete_msg': 'The playlist was synced successfully.',
   'sync_failed_removal': 'Sync failed: removing invalid tracks.',
+  'shazam_mic_denied': 'Microphone permission denied. Allow access from settings.',
+  'shazam_analyzing': 'Analyzing audio...',
+  'song_not_recognized': 'Song not recognized.',
+  'already_in_favorites': 'Already in favorites!',
+  'mic_error': 'Microphone error: {0}',
+  'genre': 'Genre',
+  'year': 'Year',
+  'recognition_title': 'Music Recognition',
+  'shazam_wizard_tip': 'Listen to the music around you and record it on your playlist',
+  'shazam_wizard_hint': 'Identify music around you for targeted search!',
 };
 
