@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'log_service.dart';
 
 class InterstitialAdService {
-  static final InterstitialAdService _instance = InterstitialAdService._internal();
+  static final InterstitialAdService _instance =
+      InterstitialAdService._internal();
   factory InterstitialAdService() => _instance;
   InterstitialAdService._internal();
 
@@ -13,7 +14,7 @@ class InterstitialAdService {
   static const int _maxAttempts = 3;
 
   final String _adUnitId = kReleaseMode
-      ? 'ca-app-pub-3351319116434923/1642535796'
+      ? 'ca-app-pub-3351319116434923/5813365382'
       : 'ca-app-pub-3940256099942544/1033173712'; // Test ID for debug
 
   /// Preload the ad
@@ -31,37 +32,46 @@ class InterstitialAdService {
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
-          LogService().log("InterstitialAdService: Ad loaded successfully on attempt ${_numAttempts + 1}.");
+          LogService().log(
+            "InterstitialAdService: Ad loaded successfully on attempt ${_numAttempts + 1}.",
+          );
           _interstitialAd = ad;
           _isAdLoading = false;
           _numAttempts = 0; // Reset on success
 
-          _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              LogService().log("InterstitialAdService: Ad dismissed.");
-              ad.dispose();
-              _interstitialAd = null;
-              loadAd(); // Pre-load next
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) {
-              LogService().log("InterstitialAdService: Ad failed to show: $error");
-              ad.dispose();
-              _interstitialAd = null;
-              loadAd();
-            },
-          );
+          _interstitialAd!.fullScreenContentCallback =
+              FullScreenContentCallback(
+                onAdDismissedFullScreenContent: (ad) {
+                  LogService().log("InterstitialAdService: Ad dismissed.");
+                  ad.dispose();
+                  _interstitialAd = null;
+                  loadAd(); // Pre-load next
+                },
+                onAdFailedToShowFullScreenContent: (ad, error) {
+                  LogService().log(
+                    "InterstitialAdService: Ad failed to show: $error",
+                  );
+                  ad.dispose();
+                  _interstitialAd = null;
+                  loadAd();
+                },
+              );
         },
         onAdFailedToLoad: (LoadAdError error) {
           _numAttempts++;
           _isAdLoading = false;
           _interstitialAd = null;
-          LogService().log("InterstitialAdService: Ad failed to load (Attempt $_numAttempts): $error");
-          
+          LogService().log(
+            "InterstitialAdService: Ad failed to load (Attempt $_numAttempts): $error",
+          );
+
           if (_numAttempts < _maxAttempts) {
-             LogService().log("InterstitialAdService: Retrying in 5 seconds...");
-             Future.delayed(const Duration(seconds: 5), () => loadAd());
+            LogService().log("InterstitialAdService: Retrying in 5 seconds...");
+            Future.delayed(const Duration(seconds: 5), () => loadAd());
           } else {
-             LogService().log("InterstitialAdService: Max load attempts reached.");
+            LogService().log(
+              "InterstitialAdService: Max load attempts reached.",
+            );
           }
         },
       ),
@@ -74,7 +84,9 @@ class InterstitialAdService {
       LogService().log("InterstitialAdService: Showing ad.");
       _interstitialAd!.show();
     } else {
-      LogService().log("InterstitialAdService: Ad not ready, status: ${_isAdLoading ? 'Loading' : 'Idle'}.");
+      LogService().log(
+        "InterstitialAdService: Ad not ready, status: ${_isAdLoading ? 'Loading' : 'Idle'}.",
+      );
       if (!_isAdLoading) {
         loadAd();
       }
