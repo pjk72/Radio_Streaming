@@ -105,6 +105,7 @@ class RadioAudioHandler extends BaseAudioHandler
   Duration? _nextCheckDuration;
   DateTime? _lastRecognitionTime;
   Duration _lastRecognitionOffset = Duration.zero; // Local track for position offset
+  Timer? _analyticsHeartbeatTimer;
 
   void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
     if (kDebugMode) {
@@ -613,6 +614,9 @@ class RadioAudioHandler extends BaseAudioHandler
         mediaItem.add(item);
         // Broadcast stopped state with this item to satisfy AA immediately
         _broadcastState(PlayerState.stopped);
+        
+        // Ensure heartbeat is stopped on restore
+        _stopAnalyticsHeartbeat();
       }
     } catch (_) {}
   }
@@ -1253,6 +1257,7 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (_) {}
     // Manually update state so UI knows we paused immediately
     _logAnalyticsEvent('toggle_play', {'action': 'pause'});
+    _stopAnalyticsHeartbeat();
     _broadcastState(PlayerState.paused);
   }
 
@@ -1264,6 +1269,7 @@ class RadioAudioHandler extends BaseAudioHandler
     try {
       await _player.stop();
     } catch (_) {}
+    _stopAnalyticsHeartbeat();
     _broadcastState(PlayerState.stopped);
     await super.stop();
   }
@@ -1288,6 +1294,7 @@ class RadioAudioHandler extends BaseAudioHandler
         _logAnalyticsEvent('toggle_play', {'action': 'play'});
       }
       _broadcastState(PlayerState.playing);
+      _startAnalyticsHeartbeat();
 
       // Restart Recognition Cycle if Radio Mode
       if (_isACRCloudEnabled &&
@@ -1309,6 +1316,7 @@ class RadioAudioHandler extends BaseAudioHandler
         currentItem.extras,
         logEvent,
       );
+      _startAnalyticsHeartbeat();
     }
   }
 
@@ -2793,6 +2801,7 @@ class RadioAudioHandler extends BaseAudioHandler
       // Keep _isInitialBuffering true until real playback is detected
       _expectingStop =
           false; // Safety: If we are playing, we are not expecting a stop anymore
+      _startAnalyticsHeartbeat();
 
       // Reset error counter on successful playback (not buffering)
       if (!_isInitialBuffering) {
@@ -2800,6 +2809,11 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     } else {
       _stopStuckMonitor();
+      if (state == PlayerState.paused ||
+          state == PlayerState.stopped ||
+          state == PlayerState.completed) {
+        _stopAnalyticsHeartbeat();
+      }
     }
 
     // If we are pending a retry, don't clear notification
@@ -4636,5 +4650,37 @@ class RadioAudioHandler extends BaseAudioHandler
       'JP': 'Japan',
     };
     return names[code] ?? 'Global';
+  }
+
+  void _startAnalyticsHeartbeat() {
+    if (_analyticsHeartbeatTimer != null && _analyticsHeartbeatTimer!.isActive) return;
+    _analyticsHeartbeatTimer?.cancel();
+    // Log immediately on start
+    _sendHeartbeatEvent();
+
+    // Then every 5 minutes (300 seconds)
+    _analyticsHeartbeatTimer =
+        Timer.periodic(const Duration(minutes: 5), (timer) {
+      if (playbackState.value.playing) {
+        _sendHeartbeatEvent();
+      } else {
+        _stopAnalyticsHeartbeat();
+      }
+    });
+  }
+
+  void _stopAnalyticsHeartbeat() {
+    _analyticsHeartbeatTimer?.cancel();
+    _analyticsHeartbeatTimer = null;
+  }
+
+  void _sendHeartbeatEvent() {
+    final currentItem = mediaItem.value;
+    _logAnalyticsEvent('audio_playback_heartbeat', {
+      'playback_type': currentItem?.extras?['type'] ?? 'unknown',
+      'is_android_auto': _isInAndroidAutoMode,
+      'is_background': true,
+      'song_id': currentItem?.extras?['songId'] ?? currentItem?.id,
+    });
   }
 }
