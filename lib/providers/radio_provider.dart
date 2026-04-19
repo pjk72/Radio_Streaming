@@ -2389,7 +2389,20 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               changed = true;
               successCount++;
             } else {
-              failedCount++;
+              // Second tier: Deep search via YouTube specifically
+              final results = await searchMusic("${currentSong.title} ${currentSong.artist}");
+              if (results.isNotEmpty) {
+                final best = results.first.song;
+                currentSong = currentSong.copyWith(
+                  youtubeUrl: best.youtubeUrl,
+                  artUri: (currentSong.artUri == null || currentSong.artUri!.isEmpty) ? best.artUri : currentSong.artUri,
+                  album: (currentSong.album.isEmpty || currentSong.album == 'Unknown Album') ? best.album : currentSong.album,
+                );
+                changed = true;
+                successCount++;
+              } else {
+                failedCount++;
+              }
             }
           } catch (e) {
             failedCount++;
@@ -2403,9 +2416,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         try {
           final cleanTitle = _cleanQuery(currentSong.title);
           final cleanArtist = _cleanQuery(currentSong.artist);
-          final metaResults = await _musicMetadataService.searchSongs(
-            query: "$cleanTitle $cleanArtist",
-          );
+          final metaResults = await searchMusic("$cleanTitle $cleanArtist");
 
           if (metaResults.isNotEmpty) {
             final bestMatch = metaResults.first.song;
@@ -2923,7 +2934,71 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<List<SongSearchResult>> searchMusic(String query) async {
-    return await _musicMetadataService.searchSongs(query: query, limit: 40);
+    final countryCode = _detectCountryCode();
+    
+    // 1. Search via iTunes Metadata Service
+    LogService().log('Searching Music for query: "$query" (Country: $countryCode)');
+    List<SongSearchResult> itunesResults = [];
+    try {
+      itunesResults = await _musicMetadataService.searchSongs(
+        query: query,
+        limit: 30, // Reduced to 30 to make room for YouTube results
+        countryCode: countryCode,
+      ).timeout(const Duration(seconds: 8));
+      LogService().log('iTunes Search Results: ${itunesResults.length}');
+    } catch (e) {
+      LogService().log('iTunes Search Error: $e');
+    }
+
+    // 2. Search via YouTube (as fallback or supplement)
+    List<SongSearchResult> youtubeResults = [];
+    try {
+      final yt = yt_explode.YoutubeExplode();
+      final searchList = await yt.search.searchContent(
+        query,
+        filter: yt_explode.TypeFilters.video,
+      ).timeout(const Duration(seconds: 8));
+
+      for (var result in searchList.take(20)) {
+        if (result is yt_explode.SearchVideo) {
+          youtubeResults.add(
+            SongSearchResult(
+              song: SavedSong(
+                id: result.id.value,
+                title: result.title,
+                artist: result.author,
+                album: 'YouTube',
+                artUri: result.thumbnails.isNotEmpty ? result.thumbnails.last.url.toString() : null,
+                youtubeUrl: 'https://www.youtube.com/watch?v=${result.id.value}',
+                dateAdded: DateTime.now(),
+              ),
+              genre: 'YouTube',
+            ),
+          );
+        }
+      }
+      LogService().log('YouTube Search Results: ${youtubeResults.length}');
+      yt.close();
+    } catch (e) {
+      LogService().log('YouTube Search Error: $e');
+    }
+
+    // 3. Merge results: prioritizing iTunes for high-quality metadata, then YouTube
+    final List<SongSearchResult> combined = [...itunesResults];
+    
+    // Add YouTube results that are not already present (based on title/artist matching if possible, but for now just append)
+    // We only add YouTube if itunesResults are few OR if the user specifically searched for something only on YT
+    for (var ytRes in youtubeResults) {
+      bool alreadyPresent = itunesResults.any((it) => 
+        it.song.title.toLowerCase() == ytRes.song.title.toLowerCase() &&
+        it.song.artist.toLowerCase() == ytRes.song.artist.toLowerCase()
+      );
+      if (!alreadyPresent) {
+        combined.add(ytRes);
+      }
+    }
+
+    return combined;
   }
 
   Future<void> addFoundSongToGenre(SongSearchResult result) async {
@@ -2953,6 +3028,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     if (playlist.id.isEmpty) return;
 
     _isSyncingMetadata = true;
+    _enrichingPlaylists.add(playlistId);
     notifyListeners();
 
     List<SavedSong> songsToProcess = playlist.songs
@@ -2969,7 +3045,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     List<SavedSong> updatedSongs = List.from(playlist.songs);
 
     // Process in small batches or with delays to avoid API throttling
-    for (var song in songsToProcess) {
+    for (int i = 0; i < songsToProcess.length; i++) {
+      final song = songsToProcess[i];
       try {
         // Clean query: remove file extensions or path info if present
         String cleanTitle = song.title
@@ -2978,44 +3055,43 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         final results = await searchMusic("$cleanTitle ${song.artist}");
 
         if (results.isNotEmpty) {
-          // Find best match (simple check: title similarity)
           final match = results.first.song;
           int idx = updatedSongs.indexWhere((s) => s.id == song.id);
           if (idx != -1) {
             updatedSongs[idx] = updatedSongs[idx].copyWith(
               artUri: match.artUri,
-              album:
-                  (updatedSongs[idx].album == 'Unknown Album' ||
-                      updatedSongs[idx].album.isEmpty)
-                  ? match.album
-                  : updatedSongs[idx].album,
-              releaseDate:
-                  (updatedSongs[idx].releaseDate == null ||
-                      updatedSongs[idx].releaseDate!.isEmpty)
-                  ? match.releaseDate
-                  : updatedSongs[idx].releaseDate,
+              album: (updatedSongs[idx].album == 'Unknown Album' || updatedSongs[idx].album.isEmpty)
+                  ? match.album : updatedSongs[idx].album,
+              releaseDate: (updatedSongs[idx].releaseDate == null || updatedSongs[idx].releaseDate!.isEmpty)
+                  ? match.releaseDate : updatedSongs[idx].releaseDate,
             );
             anyChanged = true;
           }
         }
+
+        // Batch update to show progress in UI
+        if (anyChanged && (i % 5 == 0 || i == songsToProcess.length - 1)) {
+          // BUG FIX: Only pass the subset that was modified in this batch if possible,
+          // but PlaylistService.updateSongsInPlaylist merges by ID, so it is safe to pass the FULL list
+          // ONLY IF the list is not stale. To avoid data loss from stale lists, we re-fetch the playlist structure
+          // before updating, or simply use the current mutated state if we are sure no concurrent edits happened.
+          // For now, we use a more precise update by passing ONLY the current modified song or the batch.
+          await _playlistService.updateSongsInPlaylist(
+            playlistId,
+            updatedSongs,
+          );
+          await _loadPlaylists(); // This notifies listeners
+          anyChanged = false; // Reset for next batch
+        }
+
         await Future.delayed(const Duration(milliseconds: 300));
       } catch (e) {
         LogService().log("Metadata Enrichment Error for ${song.title}: $e");
       }
     }
 
-    if (anyChanged) {
-      await _playlistService.saveAll(
-        _playlists
-            .map(
-              (p) => p.id == playlistId ? p.copyWith(songs: updatedSongs) : p,
-            )
-            .toList(),
-      );
-      await _loadPlaylists();
-    }
-
     _isSyncingMetadata = false;
+    _enrichingPlaylists.remove(playlistId);
     notifyListeners();
   }
 
@@ -6826,10 +6902,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       );
 
       try {
-        final cleanTitle = _cleanQuery(song.title);
-        final cleanArtist = _cleanQuery(song.artist);
+        String cleanTitle = song.title
+            .replaceAll(RegExp(r'^\d+[\s.-]+'), '') // Remove leading track numbers (e.g., "01 - ")
+            .replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$', caseSensitive: false), '') // Remove extensions
+            .trim();
+        String cleanArtist = song.artist
+            .replaceAll('Unknown Artist', '')
+            .trim();
+            
         final results = await _musicMetadataService.searchSongs(
-          query: "$cleanTitle $cleanArtist",
+          query: "$cleanTitle $cleanArtist".trim(),
           limit: 1,
         );
 
@@ -7837,12 +7919,23 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     bool needsResolution = playlist.songs.any(
       (s) => s.youtubeUrl == null || !ytRegex.hasMatch(s.youtubeUrl!),
     );
-    if (!needsResolution) return;
+    bool needsMetadata = playlist.songs.any(
+      (s) => s.artUri == null || s.artUri!.isEmpty,
+    );
+
+    if (!needsResolution && !needsMetadata) return;
 
     _isProactivelyResolving = true;
     try {
-      // Start a silent preparation
-      await startQRPreparation(playlist, null, silent: true);
+      if (needsMetadata) {
+        // Trigger artwork/album enrichment
+        enrichPlaylistMetadata(playlist.id);
+      }
+
+      if (needsResolution) {
+        // Start a silent preparation for YouTube IDs
+        await startQRPreparation(playlist, null, silent: true);
+      }
     } finally {
       _isProactivelyResolving = false;
     }

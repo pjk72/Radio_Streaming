@@ -172,7 +172,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
                 ),
                 onChanged: (val) {
                   _searchDebounce?.cancel();
-                  if (val.trim().length >= 3) {
+                  if (val.trim().length >= 2) {
                     _searchDebounce = Timer(
                       const Duration(milliseconds: 600),
                       () => _performSearch(val),

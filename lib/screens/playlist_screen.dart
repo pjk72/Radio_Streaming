@@ -98,7 +98,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   }
 
   void _showSyncCompleteDialog(EnrichmentCompletion completion) {
-    final provider = Provider.of<RadioProvider>(context, listen: false);
     final lang = Provider.of<LanguageProvider>(context, listen: false);
 
     GlassUtils.showGlassDialog(
@@ -118,24 +117,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(ctx);
               _isShowingSyncDialog = false;
-
-              // Remove unsynced songs
-              final playlist = provider.playlists.firstWhere((p) => p.id == completion.playlistId);
-              final fetchingTag = lang.translate('syncing_yt'); // Use the placeholder tag we set
-              final toRemove = playlist.songs
-                  .where((s) => s.artist == fetchingTag || (s.artUri == null || s.artUri!.isEmpty))
-                  .map((s) => s.id)
-                  .toList();
-
-              if (toRemove.isNotEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(lang.translate('sync_failed_removal'))),
-                );
-                await provider.removeSongsFromPlaylist(completion.playlistId, toRemove);
-              }
             },
             child: Text(lang.translate('close')),
           ),
@@ -1685,16 +1669,24 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   builder: (context) {
                     if (isSelectionActive) {
                       return RefreshIndicator(
-                        color: Colors.transparent,
-                        backgroundColor: Colors.transparent,
                         onRefresh: () async {
+                          // Artificial delay to ensure spinner is visible as requested
+                          final startTime = DateTime.now();
+                          final provider = Provider.of<RadioProvider>(context, listen: false);
+
                           if (_selectedPlaylistId != null) {
                             // Call background refresh that checks local file structure and video links
                             provider.refreshPlaylistInBackground(_selectedPlaylistId!);
-                            provider.reloadPlaylists();
+                            await provider.reloadPlaylists();
                           } else {
-                            provider.reloadPlaylists();
+                            await provider.reloadPlaylists();
                             provider.findMissingArtworks();
+                          }
+
+                          // Ensure at least 800ms of visibility
+                          final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+                          if (elapsed < 800) {
+                            await Future.delayed(Duration(milliseconds: 800 - elapsed));
                           }
                         },
                         child: _buildSongList(
@@ -1733,8 +1725,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     switch (_viewMode) {
                       case MetadataViewMode.playlists:
                         return RefreshIndicator(
-                          color: Colors.transparent,
-                          backgroundColor: Colors.transparent,
                           onRefresh: () async {
                             provider.reloadPlaylists();
                             provider.findMissingArtworks();
@@ -1755,8 +1745,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         );
                       case MetadataViewMode.artists:
                         return RefreshIndicator(
-                          color: Colors.transparent,
-                          backgroundColor: Colors.transparent,
                           onRefresh: () async {
                             provider.reloadPlaylists();
                             provider.findMissingArtworks();
@@ -1765,8 +1753,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         );
                       case MetadataViewMode.albums:
                         return RefreshIndicator(
-                          color: Colors.transparent,
-                          backgroundColor: Colors.transparent,
                           onRefresh: () async {
                             provider.reloadPlaylists();
                             provider.findMissingArtworks();

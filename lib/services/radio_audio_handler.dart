@@ -251,11 +251,15 @@ class RadioAudioHandler extends BaseAudioHandler
                 stayAwake: true,
                 contentType: AndroidContentType.music,
                 usageType: AndroidUsageType.media,
-                audioFocus: AndroidAudioFocus.gain,
+                audioFocus: AndroidAudioFocus.none,
               ),
               iOS: AudioContextIOS(
-                category: AVAudioSessionCategory.playback,
-                options: const {},
+                category: AVAudioSessionCategory.playAndRecord,
+                options: {
+                  AVAudioSessionOptions.allowBluetooth,
+                  AVAudioSessionOptions.defaultToSpeaker,
+                  AVAudioSessionOptions.mixWithOthers,
+                },
               ),
             ),
           );
@@ -1971,9 +1975,16 @@ class RadioAudioHandler extends BaseAudioHandler
                 stayAwake: true,
                 contentType: AndroidContentType.music,
                 usageType: AndroidUsageType.media,
-                audioFocus: AndroidAudioFocus.gain,
+                audioFocus: AndroidAudioFocus.none,
               ),
-              iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
+              iOS: AudioContextIOS(
+                category: AVAudioSessionCategory.playAndRecord,
+                options: {
+                  AVAudioSessionOptions.allowBluetooth,
+                  AVAudioSessionOptions.defaultToSpeaker,
+                  AVAudioSessionOptions.mixWithOthers,
+                },
+              ),
             ),
           );
         }
