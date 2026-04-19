@@ -264,6 +264,12 @@ class EntitlementService extends ChangeNotifier {
       return false; // Feature not defined
     }
 
+    // SPECIAL LOGIC for specified ad attributes: prioritized specificity
+    if (featureKey == 'app_open_ad' ||
+        featureKey == 'interstitial_ad') {
+      return _getPrioritizedValue(featureKey) != 0;
+    }
+
     final featureData = features[featureKey];
 
     // Handle both List (old format) and Map (new format with limits)
@@ -341,6 +347,13 @@ class EntitlementService extends ChangeNotifier {
     if (features == null || !features.containsKey(featureKey)) return 0;
 
     final featureData = features[featureKey];
+
+    // SPECIAL LOGIC for specified ad attributes: prioritized specificity
+    if (featureKey == 'app_open_ad' ||
+        featureKey == 'interstitial_ad') {
+      return _getPrioritizedValue(featureKey);
+    }
+
     if (featureData is! Map) {
       // If it's a list, we assume -1 (unlimited) for everyone in the list
       return isFeatureEnabled(featureKey) ? -1 : 0;
@@ -410,6 +423,108 @@ class EntitlementService extends ChangeNotifier {
     });
 
     return maxLimit;
+  }
+
+  /// New logic for specific attributes: Priority to the most specific rule.
+  /// 1: Email (Priority 1)
+  /// 2: Group (Priority 2)
+  /// 3: "All login" (Priority 3)
+  /// 4: "All" (Priority 4)
+  /// Value 0 is an explicit block. If no rules match, returns 0.
+  int _getPrioritizedValue(String featureKey) {
+    if (_config.isEmpty) return 0;
+
+    final features = _config['features'] as Map<String, dynamic>?;
+    if (features == null) return 0;
+
+    dynamic featureData = features[featureKey];
+
+    if (featureData is! Map) return 0;
+
+    final Map<String, dynamic> rules = Map<String, dynamic>.from(featureData);
+    final currentUser = _backupService.currentUser;
+    String? userEmail = currentUser?.email;
+
+    // Fallback to cache (for background/offline)
+    if (userEmail == null || userEmail.isEmpty) {
+      if (_cachedUserEmail != null &&
+          _cachedUserEmail != "GUEST" &&
+          _cachedUserEmail != "None") {
+        userEmail = _cachedUserEmail;
+      }
+    }
+
+    final String? normalizedUserEmail = userEmail?.toLowerCase().trim();
+    final groups = _config['groups'] as Map<String, dynamic>?;
+
+    int? bestPriority;
+    List<int> bestValues = [];
+
+    void evaluateRule(String entity, dynamic value, int priority) {
+      // If we already found a MORE specific rule, ignore this one
+      if (bestPriority != null && priority > bestPriority!) return;
+
+      int numericValue = (value is num) ? value.toInt() : 1;
+
+      if (bestPriority == null || priority < bestPriority!) {
+        // New most specific level found
+        bestPriority = priority;
+        bestValues = [numericValue];
+      } else {
+        // Same priority level (possible with multiple groups)
+        bestValues.add(numericValue);
+      }
+    }
+
+    LogService().log("[EntitlementDebug] Checking $featureKey for email: $normalizedUserEmail");
+
+    rules.forEach((entity, value) {
+      final String normalizedEntity = entity.toLowerCase().trim();
+      bool matched = false;
+      int priority = 0;
+
+      // Priority 1: Specific User Email
+      if (normalizedUserEmail != null && normalizedEntity == normalizedUserEmail) {
+        matched = true;
+        priority = 1;
+      }
+      // Priority 2: Groups (e.g., Administrator, beta_testers)
+      else if (normalizedUserEmail != null &&
+          groups != null &&
+          groups.containsKey(entity)) {
+        final groupEmails = List<String>.from(groups[entity] ?? []);
+        if (groupEmails.any(
+          (email) => email.toLowerCase().trim() == normalizedUserEmail,
+        )) {
+          matched = true;
+          priority = 2;
+        }
+      }
+      // Priority 3: "All login" (any authenticated user)
+      else if (normalizedUserEmail != null && normalizedEntity == "all login") {
+        matched = true;
+        priority = 3;
+      }
+      // Priority 4: "All" (everyone)
+      else if (normalizedEntity == "all") {
+        matched = true;
+        priority = 4;
+      }
+
+      if (matched) {
+        LogService().log("[EntitlementDebug] Match found: $entity (Priority $priority, Value $value)");
+        evaluateRule(entity, value, priority);
+      }
+    });
+
+    if (bestPriority == null) {
+      LogService().log("[EntitlementDebug] No rules matched for $featureKey. Access DENIED.");
+      return 0; // Not eligible by default
+    }
+
+    final result = bestValues.contains(0) ? 0 : (bestValues.isEmpty ? 0 : bestValues.reduce((a, b) => a > b ? a : b));
+    LogService().log("[EntitlementDebug] Winning priority $bestPriority with value $result");
+    return result;
   }
 
   @override

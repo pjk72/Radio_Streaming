@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/recognition_api_service.dart';
 import '../models/saved_song.dart';
-import 'realistic_visualizer.dart';
+import 'advanced_recognition_visualizer.dart';
 
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
@@ -44,6 +44,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   final AudioRecorder _record = AudioRecorder();
   bool _isListening = false;
+  bool _isAnalyzing = false;
 
   int _step = 0; // 0: Country Selection, 1: Search & Select
   String? _selectedCountryCode;
@@ -272,7 +273,10 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         path: tempPath,
       );
 
+      // Fase 1: Registrazione (5 secondi)
       await Future.delayed(const Duration(seconds: 5));
+
+      if (mounted) setState(() => _isAnalyzing = true);
 
       final path = await _record.stop();
       
@@ -281,9 +285,15 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         final Uint8List audioBytes = await audioFile.readAsBytes();
 
         if (audioBytes.isNotEmpty && mounted) {
+          // Fase 2: Analisi
           final result = await RecognitionApiService().identifyFromAudioBytes(audioBytes);
           
-          if (mounted) setState(() => _isListening = false);
+          if (mounted) {
+            setState(() {
+              _isListening = false;
+              _isAnalyzing = false;
+            });
+          }
 
           if (result != null && result['track'] != null) {
             _showShazamResultPopup(result['track']);
@@ -1048,10 +1058,15 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                   child: Row(
                     children: [
                       _isListening 
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 40, 
                             height: 40, 
-                            child: Center(child: RealisticVisualizer(color: Color(0xFF0088FF), barCount: 4, volume: 1.0))
+                            child: Center(
+                              child: AdvancedRecognitionVisualizer(
+                                isAnalyzing: _isAnalyzing,
+                                color: const Color(0xFF0088FF),
+                              ),
+                            ),
                           )
                         : const Icon(Icons.track_changes, color: Color(0xFF0088FF), size: 40),
                       const SizedBox(width: 16),

@@ -2675,7 +2675,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         );
 
         if (rewardEarned) {
-          final int bonus = earnedAmount > 0 ? earnedAmount : RewardedAdService.rewardAmount;
+          final int bonus = earnedAmount > 0 ? earnedAmount : 5;
           await provider.addEarnedDownloadCredits(bonus);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -2786,7 +2786,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             );
 
                             if (earned) {
-                              final int bonus = earnedAmount > 0 ? earnedAmount : RewardedAdService.rewardAmount;
+                              final int bonus = earnedAmount > 0 ? earnedAmount : 1;
                               await provider.addEarnedDownloadCredits(bonus);
                               if (mounted) {
                                  ScaffoldMessenger.of(context).showSnackBar(
@@ -2821,7 +2821,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     const Icon(Icons.stars_rounded, color: Colors.amber, size: 24),
                                     const SizedBox(width: 12),
                                     Text(
-                                      "+${RewardedAdService.rewardAmount} ${lang.translate('watch_ad')}",
+                                      "+5 ${lang.translate('watch_ad')}",
                                       style: const TextStyle(
                                         color: Colors.amber,
                                         fontWeight: FontWeight.bold,

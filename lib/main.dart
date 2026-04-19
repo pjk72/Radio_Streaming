@@ -32,7 +32,6 @@ import 'services/entitlement_service.dart';
 import 'services/interstitial_ad_service.dart';
 import 'widgets/admin_debug_overlay.dart';
 import 'services/app_open_ad_manager.dart';
-import 'services/rewarded_ad_service.dart';
 import 'services/notification_service.dart';
 import 'services/user_sync_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -199,15 +198,14 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
           await MobileAds.instance
               .initialize()
               .timeout(const Duration(seconds: 5));
-          await RewardedAdService.init(); // Carica il valore del premio salvato
         } catch (_) {}
       }
 
       final entitlements = Provider.of<EntitlementService>(context, listen: false);
       AppOpenAdManager().init(entitlements);
 
-      // Preload Interstitial Ads after library is initialized
-      InterstitialAdService().loadAd();
+      // Preload Interstitial Ads after library is initialized with entitlements
+      InterstitialAdService().init(entitlements);
 
       // 3. SECONDARY INITIALIZATIONS (Wait for these but with a safety timeout)
       // This ensures the splash stays until they are done, but doesn't hang forever

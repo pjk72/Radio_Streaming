@@ -23,6 +23,7 @@ import '../models/saved_song.dart';
 import '../utils/glass_utils.dart';
 import '../services/entitlement_service.dart';
 import '../services/interstitial_ad_service.dart';
+import 'advanced_recognition_visualizer.dart';
 
 class NowPlayingHeader extends StatefulWidget {
   final double height;
@@ -47,6 +48,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
   String? _lastArtistChecked;
 
   bool _isListening = false;
+  bool _isAnalyzing = false;
   final AudioRecorder _record = AudioRecorder();
 
   @override
@@ -135,8 +137,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           path: tempPath,
         );
 
-        // Fase 1: Registrazione (5 secondi)
+        // Fase 1: Registrazione (5 secondi) - Animazione note musicali
         await Future.delayed(const Duration(seconds: 5));
+
+        if (mounted) setState(() => _isAnalyzing = true);
 
         final path = await _record.stop();
         
@@ -145,14 +149,18 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           final Uint8List audioBytes = await audioFile.readAsBytes();
 
           if (audioBytes.isNotEmpty && mounted) {
-            // Fase 2: Analisi (Il pulsante resta al centro e si muove)
-            // Non mostriamo il popup intermedio come richiesto, lasciamo il radar al centro
+            // Fase 2: Analisi (Animazione scanner digitale)
             final result = await RecognitionApiService().identifyFromAudioBytes(
               audioBytes,
             );
 
             // Una volta finito, il pulsante torna al suo posto
-            if (mounted) setState(() => _isListening = false);
+            if (mounted) {
+              setState(() {
+                _isListening = false;
+                _isAnalyzing = false;
+              });
+            }
 
             if (result != null && result['track'] != null) {
               // Fase 3: Risultato (Sfondo sfocato e popup glass)
@@ -949,6 +957,22 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           ),
         ),
 
+        if (_isListening)
+          Positioned.fill(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 300),
+              builder: (context, value, child) {
+                return BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 5 * value, sigmaY: 5 * value),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.3 * value),
+                  ),
+                );
+              },
+            ),
+          ),
+
         if (Provider.of<EntitlementService>(context).isFeatureEnabled('external_song_recognition'))
           AnimatedPositioned(
             duration: const Duration(milliseconds: 400),
@@ -985,14 +1009,13 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                       icon: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 300),
                         child: _isListening
-                            ? const SizedBox(
-                                width: 32,
-                                height: 32,
+                            ? SizedBox(
+                                width: 80,
+                                height: 80,
                                 child: Center(
-                                  child: RealisticVisualizer(
+                                  child: AdvancedRecognitionVisualizer(
+                                    isAnalyzing: _isAnalyzing,
                                     color: Colors.white,
-                                    barCount: 5,
-                                    volume: 1.0,
                                   ),
                                 ),
                               )

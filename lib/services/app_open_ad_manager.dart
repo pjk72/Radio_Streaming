@@ -27,6 +27,13 @@ class AppOpenAdManager {
   void loadAd() {
     if (kIsWeb || !Platform.isAndroid) return;
 
+    // Check if feature is enabled BEFORE making the request
+    if (_entitlements != null &&
+        !_entitlements!.isFeatureEnabled('app_open_ad')) {
+      debugPrint('AppOpenAd: Feature disabled for this user. Skipping ad request.');
+      return;
+    }
+
     AppOpenAd.load(
       adUnitId: adUnitId,
       request: const AdRequest(),
