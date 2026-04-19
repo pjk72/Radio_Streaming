@@ -18,6 +18,8 @@ import '../providers/language_provider.dart';
 import '../models/station.dart';
 import '../utils/genre_mapper.dart';
 import '../utils/glass_utils.dart';
+import '../services/entitlement_service.dart';
+import '../services/interstitial_ad_service.dart';
 
 class TutorialCreateRadioWizard extends StatefulWidget {
   const TutorialCreateRadioWizard({super.key});
@@ -429,7 +431,10 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          InterstitialAdService().showAd();
+                        },
                         child: Text(lang.translate('close')),
                       ),
                     ],
@@ -1028,46 +1033,49 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // DEDICATED SHAZAM SECTION (Promosso in alto come header)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0088FF).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF0088FF).withValues(alpha: 0.15)),
-              ),
-              child: InkWell(
-                onTap: _isListening ? null : _startListening,
-                borderRadius: BorderRadius.circular(16),
-                child: Row(
-                  children: [
-                    _isListening 
-                      ? const SizedBox(
-                          width: 40, 
-                          height: 40, 
-                          child: Center(child: RealisticVisualizer(color: Color(0xFF0088FF), barCount: 4, volume: 1.0))
-                        )
-                      : const Icon(Icons.track_changes, color: Color(0xFF0088FF), size: 40),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            langProvider.translate('recognition_title'),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF0088FF)),
-                          ),
-                          Text(
-                            langProvider.translate('shazam_wizard_tip'),
-                            style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
-                          ),
-                        ],
+            if (Provider.of<EntitlementService>(context, listen: false).isFeatureEnabled('external_song_recognition'))
+            ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0088FF).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF0088FF).withValues(alpha: 0.15)),
+                ),
+                child: InkWell(
+                  onTap: _isListening ? null : _startListening,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Row(
+                    children: [
+                      _isListening 
+                        ? const SizedBox(
+                            width: 40, 
+                            height: 40, 
+                            child: Center(child: RealisticVisualizer(color: Color(0xFF0088FF), barCount: 4, volume: 1.0))
+                          )
+                        : const Icon(Icons.track_changes, color: Color(0xFF0088FF), size: 40),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              langProvider.translate('recognition_title'),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF0088FF)),
+                            ),
+                            Text(
+                              langProvider.translate('shazam_wizard_tip'),
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
             Text(
               langProvider.translate('wizard_welcome'),
               style: Theme.of(context).textTheme.headlineSmall,

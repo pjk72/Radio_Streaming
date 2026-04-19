@@ -21,6 +21,8 @@ import 'package:path_provider/path_provider.dart';
 import '../services/recognition_api_service.dart';
 import '../models/saved_song.dart';
 import '../utils/glass_utils.dart';
+import '../services/entitlement_service.dart';
+import '../services/interstitial_ad_service.dart';
 
 class NowPlayingHeader extends StatefulWidget {
   final double height;
@@ -328,7 +330,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          InterstitialAdService().showAd();
+                        },
                         child: Text(lang.translate('close')),
                       ),
                     ],
@@ -944,66 +949,67 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           ),
         ),
 
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOutCirc,
-          top: _isListening 
-              ? (widget.height / 2) - 40 // Centrato verticalmente nella card
-              : (widget.topPadding * (1.0 - t)) + 8.0,
-          right: _isListening 
-              ? (screenWidth / 2) - 40 // Centrato orizzontalmente
-              : (20.0 * t) + 8.0,
-          child: Opacity(
-            opacity: _isListening ? 1.0 : 0.3 + (0.7 * t),
-            child: Transform.scale(
-              scale: _isListening ? 2.5 : 0.8 + (0.4 * t),
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: _isListening 
-                        ? const Color(0xFF0088FF) 
-                        : const Color(0xFF0088FF).withValues(alpha: 0.8 * (1.0 - (t * 0.5))),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      if (t > 0.5 || _isListening) 
-                        BoxShadow(
-                          color: const Color(0xFF0088FF).withValues(alpha: _isListening ? 0.4 : 0.3),
-                          blurRadius: _isListening ? 30 : 12,
-                          spreadRadius: _isListening ? 10 : 2,
-                        ),
-                    ],
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: _isListening
-                          ? const SizedBox(
-                              width: 32,
-                              height: 32,
-                              child: Center(
-                                child: RealisticVisualizer(
-                                  color: Colors.white,
-                                  barCount: 5,
-                                  volume: 1.0,
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.track_changes,
-                              color: Colors.white,
-                              size: 26,
-                            ),
+        if (Provider.of<EntitlementService>(context).isFeatureEnabled('external_song_recognition'))
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOutCirc,
+            top: _isListening
+                ? (widget.height / 2) - 40 // Centrato verticalmente nella card
+                : (widget.topPadding * (1.0 - t)) + 8.0,
+            right: _isListening
+                ? (screenWidth / 2) - 40 // Centrato orizzontalmente
+                : (20.0 * t) + 8.0,
+            child: Opacity(
+              opacity: _isListening ? 1.0 : 0.3 + (0.7 * t),
+              child: Transform.scale(
+                scale: _isListening ? 2.5 : 0.8 + (0.4 * t),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _isListening
+                          ? const Color(0xFF0088FF)
+                          : const Color(0xFF0088FF).withValues(alpha: 0.8 * (1.0 - (t * 0.5))),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        if (t > 0.5 || _isListening)
+                          BoxShadow(
+                            color: const Color(0xFF0088FF).withValues(alpha: _isListening ? 0.4 : 0.3),
+                            blurRadius: _isListening ? 30 : 12,
+                            spreadRadius: _isListening ? 10 : 2,
+                          ),
+                      ],
                     ),
-                    tooltip: 'Shazam',
-                    onPressed: _isListening ? null : _startListening,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: _isListening
+                            ? const SizedBox(
+                                width: 32,
+                                height: 32,
+                                child: Center(
+                                  child: RealisticVisualizer(
+                                    color: Colors.white,
+                                    barCount: 5,
+                                    volume: 1.0,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.track_changes,
+                                color: Colors.white,
+                                size: 26,
+                              ),
+                      ),
+                      tooltip: 'Shazam',
+                      onPressed: _isListening ? null : _startListening,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

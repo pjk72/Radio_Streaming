@@ -29,6 +29,7 @@ import 'widgets/connectivity_banner.dart';
 import 'widgets/admob_banner_widget.dart';
 import 'services/encryption_service.dart';
 import 'services/entitlement_service.dart';
+import 'services/interstitial_ad_service.dart';
 import 'widgets/admin_debug_overlay.dart';
 import 'services/app_open_ad_manager.dart';
 import 'services/rewarded_ad_service.dart';
@@ -135,6 +136,7 @@ class _MusicStreamRootState extends State<MusicStreamRoot> {
     super.initState();
     _backupService = BackupService();
     _entitlementService = EntitlementService(_backupService);
+    // Removed InterstitialAdService().loadAd() from here as SDK is not yet initialized
   }
 
   @override
@@ -203,6 +205,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
 
       final entitlements = Provider.of<EntitlementService>(context, listen: false);
       AppOpenAdManager().init(entitlements);
+
+      // Preload Interstitial Ads after library is initialized
+      InterstitialAdService().loadAd();
 
       // 3. SECONDARY INITIALIZATIONS (Wait for these but with a safety timeout)
       // This ensures the splash stays until they are done, but doesn't hang forever
