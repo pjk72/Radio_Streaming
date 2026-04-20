@@ -585,4 +585,7 @@ final Map<String, String> ar = {
   'recognition_title': 'التعرف على الموسيقى',
   'shazam_wizard_tip': 'استمع إلى الموسيقى من حولك وقم بتسجيلها في قائمة التشغيل الخاصة بك',
   'shazam_wizard_hint': 'تحديد الموسيقى من حولك للبحث المستهدف!',
+  'music_recognition': 'التعرف على الموسيقى',
+  'music_recognition_disabled': 'التعرف على الموسيقى (غير متوفر)',
+  'music_recognition_disabled_momentarily': 'تم تعطيل خدمة التعرف على الموسيقى مؤقتًا.',
 };

@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,18 +21,82 @@ class RecognitionApiService {
   static bool _isGlobalRecognizing = false;
   http.Client? _activeClient;
 
+  static final ValueNotifier<bool> isShazamDisabled = ValueNotifier<bool>(false);
+
+  static Future<void> checkKeysAvailability() async {
+    try {
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      final String keysJson = remoteConfig.getString('shazam_api_keys');
+      List<String> keys2 = ['937107fc2fmsh3f14e2e149d183cp1a7b28jsn5745ab269835'];
+      
+      if (keysJson.isNotEmpty) {
+        try {
+          final dynamic decoded = jsonDecode(keysJson);
+          if (decoded is Map) {
+            if (decoded.containsKey('recognition_key_2')) {
+              final List<dynamic> k2 = decoded['recognition_key_2'] as List;
+              if (k2.isNotEmpty) keys2 = k2.map((e) => e.toString()).toList();
+            }
+          }
+        } catch (_) {}
+      }
+      
+      final firestore = FirebaseFirestore.instance;
+      final snapshot = await firestore
+          .collection('api_keys_usage')
+          .get()
+          .timeout(const Duration(seconds: 5));
+          
+      final now = DateTime.now();
+      bool anyActive = false;
+      
+      void checkList(List<String> keys, int solIndex) {
+        for (var key in keys) {
+          final doc = snapshot.docs.where((d) => d.id == key).firstOrNull;
+          if (doc == null) {
+            anyActive = true; 
+            continue;
+          }
+          final data = doc.data();
+          final bool isDisabled = data['is_disabled_$solIndex'] ?? false;
+          final Timestamp? lastUsedTs = data['last_used_$solIndex'] as Timestamp?;
+          final DateTime? lastUsed = lastUsedTs?.toDate();
+          
+          final Timestamp? disabledAtTs = data['disabled_at_$solIndex'] as Timestamp?;
+          final DateTime? disabledAt = disabledAtTs?.toDate();
+
+          DateTime? mostRecentActivity = lastUsed;
+          if (disabledAt != null && (mostRecentActivity == null || disabledAt.isAfter(mostRecentActivity))) {
+            mostRecentActivity = disabledAt;
+          }
+          
+          bool isDifferentDay = mostRecentActivity == null ||
+              mostRecentActivity.year != now.year ||
+              mostRecentActivity.month != now.month ||
+              mostRecentActivity.day != now.day;
+              
+          if (isDifferentDay || !isDisabled) {
+            anyActive = true;
+          }
+        }
+      }
+      
+      // Il radar del microfono poggia solo sulla soluzione 2. 
+      // Ignoriamo lo stato della soluzione 1 per disabilitare il bottone visivo
+      checkList(keys2, 2);
+      
+      isShazamDisabled.value = !anyActive;
+    } catch (e) {
+      LogService().log("RecognitionAPI [InitCheck]: Error $e");
+    }
+  }
+
   Future<Map<String, dynamic>?> identifyFromAudioBytes(Uint8List audioData) async {
     _activeClient = http.Client();
     try {
       LogService().log("RecognitionAPI: Identifying from microphone bytes...");
       
-      final selection2 = await _getBestApiKey(
-        'recognition_key_2',
-        _apiKey2,
-        2,
-      );
-      
-      final result = await _runSolution2(audioData, selection2['key']);
+      final result = await _trySolutionWithRetry(2, audioData);
       return result;
     } catch (e) {
       LogService().log("RecognitionAPI Exception (Microphone): $e");
@@ -76,46 +140,24 @@ class RecognitionApiService {
       Map<String, dynamic>? result;
 
       if (strategy == "soluzione 1") {
-        final selection1 = await _getBestApiKey(
-          'recognition_key_1',
-          _defaultApiKey,
-          1,
-        );
-        result = await _runSolution1(audioData, selection1['key']);
+        result = await _trySolutionWithRetry(1, audioData);
       } else if (strategy == "soluzione 2") {
-        final selection2 = await _getBestApiKey(
-          'recognition_key_2',
-          _apiKey2,
-          2,
-        );
-        result = await _runSolution2(audioData, selection2['key']);
+        result = await _trySolutionWithRetry(2, audioData);
       } else {
         // "entrambi"
-        final selection1 = await _getBestApiKey(
-          'recognition_key_1',
-          _defaultApiKey,
-          1,
-        );
-        final bool sol1Exhausted = selection1['allExhausted'] as bool;
-
-        if (sol1Exhausted) {
+        result = await _trySolutionWithRetry(1, audioData);
+        if (result == null || result['error'] == 'key_exhausted') {
           LogService().log(
             "RecognitionAPI: ALL Soluzione 1 keys exhausted. Falling back to Soluzione 2 directly.",
           );
-          final selection2 = await _getBestApiKey(
-            'recognition_key_2',
-            _apiKey2,
-            2,
-          );
-          result = await _runSolution2(audioData, selection2['key']);
-        } else {
-          LogService().log(
-            "RecognitionAPI: Strategy 'entrambi' selected. Trying Soluzione 1...",
-          );
-          result = await _runSolution1(audioData, selection1['key']);
+          result = await _trySolutionWithRetry(2, audioData);
         }
       }
-
+      
+      if (result != null && result['error'] == 'key_exhausted') {
+         return null;
+      }
+      
       return result;
     } catch (e) {
       if (_activeClient != null) {
@@ -167,19 +209,47 @@ class RecognitionApiService {
         }
       }
       return data;
-    } else if (response.statusCode == 429 ||
+    } else if (response.statusCode == 429 || response.statusCode == 401 || response.statusCode == 403 ||
         (response.body.toLowerCase().contains("you have exceeded") ||
-            response.body.toLowerCase().contains("quota"))) {
+            response.body.toLowerCase().contains("quota") ||
+            response.body.toLowerCase().contains("invalid") ||
+            response.body.toLowerCase().contains("unauthorized"))) {
       LogService().log(
-        "RecognitionAPI [MultiKey 1]: Key $apiKey EXHAUSTED. Disabling for today.",
+          "RecognitionAPI [MultiKey 1]: Key ${apiKey.substring(0, 8)}... EXHAUSTED/INVALID. Disabling for today.",
       );
-      _disableKey(apiKey, 1);
+      await _disableKey(apiKey, 1);
+      // Eseguiamo il check in background, non blocchiamo il return
+      checkKeysAvailability();
+      return {'error': 'key_exhausted'};
     } else {
       LogService().log(
         "RecognitionAPI [Soluzione 1] HTTP Error: ${response.statusCode} - ${response.body}",
       );
     }
     return null;
+  }
+  
+  Future<Map<String, dynamic>?> _trySolutionWithRetry(int solutionIndex, Uint8List audioData) async {
+    List<String> ignoredKeys = [];
+    while (true) {
+      final configKeyName = solutionIndex == 1 ? 'recognition_key_1' : 'recognition_key_2';
+      final defaultKey = solutionIndex == 1 ? _defaultApiKey : _apiKey2;
+      
+      final selection = await _getBestApiKey(configKeyName, defaultKey, solutionIndex, ignoredKeys);
+      
+      if (selection['allExhausted'] == true) {
+         return null;
+      }
+      
+      final apiKey = selection['key'];
+      final result = solutionIndex == 1 ? await _runSolution1(audioData, apiKey) : await _runSolution2(audioData, apiKey);
+      
+      if (result != null && result['error'] == 'key_exhausted') {
+         ignoredKeys.add(apiKey); // Will retry since loop doesn't break
+      } else {
+         return result;
+      }
+    }
   }
 
   Future<Map<String, dynamic>?> _runSolution2(
@@ -240,14 +310,20 @@ class RecognitionApiService {
         }
 
         return null;
-      } else if (response.statusCode == 429 ||
+      } else if (response.statusCode == 429 || response.statusCode == 404 || 
+                 response.statusCode == 401 || response.statusCode == 403 ||
           (response.body.toLowerCase().contains("you have exceeded") ||
-              response.body.toLowerCase().contains("quota"))) {
+              response.body.toLowerCase().contains("quota") ||
+              response.body.toLowerCase().contains("not found") ||
+              response.body.toLowerCase().contains("invalid") ||
+              response.body.toLowerCase().contains("unauthorized"))) {
         LogService().log(
-          "RecognitionAPI [Soluzione 2 MultiKey]: Key $apiKey EXHAUSTED. Disabling for today.",
+          "RecognitionAPI [Soluzione 2 MultiKey]: Key ${apiKey.substring(0, 8)}... EXHAUSTED/INVALID (or 404). Disabling for today.",
         );
-        _disableKey(apiKey, 2);
-        return null;
+        await _disableKey(apiKey, 2);
+        // Eseguiamo il check in background, non blocchiamo il return
+        checkKeysAvailability();
+        return {'error': 'key_exhausted'};
       } else {
         LogService().log(
           "RecognitionAPI [Soluzione 2] HTTP Error: ${response.statusCode} - ${response.body}",
@@ -266,6 +342,7 @@ class RecognitionApiService {
     String configKeyName,
     String defaultKey,
     int solutionIndex,
+    [List<String> ignoredSessionKeys = const []]
   ) async {
     try {
       final remoteConfig = FirebaseRemoteConfig.instance;
@@ -300,6 +377,8 @@ class RecognitionApiService {
       final List<String> activeKeys = [];
 
       for (var key in keys) {
+        if (ignoredSessionKeys.contains(key)) continue;
+
         // Find data for this key if it exists in Firestore
         final doc = snapshot.docs.where((d) => d.id == key).firstOrNull;
 
@@ -310,13 +389,21 @@ class RecognitionApiService {
               data['last_used_$solutionIndex'] as Timestamp?;
           final DateTime? lastUsed = lastUsedTs?.toDate();
 
+          final Timestamp? disabledAtTs = data['disabled_at_$solutionIndex'] as Timestamp?;
+          final DateTime? disabledAt = disabledAtTs?.toDate();
+
+          DateTime? mostRecentActivity = lastUsed;
+          if (disabledAt != null && (mostRecentActivity == null || disabledAt.isAfter(mostRecentActivity))) {
+            mostRecentActivity = disabledAt;
+          }
+
           // DAILY RESET LOGIC:
           // If the key wasn't used today, or was disabled on a previous day, reactivate and reset count.
           bool isDifferentDay =
-              lastUsed == null ||
-              lastUsed.year != now.year ||
-              lastUsed.month != now.month ||
-              lastUsed.day != now.day;
+              mostRecentActivity == null ||
+              mostRecentActivity.year != now.year ||
+              mostRecentActivity.month != now.month ||
+              mostRecentActivity.day != now.day;
 
           if (isDifferentDay) {
             // Reset count for the day and reactivate
@@ -388,9 +475,9 @@ class RecognitionApiService {
   }
 
   /// Disables a key in Firestore until the next day reset.
-  void _disableKey(String key, int solutionIndex) {
+  Future<void> _disableKey(String key, int solutionIndex) async {
     try {
-      FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
+      await FirebaseFirestore.instance.collection('api_keys_usage').doc(key).set({
         'is_disabled_$solutionIndex': true,
         'disabled_at_$solutionIndex': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));

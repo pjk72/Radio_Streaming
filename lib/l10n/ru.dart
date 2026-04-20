@@ -630,4 +630,7 @@ final Map<String, String> ru = {
   'recognition_title': 'Распознавание музыки',
   'shazam_wizard_tip': 'Слушайте музыку вокруг себя и записывайте ее в свой плейлист.',
   'shazam_wizard_hint': 'Определите музыку вокруг вас для целевого поиска!',
+  'music_recognition': 'Распознавание музыки',
+  'music_recognition_disabled': 'Распознавание музыки (недоступно)',
+  'music_recognition_disabled_momentarily': 'Служба распознавания музыки временно отключена.',
 };

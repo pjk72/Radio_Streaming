@@ -622,4 +622,7 @@ final Map<String, String> zh = {
   'recognition_title': '音乐识别',
   'shazam_wizard_tip': '聆听您周围的音乐并将其记录在您的播放列表中',
   'shazam_wizard_hint': '识别您周围的音乐以进行有针对性的搜索！',
+  'music_recognition': '音乐识别',
+  'music_recognition_disabled': '音乐识别（不可用）',
+  'music_recognition_disabled_momentarily': '音乐识别服务暂时关闭。',
 };

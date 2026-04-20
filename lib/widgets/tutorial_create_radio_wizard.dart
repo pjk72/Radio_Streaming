@@ -251,6 +251,20 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   void _startListening() async {
     final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    if (RecognitionApiService.isShazamDisabled.value) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(lang.translate('music_recognition_disabled_momentarily')),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
     bool hasPermission = await _record.hasPermission();
 
     if (!hasPermission) {
@@ -1044,53 +1058,73 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           children: [
             // DEDICATED SHAZAM SECTION (Promosso in alto come header)
             if (Provider.of<EntitlementService>(context, listen: false).isFeatureEnabled('external_song_recognition'))
-            ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0088FF).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF0088FF).withValues(alpha: 0.15)),
-                ),
-                child: InkWell(
-                  onTap: _isListening ? null : _startListening,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Row(
-                    children: [
-                      _isListening 
-                        ? SizedBox(
-                            width: 40, 
-                            height: 40, 
-                            child: Center(
-                              child: AdvancedRecognitionVisualizer(
-                                isAnalyzing: _isAnalyzing,
-                                color: const Color(0xFF0088FF),
-                              ),
-                            ),
-                          )
-                        : const Icon(Icons.track_changes, color: Color(0xFF0088FF), size: 40),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+            ValueListenableBuilder<bool>(
+              valueListenable: RecognitionApiService.isShazamDisabled,
+              builder: (context, isShazamDisabled, child) {
+                final baseColor = isShazamDisabled ? Colors.grey : const Color(0xFF0088FF);
+                
+                return AnimatedOpacity(
+                  duration: const Duration(milliseconds: 300),
+                  opacity: isShazamDisabled ? 0.5 : 1.0,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: baseColor.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: baseColor.withValues(alpha: 0.15)),
+                    ),
+                    child: InkWell(
+                      onTap: _isListening ? null : _startListening,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
                           children: [
-                            Text(
-                              langProvider.translate('recognition_title'),
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF0088FF)),
-                            ),
-                            Text(
-                              langProvider.translate('shazam_wizard_tip'),
-                              style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                            _isListening 
+                              ? SizedBox(
+                                  width: 40, 
+                                  height: 40, 
+                                  child: Center(
+                                    child: AdvancedRecognitionVisualizer(
+                                      isAnalyzing: _isAnalyzing,
+                                      color: baseColor,
+                                    ),
+                                  ),
+                                )
+                              : Icon(Icons.track_changes, color: baseColor, size: 40),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isShazamDisabled 
+                                      ? langProvider.translate('music_recognition_disabled')
+                                      : langProvider.translate('recognition_title'),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold, 
+                                      fontSize: 20, 
+                                      color: baseColor
+                                    ),
+                                  ),
+                                  Text(
+                                    langProvider.translate('shazam_wizard_tip'),
+                                    style: TextStyle(
+                                      fontSize: 12, 
+                                      color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: isShazamDisabled ? 0.5 : 1.0)
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                );
+              },
+            ),
             Text(
               langProvider.translate('wizard_welcome'),
               style: Theme.of(context).textTheme.headlineSmall,

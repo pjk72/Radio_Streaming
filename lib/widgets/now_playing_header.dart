@@ -110,6 +110,20 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
 
   void _startListening() async {
     final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    if (RecognitionApiService.isShazamDisabled.value) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(lang.translate('music_recognition_disabled_momentarily')),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
     bool hasPermission = await _record.hasPermission();
 
     if (!hasPermission) {
@@ -974,64 +988,69 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           ),
 
         if (Provider.of<EntitlementService>(context).isFeatureEnabled('external_song_recognition'))
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOutCirc,
-            top: _isListening
-                ? (widget.height / 2) - 40 // Centrato verticalmente nella card
-                : (widget.topPadding * (1.0 - t)) + 8.0,
-            right: _isListening
-                ? (screenWidth / 2) - 40 // Centrato orizzontalmente
-                : (20.0 * t) + 8.0,
-            child: Opacity(
-              opacity: _isListening ? 1.0 : 0.3 + (0.7 * t),
-              child: Transform.scale(
-                scale: _isListening ? 2.5 : 0.8 + (0.4 * t),
-                child: Material(
-                  color: Colors.transparent,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _isListening
-                          ? const Color(0xFF0088FF)
-                          : const Color(0xFF0088FF).withValues(alpha: 0.8 * (1.0 - (t * 0.5))),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        if (t > 0.5 || _isListening)
-                          BoxShadow(
-                            color: const Color(0xFF0088FF).withValues(alpha: _isListening ? 0.4 : 0.3),
-                            blurRadius: _isListening ? 30 : 12,
-                            spreadRadius: _isListening ? 10 : 2,
-                          ),
-                      ],
-                    ),
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: _isListening
-                            ? SizedBox(
-                                width: 80,
-                                height: 80,
-                                child: Center(
-                                  child: AdvancedRecognitionVisualizer(
-                                    isAnalyzing: _isAnalyzing,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              )
-                            : const Icon(
-                                Icons.track_changes,
-                                color: Colors.white,
-                                size: 26,
+          ValueListenableBuilder<bool>(
+            valueListenable: RecognitionApiService.isShazamDisabled,
+            builder: (context, isShazamDisabled, child) {
+              return AnimatedPositioned(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOutCirc,
+                top: _isListening
+                    ? (widget.height / 2) - 40 // Centrato verticalmente nella card
+                    : (widget.topPadding * (1.0 - t)) + 8.0,
+                right: _isListening
+                    ? (screenWidth / 2) - 40 // Centrato orizzontalmente
+                    : (20.0 * t) + 8.0,
+                child: Opacity(
+                  opacity: _isListening ? 1.0 : (isShazamDisabled ? 0.3 : 0.3 + (0.7 * t)),
+                  child: Transform.scale(
+                    scale: _isListening ? 2.5 : 0.8 + (0.4 * t),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _isListening
+                              ? const Color(0xFF0088FF)
+                              : (isShazamDisabled ? Colors.grey : const Color(0xFF0088FF)).withValues(alpha: 0.8 * (1.0 - (t * 0.5))),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            if (!isShazamDisabled && (t > 0.5 || _isListening))
+                              BoxShadow(
+                                color: const Color(0xFF0088FF).withValues(alpha: _isListening ? 0.4 : 0.3),
+                                blurRadius: _isListening ? 30 : 12,
+                                spreadRadius: _isListening ? 10 : 2,
                               ),
+                          ],
+                        ),
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: _isListening
+                                ? SizedBox(
+                                    width: 80,
+                                    height: 80,
+                                    child: Center(
+                                      child: AdvancedRecognitionVisualizer(
+                                        isAnalyzing: _isAnalyzing,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.track_changes,
+                                    color: isShazamDisabled ? Colors.white54 : Colors.white,
+                                    size: 26,
+                                  ),
+                          ),
+                          tooltip: isShazamDisabled ? lang.translate('music_recognition_disabled') : lang.translate('music_recognition'),
+                          onPressed: _isListening ? null : _startListening,
+                        ),
                       ),
-                      tooltip: 'Shazam',
-                      onPressed: _isListening ? null : _startListening,
                     ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
       ],
     );

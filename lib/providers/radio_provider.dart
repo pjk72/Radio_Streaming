@@ -640,6 +640,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // However, we shouldn't block.
     // _handleStartupPlayback(); // Removed automatic call
     _ensureStationImages();
+    
+    // Check Shazam keys status silently
+    RecognitionApiService.checkKeysAvailability();
   }
 
   void _ensureStationImages() {

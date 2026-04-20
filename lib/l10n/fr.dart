@@ -639,4 +639,7 @@ final Map<String, String> fr = {
   'recognition_title': 'Reconnaissance musicale',
   'shazam_wizard_tip': 'Écoutez la musique autour de vous et enregistrez-la sur votre playlist',
   'shazam_wizard_hint': 'Identifiez la musique autour de vous pour une recherche ciblée !',
+  'music_recognition': 'Reconnaissance musicale',
+  'music_recognition_disabled': 'Reconnaissance musicale (non disponible)',
+  'music_recognition_disabled_momentarily': 'Le service de reconnaissance musicale est temporairement désactivé.',
 };
