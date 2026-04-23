@@ -32,6 +32,7 @@ import '../services/music_metadata_service.dart';
 import '../services/log_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/entitlement_service.dart';
+import 'theme_provider.dart';
 
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -1383,10 +1384,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   bool _isOffline = false; // Internal connectivity state
 
+  final ThemeProvider? _themeProvider;
+  
   RadioProvider(
     this._audioHandler,
     this._backupService,
     this._entitlementService,
+    [this._themeProvider]
   ) {
     WidgetsBinding.instance.addObserver(this);
     // connectivity_plus listener
@@ -5855,6 +5859,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
 
     try {
+      final prefs = await SharedPreferences.getInstance();
       final data = {
         'stations': stations.map((s) => s.toJson()).toList(),
         'favorites': _favorites,
@@ -5873,6 +5878,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'promoted_playlists': _promotedPlaylists
             .map((p) => p.toJson())
             .toList(),
+        'theme_settings': {
+          'theme_id': prefs.getString('theme_id'),
+          'custom_primary': prefs.getInt('custom_primary'),
+          'custom_bg': prefs.getInt('custom_bg'),
+          'custom_card': prefs.getInt('custom_card'),
+          'custom_surface': prefs.getInt('custom_surface'),
+          'custom_bg_image': prefs.getString('custom_bg_image'),
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'version': 3, // Increment version
         'type': isAuto ? 'auto' : 'manual',
@@ -5880,7 +5893,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       await _backupService.uploadBackup(jsonEncode(data));
 
-      final prefs = await SharedPreferences.getInstance();
       _lastBackupTs = DateTime.now().millisecondsSinceEpoch;
       _lastBackupType = isAuto ? 'auto' : 'manual';
       await prefs.setInt('last_backup_ts', _lastBackupTs);
@@ -6112,6 +6124,21 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       LogService().log(
         "[RadioProvider] Finalizing restore: updating local state...",
       );
+
+      // Restore Theme Settings
+      if (data['theme_settings'] != null) {
+        final theme = data['theme_settings'];
+        if (theme['theme_id'] != null) await prefs.setString('theme_id', theme['theme_id']);
+        if (theme['custom_primary'] != null) await prefs.setInt('custom_primary', theme['custom_primary']);
+        if (theme['custom_bg'] != null) await prefs.setInt('custom_bg', theme['custom_bg']);
+        if (theme['custom_card'] != null) await prefs.setInt('custom_card', theme['custom_card']);
+        if (theme['custom_surface'] != null) await prefs.setInt('custom_surface', theme['custom_surface']);
+        if (theme['custom_bg_image'] != null) await prefs.setString('custom_bg_image', theme['custom_bg_image']);
+        
+        // Reload theme if provider is available
+        await _themeProvider?.loadSettings();
+      }
+
       await _loadPlaylists(); // Refresh state
 
       // Manual trigger for AI recommendations to ensure "For You" is ready
@@ -7035,6 +7062,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         }
       } catch (e) {
         LogService().log("Error finding artwork for ${song.title}: $e");
+        if (e.toString().contains('RateLimited')) {
+          LogService().log("iTunes Rate Limit hit (403/429). Aborting metadata sync for now.");
+          break; // Stop spamming API
+        }
       }
 
       // Small delay to avoid rate limits

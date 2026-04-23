@@ -302,10 +302,10 @@ class ThemeProvider with ChangeNotifier {
       _customSurfaceColor != null;
 
   ThemeProvider() {
-    _loadSettings();
+    loadSettings();
   }
 
-  Future<void> _loadSettings() async {
+  Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final themeId = prefs.getString(_keyThemeId);
 

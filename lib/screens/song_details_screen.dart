@@ -1144,12 +1144,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     provider,
                     isFast: true,
                   )
-                : (provider
-                          .audioHandler
-                          .mediaItem
-                          .value
-                          ?.extras?['hasExactOffset'] ??
-                      true)
+                : ((provider.audioHandler.mediaItem.value?.extras?['hasExactOffset'] ?? true) &&
+                   (provider.audioHandler.mediaItem.value?.extras?['isRecognized'] ?? true) != false)
                 ? _buildNativeProgressBar(context, provider)
                 : provider.isPlaying
                 ? _buildIndeterminateProgressBar(
@@ -1554,53 +1550,106 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     RadioProvider provider, {
     bool isFast = false,
   }) {
-    final duration =
-        provider.audioHandler.mediaItem.value?.duration ?? Duration.zero;
-    final durationLabel =
-        duration > Duration.zero ? _formatDuration(duration) : "--:--";
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Row(
-            children: [
-              Text(
-                isFast ? "--:--" : "00:00",
-                style: const TextStyle(color: Colors.white30, fontSize: 12),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: SizedBox(
-                      height: 4,
-                      child: _ScanningProgressBar(
-                        speed: isFast ? ScanningSpeed.fast : ScanningSpeed.slow,
+    if (isFast) {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Row(
+              children: [
+                const Text(
+                  "--:--",
+                  style: TextStyle(color: Colors.white30, fontSize: 12),
+                ),
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.all(Radius.circular(2)),
+                      child: SizedBox(
                         height: 4,
+                        child: _ScanningProgressBar(
+                          speed: ScanningSpeed.fast,
+                          height: 4,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              if (isFast)
                 const Icon(
                   Icons.sync_rounded,
                   color: Colors.white30,
                   size: 16,
-                )
-              else
-                Text(
-                  durationLabel,
-                  style: const TextStyle(color: Colors.white30, fontSize: 12),
                 ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-      ],
-    );
+          const SizedBox(height: 12),
+        ],
+      );
+    }
+    
+    // Countdown Timer logic for Not Found / Sol 2 (isFast = false)
+    final item = provider.audioHandler.mediaItem.value;
+    final start = item?.extras?['countdown_start'] as int?;
+    final durationMs = item?.extras?['ui_duration'] as int? ?? 45000;
+    
+    if (start != null) {
+      return StreamBuilder<int>(
+        stream: Stream.periodic(const Duration(milliseconds: 100), (i) => i),
+        builder: (context, snapshot) {
+          final elapsedMs = DateTime.now().millisecondsSinceEpoch - start;
+          final progress = (elapsedMs / durationMs).clamp(0.0, 1.0);
+          final currentDur = Duration(milliseconds: elapsedMs.clamp(0, durationMs));
+          final maxDur = Duration(milliseconds: durationMs);
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Row(
+                  children: [
+                    Text(
+                      _formatDuration(currentDur),
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 4,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
+                              activeTrackColor: Theme.of(context).primaryColor,
+                              inactiveTrackColor: Colors.white24,
+                              thumbColor: Colors.transparent, // Disable thumb display since it's unseekable
+                            ),
+                            child: Slider(
+                              value: progress,
+                              onChanged: null,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _formatDuration(maxDur),
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          );
+        },
+      );
+    }
+    
+    return const SizedBox(height: 20);
   }
 
   Widget _buildProgressBar(

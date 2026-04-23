@@ -57,8 +57,16 @@ Future<bool> _performBackgroundBackup() async {
       'genre_order': genreOrder ?? [],
       'category_order': categoryOrder ?? [],
       'playlists': playlistsJson != null ? jsonDecode(playlistsJson) : [],
+      'theme_settings': {
+        'theme_id': prefs.getString('theme_id'),
+        'custom_primary': prefs.getInt('custom_primary'),
+        'custom_bg': prefs.getInt('custom_bg'),
+        'custom_card': prefs.getInt('custom_card'),
+        'custom_surface': prefs.getInt('custom_surface'),
+        'custom_bg_image': prefs.getString('custom_bg_image'),
+      },
       'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'version': 1,
+      'version': 3, // Synchronized version with RadioProvider
       'type': 'auto',
     };
 

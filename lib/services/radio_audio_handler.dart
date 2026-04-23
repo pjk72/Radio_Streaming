@@ -2983,12 +2983,24 @@ class RadioAudioHandler extends BaseAudioHandler
           ),
         );
         return;
-      } else if (!hasExactOffset) {
-        // Solution 2: NO OSCILLATION on Android Auto. 
-        // We set duration to null in _attemptRecognition, making it a 'Live' state on AA.
+      } else if (!hasExactOffset || !isRecognized) {
+        // Solution 2 found AND Not Found (Retry).
+        // For Soluzione 2 (hasExactOffset = false), duration is null so AA hides the bar.
+        // For Not Found (isRecognized = false), duration is 45s and we need to simulate the progress for AA.
+        if (_lastRecognitionTime != null) {
+          effectivePosition = now.difference(_lastRecognitionTime!);
+          final maxDur = _nextCheckDuration ?? const Duration(seconds: 45);
+          if (effectivePosition > maxDur) {
+            effectivePosition = maxDur;
+          }
+        } else {
+          effectivePosition = Duration.zero;
+        }
+
+        // We do not need a 100ms timer because we just set speed = 1.0 down below, 
+        // and AA/Flutter will smoothly extrapolate from the last position!
         _uiAnimationTimer?.cancel();
         _uiAnimationTimer = null;
-        effectivePosition = Duration.zero;
       } else {
         // Solution 1: Calculate real progress based on offset
         if (_lastRecognitionTime != null) {
@@ -4279,11 +4291,16 @@ class RadioAudioHandler extends BaseAudioHandler
               ? Duration(milliseconds: result['itunes_duration'])
               : _nextCheckDuration;
 
+          final updatedExtras = Map<String, dynamic>.from(mediaItem.value!.extras ?? {});
+          updatedExtras['countdown_start'] = _lastRecognitionTime?.millisecondsSinceEpoch;
+          updatedExtras['ui_duration'] = nextCheckDelay;
+
           // Mirror Soluzione 1 vs Soluzione 2 logic for progress bar:
           // Soluzione 1 (Exact): Show determinate duration for real progress
           // Soluzione 2 (Estimated): Hide duration on AA (Live state) to satisfy user preference
           mediaItem.add(mediaItem.value!.copyWith(
             duration: hasExactOffset ? itunesDuration : null,
+            extras: updatedExtras,
           ));
         }
 
@@ -4325,6 +4342,7 @@ class RadioAudioHandler extends BaseAudioHandler
       newExtras['isRecognized'] = false;
       newExtras['hasExactOffset'] = true; // Use standard countdown UI for retries
       _isCurrentSongInFavorites = false;
+      _lastRecognitionOffset = Duration.zero;
 
       final newItem = mediaItem.value?.copyWith(
         title: station.name,
@@ -4346,7 +4364,14 @@ class RadioAudioHandler extends BaseAudioHandler
     _lastRecognitionTime = DateTime.now();
     _nextCheckDuration = Duration(seconds: seconds);
     if (mediaItem.value != null) {
-      mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
+      final updatedExtras = Map<String, dynamic>.from(mediaItem.value!.extras ?? {});
+      updatedExtras['countdown_start'] = _lastRecognitionTime?.millisecondsSinceEpoch;
+      updatedExtras['ui_duration'] = seconds * 1000;
+      
+      mediaItem.add(mediaItem.value!.copyWith(
+        duration: _nextCheckDuration,
+        extras: updatedExtras,
+      ));
     }
     _broadcastState();
   }

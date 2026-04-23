@@ -109,7 +109,7 @@ class RecognitionApiService {
 
   Future<Map<String, dynamic>?> identifyStream(
     String streamUrl, {
-    String strategy = "soluzione 2",
+    String strategy = "entrambi",
   }) async {
     if (_isGlobalRecognizing) {
       LogService().log(
@@ -144,6 +144,8 @@ class RecognitionApiService {
       } else if (strategy == "soluzione 2") {
         result = await _trySolutionWithRetry(2, audioData);
       } else {
+      
+      
         // "entrambi"
         result = await _trySolutionWithRetry(1, audioData);
         if (result == null || result['error'] == 'key_exhausted') {

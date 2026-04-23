@@ -146,16 +146,17 @@ class _MusicStreamRootState extends State<MusicStreamRoot> {
         ChangeNotifierProvider.value(value: _entitlementService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
-        ChangeNotifierProxyProvider<LanguageProvider, RadioProvider>(
+        ChangeNotifierProxyProvider2<LanguageProvider, ThemeProvider, RadioProvider>(
           create: (ctx) => RadioProvider(
             audioHandler,
             _backupService,
             _entitlementService,
+            Provider.of<ThemeProvider>(ctx, listen: false),
           )..updateLanguageCode(
             Provider.of<LanguageProvider>(ctx, listen: false)
                 .resolvedLanguageCode,
           ),
-          update: (ctx, lang, radio) {
+          update: (ctx, lang, theme, radio) {
             if (radio != null) {
               radio.updateLanguageCode(lang.resolvedLanguageCode);
             }

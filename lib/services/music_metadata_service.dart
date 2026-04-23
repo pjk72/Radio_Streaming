@@ -73,6 +73,9 @@ class MusicMetadataService {
         }).toList();
       } else {
         print('Music Search Status Error: ${response.statusCode}');
+        if (response.statusCode == 403 || response.statusCode == 429) {
+          throw Exception('RateLimited');
+        }
         return [];
       }
     } catch (e) {

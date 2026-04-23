@@ -907,12 +907,27 @@ class PlayerBar extends StatelessWidget {
           child: _ScanningProgressBar(speed: ScanningSpeed.fast),
         );
       }
-      if (!hasExactOffset) {
-        // "Back and forth" slow animation for Solution 2
-        return const SizedBox(
-          height: 2,
-          child: _ScanningProgressBar(speed: ScanningSpeed.slow),
-        );
+      if (!hasExactOffset || provider.audioHandler.mediaItem.value?.extras?['isRecognized'] == false) {
+        // "Back and forth" slow animation for Solution 2 IS REMOVED
+        // We now show a 45s countdown/count-up timer for Sol 2 (Found) and Not Found
+        final item = provider.audioHandler.mediaItem.value;
+        final start = item?.extras?['countdown_start'] as int?;
+        final durationMs = item?.extras?['ui_duration'] as int? ?? 45000;
+
+        if (start != null) {
+          return StreamBuilder<int>(
+            stream: Stream.periodic(const Duration(milliseconds: 100), (i) => i),
+            builder: (context, snapshot) {
+              final elapsed = DateTime.now().millisecondsSinceEpoch - start;
+              final progress = (elapsed / durationMs).clamp(0.0, 1.0);
+              return _progressBarLine(
+                context,
+                progress,
+                accentColor.withValues(alpha: 0.5),
+              );
+            },
+          );
+        }
       }
       return StreamBuilder<Duration>(
         stream: AudioService.position,
