@@ -598,7 +598,8 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                         ),
                       ),
 
-                    // Content
+
+                    // 4. Content
                     Positioned.fill(
                       child: Padding(
                         padding: EdgeInsets.only(

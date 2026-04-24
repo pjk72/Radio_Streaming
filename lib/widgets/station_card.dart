@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
 
-import 'realistic_visualizer.dart';
+import 'premium_glass_visualizer.dart';
 
 import '../utils/icon_library.dart';
 
@@ -107,32 +107,15 @@ class _StationCardState extends State<StationCard> {
                   ),
                   if (isPlaying)
                     Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surface.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 16,
-                              height: 10,
-                              child: RealisticVisualizer(
-                                color: Colors.white,
-                                barCount: 5,
-                              ),
-                            ),
-                          ],
-                        ),
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: PremiumGlassVisualizer(
+                        color: Color(int.parse(widget.station.color)),
+                        isPlaying: isPlaying,
+                        height: 30,
+                        barCount: 25,
+                        opacity: 0.15,
                       ),
                     ),
                   Positioned(
@@ -197,60 +180,17 @@ class _StationCardState extends State<StationCard> {
                     ),
                   ),
 
-                  if (isCompact && isPlaying)
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color(
-                                int.parse(widget.station.color),
-                              ).withValues(alpha: 0.3),
-                              Colors.transparent,
-                            ],
-                            begin: Alignment.centerRight,
-                            end: Alignment.centerLeft,
-                          ),
-                        ),
-                        child: Align(
-                          alignment: Alignment.bottomRight,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.max,
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Flexible(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: 8,
-                                    bottom: 0,
-                                  ),
-                                  child: ShaderMask(
-                                    shaderCallback: (bounds) => LinearGradient(
-                                      colors: [
-                                        Theme.of(context).colorScheme.surface
-                                            .withValues(alpha: 0.6),
-                                        Theme.of(context).colorScheme.surface
-                                            .withValues(alpha: 0.1),
-                                      ],
-                                      begin: Alignment.bottomCenter,
-                                      end: Alignment.topCenter,
-                                    ).createShader(bounds),
-                                    blendMode: BlendMode.dstIn,
-                                    child: RealisticVisualizer(
-                                      color: Color(
-                                        int.parse(widget.station.color),
-                                      ),
-                                      barCount: 20,
-                                      isBackground: true,
-                                      volume: provider.volume,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                  if (isPlaying)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: PremiumGlassVisualizer(
+                        color: Color(int.parse(widget.station.color)),
+                        isPlaying: isPlaying,
+                        height: isCompact ? 30 : 50,
+                        barCount: isCompact ? 25 : 45,
+                        opacity: 0.15,
                       ),
                     ),
 
@@ -415,14 +355,6 @@ class _LiveBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: SizedBox(
-              width: 20,
-              height: 12,
-              child: RealisticVisualizer(color: color),
-            ),
-          ),
           Text(
             "LIVE",
             style: TextStyle(
