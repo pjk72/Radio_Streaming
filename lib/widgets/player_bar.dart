@@ -135,46 +135,30 @@ class PlayerBar extends StatelessWidget {
                                                     height: isDesktop ? 44 : 36,
                                                     color: Colors.black,
                                                     alignment: Alignment.center,
-                                                    child:
-                                                        (provider.currentAlbumArt ??
-                                                                station.logo) !=
-                                                            null
-                                                        ? _buildImage(
-                                                            provider.currentAlbumArt ??
-                                                                station.logo!,
+                                                    child: Builder(
+                                                      builder: (context) {
+                                                        final imgUrl = provider.currentAlbumArt ?? provider.currentArtistImage ?? station.logo;
+                                                        if (imgUrl != null && imgUrl.isNotEmpty) {
+                                                          return _buildImage(
+                                                            imgUrl,
                                                             fit: BoxFit.cover,
-                                                            errorBuilder:
-                                                                (
-                                                                  context,
-                                                                  error,
-                                                                  stackTrace,
-                                                                ) {
-                                                                  return FaIcon(
-                                                                    IconLibrary.getIcon(
-                                                                      station
-                                                                          .icon,
-                                                                    ),
-                                                                    color: Color(
-                                                                      int.parse(
-                                                                        station
-                                                                            .color,
-                                                                      ),
-                                                                    ),
-                                                                    size: 24,
-                                                                  );
-                                                                },
-                                                          )
-                                                        : FaIcon(
-                                                            IconLibrary.getIcon(
-                                                              station.icon,
-                                                            ),
-                                                            color: Color(
-                                                              int.parse(
-                                                                station.color,
-                                                              ),
-                                                            ),
+                                                            errorBuilder: (context, error, stackTrace) {
+                                                              return FaIcon(
+                                                                IconLibrary.getIcon(station.icon),
+                                                                color: Color(int.parse(station.color)),
+                                                                size: 24,
+                                                              );
+                                                            },
+                                                          );
+                                                        } else {
+                                                          return FaIcon(
+                                                            IconLibrary.getIcon(station.icon),
+                                                            color: Color(int.parse(station.color)),
                                                             size: 24,
-                                                          ),
+                                                          );
+                                                        }
+                                                      },
+                                                    ),
                                                   ),
                                                 ),
                                                 if (provider.currentLocalPath !=
@@ -647,12 +631,14 @@ class PlayerBar extends StatelessWidget {
     if (url.startsWith('assets/')) {
       return Image.asset(
         url,
+        key: ValueKey(url),
         fit: fit,
         errorBuilder: errorBuilder,
         gaplessPlayback: true,
       );
     } else {
       return CachedNetworkImage(
+        key: ValueKey(url),
         imageUrl: url,
         fit: fit,
         errorWidget: errorBuilder != null
@@ -869,25 +855,28 @@ class PlayerBar extends StatelessWidget {
         },
       );
     } else if (provider.currentPlayingPlaylistId != null) {
-      return StreamBuilder<Duration>(
-        stream: AudioService.position,
-        builder: (context, snapshot) {
-          final position = snapshot.data ?? Duration.zero;
-          final totalDuration =
-              provider.audioHandler.mediaItem.value?.duration ??
-              const Duration(seconds: 1);
-          final maxMs = totalDuration.inMilliseconds > 0
-              ? totalDuration.inMilliseconds
-              : 1000;
-          final progress = (position.inMilliseconds / maxMs).clamp(0.0, 1.0);
+      return StreamBuilder<MediaItem?>(
+        stream: provider.audioHandler.mediaItem,
+        builder: (context, mediaSnapshot) {
+          return StreamBuilder<Duration>(
+            stream: AudioService.position,
+            builder: (context, snapshot) {
+              final position = snapshot.data ?? Duration.zero;
+              final totalDuration = mediaSnapshot.data?.duration ?? const Duration(seconds: 1);
+              final maxMs = totalDuration.inMilliseconds > 0
+                  ? totalDuration.inMilliseconds
+                  : 1000;
+              final progress = (position.inMilliseconds / maxMs).clamp(0.0, 1.0);
 
-          return _progressBarLine(
-            context,
-            progress,
-            accentColor,
-            onSeek: (p) => provider.audioHandler.seek(
-              Duration(milliseconds: (p * maxMs).toInt()),
-            ),
+              return _progressBarLine(
+                context,
+                progress,
+                accentColor,
+                onSeek: (p) => provider.audioHandler.seek(
+                  Duration(milliseconds: (p * maxMs).toInt()),
+                ),
+              );
+            },
           );
         },
       );

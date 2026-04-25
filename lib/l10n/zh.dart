@@ -625,4 +625,8 @@ final Map<String, String> zh = {
   'music_recognition': '音乐识别',
   'music_recognition_disabled': '音乐识别（不可用）',
   'music_recognition_disabled_momentarily': '音乐识别服务暂时关闭。',
+  'playback': '回放',
+  'crossfade_duration': '交叉淡入淡出持续时间',
+  'crossfade_duration_desc': '调整歌曲之间的淡入淡出时间',
+  'seconds_unit': '{0}s',
 };

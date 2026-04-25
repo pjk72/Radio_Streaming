@@ -638,4 +638,8 @@ final Map<String, String> es = {
   'music_recognition': 'Reconocimiento de música',
   'music_recognition_disabled': 'Reconocimiento de música (no disponible)',
   'music_recognition_disabled_momentarily': 'El servicio de reconocimiento de música está temporalmente deshabilitado.',
+  'playback': 'Reproducción',
+  'crossfade_duration': 'Duración del fundido cruzado',
+  'crossfade_duration_desc': 'Ajustar el tiempo de desvanecimiento entre canciones.',
+  'seconds_unit': '{0}s',
 };

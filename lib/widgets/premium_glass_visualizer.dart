@@ -105,7 +105,7 @@ class _PremiumGlassVisualizerState extends State<PremiumGlassVisualizer>
                           end: Alignment.bottomCenter,
                           colors: [
                             widget.color.withValues(alpha: widget.opacity),
-                            widget.color.withValues(alpha: 0.05),
+                            widget.color.withValues(alpha: 0.2),
                           ],
                         ),
                         borderRadius: const BorderRadius.vertical(
@@ -113,9 +113,9 @@ class _PremiumGlassVisualizerState extends State<PremiumGlassVisualizer>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: widget.color.withValues(alpha: widget.opacity * 0.5),
-                            blurRadius: 4,
-                            spreadRadius: 0,
+                            color: widget.color.withValues(alpha: widget.opacity),
+                            blurRadius: 8,
+                            spreadRadius: 1,
                           ),
                         ],
                       ),
@@ -137,7 +137,7 @@ class _PremiumGlassVisualizerState extends State<PremiumGlassVisualizer>
                     child: FractionallySizedBox(
                       heightFactor: (0.1 + (_heights[index] * 0.9)) * 0.4,
                       child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                        margin: const EdgeInsets.symmetric(horizontal: 1.0),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.bottomCenter,

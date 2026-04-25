@@ -184,6 +184,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
 
                     const SizedBox(height: 32),
+                    Text(
+                      langProvider.translate('playback'),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).textTheme.titleLarge?.color,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildCrossfadeSlider(context, radio, langProvider),
+
+                    const SizedBox(height: 32),
 
                     Text(
                       langProvider.translate('cloud_backup'),
@@ -1142,6 +1154,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCrossfadeSlider(BuildContext context, RadioProvider radio, LanguageProvider lang) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.05),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lang.translate('crossfade_duration'),
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge?.color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      lang.translate('crossfade_duration_desc'),
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                lang.translate('seconds_unit').replaceAll('{0}', radio.crossfadeDuration.toString()),
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+            ),
+            child: Slider(
+              value: radio.crossfadeDuration.toDouble(),
+              min: 0,
+              max: 12,
+              divisions: 12,
+              label: radio.crossfadeDuration.toString(),
+              activeColor: Theme.of(context).primaryColor,
+              inactiveColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+              onChanged: (value) {
+                radio.setCrossfadeDuration(value.toInt());
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

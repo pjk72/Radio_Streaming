@@ -642,4 +642,8 @@ final Map<String, String> fr = {
   'music_recognition': 'Reconnaissance musicale',
   'music_recognition_disabled': 'Reconnaissance musicale (non disponible)',
   'music_recognition_disabled_momentarily': 'Le service de reconnaissance musicale est temporairement désactivé.',
+  'playback': 'Lecture',
+  'crossfade_duration': 'Durée du fondu enchaîné',
+  'crossfade_duration_desc': 'Ajustez le temps de fondu entre les chansons',
+  'seconds_unit': '{0}s',
 };

@@ -38,12 +38,19 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _hasLoggedAndroidAutoStart = false;
   bool _isSwapping = false; // Flag for seamless transition state
   bool _isInAndroidAutoMode = false;
+  int _crossfadeSeconds = 5;
+
+  void setCrossfadeDuration(int seconds) {
+    _crossfadeSeconds = seconds;
+    LogService().log("AudioHandler: Crossfade duration set to $seconds seconds");
+  } // Configurable crossfade duration in seconds
 
   bool _isRetryPending = false;
   bool _internalRetry = false;
   bool _expectingStop = false;
   bool _isInitialBuffering = false;
   bool _isCurrentSongInFavorites = false; // Flag for Android Auto heart icon
+  Duration? _handoffDuration; // Bridge duration during crossfade
 
   static const _heartFilledControl = MediaControl(
     androidIcon: 'drawable/ic_favorite',
@@ -241,7 +248,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
       // 3. Configure (Use defaults to match Test Screen, add minimal config)
 
-      // 3. Configure both players for gapless
+      // 3. Configure both players for gapless/crossfade
       for (var p in [_player, _nextPlayer]) {
         try {
           await p.setReleaseMode(ReleaseMode.stop);
@@ -285,6 +292,18 @@ class RadioAudioHandler extends BaseAudioHandler
       LogService().log("Seek error or timeout: $e");
     }
     _currentPosition = position;
+
+    // Reset preloading trigger if we seek back before the 50% mark
+    final currentMedia = mediaItem.value;
+    if (currentMedia?.duration != null && currentMedia?.duration! != Duration.zero) {
+      if (position.inSeconds < currentMedia!.duration!.inSeconds * 0.45) {
+        if (_hasTriggeredPreload) {
+           LogService().log("Seek: Resetting preload trigger (seeked back to start area)");
+           _hasTriggeredPreload = false;
+        }
+      }
+    }
+
     _broadcastState(_player.state);
   }
 
@@ -432,27 +451,35 @@ class RadioAudioHandler extends BaseAudioHandler
 
         if (expectedDuration != null &&
             currentMedia?.extras?['type'] == 'playlist_song') {
-          // Trigger preloading 10 seconds before end
-          if (expectedDuration - pos <= const Duration(seconds: 10) &&
-              expectedDuration > Duration.zero) {
-            if (!_hasTriggeredPreload) {
+          // Trigger preloading logic
+          final remaining = expectedDuration - pos;
+          // Preparation starts at 50% OR 1 minute before end (Requirement 1)
+          final shouldPreload = (pos.inSeconds >= expectedDuration.inSeconds * 0.5) || 
+                              (remaining.inSeconds <= 60);
+
+          if (shouldPreload && expectedDuration > Duration.zero) {
+            if (!_hasTriggeredPreload && !_isSwapping) {
               _hasTriggeredPreload = true;
+              LogService().log("Preload: Triggering for ${currentMedia?.title} (Remaining: ${remaining.inSeconds}s)");
               if (onPreloadNext != null) onPreloadNext!();
             }
           }
 
-          // Trigger early start 5 seconds before end
-          if (expectedDuration - pos <= const Duration(seconds: 5) &&
+          // TRIGGER CROSSFADE: Instead of a hard skip, we start the crossfade transition
+          if (expectedDuration - pos <= Duration(seconds: _crossfadeSeconds) &&
               expectedDuration > Duration.zero) {
-            if (!_hasTriggeredEarlyStart && _nextPlayerSourceUrl != null) {
+            if (!_hasTriggeredEarlyStart && _nextPlayerSourceUrl != null && !_isSwapping) {
               _hasTriggeredEarlyStart = true;
-              skipToNext(reason: "Gapless transition (early start)");
+              LogService().log("Crossfade: Starting transition (${_crossfadeSeconds}s)...");
+              _startCrossfade();
               return;
+            } else if (!_hasTriggeredEarlyStart) {
+              LogService().log("Crossfade: SKIPPED — preload=${_nextPlayerSourceUrl != null}, swapping=$_isSwapping");
             }
           }
 
           if (pos >= expectedDuration) {
-            if (!_expectingStop) {
+            if (!_expectingStop && !_isSwapping) {
               skipToNext(reason: "Reached expected end of track");
             }
             return;
@@ -958,6 +985,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'user_initiated': true,
         'stableId': song.id,
         'startAt': startAt,
+        'duration': song.duration?.inSeconds, // FIX: Pass duration for local files
       };
       await _playYoutubeSong(effectiveLocalPath, extras);
       return;
@@ -979,7 +1007,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'videoId': videoId,
         'type': 'playlist_song',
         'is_resolved': true,
-        'duration': _cachedNextSongExtras?['duration'],
+        'duration': _cachedNextSongExtras?['duration'] ?? song.duration?.inSeconds,
         'user_initiated': true,
 
         'stableId': song.youtubeUrl ?? 'song_${song.id}',
@@ -1008,6 +1036,7 @@ class RadioAudioHandler extends BaseAudioHandler
       album: song.album,
       title: _getSongTitleWithIcons(song.title, song.localPath),
       artist: song.artist,
+      duration: song.duration, // FIX: Use known duration immediately
       artUri: _sanitizeArtUri(song.artUri, "${song.title} ${song.artist}"),
       extras: {
         'type': 'playlist_song',
@@ -1015,6 +1044,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'songId': song.id,
         'videoId': videoId,
         'stableId': stableId,
+        'duration': song.duration?.inSeconds,
       },
     );
     mediaItem.add(placeholderItem);
@@ -1263,11 +1293,22 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> stop() async {
+    LogService().log("AudioHandler: Stop requested (Expecting: $_expectingStop, Swapping: $_isSwapping)");
+    
     _stopRecognition();
     _isInitialBuffering = false;
+    
+    // If we are in the middle of a swap or expecting a transition, 
+    // don't reset _expectingStop yet, and don't broadcast 'stopped' if the new player is already ready.
+    if (_expectingStop || _isSwapping) {
+      LogService().log("AudioHandler: stop() ignored during transition/swap");
+      return;
+    }
+
     _expectingStop = false;
     try {
       await _player.stop();
+      await _nextPlayer.stop(); // Ensure both are stopped on explicit stop
     } catch (_) {}
     _stopAnalyticsHeartbeat();
     _broadcastState(PlayerState.stopped);
@@ -1357,7 +1398,29 @@ class RadioAudioHandler extends BaseAudioHandler
         _playlistIndex = 0; // Loop
       }
       final item = _playlistQueue[_playlistIndex];
-      await playFromMediaId(item.id, {'queue_ready': true});
+      
+      // PASS DURATION and STARTAT if this is a crossfade sync
+      Map<String, dynamic> extras = {
+        'queue_ready': true,
+        'duration': item.duration?.inSeconds, // FORCE DURATION FROM METADATA
+      };
+      
+      if (reason == "crossfade_sync") {
+        extras['startAt'] = Duration(seconds: _crossfadeSeconds);
+        // Merge in preloaded metadata if it matches (Requirement 2: Ensure duration is present)
+        if (_cachedNextSongExtras != null && 
+            (_cachedNextSongExtras!['songId'] == item.extras?['songId'] || 
+             _cachedNextSongExtras!['videoId'] == item.extras?['videoId'])) {
+           extras.addAll(_cachedNextSongExtras!);
+        }
+        
+        // Ensure duration from handoff is passed if not already in extras
+        if (extras['duration'] == null && _handoffDuration != null) {
+          extras['duration'] = _handoffDuration!.inSeconds;
+        }
+      }
+      
+      await playFromMediaId(item.id, extras);
       return;
     }
 
@@ -1431,8 +1494,33 @@ class RadioAudioHandler extends BaseAudioHandler
     }
   }
 
-  Future<void> preloadNextStream(String videoId, String songId) async {
+  Future<void> preloadNextStream(String videoId, String songId, Map<String, dynamic> metadataExtras) async {
     try {
+      // Handle Direct HTTP Streams
+      if (videoId.startsWith('http://') || videoId.startsWith('https://')) {
+        _cachedNextSongUrl = videoId;
+        
+        int? finalDuration = metadataExtras['duration'];
+        if (finalDuration == null || finalDuration == 0) {
+           try {
+             finalDuration = _playlistQueue.firstWhere((item) => item.extras?['songId'] == songId).duration?.inSeconds;
+           } catch (_) {}
+        }
+
+        _cachedNextSongExtras = {
+          ...metadataExtras,
+          'videoId': videoId,
+          'songId': songId,
+          'uniqueId': "$songId-$videoId",
+          'duration': finalDuration,
+        };
+        _nextPlayerSourceUrl = videoId;
+        await _nextPlayer.setSource(UrlSource(videoId));
+        await _nextPlayer.stop();
+        LogService().log("Preload: READY for HTTP Stream $videoId");
+        return;
+      }
+
       // Handle Local / Encrypted Files
       if (videoId.contains('/') ||
           videoId.contains('\\') ||
@@ -1460,18 +1548,35 @@ class RadioAudioHandler extends BaseAudioHandler
         }
 
         _cachedNextSongUrl = filePath;
+        
+        int? finalDuration = metadataExtras['duration'];
+        if (finalDuration == null || finalDuration == 0) {
+           try {
+             finalDuration = _playlistQueue.firstWhere((item) => item.extras?['songId'] == songId).duration?.inSeconds;
+           } catch (_) {}
+        }
+
         _cachedNextSongExtras = {
+          ...metadataExtras,
           'videoId': videoId,
           'songId': songId,
           'uniqueId': "$songId-$videoId",
+          'duration': finalDuration,
         };
         _nextPlayerSourceUrl = filePath;
         await _nextPlayer.stop();
         return;
       }
 
-      if (_cachedNextSongExtras?['uniqueId'] == "$songId-$videoId") return;
+      if (_cachedNextSongExtras?['uniqueId'] == "$songId-$videoId") {
+        LogService().log("Preload: Already cached for $videoId, skipping.");
+        if (_cachedNextSongUrl != null) {
+          _nextPlayerSourceUrl = _cachedNextSongUrl;
+        }
+        return;
+      }
 
+      LogService().log("Preload: Fetching stream for videoId=$videoId (duration hint: ${metadataExtras['duration']})");
       var yt = YoutubeExplode();
       var video = await yt.videos.get(videoId);
       var manifest = await yt.videos.streamsClient.getManifest(videoId);
@@ -1481,19 +1586,22 @@ class RadioAudioHandler extends BaseAudioHandler
       final streamUrl = streamInfo.url.toString();
       _cachedNextSongUrl = streamUrl;
       _cachedNextSongExtras = {
+        ...metadataExtras,
         'videoId': videoId,
         'songId': songId,
         'uniqueId': "$songId-$videoId",
-        'duration': video.duration?.inSeconds,
+        'duration': (video.duration != null && video.duration!.inSeconds > 0) ? video.duration!.inSeconds : metadataExtras['duration'],
       };
 
-      // PRE-LOAD into the SECOND player for gapless swap
+      // Set URL flag BEFORE loading source so crossfade trigger sees it immediately
       _nextPlayerSourceUrl = streamUrl;
       await _nextPlayer.setSource(UrlSource(streamUrl));
-      // Ensure it stays paused/stopped while buffering
+      // Keep it paused/stopped while buffering, ready for resume
       await _nextPlayer.stop();
+      LogService().log("Preload: READY for $videoId (${video.duration?.inSeconds}s). Crossfade can now trigger.");
     } catch (e) {
-      // Ignore preloading errors; playback will resolve on demand if needed.
+      LogService().log("Preload: FAILED for $videoId — $e");
+      _nextPlayerSourceUrl = null; // Clear so crossfade won't attempt with invalid source
     }
   }
 
@@ -1591,13 +1699,40 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Future<void> _swapPlayers(String url, Map<String, dynamic> extras) async {
     // 1. Prepare Metadata
-    final String rawTitle = extras['title'] ?? "Song";
+    final String rawTitle = extras['title'] ?? "Loading...";
     final String title = _getSongTitleWithIcons(rawTitle, extras['localPath']);
-    final String artist = extras['artist'] ?? "Artist";
-    final String album = extras['album'] ?? "Playlist";
+    final String artist = extras['artist'] ?? "Unknown Artist";
+    final String album = extras['album'] ?? "";
     final String? artUri = extras['artUri'];
 
-    LogService().log("Gapless Swap Triggered: $title - $artist (Art: $artUri)");
+    // Capture Handoff Duration (Priority: Handoff > Extras > Cached)
+    Duration? finalDuration;
+    if (_handoffDuration != null && _handoffDuration!.inSeconds > 0) {
+      finalDuration = _handoffDuration;
+    } else if (extras['duration'] != null) {
+      if (extras['duration'] is int && extras['duration'] > 0) {
+        finalDuration = Duration(seconds: extras['duration']);
+      } else if (extras['duration'] is Duration && extras['duration'] > Duration.zero) {
+        finalDuration = extras['duration'];
+      }
+    }
+    
+    if (finalDuration == null && _cachedNextSongExtras?['duration'] != null) {
+      finalDuration = Duration(seconds: _cachedNextSongExtras!['duration']);
+    }
+
+    // FINAL FALLBACK: Check the playlist queue if still null
+    if (finalDuration == null || finalDuration == Duration.zero) {
+      try {
+        final songId = extras['songId'];
+        final queueItem = _playlistQueue.firstWhere((item) => item.extras?['songId'] == songId);
+        if (queueItem.duration != null && queueItem.duration! > Duration.zero) {
+          finalDuration = queueItem.duration;
+        }
+      } catch (_) {}
+    }
+
+    LogService().log("Gapless Swap Triggered: $title - $artist (Final Duration: ${finalDuration?.inSeconds}s)");
 
     final Uri? validArtUri = _sanitizeArtUri(artUri, "$title $artist");
 
@@ -1616,13 +1751,12 @@ class RadioAudioHandler extends BaseAudioHandler
       album: album,
       title: title,
       artist: artist,
-      duration: extras['duration'] != null
-          ? Duration(seconds: extras['duration'])
-          : null,
+      duration: finalDuration,
       artUri: validArtUri,
       playable: true,
       extras: updatedExtras,
     );
+    _handoffDuration = null; // Consume handoff duration
     mediaItem.add(newItem);
 
     // 2. The Swap
@@ -1646,9 +1780,48 @@ class RadioAudioHandler extends BaseAudioHandler
     }
     _setupPlayerListeners(); // Re-attach listeners to the new main
     _isSwapping = false;
-    _expectingStop = false;
+    
+    // RESET TRIGGER FLAGS for the next song in the chain
+    _hasTriggeredPreload = false;
+    _hasTriggeredEarlyStart = false;
 
+    // Delay clearing _expectingStop to ignore residual events from the dying player
+    Future.delayed(const Duration(seconds: 1), () {
+      _expectingStop = false;
+    });
+
+    // Restore position from extras if available (crucial for crossfade)
+    // or fallback to the player's actual current position
+    final startAt = extras['startAt'] as Duration? ?? Duration.zero;
+    if (startAt > Duration.zero) {
+       _currentPosition = startAt;
+    } else {
+       try {
+         final actualPos = await _player.getCurrentPosition();
+         if (actualPos != null && actualPos > Duration.zero) {
+           _currentPosition = actualPos;
+         } else {
+           _currentPosition = Duration.zero;
+         }
+       } catch (_) {
+         _currentPosition = Duration.zero;
+       }
+    }
+    
     _broadcastState(PlayerState.playing);
+    
+    // EXPLICIT DURATION FETCH: 
+    // The player might have already emitted its duration while in the background,
+    // so the newly attached listener won't catch it. We must ask explicitly.
+    _player.getDuration().then((d) {
+      if (d != null && d.inSeconds > 0) {
+        final currentMediaItem = mediaItem.value;
+        if (currentMediaItem != null && currentMediaItem.duration != d) {
+          LogService().log("Gapless Swap: Recovered duration ${d.inSeconds}s post-swap");
+          updateMediaItem(currentMediaItem.copyWith(duration: d));
+        }
+      }
+    }).catchError((_) {});
 
     // 4. Fade out and stop the OLD player (now in _nextPlayer)
     _fadeOutAndStop(_nextPlayer);
@@ -1943,20 +2116,43 @@ class RadioAudioHandler extends BaseAudioHandler
     }
     updatedExtras['isCar'] = _isInAndroidAutoMode;
 
-    // Set MediaItem
+    // Set MediaItem with atomic duration (Priority: Crossfade Handoff > Metadata > Null)
+    Duration? atomicDuration;
+    if (_handoffDuration != null && _handoffDuration!.inSeconds > 0) {
+      atomicDuration = _handoffDuration;
+      _handoffDuration = null; // Consume it immediately
+    } else if (extras['duration'] != null) {
+      atomicDuration = extras['duration'] is int 
+          ? Duration(seconds: extras['duration'] as int) 
+          : extras['duration'] as Duration;
+    }
+    
+    // FINAL FALLBACK: Check the playlist queue if still null
+    if (atomicDuration == null || atomicDuration == Duration.zero) {
+      try {
+        final songId = extras['songId'];
+        final queueItem = _playlistQueue.firstWhere((item) => item.extras?['songId'] == songId);
+        if (queueItem.duration != null && queueItem.duration! > Duration.zero) {
+          atomicDuration = queueItem.duration;
+        }
+      } catch (_) {}
+    }
+
     MediaItem newItem = MediaItem(
       id: extras['stableId'] ?? url,
       album: album,
       title: title,
       artist: artist,
-      duration: extras['duration'] != null
-          ? Duration(seconds: extras['duration'])
-          : null,
+      duration: atomicDuration,
       artUri: validArtUri,
       playable: true,
       extras: updatedExtras,
     );
     mediaItem.add(newItem);
+
+    // Always reset flags for fresh playback
+    _hasTriggeredPreload = false;
+    _hasTriggeredEarlyStart = false;
 
     // Force immediate transition to Loading state
     _expectingStop = true;
@@ -2133,11 +2329,13 @@ class RadioAudioHandler extends BaseAudioHandler
 
         LogService().log("LOCAL PLAYBACK: Resuming player...");
         await _player.resume();
+        _isInitialBuffering = false;
 
         if (_currentSessionId == sessionId) {
           _expectingStop = false;
-          _currentPosition = Duration.zero; // Reset for new song
-          _consecutiveErrorCount = 0; // SUCCESS: Reset error counter
+          _currentPosition = extras['startAt'] as Duration? ?? Duration.zero;
+          _consecutiveErrorCount = 0;
+
           _broadcastState(
             PlayerState.playing,
           ); // This ensures BOTH position and icon are updated
@@ -2220,6 +2418,141 @@ class RadioAudioHandler extends BaseAudioHandler
     });
   }
 
+  /// NEW: Performs a professional crossfade between _player and _nextPlayer
+  Future<void> _startCrossfade() async {
+    if (_isSwapping || _nextPlayerSourceUrl == null || _cachedNextSongExtras == null) return;
+    
+    try {
+      _isSwapping = true;
+      _expectingStop = true; 
+      
+      final sessionId = DateTime.now().millisecondsSinceEpoch;
+      _currentSessionId = sessionId;
+
+      LogService().log("Crossfade: Starting smooth transition overlap...");
+
+      // 1. PREPARE INCOMING METADATA (Look up in queue for absolute accuracy)
+      final String nextSongId = _cachedNextSongExtras!['songId'] ?? "";
+      MediaItem? queueItem;
+      try {
+        queueItem = _playlistQueue.firstWhere((item) => item.extras?['songId'] == nextSongId);
+      } catch (_) {}
+
+      final extras = Map<String, dynamic>.from(_cachedNextSongExtras!);
+      if (queueItem != null) {
+        extras.addAll(queueItem.extras ?? {});
+      }
+      
+      final String rawTitle = queueItem?.title ?? extras['title'] ?? "Loading...";
+      final String title = _getSongTitleWithIcons(rawTitle, extras['localPath']);
+      final String artist = queueItem?.artist ?? extras['artist'] ?? "Unknown Artist";
+      final String album = queueItem?.album ?? extras['album'] ?? "";
+      final String? artUri = queueItem?.artUri?.toString() ?? extras['artUri'];
+      
+      Duration? nextDuration = await _nextPlayer.getDuration();
+      if (nextDuration == null || nextDuration == Duration.zero) {
+        nextDuration = queueItem?.duration ?? (extras['duration'] != null ? Duration(seconds: extras['duration']) : null);
+      }
+
+      final Uri? validArtUri = _sanitizeArtUri(artUri, "$title $artist");
+
+      MediaItem nextItem = MediaItem(
+        id: queueItem?.id ?? extras['stableId'] ?? extras['videoId'] ?? "next",
+        album: album,
+        title: title,
+        artist: artist,
+        duration: nextDuration,
+        artUri: validArtUri,
+        playable: true,
+        extras: extras,
+      );
+
+      // 2. PREPARE PLAYERS (Keep references for now, use local pointers for the loop)
+      final incomingPlayer = _nextPlayer;
+      final outgoingPlayer = _player;
+      
+      await incomingPlayer.setVolume(0.0);
+      await incomingPlayer.resume();
+      
+      // Wait for play confirmation (short)
+      int retry = 0;
+      while (incomingPlayer.state != PlayerState.playing && retry < 10) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        retry++;
+      }
+
+      // 3. FADE LOOP WITH MID-SWAP
+      const int steps = 20;
+      final stepMs = (_crossfadeSeconds * 1000) ~/ steps;
+      bool hasSwappedMetadata = false;
+      
+      for (int i = 1; i <= steps; i++) {
+        if (_currentSessionId != sessionId) break;
+        
+        double volIncoming = i / steps;
+        double volOutgoing = 1.0 - (i / steps);
+        
+        await incomingPlayer.setVolume(volIncoming);
+        await outgoingPlayer.setVolume(volOutgoing);
+
+        // MID-POINT SWAP (Requirement: change in the middle smoothly)
+        if (i >= steps / 2 && !hasSwappedMetadata) {
+          hasSwappedMetadata = true;
+          
+          // Switch global references
+          _player = incomingPlayer;
+          _nextPlayer = outgoingPlayer;
+          _nextPlayerSourceUrl = null; 
+
+          // Update UI and Listeners
+          mediaItem.add(nextItem);
+          _currentPosition = await incomingPlayer.getCurrentPosition() ?? Duration.zero;
+          _broadcastState(PlayerState.playing);
+          _setupPlayerListeners(); 
+          
+          // CRITICAL FIX: Reset trigger flags for the next song in the chain
+          // Without this, crossfade only works for every other song.
+          _hasTriggeredPreload = false;
+          _hasTriggeredEarlyStart = false;
+          
+          LogService().log("Crossfade: Mid-point metadata swap performed to $title");
+        }
+
+        await Future.delayed(Duration(milliseconds: stepMs));
+      }
+
+      // 4. CLEANUP
+      _isSwapping = false; 
+      _expectingStop = false;
+      _broadcastState(); 
+      
+      // Ensure final state
+      await incomingPlayer.setVolume(1.0);
+      
+      // Update queue index
+      if (_playlistQueue.isNotEmpty) {
+        try {
+          final idx = _playlistQueue.indexWhere((item) => item.extras?['songId'] == nextSongId);
+          if (idx != -1) {
+            _playlistIndex = idx;
+          }
+        } catch (_) {}
+      }
+
+      // Stop the old player (now in outgoingPlayer)
+      await outgoingPlayer.stop();
+      await outgoingPlayer.setVolume(1.0);
+      
+      LogService().log("Crossfade Complete.");
+
+    } catch (e) {
+      LogService().log("Crossfade Audio Error: $e");
+      _isSwapping = false;
+      _expectingStop = false;
+      skipToNext(reason: "crossfade_fallback");
+    }
+  }
+
   @override
   Future<void> playFromUri(
     Uri uri, [
@@ -2252,6 +2585,25 @@ class RadioAudioHandler extends BaseAudioHandler
           });
         }
         _expectingStop = true; // Block events from old player
+        
+        // DO WE HAVE A WARM PLAYER? (Gapless Swap)
+        // Compare URL for local files OR videoId for YouTube (because stream URLs change tokens)
+        final isPreloadedMatch = _nextPlayerSourceUrl == uri.toString() || 
+            (_cachedNextSongExtras != null && extras['videoId'] != null && _cachedNextSongExtras!['videoId'] == extras['videoId']);
+            
+        if (isPreloadedMatch) {
+          // Merge preloaded metadata to guarantee we don't lose fetched duration
+          final finalExtras = Map<String, dynamic>.from(extras);
+          if (_cachedNextSongExtras != null) {
+            if (_cachedNextSongExtras!['duration'] != null && finalExtras['duration'] == null) {
+              finalExtras['duration'] = _cachedNextSongExtras!['duration'];
+            }
+          }
+          // We must use the PRELOADED source URL for swap, because it's the one actually loaded in the background player!
+          await _swapPlayers(_nextPlayerSourceUrl ?? uri.toString(), finalExtras);
+          return;
+        }
+        
         await _playYoutubeSong(uri.toString(), extras);
       } else {
         // Otherwise, it's likely a video ID (from RadioProvider update), resolve it (checking cache)
@@ -2267,9 +2619,13 @@ class RadioAudioHandler extends BaseAudioHandler
           album: extras['album'] ?? '',
           artUri: extras['artUri'],
           dateAdded: DateTime.now(),
-          // Use URI as youtubeUrl normally, or localPath if local
           youtubeUrl: isLocal ? null : uri.toString(),
           localPath: isLocal ? (extras['videoId'] ?? uri.toString()) : null,
+          duration: extras['duration'] != null 
+              ? (extras['duration'] is int 
+                  ? Duration(seconds: extras['duration'] as int) 
+                  : extras['duration'] as Duration)
+              : null,
         );
         // Delegate to _playYoutubeVideo which handles caching and resolution
         await _playYoutubeVideo(
@@ -3984,7 +4340,12 @@ class RadioAudioHandler extends BaseAudioHandler
               }
               final String videoId = _extractVideoId(finalUrl ?? '') ?? '';
               if (videoId.isNotEmpty) {
-                await _playYoutubeVideo(videoId, song, p.id);
+                await _playYoutubeVideo(
+                  videoId, 
+                  song, 
+                  p.id, 
+                  startAt: extras?['startAt'] as Duration?
+                );
                 return;
               }
             }
@@ -4099,6 +4460,9 @@ class RadioAudioHandler extends BaseAudioHandler
         'songId': s.id,
         'stableId': stableId,
         'youtubeUrl': s.youtubeUrl,
+        'appleMusicUrl': s.appleMusicUrl,
+        'releaseDate': s.releaseDate,
+        'provider': s.provider,
         'isLocal': s.localPath != null,
         'localPath': s.localPath,
         'isCar': _isInAndroidAutoMode,
@@ -4232,7 +4596,14 @@ class RadioAudioHandler extends BaseAudioHandler
           artUri: station?.logo != null ? Uri.parse(station!.logo!) : null,
           extras: newExtras,
         );
-        mediaItem.add(newMediaItem);
+
+        // CRITICAL SAFETY CHECK: Ensure we haven't switched to a playlist song or another station
+        if (mediaItem.value?.id == streamUrl) {
+           mediaItem.add(newMediaItem);
+        } else {
+           LogService().log("RecognitionAPI: Match discarded because current media changed to ${mediaItem.value?.id}");
+           return;
+        }
 
         // Try to find artwork from Recognition service
         String? recognitionArtwork;
@@ -4387,7 +4758,7 @@ class RadioAudioHandler extends BaseAudioHandler
     // If we have initial art, update immediately
     if (finalArt != null) {
       final item = mediaItem.value;
-      if (item != null) {
+      if (item != null && item.title == title && item.artist == artist) {
         mediaItem.add(item.copyWith(artUri: Uri.parse(finalArt)));
       }
     }
@@ -4411,7 +4782,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
         // Update MediaItem with resolved art and links
         final item = mediaItem.value;
-        if (item != null) {
+        if (item != null && item.title == title && item.artist == artist) {
           final newExtras = Map<String, dynamic>.from(item.extras ?? {});
           if (links.containsKey('youtube'))
             newExtras['youtubeUrl'] = links['youtube'];

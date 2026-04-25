@@ -641,4 +641,8 @@ final Map<String, String> de = {
   'music_recognition': 'Musikanerkennung',
   'music_recognition_disabled': 'Musikerkennung (nicht verfügbar)',
   'music_recognition_disabled_momentarily': 'Der Musikerkennungsdienst ist vorübergehend deaktiviert.',
+  'playback': 'Wiedergabe',
+  'crossfade_duration': 'Crossfade-Dauer',
+  'crossfade_duration_desc': 'Passen Sie die Überblendzeit zwischen den Songs an',
+  'seconds_unit': '{0}s',
 };

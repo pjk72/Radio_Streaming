@@ -41,6 +41,11 @@ final Map<String, String> en = {
   'tap_to_choose': 'Tap to choose',
   'backup': 'Backup',
   'restore': 'Restore',
+  'playback': 'Playback',
+
+  'crossfade_duration': 'Crossfade Duration',
+  'crossfade_duration_desc': 'Adjust the fade time between songs',
+  'seconds_unit': '{0}s',
 
   // Navigation / Tabs
   'tab_home': 'Home',

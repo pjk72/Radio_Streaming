@@ -588,4 +588,8 @@ final Map<String, String> ar = {
   'music_recognition': 'التعرف على الموسيقى',
   'music_recognition_disabled': 'التعرف على الموسيقى (غير متوفر)',
   'music_recognition_disabled_momentarily': 'تم تعطيل خدمة التعرف على الموسيقى مؤقتًا.',
+  'playback': 'التشغيل',
+  'crossfade_duration': 'مدة التلاشي المتقاطع',
+  'crossfade_duration_desc': 'ضبط وقت التلاشي بين الأغاني',
+  'seconds_unit': '{0}ق',
 };

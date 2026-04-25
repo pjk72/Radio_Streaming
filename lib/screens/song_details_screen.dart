@@ -923,9 +923,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               ],
             ),
             clipBehavior: Clip.antiAlias,
-            child: mainImage != null
+            child: mainImage != null && mainImage.isNotEmpty
                 ? Image.network(
                     mainImage,
+                    key: ValueKey(mainImage),
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) {
                       return Center(
@@ -1453,93 +1454,95 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   }
 
   Widget _buildNativeProgressBar(BuildContext context, RadioProvider provider) {
-    // STANDARD LOGIC: Use AudioService.position for live position updates
-    // This stream automatically extrapolates based on playback state and speed.
-    return StreamBuilder<Duration>(
-      stream: AudioService.position,
-      builder: (context, snapshot) {
-        final position = provider.isRecognizing
-            ? Duration.zero
-            : (snapshot.data ?? Duration.zero);
-        final duration =
-            provider.audioHandler.mediaItem.value?.duration ?? Duration.zero;
+    return StreamBuilder<MediaItem?>(
+      stream: provider.audioHandler.mediaItem,
+      builder: (context, mediaSnapshot) {
+        return StreamBuilder<Duration>(
+          stream: AudioService.position,
+          builder: (context, snapshot) {
+            final position = provider.isRecognizing
+                ? Duration.zero
+                : (snapshot.data ?? Duration.zero);
+            final duration = mediaSnapshot.data?.duration ?? Duration.zero;
 
-        final maxMs = duration.inMilliseconds.toDouble() > 0
-            ? duration.inMilliseconds.toDouble()
-            : 1000.0;
-        final val = position.inMilliseconds.toDouble().clamp(0.0, maxMs);
+            final maxMs = duration.inMilliseconds.toDouble() > 0
+                ? duration.inMilliseconds.toDouble()
+                : 1000.0;
+            final val = position.inMilliseconds.toDouble().clamp(0.0, maxMs);
 
-        final isStation = provider.currentPlayingPlaylistId == null;
-        final leftLabel = (isStation && duration > Duration.zero)
-            ? "-${_formatDuration(duration - position > Duration.zero ? duration - position : Duration.zero)}"
-            : _formatDuration(position);
+            final isStation = provider.currentPlayingPlaylistId == null;
+            final leftLabel = (isStation && duration > Duration.zero)
+                ? "-${_formatDuration(duration - position > Duration.zero ? duration - position : Duration.zero)}"
+                : _formatDuration(position);
 
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Row(
-                children: [
-                  Text(
-                    leftLabel,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                  Expanded(
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 4,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 6,
-                        ), // Visible thumb
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14,
-                        ),
-                        activeTrackColor: Theme.of(context).primaryColor,
-                        inactiveTrackColor: Colors.white24,
-                        thumbColor: Theme.of(context).primaryColor,
-                        overlayColor: Theme.of(
-                          context,
-                        ).primaryColor.withValues(alpha: 0.12),
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Row(
+                    children: [
+                      Text(
+                        leftLabel,
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
                       ),
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween<double>(end: val),
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.linear,
-                        builder: (context, animatedVal, _) {
-                          final secureValue = animatedVal.clamp(0.0, maxMs);
-                          return Slider(
-                            value: secureValue,
-                            max: maxMs,
-                            onChanged: provider.currentPlayingPlaylistId != null
-                                ? (v) {
-                                    provider.audioHandler.seek(
-                                      Duration(milliseconds: v.toInt()),
-                                    );
-                                  }
-                                : null,
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  isStation
-                      ? const Icon(
-                          Icons.search_rounded,
-                          color: Colors.white70,
-                          size: 16,
-                        )
-                      : Text(
-                          _formatDuration(duration),
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
+                      Expanded(
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 4,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 6,
+                            ), // Visible thumb
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 14,
+                            ),
+                            activeTrackColor: Theme.of(context).primaryColor,
+                            inactiveTrackColor: Colors.white24,
+                            thumbColor: Theme.of(context).primaryColor,
+                            overlayColor: Theme.of(
+                              context,
+                            ).primaryColor.withValues(alpha: 0.12),
+                          ),
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween<double>(end: val),
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.linear,
+                            builder: (context, animatedVal, _) {
+                              final secureValue = animatedVal.clamp(0.0, maxMs);
+                              return Slider(
+                                value: secureValue,
+                                max: maxMs,
+                                onChanged: provider.currentPlayingPlaylistId != null
+                                    ? (v) {
+                                        provider.audioHandler.seek(
+                                          Duration(milliseconds: v.toInt()),
+                                        );
+                                      }
+                                    : null,
+                              );
+                            },
                           ),
                         ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
+                      ),
+                      isStation
+                          ? const Icon(
+                              Icons.search_rounded,
+                              color: Colors.white70,
+                              size: 16,
+                            )
+                          : Text(
+                              _formatDuration(duration),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            );
+          },
         );
       },
     );

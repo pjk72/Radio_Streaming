@@ -633,4 +633,8 @@ final Map<String, String> ru = {
   'music_recognition': 'Распознавание музыки',
   'music_recognition_disabled': 'Распознавание музыки (недоступно)',
   'music_recognition_disabled_momentarily': 'Служба распознавания музыки временно отключена.',
+  'playback': 'Воспроизведение',
+  'crossfade_duration': 'Продолжительность кроссфейда',
+  'crossfade_duration_desc': 'Отрегулируйте время затухания между песнями',
+  'seconds_unit': 'СЛОТ0СЛОТ',
 };

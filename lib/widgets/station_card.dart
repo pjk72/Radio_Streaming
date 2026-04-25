@@ -113,9 +113,9 @@ class _StationCardState extends State<StationCard> {
                       child: PremiumGlassVisualizer(
                         color: Color(int.parse(widget.station.color)),
                         isPlaying: isPlaying,
-                        height: 30,
-                        barCount: 25,
-                        opacity: 0.15,
+                        height: 40,
+                        barCount: 30,
+                        opacity: 0.6,
                       ),
                     ),
                   Positioned(
@@ -188,9 +188,9 @@ class _StationCardState extends State<StationCard> {
                       child: PremiumGlassVisualizer(
                         color: Color(int.parse(widget.station.color)),
                         isPlaying: isPlaying,
-                        height: isCompact ? 30 : 50,
-                        barCount: isCompact ? 25 : 45,
-                        opacity: 0.15,
+                        height: isCompact ? 40 : 60,
+                        barCount: isCompact ? 30 : 50,
+                        opacity: 0.6,
                       ),
                     ),
 
