@@ -106,7 +106,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   int _lifetimeDownloadCount = 0;
   int _earnedDownloadCredits = 0;
-  int _crossfadeDuration = 5;
+  int _crossfadeDuration = 7;
 
   int get crossfadeDuration => _crossfadeDuration;
 
@@ -4684,7 +4684,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _startupStationId = prefs.getInt(_keyStartupStationId);
     // _isACRCloudEnabled is now dynamically derived.
     _isCompactView = prefs.getBool(_keyCompactView) ?? false;
-    _crossfadeDuration = prefs.getInt(_keyCrossfadeDuration) ?? 5;
+    _crossfadeDuration = prefs.getInt(_keyCrossfadeDuration) ?? 7;
     if (_audioHandler is RadioAudioHandler) {
       _audioHandler.setCrossfadeDuration(
         _crossfadeDuration,

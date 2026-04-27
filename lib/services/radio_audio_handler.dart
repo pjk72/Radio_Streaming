@@ -38,7 +38,7 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _hasLoggedAndroidAutoStart = false;
   bool _isSwapping = false; // Flag for seamless transition state
   bool _isInAndroidAutoMode = false;
-  int _crossfadeSeconds = 5;
+  int _crossfadeSeconds = 7;
 
   void setCrossfadeDuration(int seconds) {
     _crossfadeSeconds = seconds;
@@ -406,11 +406,14 @@ class RadioAudioHandler extends BaseAudioHandler
     });
 
     _playerPositionSubscription = _player.onPositionChanged.listen((pos) {
+      // 1. Unified Background/Foreground Position Logic
+      _handleUnifiedPosition(pos);
+
       if (mediaItem.value?.extras?['type'] == 'playlist_song') {
         _currentPosition = pos; // Track position only for playlist songs
       }
 
-      // Fallback: If we see position moving or stop expecting stop, we are definitely NOT buffering anymore
+      // 2. Initial Buffering Recovery
       if (_isInitialBuffering && (pos > Duration.zero || !_expectingStop)) {
         _isInitialBuffering = false;
         _broadcastState(_player.state);
@@ -420,76 +423,28 @@ class RadioAudioHandler extends BaseAudioHandler
         if (playbackState.value.playing &&
             _isACRCloudEnabled &&
             mediaItem.value?.extras?['type'] != 'playlist_song') {
-          // CRITICAL: Always cancel any previous timer before starting a new one
           _recognitionTimer?.cancel();
-
-          // Delay recognition by 5 seconds to match Application Rules
           LogService().log("Recognition: Scheduling primary attempt in 5s...");
-
           _lastRecognitionTime = DateTime.now();
           _nextCheckDuration = const Duration(seconds: 5);
           if (mediaItem.value != null) {
-            mediaItem.add(
-              mediaItem.value!.copyWith(duration: _nextCheckDuration),
-            );
+            mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
           }
-
           _recognitionTimer = Timer(const Duration(seconds: 5), () {
             if (playbackState.value.playing &&
                 _isACRCloudEnabled &&
                 mediaItem.value?.extras?['type'] != 'playlist_song') {
-              LogService().log("Attempting Recognition...5");
               _attemptRecognition();
             }
           });
         }
         return;
-      } else {
-        // Enforce Metadata Limits - ONLY for playlist songs
-        final currentMedia = mediaItem.value;
-        final expectedDuration = currentMedia?.duration;
+      }
 
-        if (expectedDuration != null &&
-            currentMedia?.extras?['type'] == 'playlist_song') {
-          // Trigger preloading logic
-          final remaining = expectedDuration - pos;
-          // Preparation starts at 50% OR 1 minute before end (Requirement 1)
-          final shouldPreload = (pos.inSeconds >= expectedDuration.inSeconds * 0.5) || 
-                              (remaining.inSeconds <= 60);
-
-          if (shouldPreload && expectedDuration > Duration.zero) {
-            if (!_hasTriggeredPreload && !_isSwapping) {
-              _hasTriggeredPreload = true;
-              LogService().log("Preload: Triggering for ${currentMedia?.title} (Remaining: ${remaining.inSeconds}s)");
-              if (onPreloadNext != null) onPreloadNext!();
-            }
-          }
-
-          // TRIGGER CROSSFADE: Instead of a hard skip, we start the crossfade transition
-          if (expectedDuration - pos <= Duration(seconds: _crossfadeSeconds) &&
-              expectedDuration > Duration.zero) {
-            if (!_hasTriggeredEarlyStart && _nextPlayerSourceUrl != null && !_isSwapping) {
-              _hasTriggeredEarlyStart = true;
-              LogService().log("Crossfade: Starting transition (${_crossfadeSeconds}s)...");
-              _startCrossfade();
-              return;
-            } else if (!_hasTriggeredEarlyStart) {
-              LogService().log("Crossfade: SKIPPED — preload=${_nextPlayerSourceUrl != null}, swapping=$_isSwapping");
-            }
-          }
-
-          if (pos >= expectedDuration) {
-            if (!_expectingStop && !_isSwapping) {
-              skipToNext(reason: "Reached expected end of track");
-            }
-            return;
-          }
-        }
-
-        final lastPos = playbackState.value.position;
-        if ((pos - lastPos).abs().inSeconds >= 2) {
-          _broadcastState(_player.state);
-        }
+      // 3. UI Position Update Broadcast (Throttle to 2s to avoid overwhelming the bridge)
+      final lastPos = playbackState.value.position;
+      if ((pos - lastPos).abs().inSeconds >= 2) {
+        _broadcastState(_player.state);
       }
     }, onError: (Object e) {});
 
@@ -603,12 +558,25 @@ class RadioAudioHandler extends BaseAudioHandler
         _initCompleter.complete();
       }
 
-      // Heartbeat Timer: Fixes stuck UI progress in Release builds
-      Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (playbackState.value.playing ||
-            _expectingStop ||
-            _isInitialBuffering) {
-          _broadcastState();
+      // Heartbeat Timer: Fixes stuck UI progress AND ensures crossfade triggers when phone is inactive
+      // Increased frequency to 500ms for more precise background transitions
+      Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+        final bool isPlaylist = mediaItem.value?.extras?['type'] == 'playlist_song';
+        final bool shouldRun = playbackState.value.playing || _expectingStop || _isInitialBuffering;
+        
+        if (shouldRun) {
+          // Only broadcast every 2nd tick (1s) to save resources, unless we need high precision
+          if (timer.tick % 2 == 0) {
+            _broadcastState();
+          }
+
+          // Background crossfade check - MUST be precise
+          if (playbackState.value.playing && isPlaylist && !_isSwapping) {
+             final pos = await _player.getCurrentPosition();
+             if (pos != null) {
+               _handleUnifiedPosition(pos);
+             }
+          }
         }
       });
     }
@@ -2418,7 +2386,7 @@ class RadioAudioHandler extends BaseAudioHandler
     });
   }
 
-  /// NEW: Performs a professional crossfade between _player and _nextPlayer
+  /// Performs a professional crossfade between _player and _nextPlayer
   Future<void> _startCrossfade() async {
     if (_isSwapping || _nextPlayerSourceUrl == null || _cachedNextSongExtras == null) return;
     
@@ -2428,10 +2396,11 @@ class RadioAudioHandler extends BaseAudioHandler
       
       final sessionId = DateTime.now().millisecondsSinceEpoch;
       _currentSessionId = sessionId;
+      WakelockPlus.enable(); // Ensure CPU stays awake during transition
 
-      LogService().log("Crossfade: Starting smooth transition overlap...");
+      LogService().log("Crossfade: Starting smooth transition (${_crossfadeSeconds}s) for background/AA...");
 
-      // 1. PREPARE INCOMING METADATA (Look up in queue for absolute accuracy)
+      // 1. PREPARE INCOMING METADATA
       final String nextSongId = _cachedNextSongExtras!['songId'] ?? "";
       MediaItem? queueItem;
       try {
@@ -2439,111 +2408,101 @@ class RadioAudioHandler extends BaseAudioHandler
       } catch (_) {}
 
       final extras = Map<String, dynamic>.from(_cachedNextSongExtras!);
-      if (queueItem != null) {
-        extras.addAll(queueItem.extras ?? {});
-      }
+      if (queueItem != null) extras.addAll(queueItem.extras ?? {});
       
       final String rawTitle = queueItem?.title ?? extras['title'] ?? "Loading...";
       final String title = _getSongTitleWithIcons(rawTitle, extras['localPath']);
       final String artist = queueItem?.artist ?? extras['artist'] ?? "Unknown Artist";
       final String album = queueItem?.album ?? extras['album'] ?? "";
-      final String? artUri = queueItem?.artUri?.toString() ?? extras['artUri'];
       
       Duration? nextDuration = await _nextPlayer.getDuration();
       if (nextDuration == null || nextDuration == Duration.zero) {
         nextDuration = queueItem?.duration ?? (extras['duration'] != null ? Duration(seconds: extras['duration']) : null);
       }
 
-      final Uri? validArtUri = _sanitizeArtUri(artUri, "$title $artist");
-
       MediaItem nextItem = MediaItem(
         id: queueItem?.id ?? extras['stableId'] ?? extras['videoId'] ?? "next",
-        album: album,
-        title: title,
-        artist: artist,
+        album: album, title: title, artist: artist,
         duration: nextDuration,
-        artUri: validArtUri,
+        artUri: _sanitizeArtUri(queueItem?.artUri?.toString() ?? extras['artUri'], "$title $artist"),
         playable: true,
         extras: extras,
       );
 
-      // 2. PREPARE PLAYERS (Keep references for now, use local pointers for the loop)
+      // 2. START PLAYBACK
       final incomingPlayer = _nextPlayer;
       final outgoingPlayer = _player;
       
       await incomingPlayer.setVolume(0.0);
       await incomingPlayer.resume();
       
-      // Wait for play confirmation (short)
+      // Wait for play confirmation (max 1s)
       int retry = 0;
       while (incomingPlayer.state != PlayerState.playing && retry < 10) {
         await Future.delayed(const Duration(milliseconds: 100));
         retry++;
       }
 
-      // 3. FADE LOOP WITH MID-SWAP
-      const int steps = 20;
-      final stepMs = (_crossfadeSeconds * 1000) ~/ steps;
-      bool hasSwappedMetadata = false;
-      
-      for (int i = 1; i <= steps; i++) {
-        if (_currentSessionId != sessionId) break;
-        
-        double volIncoming = i / steps;
-        double volOutgoing = 1.0 - (i / steps);
-        
-        await incomingPlayer.setVolume(volIncoming);
-        await outgoingPlayer.setVolume(volOutgoing);
+      // 3. ROBUST FADE LOOP (Time-based for background reliability)
+      if (_crossfadeSeconds > 0) {
+        final startTime = DateTime.now();
+        final totalDurationMs = _crossfadeSeconds * 1000;
+        bool hasSwappedMetadata = false;
 
-        // MID-POINT SWAP (Requirement: change in the middle smoothly)
-        if (i >= steps / 2 && !hasSwappedMetadata) {
-          hasSwappedMetadata = true;
+        while (true) {
+          if (_currentSessionId != sessionId) break;
           
-          // Switch global references
-          _player = incomingPlayer;
-          _nextPlayer = outgoingPlayer;
-          _nextPlayerSourceUrl = null; 
+          final elapsedMs = DateTime.now().difference(startTime).inMilliseconds;
+          if (elapsedMs >= totalDurationMs) break;
 
-          // Update UI and Listeners
-          mediaItem.add(nextItem);
-          _currentPosition = await incomingPlayer.getCurrentPosition() ?? Duration.zero;
-          _broadcastState(PlayerState.playing);
-          _setupPlayerListeners(); 
-          
-          // CRITICAL FIX: Reset trigger flags for the next song in the chain
-          // Without this, crossfade only works for every other song.
-          _hasTriggeredPreload = false;
-          _hasTriggeredEarlyStart = false;
-          
-          LogService().log("Crossfade: Mid-point metadata swap performed to $title");
+          double ratio = elapsedMs / totalDurationMs;
+          await incomingPlayer.setVolume(ratio);
+          await outgoingPlayer.setVolume(1.0 - ratio);
+
+          // Mid-point swap
+          if (ratio >= 0.5 && !hasSwappedMetadata) {
+            hasSwappedMetadata = true;
+            _player = incomingPlayer;
+            _nextPlayer = outgoingPlayer;
+            _nextPlayerSourceUrl = null; 
+            mediaItem.add(nextItem);
+            _broadcastState(PlayerState.playing);
+            _setupPlayerListeners(); 
+            _hasTriggeredPreload = false;
+            _hasTriggeredEarlyStart = false;
+            LogService().log("Crossfade: Mid-point metadata swap performed in background");
+          }
+
+          // Small delay but ratio is absolute time-based, so it's robust against background lag
+          await Future.delayed(const Duration(milliseconds: 150));
         }
-
-        await Future.delayed(Duration(milliseconds: stepMs));
+      } else {
+        // Instant swap for 0s crossfade
+        _player = incomingPlayer;
+        _nextPlayer = outgoingPlayer;
+        _nextPlayerSourceUrl = null;
+        mediaItem.add(nextItem);
+        _broadcastState(PlayerState.playing);
+        _setupPlayerListeners();
+        _hasTriggeredPreload = false;
+        _hasTriggeredEarlyStart = false;
       }
 
       // 4. CLEANUP
       _isSwapping = false; 
       _expectingStop = false;
-      _broadcastState(); 
-      
-      // Ensure final state
       await incomingPlayer.setVolume(1.0);
       
-      // Update queue index
       if (_playlistQueue.isNotEmpty) {
         try {
           final idx = _playlistQueue.indexWhere((item) => item.extras?['songId'] == nextSongId);
-          if (idx != -1) {
-            _playlistIndex = idx;
-          }
+          if (idx != -1) _playlistIndex = idx;
         } catch (_) {}
       }
 
-      // Stop the old player (now in outgoingPlayer)
       await outgoingPlayer.stop();
       await outgoingPlayer.setVolume(1.0);
-      
-      LogService().log("Crossfade Complete.");
+      LogService().log("Crossfade Complete ($title)");
 
     } catch (e) {
       LogService().log("Crossfade Audio Error: $e");
@@ -2552,6 +2511,7 @@ class RadioAudioHandler extends BaseAudioHandler
       skipToNext(reason: "crossfade_fallback");
     }
   }
+
 
   @override
   Future<void> playFromUri(
@@ -5078,5 +5038,40 @@ class RadioAudioHandler extends BaseAudioHandler
       'is_background': true,
       'song_id': currentItem?.extras?['songId'] ?? currentItem?.id,
     });
+  }
+
+  void _handleUnifiedPosition(Duration pos) {
+    if (mediaItem.value?.extras?['type'] == 'playlist_song') {
+      _currentPosition = pos;
+    }
+
+    final currentMedia = mediaItem.value;
+    final expectedDuration = currentMedia?.duration;
+
+    if (expectedDuration != null &&
+        currentMedia?.extras?['type'] == 'playlist_song' &&
+        expectedDuration > Duration.zero) {
+      
+      final remaining = expectedDuration - pos;
+
+      // 1. PRELOAD TRIGGER (50% or 60s)
+      final shouldPreload = (pos.inSeconds >= expectedDuration.inSeconds * 0.5) || 
+                          (remaining.inSeconds <= 60);
+
+      if (shouldPreload && !_hasTriggeredPreload && !_isSwapping) {
+        _hasTriggeredPreload = true;
+        LogService().log("Preload: Background Trigger for ${currentMedia?.title} (Rem: ${remaining.inSeconds}s)");
+        if (onPreloadNext != null) onPreloadNext!();
+      }
+
+      // 2. CROSSFADE TRIGGER
+      if (remaining <= Duration(seconds: _crossfadeSeconds)) {
+        if (!_hasTriggeredEarlyStart && _nextPlayerSourceUrl != null && !_isSwapping) {
+          _hasTriggeredEarlyStart = true;
+          LogService().log("Crossfade: Background Trigger starting (${_crossfadeSeconds}s)...");
+          _startCrossfade();
+        }
+      }
+    }
   }
 }

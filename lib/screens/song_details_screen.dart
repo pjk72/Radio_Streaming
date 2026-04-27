@@ -1478,64 +1478,73 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
             return Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Row(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Column(
                     children: [
-                      Text(
-                        leftLabel,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                      Expanded(
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 4,
-                            thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 6,
-                            ), // Visible thumb
-                            overlayShape: const RoundSliderOverlayShape(
-                              overlayRadius: 14,
-                            ),
-                            activeTrackColor: Theme.of(context).primaryColor,
-                            inactiveTrackColor: Colors.white24,
-                            thumbColor: Theme.of(context).primaryColor,
-                            overlayColor: Theme.of(
-                              context,
-                            ).primaryColor.withValues(alpha: 0.12),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 4,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
+                          ), // Visible thumb
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 14,
                           ),
-                          child: TweenAnimationBuilder<double>(
-                            tween: Tween<double>(end: val),
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.linear,
-                            builder: (context, animatedVal, _) {
-                              final secureValue = animatedVal.clamp(0.0, maxMs);
-                              return Slider(
-                                value: secureValue,
-                                max: maxMs,
-                                onChanged: provider.currentPlayingPlaylistId != null
-                                    ? (v) {
-                                        provider.audioHandler.seek(
-                                          Duration(milliseconds: v.toInt()),
-                                        );
-                                      }
-                                    : null,
-                              );
-                            },
-                          ),
+                          activeTrackColor: Theme.of(context).primaryColor,
+                          inactiveTrackColor: Colors.white24,
+                          thumbColor: Theme.of(context).primaryColor,
+                          overlayColor: Theme.of(
+                            context,
+                          ).primaryColor.withValues(alpha: 0.12),
+                        ),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(end: val),
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.linear,
+                          builder: (context, animatedVal, _) {
+                            final secureValue = animatedVal.clamp(0.0, maxMs);
+                            return Slider(
+                              value: secureValue,
+                              max: maxMs,
+                              onChanged: provider.currentPlayingPlaylistId != null
+                                  ? (v) {
+                                      provider.audioHandler.seek(
+                                        Duration(milliseconds: v.toInt()),
+                                      );
+                                    }
+                                  : null,
+                            );
+                          },
                         ),
                       ),
-                      isStation
-                          ? const Icon(
-                              Icons.search_rounded,
-                              color: Colors.white70,
-                              size: 16,
-                            )
-                          : Text(
-                              _formatDuration(duration),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              leftLabel,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
                               ),
                             ),
+                            isStation
+                                ? const Icon(
+                                    Icons.search_rounded,
+                                    color: Colors.white70,
+                                    size: 16,
+                                  )
+                                : Text(
+                                    _formatDuration(duration),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1556,30 +1565,30 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     if (isFast) {
       return Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 40.0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.all(Radius.circular(2)),
+              child: SizedBox(
+                height: 4,
+                child: _ScanningProgressBar(
+                  speed: ScanningSpeed.fast,
+                  height: 4,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24.0),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   "--:--",
                   style: TextStyle(color: Colors.white30, fontSize: 12),
                 ),
-                const Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.all(Radius.circular(2)),
-                      child: SizedBox(
-                        height: 4,
-                        child: _ScanningProgressBar(
-                          speed: ScanningSpeed.fast,
-                          height: 4,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const Icon(
+                Icon(
                   Icons.sync_rounded,
                   color: Colors.white30,
                   size: 16,
@@ -1609,38 +1618,54 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Row(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Column(
                   children: [
-                    Text(
-                      _formatDuration(currentDur),
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
-                          child: SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 4,
-                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
-                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
-                              activeTrackColor: Theme.of(context).primaryColor,
-                              inactiveTrackColor: Colors.white24,
-                              thumbColor: Colors.transparent, // Disable thumb display since it's unseekable
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 4,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 0,
                             ),
-                            child: Slider(
-                              value: progress,
-                              onChanged: null,
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 0,
                             ),
+                            activeTrackColor: Theme.of(context).primaryColor,
+                            inactiveTrackColor: Colors.white24,
+                            thumbColor: Colors.transparent, // Disable thumb display since it's unseekable
+                          ),
+                          child: Slider(
+                            value: progress,
+                            onChanged: null,
                           ),
                         ),
                       ),
                     ),
-                    Text(
-                      _formatDuration(maxDur),
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _formatDuration(currentDur),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            _formatDuration(maxDur),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1667,42 +1692,54 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Row(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Column(
                 children: [
-                  Text(
-                    _formatDuration(value.position),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                  Expanded(
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 4,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 0,
-                        ),
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14,
-                        ),
-                        activeTrackColor: Theme.of(context).primaryColor,
-                        inactiveTrackColor: Colors.white24,
-                        thumbColor: Theme.of(context).primaryColor,
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 4,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 0,
                       ),
-                      child: Slider(
-                        value: position.clamp(
-                          0.0,
-                          duration > 0 ? duration : 1.0,
-                        ),
-                        max: duration > 0 ? duration : 1.0,
-                        onChanged: (v) {
-                          controller.seekTo(Duration(seconds: v.toInt()));
-                        },
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 14,
                       ),
+                      activeTrackColor: Theme.of(context).primaryColor,
+                      inactiveTrackColor: Colors.white24,
+                      thumbColor: Theme.of(context).primaryColor,
+                    ),
+                    child: Slider(
+                      value: position.clamp(
+                        0.0,
+                        duration > 0 ? duration : 1.0,
+                      ),
+                      max: duration > 0 ? duration : 1.0,
+                      onChanged: (v) {
+                        controller.seekTo(Duration(seconds: v.toInt()));
+                      },
                     ),
                   ),
-                  Text(
-                    _formatDuration(value.metaData.duration),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _formatDuration(value.position),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          _formatDuration(value.metaData.duration),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

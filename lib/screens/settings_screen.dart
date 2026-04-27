@@ -1214,8 +1214,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Slider(
               value: radio.crossfadeDuration.toDouble(),
               min: 0,
-              max: 12,
-              divisions: 12,
+              max: 15,
+              divisions: 15,
               label: radio.crossfadeDuration.toString(),
               activeColor: Theme.of(context).primaryColor,
               inactiveColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
