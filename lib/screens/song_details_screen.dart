@@ -25,12 +25,14 @@ class SongDetailsScreen extends StatefulWidget {
   State<SongDetailsScreen> createState() => _SongDetailsScreenState();
 }
 
-class _SongDetailsScreenState extends State<SongDetailsScreen> {
+class _SongDetailsScreenState extends State<SongDetailsScreen>
+    with TickerProviderStateMixin {
   double _currentVolume = 0.5;
 
   // Palette State
   String? _lastPaletteImage;
   Color? _extractedColor;
+  late AnimationController _pulseController;
 
   PageController? _pageController;
   bool _isNavigatingCarousel = false;
@@ -45,6 +47,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
     _initVolume();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -85,6 +91,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     } catch (_) {}
 
     _playbackTimer?.cancel();
+    _pulseController.dispose();
     FlutterVolumeController.removeListener();
     _pageController?.dispose();
     _syncOverlayEntry?.remove();
@@ -176,8 +183,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     }
 
     // Determine images
-    final String? bgImage =
-        provider.currentArtistImage ?? provider.currentAlbumArt ?? station.logo;
+    // During carousel preview, we prioritize the song art over the artist image for better visual feedback
+    final String? bgImage = provider.currentAlbumArt ?? provider.currentArtistImage ?? station.logo;
     final String? mainImage = provider.currentAlbumArt ?? station.logo;
 
     // Trigger Palette Update if needed
@@ -200,6 +207,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           if (bgImage != null)
             Image.network(
               bgImage,
+              key: ValueKey(bgImage), // Force rebuild on image change
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) =>
                   Container(color: Color(int.parse(station.color))),
@@ -627,16 +635,44 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
           //const SizedBox(height: 60), // More top space
           SizedBox(
-            height: 230,
-            child:
+            height: 280,
+            child: Stack(
+              alignment: Alignment.center,
+              clipBehavior:
+                  Clip.none, // Allow aura to overflow without pushing layout
+              children: [
+                Positioned(
+                  child: SizedBox(
+                    height: 380,
+                    width: MediaQuery.of(context).size.width,
+                    child: _StardustAura(
+                      color: visualizerColor,
+                      isPlaying: provider.isPlaying && !provider.isLoading,
+                      volume: _currentVolume,
+                    ),
+                  ),
+                ),
                 provider.currentPlayingPlaylistId != null &&
-                    provider.activeQueue.isNotEmpty
-                ? _buildCarousel(context, provider, height: 230)
-                : _buildAlbumArt(context, provider, mainImage, 230),
+                        provider.activeQueue.isNotEmpty
+                    ? _buildCarousel(
+                        context,
+                        provider,
+                        visualizerColor,
+                        height: 230,
+                      )
+                    : _buildAlbumArt(
+                        context,
+                        provider,
+                        visualizerColor,
+                        mainImage,
+                        230,
+                      ),
+              ],
+            ),
           ),
           const SizedBox(
-            height: 28,
-          ), // Increased space to lower title and controls
+            height: 32,
+          ), // Increased space to allow the shadow to breathe and move title away
           // Bottom Section: Info + Controls + Visualizer
           _buildBottomSection(
             context,
@@ -678,11 +714,42 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     left: 16.0,
                     right: 16.0,
                   ),
-                  child:
-                      provider.currentPlayingPlaylistId != null &&
-                          provider.activeQueue.isNotEmpty
-                      ? _buildCarousel(context, provider, height: artSize)
-                      : _buildAlbumArt(context, provider, mainImage, artSize),
+                  child: SizedBox(
+                    height: artSize,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          child: SizedBox(
+                            height: artSize * 2.5,
+                            width: artSize * 2.5,
+                            child: _StardustAura(
+                              color: visualizerColor,
+                              isPlaying:
+                                  provider.isPlaying && !provider.isLoading,
+                              volume: _currentVolume,
+                            ),
+                          ),
+                        ),
+                        provider.currentPlayingPlaylistId != null &&
+                                provider.activeQueue.isNotEmpty
+                            ? _buildCarousel(
+                                context,
+                                provider,
+                                visualizerColor,
+                                height: artSize,
+                              )
+                            : _buildAlbumArt(
+                                context,
+                                provider,
+                                visualizerColor,
+                                mainImage,
+                                artSize,
+                              ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               // Right: Info + Controls
@@ -878,6 +945,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
   Widget _buildAlbumArt(
     BuildContext context,
     RadioProvider provider,
+    Color visualizerColor,
     String? mainImage,
     double size,
   ) {
@@ -909,42 +977,34 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
               );
             }
           },
-          child: Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+          child: AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, child) {
+              return Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    if (provider.isPlaying)
+                      BoxShadow(
+                        color: Theme.of(context).primaryColor.withOpacity(0.5),
+                        blurRadius: 40,
+                        spreadRadius: 5,
+                        offset: Offset.zero,
+                      ),
+                  ],
                 ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: mainImage != null && mainImage.isNotEmpty
-                ? Image.network(
-                    mainImage,
-                    key: ValueKey(mainImage),
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Center(
-                        child: Icon(
-                          Icons.music_note_rounded,
-                          size: 80,
-                          color: Colors.white.withValues(alpha: 0.5),
-                        ),
-                      );
-                    },
-                  )
-                : Center(
-                    child: Icon(
-                      Icons.music_note_rounded,
-                      size: 80,
-                      color: Colors.white.withValues(alpha: 0.5),
-                    ),
-                  ),
+                clipBehavior: Clip.antiAlias,
+                child: _ShadowedImage(
+                  imageUrl: mainImage,
+                  size: size,
+                  visualizerColor: visualizerColor,
+                  isPlaying: provider.isPlaying,
+                  borderRadius: 12,
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -972,6 +1032,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
     return SingleChildScrollView(
       padding: EdgeInsets.only(
+        top: 10, // Added a bit of gap to ensure shadow visibility
         bottom: isLandscape ? 8 : 16,
         left: isLandscape ? MediaQuery.of(context).size.width * 0.14 : 0,
       ),
@@ -1135,9 +1196,13 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           else if (provider.isRecognizing ||
               provider.currentPlayingPlaylistId != null ||
               ((provider.currentStation != null ||
-                      provider.audioHandler.mediaItem.value?.duration !=
-                          null ||
-                      provider.audioHandler.mediaItem.value?.extras?['isRecognized'] == true) &&
+                      provider.audioHandler.mediaItem.value?.duration != null ||
+                      provider
+                              .audioHandler
+                              .mediaItem
+                              .value
+                              ?.extras?['isRecognized'] ==
+                          true) &&
                   provider.isACRCloudEnabled))
             provider.isRecognizing
                 ? _buildIndeterminateProgressBar(
@@ -1145,8 +1210,19 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                     provider,
                     isFast: true,
                   )
-                : ((provider.audioHandler.mediaItem.value?.extras?['hasExactOffset'] ?? true) &&
-                   (provider.audioHandler.mediaItem.value?.extras?['isRecognized'] ?? true) != false)
+                : ((provider
+                              .audioHandler
+                              .mediaItem
+                              .value
+                              ?.extras?['hasExactOffset'] ??
+                          true) &&
+                      (provider
+                                  .audioHandler
+                                  .mediaItem
+                                  .value
+                                  ?.extras?['isRecognized'] ??
+                              true) !=
+                          false)
                 ? _buildNativeProgressBar(context, provider)
                 : provider.isPlaying
                 ? _buildIndeterminateProgressBar(
@@ -1425,26 +1501,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
           ),
 
           SizedBox(height: isLandscape ? 95 : 30),
-          // Visualizer (Bottom)
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.fastOutSlowIn,
-            height: isLandscape ? 40 : 100, // Reduced height to raise layout
-            child: (provider.isPlaying && !provider.isLoading)
-                ? Opacity(
-                    opacity:
-                        (provider.hiddenAudioController != null ||
-                            provider.currentPlayingPlaylistId != null)
-                        ? 0.3
-                        : 1.0,
-                    child: _MusicVisualizer(
-                      color: visualizerColor,
-                      barCount: 60,
-                      volume: _currentVolume,
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
 
           // Spacing for the curtain (initialChildSize is 0.15)
           SizedBox(height: MediaQuery.of(context).size.height * 0.15),
@@ -1506,7 +1562,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                             return Slider(
                               value: secureValue,
                               max: maxMs,
-                              onChanged: provider.currentPlayingPlaylistId != null
+                              onChanged:
+                                  provider.currentPlayingPlaylistId != null
                                   ? (v) {
                                       provider.audioHandler.seek(
                                         Duration(milliseconds: v.toInt()),
@@ -1588,11 +1645,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                   "--:--",
                   style: TextStyle(color: Colors.white30, fontSize: 12),
                 ),
-                Icon(
-                  Icons.sync_rounded,
-                  color: Colors.white30,
-                  size: 16,
-                ),
+                Icon(Icons.sync_rounded, color: Colors.white30, size: 16),
               ],
             ),
           ),
@@ -1600,19 +1653,21 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
         ],
       );
     }
-    
+
     // Countdown Timer logic for Not Found / Sol 2 (isFast = false)
     final item = provider.audioHandler.mediaItem.value;
     final start = item?.extras?['countdown_start'] as int?;
     final durationMs = item?.extras?['ui_duration'] as int? ?? 45000;
-    
+
     if (start != null) {
       return StreamBuilder<int>(
         stream: Stream.periodic(const Duration(milliseconds: 100), (i) => i),
         builder: (context, snapshot) {
           final elapsedMs = DateTime.now().millisecondsSinceEpoch - start;
           final progress = (elapsedMs / durationMs).clamp(0.0, 1.0);
-          final currentDur = Duration(milliseconds: elapsedMs.clamp(0, durationMs));
+          final currentDur = Duration(
+            milliseconds: elapsedMs.clamp(0, durationMs),
+          );
           final maxDur = Duration(milliseconds: durationMs);
 
           return Column(
@@ -1636,12 +1691,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                             ),
                             activeTrackColor: Theme.of(context).primaryColor,
                             inactiveTrackColor: Colors.white24,
-                            thumbColor: Colors.transparent, // Disable thumb display since it's unseekable
+                            thumbColor: Colors
+                                .transparent, // Disable thumb display since it's unseekable
                           ),
-                          child: Slider(
-                            value: progress,
-                            onChanged: null,
-                          ),
+                          child: Slider(value: progress, onChanged: null),
                         ),
                       ),
                     ),
@@ -1676,7 +1729,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
         },
       );
     }
-    
+
     return const SizedBox(height: 20);
   }
 
@@ -1709,10 +1762,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       thumbColor: Theme.of(context).primaryColor,
                     ),
                     child: Slider(
-                      value: position.clamp(
-                        0.0,
-                        duration > 0 ? duration : 1.0,
-                      ),
+                      value: position.clamp(0.0, duration > 0 ? duration : 1.0),
                       max: duration > 0 ? duration : 1.0,
                       onChanged: (v) {
                         controller.seekTo(Duration(seconds: v.toInt()));
@@ -1753,7 +1803,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
   Widget _buildCarousel(
     BuildContext context,
-    RadioProvider provider, {
+    RadioProvider provider,
+    Color visualizerColor, {
     double height = 320,
   }) {
     if (provider.currentPlayingPlaylistId == null) return const SizedBox();
@@ -1774,7 +1825,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     // Sync PageController if external change happened (e.g. autoplay)
     if (_pageController == null) {
       _pageController = PageController(
-        viewportFraction: 0.8,
+        viewportFraction:
+            1.0, // Show only one photo at a time to clean up the sides
         initialPage: currentIndex != -1 ? currentIndex : 0,
       );
       _lastPlayingSongId = provider.audioOnlySongId;
@@ -1822,7 +1874,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
     }
 
     return SizedBox(
-      height: height,
+      height: 320,
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification is ScrollStartNotification) {
@@ -1884,7 +1936,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
 
             // Scale effect
             return AnimatedBuilder(
-              animation: _pageController!,
+              animation: Listenable.merge([_pageController!, _pulseController]),
               builder: (context, child) {
                 double value = 1.0;
                 if (_pageController!.positions.length == 1 &&
@@ -1896,26 +1948,26 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                 }
                 return Center(
                   child: SizedBox(
-                    height: Curves.easeOut.transform(value) * height,
-                    width: Curves.easeOut.transform(value) * height,
-                    child: child,
+                    height: 280, // Matching the parent height
+                    width: MediaQuery.of(context).size.width,
+                    child: Center(
+                      child: SizedBox(
+                        height: Curves.easeOut.transform(value) * 230,
+                        width: Curves.easeOut.transform(value) * 230,
+                        child: child,
+                      ),
+                    ),
                   ),
                 );
               },
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 20,
-                      offset: const Offset(0, 20),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: GestureDetector(
-                  onTap: () {
+              child: _ShadowedImage(
+                imageUrl: song.artUri,
+                size: 230,
+                visualizerColor: visualizerColor,
+                isPlaying: provider.isPlaying,
+                borderRadius: 26,
+                isCarousel: true,
+                onTap: () {
                     _playbackTimer?.cancel();
                     if (provider.audioOnlySongId != song.id) {
                       setState(() {
@@ -1933,53 +1985,34 @@ class _SongDetailsScreenState extends State<SongDetailsScreen> {
                       });
                     }
                   },
-                  onDoubleTap: () {
-                    _playbackTimer?.cancel();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TrendingDetailsScreen(
-                          albumName: song.album,
-                          artistName: song.artist,
-                          artworkUrl: song.artUri,
-                          appleMusicUrl: song.appleMusicUrl,
-                          songName: song.title,
+                onDoubleTap: () {
+                  _playbackTimer?.cancel();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => TrendingDetailsScreen(
+                        albumName: song.album,
+                        artistName: song.artist,
+                        artworkUrl: song.artUri,
+                        appleMusicUrl: song.appleMusicUrl,
+                        songName: song.title,
+                      ),
+                    ),
+                  );
+                },
+                stackChildren: [
+                  if ((provider.isLoading &&
+                          provider.audioOnlySongId == song.id) ||
+                      _localLoadingId == song.id)
+                    Container(
+                      color: Colors.black54,
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
                         ),
                       ),
-                    );
-                  },
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      song.artUri != null
-                          ? Image.network(
-                              song.artUri!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  Container(color: Colors.grey[900]),
-                            )
-                          : Container(
-                              color: Colors.grey[900],
-                              child: const Icon(
-                                Icons.music_note_rounded,
-                                color: Colors.white54,
-                                size: 80,
-                              ),
-                            ),
-                      if ((provider.isLoading &&
-                              provider.audioOnlySongId == song.id) ||
-                          _localLoadingId == song.id)
-                        Container(
-                          color: Colors.black54,
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+                    ),
+                ],
               ),
             );
           },
@@ -2168,70 +2201,80 @@ class _LyricsWidgetState extends State<_LyricsWidget> {
   }
 }
 
-class _MusicVisualizer extends StatefulWidget {
+class _StardustAura extends StatefulWidget {
   final Color color;
-  final int barCount;
+  final bool isPlaying;
   final double volume;
 
-  const _MusicVisualizer({
+  const _StardustAura({
     required this.color,
-    this.barCount = 30,
-    this.volume = 1.0,
+    required this.isPlaying,
+    required this.volume,
   });
 
   @override
-  State<_MusicVisualizer> createState() => _MusicVisualizerState();
+  State<_StardustAura> createState() => _StardustAuraState();
 }
 
-class _MusicVisualizerState extends State<_MusicVisualizer>
+class _StardustAuraState extends State<_StardustAura>
     with SingleTickerProviderStateMixin {
   late Ticker _ticker;
-  late List<double> _currentHeights;
-  late List<double> _targetHeights;
+  final List<_StardustParticle> _particles = [];
   final Random _random = Random();
-  double _beatIntensity = 0.0;
+  double _rotationAngle = 0.0;
 
   @override
   void initState() {
     super.initState();
-    _currentHeights = List.filled(widget.barCount, 0.0);
-    _targetHeights = List.filled(widget.barCount, 0.0);
+    _ticker = createTicker(_onTick)..start();
+    // Initialize some particles
+    for (int i = 0; i < 50; i++) {
+      _particles.add(_createParticle(isInitial: true));
+    }
+  }
 
-    _ticker = createTicker((elapsed) {
+  void _onTick(Duration elapsed) {
+    if (!mounted) return;
+    setState(() {
       _updatePhysics();
     });
-    _ticker.start();
+  }
+
+  _StardustParticle _createParticle({bool isInitial = false}) {
+    final angle = _random.nextDouble() * pi * 2;
+    return _StardustParticle(
+      angle: angle,
+      // Radius adjusted to hug the 230x230 square art (corners are at ~163px from center)
+      radius: _random.nextDouble() * 0.3 + 0.55,
+      size: _random.nextDouble() * 2.5 + 0.5,
+      speed: _random.nextDouble() * 0.01 + 0.005,
+      life: isInitial ? _random.nextDouble() : 1.0,
+      opacity: _random.nextDouble() * 0.5 + 0.2,
+      wobble: _random.nextDouble() * pi * 2,
+    );
   }
 
   void _updatePhysics() {
-    if (_random.nextDouble() < 0.05) {
-      _beatIntensity = 0.8 + _random.nextDouble() * 0.2;
-    } else {
-      _beatIntensity *= 0.95;
+    final activeMultiplier = widget.isPlaying ? 1.0 : 0.15;
+    _rotationAngle += 0.003 * activeMultiplier;
+
+    // Add new particles - Balanced count for 60fps performance
+    final maxParticles = (100 + (widget.volume * 100)).toInt();
+    if (_particles.length < maxParticles && _random.nextDouble() < 0.4) {
+      _particles.add(_createParticle());
     }
 
-    for (int i = 0; i < widget.barCount; i++) {
-      double x = (i / widget.barCount) * 2 - 1;
-      double spectrumBias = exp(-2 * x * x);
-      double noise = _random.nextDouble();
+    // Update existing
+    for (int i = _particles.length - 1; i >= 0; i--) {
+      final p = _particles[i];
+      p.life -= 0.004; // Slightly faster fade for cleaner look
+      p.angle += p.speed * activeMultiplier;
+      p.wobble += 0.04;
 
-      if (_random.nextDouble() < 0.15) {
-        double beatComponent = (_beatIntensity * spectrumBias);
-        double randomComponent = noise * 0.3 * spectrumBias;
-
-        _targetHeights[i] = randomComponent + beatComponent;
-        _targetHeights[i] = _targetHeights[i].clamp(0.05, 1.0);
+      if (p.life <= 0) {
+        _particles.removeAt(i);
       }
-
-      if (_currentHeights[i] < _targetHeights[i]) {
-        _currentHeights[i] += (_targetHeights[i] - _currentHeights[i]) * 0.15;
-      } else {
-        _currentHeights[i] -= 0.02;
-      }
-      _currentHeights[i] = _currentHeights[i].clamp(0.01, 1.0);
     }
-
-    setState(() {});
   }
 
   @override
@@ -2242,48 +2285,234 @@ class _MusicVisualizerState extends State<_MusicVisualizer>
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double totalWidth = constraints.maxWidth;
-        final double gap = totalWidth * 0.005;
-        final double totalGap = gap * (widget.barCount - 1);
-        final double barWidth = (totalWidth - totalGap) / widget.barCount;
+    return CustomPaint(
+      painter: _StardustPainter(
+        particles: _particles,
+        color: widget.color,
+        rotationAngle: _rotationAngle,
+        volume: widget.volume,
+      ),
+      size: Size.infinite,
+    );
+  }
+}
 
-        final Color accentColor = Color.lerp(widget.color, Colors.white, 0.15)!;
+class _StardustParticle {
+  double angle;
+  double radius;
+  double size;
+  double speed;
+  double life;
+  double opacity;
+  double wobble;
 
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: List.generate(widget.barCount, (index) {
-            double heightFactor = _currentHeights[index];
-            final double volumeScale = widget.volume.clamp(0.0, 1.0);
+  _StardustParticle({
+    required this.angle,
+    required this.radius,
+    required this.size,
+    required this.speed,
+    required this.life,
+    required this.opacity,
+    required this.wobble,
+  });
+}
 
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 50),
-              margin: EdgeInsets.only(
-                right: index < widget.barCount - 1 ? gap : 0,
-              ),
-              width: barWidth,
-              height: (constraints.maxHeight * heightFactor * volumeScale * 1.5)
-                  .clamp(0.0, constraints.maxHeight),
-              decoration: BoxDecoration(
-                color: accentColor.withValues(
-                  alpha: 0.6 + (heightFactor * 0.4),
+class _StardustPainter extends CustomPainter {
+  final List<_StardustParticle> particles;
+  final Color color;
+  final double rotationAngle;
+  final double volume;
+
+  _StardustPainter({
+    required this.particles,
+    required this.color,
+    required this.rotationAngle,
+    required this.volume,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = min(size.width, size.height) * 0.8;
+
+    // Removed ambient glow to prevent color mismatch with page background
+
+    for (final p in particles) {
+      final currentAngle = p.angle + rotationAngle;
+      final orbitVariation = 1.0 + sin(p.wobble) * 0.12;
+      final currentRadius = p.radius * maxRadius * orbitVariation;
+
+      final offset = Offset(
+        center.dx + cos(currentAngle) * currentRadius,
+        center.dy +
+            sin(currentAngle) *
+                currentRadius, // Perfect circle for uniform distribution
+      );
+
+      final alpha = (p.opacity * p.life * (0.4 + volume * 0.6)).clamp(0.0, 1.0);
+
+      // OPTIMIZED GLOW: Drawing two circles instead of using MaskFilter.blur
+      // OPTIMIZED GLOW: Drawing two circles
+      // 1. Soft Outer Glow - Reduced size to prevent "bar" effect
+      canvas.drawCircle(
+        offset,
+        p.size * 1.8,
+        Paint()..color = color.withOpacity(alpha * 0.25),
+      );
+
+      // 2. Main Particle
+      canvas.drawCircle(
+        offset,
+        p.size,
+        Paint()..color = color.withOpacity(alpha),
+      );
+
+      // 3. Brighter core
+      if (p.life > 0.4) {
+        canvas.drawCircle(
+          offset,
+          p.size * 0.4,
+          Paint()..color = Colors.white.withOpacity(alpha * 0.8),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class _ShadowedImage extends StatefulWidget {
+  final String? imageUrl;
+  final double size;
+  final Color visualizerColor;
+  final bool isPlaying;
+  final double borderRadius;
+  final bool isCarousel;
+  final VoidCallback? onTap;
+  final VoidCallback? onDoubleTap;
+  final List<Widget>? stackChildren;
+
+  const _ShadowedImage({
+    required this.imageUrl,
+    required this.size,
+    required this.visualizerColor,
+    required this.isPlaying,
+    required this.borderRadius,
+    this.isCarousel = false,
+    this.onTap,
+    this.onDoubleTap,
+    this.stackChildren,
+  });
+
+  @override
+  State<_ShadowedImage> createState() => _ShadowedImageState();
+}
+
+class _ShadowedImageState extends State<_ShadowedImage>
+    with SingleTickerProviderStateMixin {
+  bool _isLoaded = false;
+  late AnimationController _fadeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_ShadowedImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.imageUrl != oldWidget.imageUrl) {
+      _isLoaded = false;
+      _fadeController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showShadow = widget.isPlaying && _isLoaded;
+
+    return AnimatedBuilder(
+      animation: _fadeController,
+      builder: (context, child) {
+        return Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+            boxShadow: [
+              if (showShadow)
+                BoxShadow(
+                  color: Theme.of(context)
+                      .primaryColor
+                      .withOpacity(0.8 * _fadeController.value),
+                  blurRadius: widget.isCarousel
+                      ? 8 * _fadeController.value
+                      : 3 * _fadeController.value,
+                  spreadRadius: widget.isCarousel
+                      ? 5 * _fadeController.value
+                      : 4 * _fadeController.value,
+                  offset: Offset.zero,
                 ),
-                borderRadius: BorderRadius.circular(barWidth / 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.color.withValues(alpha: 0.6),
-                    blurRadius: 8 * heightFactor * volumeScale,
-                    spreadRadius: heightFactor * 1.5 * volumeScale,
-                    offset: const Offset(0, 0),
-                  ),
-                ],
-              ),
-            );
-          }),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: GestureDetector(
+            onTap: widget.onTap,
+            onDoubleTap: widget.onDoubleTap,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                widget.imageUrl != null && widget.imageUrl!.isNotEmpty
+                    ? Image.network(
+                        widget.imageUrl!,
+                        key: ValueKey(widget.imageUrl),
+                        fit: BoxFit.cover,
+                        frameBuilder:
+                            (context, child, frame, wasSynchronouslyLoaded) {
+                          if (frame != null && !_isLoaded) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) {
+                                setState(() {
+                                  _isLoaded = true;
+                                });
+                                _fadeController.forward();
+                              }
+                            });
+                          }
+                          return child;
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return _buildPlaceholder();
+                        },
+                      )
+                    : _buildPlaceholder(),
+                if (widget.stackChildren != null) ...widget.stackChildren!,
+              ],
+            ),
+          ),
         );
       },
+    );
+  }
+
+  Widget _buildPlaceholder() {
+    return Center(
+      child: Icon(
+        Icons.music_note_rounded,
+        size: widget.isCarousel ? 40 : 80,
+        color: Colors.white.withValues(alpha: 0.5),
+      ),
     );
   }
 }
