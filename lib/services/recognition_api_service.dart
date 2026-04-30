@@ -13,10 +13,10 @@ class RecognitionApiService {
 
   // New API constants (Soluzione 2)
   static const String _apiUrl2 =
-      "https://shazam-music-recognition1.p.rapidapi.com/api/recognize";
-  static const String _apiHost2 = "shazam-music-recognition1.p.rapidapi.com";
+      "https://shazam-api7.p.rapidapi.com/songs/recognize-song";
+  static const String _apiHost2 = "shazam-api7.p.rapidapi.com";
   static const String _apiKey2 =
-      "937107fc2fmsh3f14e2e149d183cp1a7b28jsn5745ab269835";
+      "65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828";
 
   static bool _isGlobalRecognizing = false;
   http.Client? _activeClient;
@@ -261,19 +261,37 @@ class RecognitionApiService {
     if (_activeClient == null) return null;
 
     var request = http.MultipartRequest('POST', Uri.parse(_apiUrl2));
-
     request.headers.addAll({
       "x-rapidapi-host": _apiHost2,
       "x-rapidapi-key": apiKey,
     });
 
+    // Use 'upload_file' as primary (from the Python logic) but keep 'sample.mp3'
     request.files.add(
-      http.MultipartFile.fromBytes('audio', audioData, filename: "sample.mp3"),
+      http.MultipartFile.fromBytes('upload_file', audioData,
+          filename: "sample.mp3"),
     );
 
     try {
       final streamedResponse = await _activeClient!.send(request);
-      final response = await http.Response.fromStream(streamedResponse);
+      var response = await http.Response.fromStream(streamedResponse);
+
+      // Fallback if 'upload_file' fails (as per Python logic)
+      if (response.statusCode != 200) {
+        LogService().log(
+            "RecognitionAPI [Soluzione 2] 'upload_file' failed (${response.statusCode}). Retrying with 'audio'...");
+        var retryRequest = http.MultipartRequest('POST', Uri.parse(_apiUrl2));
+        retryRequest.headers.addAll({
+          "x-rapidapi-host": _apiHost2,
+          "x-rapidapi-key": apiKey,
+        });
+        retryRequest.files.add(
+          http.MultipartFile.fromBytes('audio', audioData,
+              filename: "sample.mp3"),
+        );
+        final retryStreamedResponse = await _activeClient!.send(retryRequest);
+        response = await http.Response.fromStream(retryStreamedResponse);
+      }
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
@@ -312,8 +330,10 @@ class RecognitionApiService {
         }
 
         return null;
-      } else if (response.statusCode == 429 || response.statusCode == 404 || 
-                 response.statusCode == 401 || response.statusCode == 403 ||
+      } else if (response.statusCode == 429 ||
+          response.statusCode == 404 ||
+          response.statusCode == 401 ||
+          response.statusCode == 403 ||
           (response.body.toLowerCase().contains("you have exceeded") ||
               response.body.toLowerCase().contains("quota") ||
               response.body.toLowerCase().contains("not found") ||
@@ -323,7 +343,6 @@ class RecognitionApiService {
           "RecognitionAPI [Soluzione 2 MultiKey]: Key ${apiKey.substring(0, 8)}... EXHAUSTED/INVALID (or 404). Disabling for today.",
         );
         await _disableKey(apiKey, 2);
-        // Eseguiamo il check in background, non blocchiamo il return
         checkKeysAvailability();
         return {'error': 'key_exhausted'};
       } else {

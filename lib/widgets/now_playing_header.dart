@@ -204,7 +204,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     }
   }
 
-  void _showShazamResultPopup(Map<String, dynamic> trackData) {
+  Future<void> _showShazamResultPopup(Map<String, dynamic> trackData) async {
     if (!mounted) return;
     final lang = Provider.of<LanguageProvider>(context, listen: false);
     
@@ -234,7 +234,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
       genre = trackData['genres']['primary'];
     }
 
-    GlassUtils.showGlassDialog(
+    await GlassUtils.showGlassDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
@@ -354,7 +354,6 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                         ),
                         onPressed: () {
                           Navigator.of(context).pop();
-                          InterstitialAdService().showAd();
                         },
                         child: Text(lang.translate('close')),
                       ),
@@ -367,6 +366,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         );
       },
     );
+    InterstitialAdService().showAd();
   }
 
   @override

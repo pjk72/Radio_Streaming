@@ -334,7 +334,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     }
   }
 
-  void _showShazamResultPopup(Map<String, dynamic> trackData) {
+  Future<void> _showShazamResultPopup(Map<String, dynamic> trackData) async {
     final lang = Provider.of<LanguageProvider>(context, listen: false);
     final provider = Provider.of<RadioProvider>(context, listen: false);
     
@@ -359,7 +359,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       }
     }
 
-    GlassUtils.showGlassDialog(
+    await GlassUtils.showGlassDialog(
       context: context,
       builder: (context) {
         bool isFav = false;
@@ -457,7 +457,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                         ),
                         onPressed: () {
                           Navigator.of(context).pop();
-                          InterstitialAdService().showAd();
                         },
                         child: Text(lang.translate('close')),
                       ),
@@ -470,6 +469,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         );
       },
     );
+    InterstitialAdService().showAd();
   }
 
   Map<String, String> get _countryMap {

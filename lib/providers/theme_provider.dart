@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:math';
 
 class ThemePreset {
   final String id;
@@ -26,6 +27,46 @@ class ThemePreset {
 
 class ThemeProvider with ChangeNotifier {
   static const String _keyThemeId = 'theme_id';
+  static const String _keyInitialSetup = 'initial_setup_v2';
+
+  // --- Default Backgrounds for first access ---
+  static final List<Map<String, dynamic>> _defaultBackgrounds = [
+    {
+      'url':
+          'https://images.unsplash.com/photo-1505118380757-91f5f45d8de7?auto=format&fit=crop&w=1600&q=80',
+      'color': 0xFF0077be, // Ocean Blue
+    },
+    {
+      'url':
+          'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&w=1600&q=80',
+      'color': 0xFFff9f43, // Sunset Orange
+    },
+    {
+      'url':
+          'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80',
+      'color': 0xFF00a8ff, // Sea Cyan
+    },
+    {
+      'url':
+          'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1600&q=80',
+      'color': 0xFF48dbfb, // Sky Blue
+    },
+    {
+      'url':
+          'https://images.unsplash.com/photo-1541701494587-cb58502866ab?auto=format&fit=crop&w=1600&q=80',
+      'color': 0xFF6c5ce7, // Abstract Purple
+    },
+    {
+      'url':
+          'https://images.unsplash.com/photo-1534067783941-51c9c23ecefd?auto=format&fit=crop&w=1600&q=80',
+      'color': 0xFF341f97, // Midnight Abstract
+    },
+    {
+      'url':
+          'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?auto=format&fit=crop&w=1600&q=80',
+      'color': 0xFF00d2d3, // Tropical Water
+    },
+  ];
 
   // --- Predefined Dark Themes ---
   static const ThemePreset _darkDefault = ThemePreset(
@@ -330,6 +371,22 @@ class ThemeProvider with ChangeNotifier {
     if (surface != null) _customSurfaceColor = Color(surface);
 
     _customBackgroundImageUrl = prefs.getString('custom_bg_image');
+
+    // First run initialization: if no background image and first time, pick a random one
+    final bool initialSetupDone = prefs.getBool(_keyInitialSetup) ?? false;
+    if (_customBackgroundImageUrl == null && !initialSetupDone) {
+      final random = Random();
+      final selection =
+          _defaultBackgrounds[random.nextInt(_defaultBackgrounds.length)];
+
+      _customBackgroundImageUrl = selection['url'] as String;
+      _customPrimaryColor = Color(selection['color'] as int);
+
+      // Save them as defaults
+      await prefs.setString('custom_bg_image', _customBackgroundImageUrl!);
+      await prefs.setInt('custom_primary', _customPrimaryColor!.value);
+      await prefs.setBool(_keyInitialSetup, true);
+    }
 
     notifyListeners();
   }
