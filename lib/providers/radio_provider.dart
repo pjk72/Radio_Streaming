@@ -529,7 +529,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     });
 
     if (_audioHandler is RadioAudioHandler) {
-      _audioHandler.setACRCloudEnabled(isACRCloudEnabled);
+      _syncACRCloudStatus();
     }
     notifyListeners();
   }
@@ -6684,9 +6684,20 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   void _onEntitlementChanged() {
     if (_audioHandler is RadioAudioHandler) {
-      _audioHandler.setACRCloudEnabled(isACRCloudEnabled);
+      _syncACRCloudStatus();
     }
     notifyListeners();
+  }
+
+  void _syncACRCloudStatus() async {
+    final enabled = isACRCloudEnabled;
+    if (_audioHandler is RadioAudioHandler) {
+      _audioHandler.setACRCloudEnabled(enabled);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('acr_cloud_enabled', enabled);
+    } catch (_) {}
   }
 
   Future<void> setACRCloudEnabled(bool value) async {

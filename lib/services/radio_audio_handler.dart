@@ -112,7 +112,9 @@ class RadioAudioHandler extends BaseAudioHandler
   Duration? _nextCheckDuration;
   DateTime? _lastRecognitionTime;
   Duration _lastRecognitionOffset = Duration.zero; // Local track for position offset
+  bool get _isAudioPlaying => _player.state == PlayerState.playing || playbackState.value.playing;
   Timer? _analyticsHeartbeatTimer;
+  DateTime? _lastHeartbeatTime;
 
   void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
     if (kDebugMode) {
@@ -420,18 +422,18 @@ class RadioAudioHandler extends BaseAudioHandler
         _startStuckMonitor();
 
         // Start recognition if in Radio Mode and enabled
-        if (playbackState.value.playing &&
+        if (_isAudioPlaying &&
             _isACRCloudEnabled &&
             mediaItem.value?.extras?['type'] != 'playlist_song') {
           _recognitionTimer?.cancel();
-          LogService().log("Recognition: Scheduling primary attempt in 5s...");
+          LogService().log("Recognition: Scheduling primary attempt in 5s (Source: PositionChanged, Playing: $_isAudioPlaying)...");
           _lastRecognitionTime = DateTime.now();
           _nextCheckDuration = const Duration(seconds: 5);
           if (mediaItem.value != null) {
             mediaItem.add(mediaItem.value!.copyWith(duration: _nextCheckDuration));
           }
           _recognitionTimer = Timer(const Duration(seconds: 5), () {
-            if (playbackState.value.playing &&
+            if (_isAudioPlaying &&
                 _isACRCloudEnabled &&
                 mediaItem.value?.extras?['type'] != 'playlist_song') {
               _attemptRecognition();
@@ -547,6 +549,10 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _initializeBackgroundState() async {
     LogService().log("RadioAudioHandler: Starting background state load...");
     try {
+      final prefs = await SharedPreferences.getInstance();
+      _isACRCloudEnabled = prefs.getBool('acr_cloud_enabled') ?? true;
+      LogService().log("RadioAudioHandler: ACRCloud Enabled (from prefs): $_isACRCloudEnabled");
+
       await _quickRestore();
       await _loadStationsFromPrefs();
       await _loadQueue();
@@ -4475,7 +4481,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     if (currentItem.extras?['type'] == 'playlist_song')
       return; // Don't recognize playlist songs
-    if (!playbackState.value.playing) return;
+    if (!_isAudioPlaying) return;
 
     final streamUrl = currentItem.id;
     _isSearching = true;
@@ -5012,30 +5018,28 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   void _startAnalyticsHeartbeat() {
-    if (_analyticsHeartbeatTimer != null && _analyticsHeartbeatTimer!.isActive) return;
-    _analyticsHeartbeatTimer?.cancel();
+    if (_lastHeartbeatTime != null && 
+        DateTime.now().difference(_lastHeartbeatTime!).inMinutes < 2) return;
+    
     // Log immediately on start
-    _sendHeartbeatEvent();
+    _lastHeartbeatTime = DateTime.now();
+    _sendHeartbeatEvent(msec: 1000); // Initial pulse
 
-    // Then every 5 minutes (300 seconds)
-    _analyticsHeartbeatTimer =
-        Timer.periodic(const Duration(minutes: 5), (timer) {
-      if (playbackState.value.playing) {
-        _sendHeartbeatEvent();
-      } else {
-        _stopAnalyticsHeartbeat();
-      }
-    });
+    // Note: Periodic timer removed in favor of Position-driven heartbeat in _handleUnifiedPosition
+    // to ensure reliability when the phone is inactive/in doze mode.
   }
 
   void _stopAnalyticsHeartbeat() {
     _analyticsHeartbeatTimer?.cancel();
     _analyticsHeartbeatTimer = null;
+    _lastHeartbeatTime = null;
   }
 
-  void _sendHeartbeatEvent() {
+  void _sendHeartbeatEvent({int msec = 120000}) {
     final currentItem = mediaItem.value;
-    _logAnalyticsEvent('audio_playback_heartbeat', {
+    // Using custom name to avoid 'user_engagement' reserved name conflicts
+    _logAnalyticsEvent('heartbeat_engagement', {
+      'engagement_time_msec': msec,
       'playback_type': currentItem?.extras?['type'] ?? 'unknown',
       'is_android_auto': _isInAndroidAutoMode,
       'is_background': true,
@@ -5044,6 +5048,16 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   void _handleUnifiedPosition(Duration pos) {
+    // 0. Heartbeat logic (driven by position to survive background doze mode)
+    if (_isAudioPlaying) {
+      final now = DateTime.now();
+      if (_lastHeartbeatTime == null || now.difference(_lastHeartbeatTime!).inMinutes >= 2) {
+        LogService().log("Analytics: Sending periodic heartbeat_engagement (via Position Listener)...");
+        _lastHeartbeatTime = now;
+        _sendHeartbeatEvent(msec: 120000);
+      }
+    }
+
     if (mediaItem.value?.extras?['type'] == 'playlist_song') {
       _currentPosition = pos;
     }
