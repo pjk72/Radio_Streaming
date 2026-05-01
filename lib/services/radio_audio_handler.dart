@@ -139,8 +139,7 @@ class RadioAudioHandler extends BaseAudioHandler
             : null;
 
         await FirebaseAnalytics.instance
-            .logEvent(name: name, parameters: cleanParameters)
-            .timeout(const Duration(seconds: 5));
+            .logEvent(name: name, parameters: cleanParameters);
 
         if (kDebugMode) {
           debugPrint(
@@ -476,8 +475,9 @@ class RadioAudioHandler extends BaseAudioHandler
 
   RadioAudioHandler() {
     _stations = [];
-    // Don't wait for future in constructor, but start it
+    // Don't wait for futures in constructor, but start them
     _initializePlayer();
+    _initializeBackgroundState();
 
     // Monitor media item changes for history tracking
     mediaItem.listen((item) {
@@ -541,10 +541,8 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       }
     });
-
-    // Load persisted stations independent of UI
-    _initializeBackgroundState();
   }
+
 
   Future<void> _initializeBackgroundState() async {
     LogService().log("RadioAudioHandler: Starting background state load...");
@@ -5018,15 +5016,34 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   void _startAnalyticsHeartbeat() {
-    if (_lastHeartbeatTime != null && 
-        DateTime.now().difference(_lastHeartbeatTime!).inMinutes < 2) return;
+    if (_lastHeartbeatTime != null) return; // Already running
     
-    // Log immediately on start
     _lastHeartbeatTime = DateTime.now();
     _sendHeartbeatEvent(msec: 1000); // Initial pulse
+    
+    // Start the continuous heartbeat loop
+    _runHeartbeatLoop();
+  }
 
-    // Note: Periodic timer removed in favor of Position-driven heartbeat in _handleUnifiedPosition
-    // to ensure reliability when the phone is inactive/in doze mode.
+  Future<void> _runHeartbeatLoop() async {
+    while (_lastHeartbeatTime != null) {
+      await Future.delayed(const Duration(minutes: 2));
+      
+      // Check if we should still be running
+      if (_lastHeartbeatTime == null) break;
+      
+      if (_isAudioPlaying) {
+        LogService().log("Analytics: Sending periodic heartbeat (Loop)...");
+        _lastHeartbeatTime = DateTime.now();
+        _sendHeartbeatEvent(msec: 120000);
+      } else {
+        // If not playing, we don't stop the loop yet, we just wait for next tick 
+        // OR we stop it if we want to be strict.
+        // For now, let's stop it to save resources.
+        _stopAnalyticsHeartbeat();
+        break;
+      }
+    }
   }
 
   void _stopAnalyticsHeartbeat() {
