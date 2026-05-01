@@ -5570,9 +5570,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         GestureDetector(
                           onTap: () async {
                             if (isFavorite) {
+                              final favSongId = favPlaylist.songs.firstWhere(
+                                (s) => s.id == song.id || (s.title == song.title && s.artist == song.artist),
+                                orElse: () => song,
+                              ).id;
                               await provider.removeFromPlaylist(
                                 'favorites',
-                                song.id,
+                                favSongId,
                               );
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).clearSnackBars();

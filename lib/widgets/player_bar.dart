@@ -161,81 +161,6 @@ class PlayerBar extends StatelessWidget {
                                                     ),
                                                   ),
                                                 ),
-                                                if (provider.currentLocalPath !=
-                                                        null ||
-                                                    provider
-                                                            .currentStation
-                                                            ?.genre ==
-                                                        "Local Device" ||
-                                                    provider
-                                                            .currentStation
-                                                            ?.icon ==
-                                                        "smartphone")
-                                                  Positioned(
-                                                    bottom: 2,
-                                                    right: 2,
-                                                    child: Container(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                            2,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.black
-                                                            .withValues(
-                                                              alpha: 0.8,
-                                                            ),
-                                                        shape: BoxShape.circle,
-                                                        border: Border.all(
-                                                          color: Colors.white24,
-                                                          width: 0.5,
-                                                        ),
-                                                      ),
-                                                      child: Icon(
-                                                        (provider.currentLocalPath !=
-                                                                    null &&
-                                                                (provider
-                                                                        .currentLocalPath!
-                                                                        .contains(
-                                                                          '_secure.',
-                                                                        ) ||
-                                                                    provider
-                                                                        .currentLocalPath!
-                                                                        .contains(
-                                                                          '.mst',
-                                                                        ) ||
-                                                                    provider
-                                                                        .currentLocalPath!
-                                                                        .contains(
-                                                                          'offline_music',
-                                                                        )))
-                                                            ? Icons
-                                                                  .file_download_done_rounded
-                                                            : Icons
-                                                                  .smartphone_rounded,
-                                                        size: 12,
-                                                        color:
-                                                            (provider.currentLocalPath !=
-                                                                    null &&
-                                                                (provider
-                                                                        .currentLocalPath!
-                                                                        .contains(
-                                                                          '_secure.',
-                                                                        ) ||
-                                                                    provider
-                                                                        .currentLocalPath!
-                                                                        .contains(
-                                                                          '.mst',
-                                                                        ) ||
-                                                                    provider
-                                                                        .currentLocalPath!
-                                                                        .contains(
-                                                                          'offline_music',
-                                                                        )))
-                                                            ? Colors.greenAccent
-                                                            : Colors.white,
-                                                      ),
-                                                    ),
-                                                  ),
                                               ],
                                             ),
                                           ),
@@ -512,8 +437,10 @@ class PlayerBar extends StatelessWidget {
                                   ),
                           ),
 
+
+
                           // Spacer to ensure separation if needed, or rely on MainAxisAlignment.spaceBetween
-                          if (!isDesktop) const SizedBox(width: 8),
+                          if (!isDesktop) const SizedBox(width: 4),
 
                           // Center Controls (Play, Prev, Next, Shuffle) - Fixed size on Mobile
                           isDesktop
@@ -661,7 +588,9 @@ class PlayerBar extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Shuffle Button (Left of Controls)
+         _buildFavoriteButton(context, provider),
+         const SizedBox(width: 4),
+         // Shuffle Button (Left of Controls)
         if (provider.currentPlayingPlaylistId != null) ...[
           IconButton(
             icon: Icon(
@@ -677,104 +606,9 @@ class PlayerBar extends StatelessWidget {
             onPressed: () => provider.toggleShuffle(),
           ),
           const SizedBox(width: 4),
-        ],
 
-        // Add to Genre Playlist Button (Radio Only)
-        // Moved to the left of controls
-        if (provider.currentPlayingPlaylistId == null &&
-            provider.currentTrack.isNotEmpty &&
-            provider.currentTrack != langProvider.translate('live_broadcast') &&
-            provider.currentTrack != langProvider.translate('unknown_title') &&
-            provider.currentAlbumArt != provider.currentStation?.logo) ...[
-          IconButton(
-            icon: Icon(
-              provider.currentSongIsSaved
-                  ? Icons.favorite
-                  : Icons.favorite_border,
-            ),
-            color: provider.currentSongIsSaved
-                ? Colors.redAccent
-                : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
-            iconSize: 20,
-            tooltip: provider.currentSongIsSaved
-                ? "Remove from Favorites" // Simplified English, or use translation if you want
-                : langProvider.translate('add_to_genre_playlist'),
-            onPressed: () async {
-              final result = await provider.toggleCurrentSongFavorite();
-              if (context.mounted) {
-                if (result == true) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      behavior: SnackBarBehavior.floating,
-                      content: Row(
-                        children: [
-                          Icon(Icons.favorite, color: Colors.white, size: 20),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              langProvider
-                                  .translate('added_to_playlist')
-                                  .replaceAll('{0}', 'Favorites'),
-                              style: TextStyle(
-                                color:
-                                    Theme.of(
-                                      context,
-                                    ).snackBarTheme.contentTextStyle?.color ??
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                } else if (result == false) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      behavior: SnackBarBehavior.floating,
-                      content: Row(
-                        children: [
-                          Icon(
-                            Icons.favorite_border,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              "Removed from Favorites", // Assuming no direct translation exists, but can adjust if needed
-                              style: TextStyle(
-                                color:
-                                    Theme.of(
-                                      context,
-                                    ).snackBarTheme.contentTextStyle?.color ??
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        langProvider.translate('could_not_identify_song'),
-                      ),
-                    ),
-                  );
-                }
-              }
-            },
-          ),
-          const SizedBox(width: 8),
+
+
         ],
 
         IconButton(
@@ -1004,6 +838,117 @@ class PlayerBar extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _buildFavoriteButton(BuildContext context, RadioProvider provider) {
+    final bool isRadio = provider.currentPlayingPlaylistId == null;
+    final bool isKnown = !isRadio ||
+        (provider.currentTrack.isNotEmpty &&
+            provider.currentTrack != "Live Broadcast" &&
+            provider.currentTrack != "Unknown Title" &&
+            provider.currentAlbumArt != provider.currentStation?.logo);
+
+    if (!isKnown) return const SizedBox.shrink();
+
+    final bool inFav = provider.currentSongIsSaved;
+    final bool inOther = provider.isInOtherPlaylists;
+
+    IconData heartIcon;
+    Color heartColor;
+
+    if (inFav) {
+      heartIcon = Icons.favorite;
+      heartColor = Colors.redAccent;
+    } else if (!isRadio) {
+      heartIcon = Icons.favorite_border;
+      heartColor = Theme.of(context).iconTheme.color?.withValues(alpha: 0.5) ?? Colors.white54;
+    } else {
+      heartIcon = inOther ? Icons.favorite : Icons.favorite_border;
+      heartColor = inOther 
+          ? Colors.grey 
+          : (Theme.of(context).iconTheme.color?.withValues(alpha: 0.5) ?? Colors.white54);
+    }
+
+    return IconButton(
+      icon: Icon(heartIcon),
+      color: heartColor,
+      iconSize: 20,
+      onPressed: () async {
+        if (inFav) {
+          if (inOther) {
+            await provider.removeCurrentSongFromPlaylist('favorites');
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  behavior: SnackBarBehavior.floating,
+                  content: Text("Removed from Favorites"),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+          } else {
+            final confirmed = await _showDeleteConfirmation(context);
+            if (confirmed) {
+              await provider.removeCurrentSongFromPlaylist('favorites');
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    behavior: SnackBarBehavior.floating,
+                    content: Text("Deleted from Favorites"),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            }
+          }
+        } else {
+          final result = await provider.toggleCurrentSongFavorite();
+          if (context.mounted && result == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                behavior: SnackBarBehavior.floating,
+                content: Row(
+                  children: [
+                    const Icon(Icons.favorite, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        Provider.of<LanguageProvider>(context, listen: false)
+                            .translate('added_to_playlist')
+                            .replaceAll('{0}', 'Favorites'),
+                      ),
+                    ),
+                  ],
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      },
+    );
+  }
+
+  Future<bool> _showDeleteConfirmation(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Elimina brano"),
+            content: const Text(
+                "Questo brano esiste solo nei tuoi Preferiti. Vuoi eliminarlo definitivamente?"),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text("Annulla")),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child:
+                    const Text("Elimina", style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 }
 

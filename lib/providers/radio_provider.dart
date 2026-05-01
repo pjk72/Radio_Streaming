@@ -479,13 +479,21 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool _currentSongIsSaved = false;
   bool get currentSongIsSaved => _currentSongIsSaved;
 
+  bool _isInOtherPlaylists = false;
+  bool get isInOtherPlaylists => _isInOtherPlaylists;
+
+  bool _isSavedAnywhere = false;
+  bool get isSavedAnywhere => _isSavedAnywhere;
+
   bool _isRecognizing = false;
+  bool _isCurrentTrackRecognized = false;
   bool _isWizardOpen = false;
   bool _showGlobalBanner = true;
 
   bool get isRecognizing =>
       _isRecognizing ||
       (_audioHandler.mediaItem.value?.extras?['isSearching'] == true);
+  bool get isCurrentTrackRecognized => _isCurrentTrackRecognized;
   bool get showGlobalBanner => _showGlobalBanner;
   bool get isWizardOpen => _isWizardOpen;
 
@@ -1730,6 +1738,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       final bool newRecognizing = item.extras?['isSearching'] == true;
       if (_isRecognizing != newRecognizing) {
         _isRecognizing = newRecognizing;
+        stateChanged = true;
+      }
+
+      final bool newRecognized = item.extras?['isRecognized'] == true;
+      if (_isCurrentTrackRecognized != newRecognized) {
+        _isCurrentTrackRecognized = newRecognized;
         stateChanged = true;
       }
 
@@ -5581,6 +5595,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     final streamStartTime = _currentTrackStartTime ?? DateTime.now();
     final elapsedSinceStream = DateTime.now().difference(streamStartTime);
     if (!force && elapsedSinceStream < const Duration(seconds: 5)) {
+      final waitMs = (const Duration(seconds: 5) - elapsedSinceStream).inMilliseconds;
+      LogService().log(
+        "[Lyrics] Waiting ${waitMs}ms before search for \"$_currentTrack\"...",
+      );
       await Future.delayed(const Duration(seconds: 5) - elapsedSinceStream);
       // Re-check after wait: if song changed, abort this old call
       final verArtistNow = LyricsService.cleanString(
@@ -5588,6 +5606,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       );
       final verTitleNow = LyricsService.cleanString(_currentTrack);
       if ("$verArtistNow|$verTitleNow" != searchKey) return;
+      // Post-delay: re-check recognition status. ACRCloud may have
+      // identified the song during the wait window, so we refresh
+      // _isCurrentTrackRecognized from the live mediaItem extras.
+      final liveRecognized =
+          _audioHandler.mediaItem.value?.extras?['isRecognized'] == true;
+      if (liveRecognized && !_isCurrentTrackRecognized) {
+        _isCurrentTrackRecognized = true;
+        LogService().log(
+          "[Lyrics] Recognition confirmed during wait for \"$_currentTrack\" — proceeding.",
+        );
+      }
     }
 
     // 1. Auto-Clear Logic: Always clear if song changed
@@ -5595,6 +5624,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _currentLyrics = LyricsData.empty();
       _originalLyrics = null;
       _isLyricsTranslated = false;
+      _isFetchingLyrics = false; // STOP previous spinner immediately
       _lyricsOffset = Duration.zero;
       notifyListeners();
     }
@@ -5602,6 +5632,18 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // 2. Control Flow Logic
     final bool isRadio =
         _currentPlayingPlaylistId == null && _currentStation != null;
+
+    // USER REQUEST: Only fetch lyrics if the song is recognized (for Radio)
+    if (isRadio && isACRCloudEnabled && !_isCurrentTrackRecognized) {
+      LogService().log(
+        "[Lyrics] Blocked — track not yet recognized: \"$_currentTrack\". "
+        "Waiting for ACRCloud identification before searching.",
+      );
+      _lastLyricsSearch = searchKey;
+      _isFetchingLyrics = false;
+      notifyListeners();
+      return;
+    }
     if (!force) {
       if (isRadio) {
         if (!isACRCloudEnabled) {
@@ -5624,21 +5666,27 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _lastLyricsSearch = searchKey;
     notifyListeners();
 
-    // Re-verify if the song is still the same after wait (Final Check)
-    // Re-verify if the song is still the same after wait
-    final verArtist = LyricsService.cleanString(
-      _sanitizeArtistName(_currentArtist),
-    );
-    final verTitle = LyricsService.cleanString(_currentTrack);
-    final verKey = "$verArtist|$verTitle";
-    if (verKey != searchKey || _lastLyricsSearch != searchKey) return;
-
     try {
-      // LyricsService now handles all combinations (sanitized, raw, cleaned) internally
+      // Final verification before calling service
+      final verArtist = LyricsService.cleanString(_sanitizeArtistName(_currentArtist));
+      final verTitle = LyricsService.cleanString(_currentTrack);
+      if ("$verArtist|$verTitle" != searchKey || _lastLyricsSearch != searchKey) {
+        _isFetchingLyrics = false;
+        notifyListeners();
+        return;
+      }
+
+      // Overall timeout for the search process
       final results = await _lyricsService.fetchLyrics(
         artist: _currentArtist,
         title: _currentTrack,
         isRadio: _currentPlayingPlaylistId == null,
+      ).timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          LogService().log("[Lyrics] Search TIMEOUT for \"$_currentTrack\"");
+          return LyricsData.empty();
+        },
       );
 
       // Only update if metadata hasn't changed while we were fetching
@@ -5650,13 +5698,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         }
       }
     } catch (e) {
+      LogService().log("[Lyrics] Error fetching lyrics: $e");
       _currentLyrics = LyricsData.empty();
-      // Allow retry if failed
-      _lastLyricsSearch = null;
+      _lastLyricsSearch = null; // Allow retry
     } finally {
       if (_lastLyricsSearch == searchKey) {
         _isFetchingLyrics = false;
         notifyListeners();
+      } else {
+        // If song changed during fetch, ensure we reset flag anyway
+        _isFetchingLyrics = false;
+        // No need to notify here as the next fetchLyrics call will do it
       }
     }
   }
@@ -5778,14 +5830,80 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<void> checkIfCurrentSongIsSaved() async {
     if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") {
       _currentSongIsSaved = false;
+      _isInOtherPlaylists = false;
+      _isSavedAnywhere = false;
     } else {
-      final cleanTitle = _cleanSongTitle(_currentTrack);
-      _currentSongIsSaved = await _playlistService.isSongInFavorites(
-        cleanTitle,
-        _currentArtist,
-      );
+      _currentSongIsSaved = await isInFavoritesLogic();
+      _isInOtherPlaylists = await isInOtherPlaylistsLogic();
+      _isSavedAnywhere = await isSavedAnywhereLogic();
     }
     notifyListeners();
+  }
+
+  Future<bool> isInFavoritesLogic() async {
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") return false;
+    final cleanTitle = _cleanSongTitle(_currentTrack);
+    final playlists = await _playlistService.loadPlaylists();
+    final fav = playlists.firstWhere(
+      (p) => p.id == 'favorites',
+      orElse: () => Playlist(
+        id: 'favorites',
+        name: 'Favorites',
+        songs: [],
+        createdAt: DateTime.now(),
+      ),
+    );
+    return fav.songs.any(
+      (s) => _cleanSongTitle(s.title) == cleanTitle && s.artist == _currentArtist,
+    );
+  }
+
+  Future<bool> isInOtherPlaylistsLogic() async {
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") return false;
+    final cleanTitle = _cleanSongTitle(_currentTrack);
+    final playlists = await _playlistService.loadPlaylists();
+    return playlists.any(
+      (p) =>
+          p.id != 'favorites' &&
+          p.songs.any(
+            (s) => _cleanSongTitle(s.title) == cleanTitle && s.artist == _currentArtist,
+          ),
+    );
+  }
+
+  Future<bool> isSavedAnywhereLogic() async {
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") return false;
+    return await _playlistService.isSongInFavorites(
+      _cleanSongTitle(_currentTrack),
+      _currentArtist,
+    );
+  }
+
+  Future<void> removeCurrentSongFromPlaylist(String playlistId) async {
+    if (_currentTrack.isEmpty || _currentTrack == "Live Broadcast") return;
+    final cleanTitle = _cleanSongTitle(_currentTrack);
+    final cleanArtist = _currentArtist;
+
+    try {
+      final playlists = await _playlistService.loadPlaylists();
+      final index = playlists.indexWhere((p) => p.id == playlistId);
+      if (index != -1) {
+        final initialLen = playlists[index].songs.length;
+        playlists[index].songs.removeWhere((s) {
+          final sTitle = _cleanSongTitle(s.title);
+          return sTitle == cleanTitle && s.artist == cleanArtist;
+        });
+        if (playlists[index].songs.length != initialLen) {
+          await _playlistService.saveAll(playlists);
+          if (playlistId == 'favorites') {
+            _currentSongIsSaved = false;
+          }
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error removing song from playlist: $e");
+    }
   }
 
   Future<bool?> toggleCurrentSongFavorite() async {
@@ -8252,8 +8370,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
 
       if (needsResolution) {
-        // Start a silent preparation for YouTube IDs
-        await startQRPreparation(playlist, null, silent: true);
+        // Since we now rely on the cloud for sharing and the recipient handles missing YouTube IDs,
+        // we no longer proactively generate and upload QR data to the cloud when entering a playlist.
+        // If we want local youtube resolution, we should call a separate local resolution method here, 
+        // but for now we skip doing anything cloud-related.
       }
     } finally {
       _isProactivelyResolving = false;
@@ -8296,7 +8416,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       final cloudPayload = {
         'n': playlist.name,
-        's': playlist.songs.map((s) => s.toJson()).toList(),
+        's': playlist.songs.map((s) {
+          final json = s.toJson();
+          json.remove('localPath'); // Sicurezza: non condividere il percorso locale
+          return json;
+        }).toList(),
         'v': 6, // Versione 6: Full Data Sync
         'ts': FieldValue.serverTimestamp(),
         'expiresAt': expiresAt, // Let the SDK handle conversion to Timestamp
@@ -8362,7 +8486,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         // Full Sync: Ricostruiamo le canzoni direttamente dal JSON
         final List<dynamic> songsData = data['s'] ?? [];
         songs = songsData
-            .map((s) => SavedSong.fromJson(Map<String, dynamic>.from(s)))
+            .map((s) {
+              final map = Map<String, dynamic>.from(s);
+              map.remove('localPath'); // Rimuoviamo sempre il percorso locale per sicurezza
+              return SavedSong.fromJson(map);
+            })
             .toList();
         LogService().log(
           "Cloud Protocol v6 (Full Sync): Importazione di ${songs.length} canzoni completata.",
@@ -8550,7 +8678,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         );
       } else {
         // Version 1/2: Full JSON
-        playlist = Playlist.fromJson(jsonMap);
+        final Map<String, dynamic> cleanMap = Map<String, dynamic>.from(jsonMap);
+        if (cleanMap['songs'] is List) {
+          for (var s in cleanMap['songs']) {
+            if (s is Map) s.remove('localPath');
+          }
+        }
+        playlist = Playlist.fromJson(cleanMap);
       }
 
       LogService().log(

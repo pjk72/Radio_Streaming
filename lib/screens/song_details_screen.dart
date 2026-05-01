@@ -142,6 +142,28 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     }
   }
 
+  Future<bool> _showDeleteConfirmation(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Elimina brano"),
+            content: const Text(
+                "Questo brano esiste solo nei tuoi Preferiti. Vuoi eliminarlo definitivamente?"),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text("Annulla")),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child:
+                    const Text("Elimina", style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context);
@@ -671,8 +693,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
             ),
           ),
           const SizedBox(
-            height: 32,
-          ), // Increased space to allow the shadow to breathe and move title away
+            height: 16,
+          ), // Reduced space between art and info
           // Bottom Section: Info + Controls + Visualizer
           _buildBottomSection(
             context,
@@ -1023,16 +1045,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     bool isDefaultLogo =
         (provider.currentAlbumArt ?? station.logo) == station.logo;
 
-    final localPath = provider.currentLocalPath;
-    final bool isOffline =
-        localPath != null &&
-        (localPath.contains('_secure.') ||
-            localPath.endsWith('.mst') ||
-            localPath.contains('offline_music'));
-
     return SingleChildScrollView(
       padding: EdgeInsets.only(
-        top: 10, // Added a bit of gap to ensure shadow visibility
+        top: 0, 
         bottom: isLandscape ? 8 : 16,
         left: isLandscape ? MediaQuery.of(context).size.width * 0.14 : 0,
       ),
@@ -1045,7 +1060,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
           // Info Section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: AnimatedSwitcher(
+            child: SizedBox(
+              height: 90,
+              child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 400),
               switchInCurve: Curves.easeOut,
               switchOutCurve: Curves.easeIn,
@@ -1187,52 +1204,60 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               ),
             ),
           ),
-
-          SizedBox(height: isLandscape ? 4 : 10),
+        ),
 
           // Progress Bar (Youtube) - Above Controls
-          if (provider.hiddenAudioController != null)
-            _buildProgressBar(context, provider.hiddenAudioController!)
-          else if (provider.isRecognizing ||
-              provider.currentPlayingPlaylistId != null ||
-              ((provider.currentStation != null ||
-                      provider.audioHandler.mediaItem.value?.duration != null ||
-                      provider
-                              .audioHandler
-                              .mediaItem
-                              .value
-                              ?.extras?['isRecognized'] ==
-                          true) &&
-                  provider.isACRCloudEnabled))
-            provider.isRecognizing
-                ? _buildIndeterminateProgressBar(
-                    context,
-                    provider,
-                    isFast: true,
-                  )
-                : ((provider
-                              .audioHandler
-                              .mediaItem
-                              .value
-                              ?.extras?['hasExactOffset'] ??
-                          true) &&
-                      (provider
+          SizedBox(
+            height: 48,
+            child: Center(
+              child: Builder(
+                builder: (context) {
+                  if (provider.hiddenAudioController != null) {
+                    return _buildProgressBar(context, provider.hiddenAudioController!);
+                  } else if (provider.isRecognizing ||
+                      provider.currentPlayingPlaylistId != null ||
+                      ((provider.currentStation != null ||
+                              provider.audioHandler.mediaItem.value?.duration != null ||
+                              provider
+                                      .audioHandler
+                                      .mediaItem
+                                      .value
+                                      ?.extras?['isRecognized'] ==
+                                  true) &&
+                          provider.isACRCloudEnabled)) {
+                    if (provider.isRecognizing) {
+                      return _buildIndeterminateProgressBar(
+                        context,
+                        provider,
+                        isFast: true,
+                      );
+                    } else if (((provider
                                   .audioHandler
                                   .mediaItem
                                   .value
-                                  ?.extras?['isRecognized'] ??
-                              true) !=
-                          false)
-                ? _buildNativeProgressBar(context, provider)
-                : provider.isPlaying
-                ? _buildIndeterminateProgressBar(
-                    context,
-                    provider,
-                    isFast: false,
-                  )
-                : const SizedBox(height: 20)
-          else
-            const SizedBox(height: 20), // Space for Radio info separation
+                                  ?.extras?['hasExactOffset'] ??
+                              true) &&
+                          (provider
+                                      .audioHandler
+                                      .mediaItem
+                                      .value
+                                      ?.extras?['isRecognized'] ??
+                                  true) !=
+                              false)) {
+                      return _buildNativeProgressBar(context, provider);
+                    } else if (provider.isPlaying) {
+                      return _buildIndeterminateProgressBar(
+                        context,
+                        provider,
+                        isFast: false,
+                      );
+                    }
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ),
           // Controls
           // Controls
           Padding(
@@ -1248,127 +1273,95 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                     height: 48,
                     child: Builder(
                       builder: (context) {
-                        // Shuffle (Playlist Mode)
-                        if (provider.currentPlayingPlaylistId != null) {
+                        // Favorite Heart (Left Side - Radio & Playlist)
+                        final bool isRadio = provider.currentPlayingPlaylistId == null;
+                        final bool isKnown = !isRadio ||
+                            (provider.currentTrack.isNotEmpty &&
+                                provider.currentTrack != "Live Broadcast" &&
+                                provider.currentTrack != "Unknown Title" &&
+                                provider.currentAlbumArt !=
+                                    provider.currentStation?.logo);
+
+                        if (isKnown) {
+                          final bool inFav = provider.currentSongIsSaved;
+                          final bool inOther = provider.isInOtherPlaylists;
+
+                          // Icon & Color Logic
+                          IconData heartIcon;
+                          Color heartColor;
+
+                          if (inFav) {
+                            heartIcon = Icons.favorite;
+                            heartColor = Colors.redAccent;
+                          } else if (!isRadio) {
+                            // Playlist Mode: Red if in favorites, else Empty
+                            heartIcon = Icons.favorite_border;
+                            heartColor = Colors.white54;
+                          } else {
+                            // Radio Mode: Grey if in other, else Empty
+                            heartIcon = inOther ? Icons.favorite : Icons.favorite_border;
+                            heartColor = inOther ? Colors.grey : Colors.white54;
+                          }
+
                           return IconButton(
-                            onPressed: () {
-                              provider.toggleShuffle();
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (_pageController != null &&
-                                    _pageController!.hasClients) {
-                                  _pageController!.jumpToPage(0);
-                                  if (provider.activeQueue.isNotEmpty &&
-                                      provider.currentPlayingPlaylistId !=
-                                          null) {
-                                    provider.playPlaylistSong(
-                                      provider.activeQueue[0],
-                                      provider.currentPlayingPlaylistId!,
+                            icon: Icon(heartIcon),
+                            color: heartColor,
+                            iconSize: 28,
+                            tooltip: inFav
+                                ? "Remove from Favorites"
+                                : Provider.of<LanguageProvider>(context, listen: false)
+                                    .translate('add_to_genre_playlist'),
+                            onPressed: () async {
+                              if (inFav) {
+                                // Logic for removing from Favorites
+                                if (inOther) {
+                                  await provider.removeCurrentSongFromPlaylist('favorites');
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        behavior: SnackBarBehavior.floating,
+                                        content: Text("Removed from Favorites"),
+                                        duration: Duration(seconds: 2),
+                                      ),
                                     );
                                   }
+                                } else {
+                                  // Ask for confirmation
+                                  final confirmed = await _showDeleteConfirmation(context);
+                                  if (confirmed) {
+                                    await provider.removeCurrentSongFromPlaylist('favorites');
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          behavior: SnackBarBehavior.floating,
+                                          content: Text("Deleted from Favorites"),
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  }
                                 }
-                              });
-                            },
-                            icon: Icon(
-                              provider.isShuffleMode
-                                  ? Icons.shuffle_rounded
-                                  : Icons.repeat_rounded,
-                              color: provider.isShuffleMode
-                                  ? Theme.of(context).primaryColor
-                                  : Colors.white24,
-                              size: 24,
-                            ),
-                          );
-                        }
-                        // Add to Genre Playlist Button (Radio Only)
-                        if (provider.currentPlayingPlaylistId == null &&
-                            provider.currentTrack.isNotEmpty &&
-                            provider.currentTrack != "Live Broadcast" &&
-                            provider.currentTrack != "Unknown Title" &&
-                            provider.currentAlbumArt !=
-                                provider.currentStation?.logo) {
-                          return IconButton(
-                            icon: Icon(
-                              provider.currentSongIsSaved
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                            ),
-                            color: provider.currentSongIsSaved
-                                ? Colors.redAccent
-                                : Colors.white54,
-                            iconSize: 28,
-                            tooltip: provider.currentSongIsSaved
-                                ? "Remove from Favorites"
-                                : Provider.of<LanguageProvider>(
-                                    context,
-                                    listen: false,
-                                  ).translate('add_to_genre_playlist'),
-                            onPressed: () async {
-                              final result = await provider
-                                  .toggleCurrentSongFavorite();
-                              if (context.mounted) {
-                                if (result == true) {
+                              } else {
+                                // Logic for adding to Favorites
+                                final result = await provider.toggleCurrentSongFavorite();
+                                if (context.mounted && result == true) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       behavior: SnackBarBehavior.floating,
                                       content: Row(
                                         children: [
-                                          const Icon(
-                                            Icons.favorite,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
+                                          const Icon(Icons.favorite, color: Colors.white, size: 20),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
-                                              Provider.of<LanguageProvider>(
-                                                    context,
-                                                    listen: false,
-                                                  )
-                                                  .translate(
-                                                    'added_to_playlist',
-                                                  )
-                                                  .replaceAll(
-                                                    '{0}',
-                                                    'Favorites',
-                                                  ),
+                                              Provider.of<LanguageProvider>(context, listen: false)
+                                                  .translate('added_to_playlist')
+                                                  .replaceAll('{0}', 'Favorites'),
                                             ),
                                           ),
                                         ],
                                       ),
                                       duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                } else if (result == false) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      behavior: SnackBarBehavior.floating,
-                                      content: Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.favorite_border,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          const Expanded(
-                                            child: Text(
-                                              "Removed from Favorites",
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        Provider.of<LanguageProvider>(
-                                          context,
-                                          listen: false,
-                                        ).translate('could_not_identify_song'),
-                                      ),
                                     ),
                                   );
                                 }
@@ -1376,6 +1369,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                             },
                           );
                         }
+                        
                         return const SizedBox.shrink();
                       },
                     ),
@@ -1441,59 +1435,74 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                   SizedBox(
                     width: 48,
                     height: 48,
-                    child: localPath != null
-                        ? IconButton(
+                    child: Builder(
+                      builder: (context) {
+                        // Shuffle (Playlist Mode - Right Side)
+                        if (provider.currentPlayingPlaylistId != null) {
+                          return IconButton(
+                            onPressed: () {
+                              provider.toggleShuffle();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (_pageController != null &&
+                                    _pageController!.hasClients) {
+                                  _pageController!.jumpToPage(0);
+                                  if (provider.activeQueue.isNotEmpty &&
+                                      provider.currentPlayingPlaylistId !=
+                                          null) {
+                                    provider.playPlaylistSong(
+                                      provider.activeQueue[0],
+                                      provider.currentPlayingPlaylistId!,
+                                    );
+                                  }
+                                }
+                              });
+                            },
                             icon: Icon(
-                              isOffline
-                                  ? Icons.file_download_done_rounded
-                                  : Icons.smartphone_rounded,
-                              color: isOffline
-                                  ? Colors.greenAccent.withValues(alpha: 0.8)
-                                  : Colors.orangeAccent,
+                              provider.isShuffleMode
+                                  ? Icons.shuffle_rounded
+                                  : Icons.repeat_rounded,
+                              color: provider.isShuffleMode
+                                  ? Theme.of(context).primaryColor
+                                  : Colors.white24,
                               size: 24,
                             ),
+                          );
+                        }
+                        
+                        // Shuffle (Playlist Mode - Right Side)
+                        if (provider.currentPlayingPlaylistId != null) {
+                          return IconButton(
                             onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  behavior: SnackBarBehavior.floating,
-                                  content: Row(
-                                    children: [
-                                      Icon(
-                                        isOffline
-                                            ? Icons.file_download_done_rounded
-                                            : Icons.smartphone_rounded,
-                                        color: isOffline
-                                            ? Colors.greenAccent
-                                            : Colors.orangeAccent,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        isOffline
-                                            ? Provider.of<LanguageProvider>(
-                                                context,
-                                                listen: false,
-                                              ).translate('song_saved_offline')
-                                            : Provider.of<LanguageProvider>(
-                                                context,
-                                                listen: false,
-                                              ).translate('song_on_device'),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  duration: const Duration(seconds: 3),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  margin: const EdgeInsets.all(20),
-                                ),
-                              );
+                              provider.toggleShuffle();
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (_pageController != null &&
+                                    _pageController!.hasClients) {
+                                  _pageController!.jumpToPage(0);
+                                  if (provider.activeQueue.isNotEmpty &&
+                                      provider.currentPlayingPlaylistId !=
+                                          null) {
+                                    provider.playPlaylistSong(
+                                      provider.activeQueue[0],
+                                      provider.currentPlayingPlaylistId!,
+                                    );
+                                  }
+                                }
+                              });
                             },
-                          )
-                        : const SizedBox.shrink(),
+                            icon: Icon(
+                              provider.isShuffleMode
+                                  ? Icons.shuffle_rounded
+                                  : Icons.repeat_rounded,
+                              color: provider.isShuffleMode
+                                  ? Theme.of(context).primaryColor
+                                  : Colors.white24,
+                              size: 24,
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -1605,7 +1614,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
               ],
             );
           },
@@ -1649,7 +1657,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          // Removed spacer to fit fixed height
         ],
       );
     }
@@ -1723,7 +1731,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
             ],
           );
         },

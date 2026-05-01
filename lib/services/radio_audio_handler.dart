@@ -4438,9 +4438,12 @@ class RadioAudioHandler extends BaseAudioHandler
     // Avoid double icons
     if (title.startsWith("⬇️ ") || title.startsWith("📱 ")) return title;
 
-    if (localPath.contains('_secure.') ||
-        localPath.endsWith('.mst') ||
-        localPath.contains('offline_music')) {
+    final lowerPath = localPath.toLowerCase();
+    if (lowerPath.contains('_secure.') ||
+        lowerPath.endsWith('.mst') ||
+        lowerPath.contains('offline_music') ||
+        lowerPath.contains('com.fazio.musicstream') ||
+        lowerPath.contains('musicstream')) {
       return "⬇️ $title";
     } else {
       return "📱 $title";

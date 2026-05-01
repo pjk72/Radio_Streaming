@@ -111,7 +111,9 @@ class SavedSong {
     final path = localPath!.toLowerCase();
     return path.contains('_secure.') ||
         path.endsWith('.mst') ||
-        path.contains('offline_music');
+        path.contains('offline_music') ||
+        path.contains('com.fazio.musicstream') ||
+        path.contains('musicstream');
   }
 
   bool get isYoutubeArt {
