@@ -66,9 +66,25 @@ class LanguageProvider with ChangeNotifier {
     _resolveSystemLanguage();
   }
 
-  String translate(String key) {
-    return AppTranslations.translations[_resolvedLanguageCode]?[key] ??
-        AppTranslations.translations['en']![key] ??
-        key;
+  String translate(String key, {List<String>? args}) {
+    // 1. Try the current resolved language
+    String? translation = AppTranslations.translations[_resolvedLanguageCode]?[key];
+
+    // 2. If not found, fallback to English ('en')
+    if (translation == null && _resolvedLanguageCode != 'en') {
+      translation = AppTranslations.translations['en']?[key];
+    }
+
+    // 3. Final safety: return translation, or key if nothing was found
+    String result = translation ?? key;
+
+    // Handle arguments if provided (e.g. {0}, {1})
+    if (args != null && args.isNotEmpty) {
+      for (int i = 0; i < args.length; i++) {
+        result = result.replaceAll('{$i}', args[i]);
+      }
+    }
+
+    return result;
   }
 }

@@ -33,27 +33,41 @@ class LyricsService {
     final cleanTitle = cleanString(title);
 
     LogService().log(
-      "Lyrics Search Initiated (Strict): '$cleanArtist' - '$cleanTitle'",
+      "Lyrics Search Initiated (${isRadio ? 'Radio' : 'Playlist'}): '$cleanArtist' - '$cleanTitle'",
     );
 
     if (cleanArtist.isEmpty || cleanTitle.isEmpty) {
       return LyricsData.empty();
     }
 
-    // 2. Try LRCLIB (Primary - supports Synced Lyrics)
-    // Only search using the cleaned names.
+    // 1. Radio Requirement: Go DIRECTLY to Lyrics.ovh
+    if (isRadio) {
+      try {
+        final ovhResult = await _tryLyricsOvh(
+          artist: cleanArtist,
+          title: cleanTitle,
+        );
+        if (ovhResult != null) return ovhResult;
+      } catch (e) {
+        LogService().log("Lyrics.ovh Error (Radio): $e");
+      }
+      LogService().log("Lyrics NOT FOUND (Radio) for: $cleanArtist - $cleanTitle");
+      return LyricsData.empty();
+    }
+
+    // 2. Playlist Requirement: Try LRCLIB first (Primary - supports Synced Lyrics)
     try {
       final result = await _tryLrclib(
         artist: cleanArtist,
         title: cleanTitle,
-        isRadio: isRadio,
+        isRadio: false,
       );
       if (result != null) return result;
     } catch (e) {
-      LogService().log("LRCLIB Error ($cleanArtist - $cleanTitle): $e");
+      LogService().log("LRCLIB Error (Playlist): $e");
     }
 
-    // 3. Fallback to Lyrics.ovh (Secondary - Static only)
+    // 3. Playlist Fallback: Try Lyrics.ovh
     try {
       final ovhResult = await _tryLyricsOvh(
         artist: cleanArtist,
@@ -61,7 +75,7 @@ class LyricsService {
       );
       if (ovhResult != null) return ovhResult;
     } catch (e) {
-      LogService().log("Lyrics.ovh Error ($cleanArtist - $cleanTitle): $e");
+      LogService().log("Lyrics.ovh Error (Playlist Fallback): $e");
     }
 
     // 4. Fallback: Parse "Artist - Title" from the title parameter (Requested Feature)

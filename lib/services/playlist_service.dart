@@ -148,6 +148,8 @@ class PlaylistService {
 
   void clearCache() {
     _cachedPlaylists = null;
+    _cachedUniqueSongs = null;
+    _notifyListeners();
   }
 
   Future<void> renamePlaylist(String id, String newName) async {

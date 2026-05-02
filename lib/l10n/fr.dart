@@ -646,4 +646,8 @@ final Map<String, String> fr = {
   'crossfade_duration': 'Durée du fondu enchaîné',
   'crossfade_duration_desc': 'Ajustez le temps de fondu entre les chansons',
   'seconds_unit': '{0}s',
+  'guest_login_title': 'Accès invité',
+  'guest_login_desc': 'Attention : en mode INVITÉ, vous ne pourrez pas synchroniser vos favoris sur d\'autres appareils et certaines fonctionnalités avancées, telles que les paroles synchronisées, ne seront pas activées.\n\nVoulez-vous quand même continuer ?',
+  'logout_confirm_title': 'Se déconnecter et passer en invité ?',
+  'logout_confirm_desc': 'Avant de vous déconnecter, nous vous recommandons d\'effectuer une sauvegarde cloud pour enregistrer vos préférences.\n\nUne fois déconnecté, vous entrerez en mode Invité avec une session dédiée : les playlists et autres activités réservées à votre connexion seront effacées de la session locale.',
 };

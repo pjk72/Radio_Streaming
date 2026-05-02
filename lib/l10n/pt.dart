@@ -639,4 +639,8 @@ final Map<String, String> pt = {
   'crossfade_duration': 'Duração do crossfade',
   'crossfade_duration_desc': 'Ajuste o tempo de fade entre as músicas',
   'seconds_unit': '{0}s',
+  'guest_login_title': 'Acesso de convidado',
+  'guest_login_desc': 'Aviso: no modo CONVIDADO você não poderá sincronizar seus favoritos com outros dispositivos e alguns recursos avançados, como letras sincronizadas, não serão ativados.\n\nDeseja continuar mesmo assim?',
+  'logout_confirm_title': 'Sair e mudar para convidado?',
+  'logout_confirm_desc': 'Antes de sair, recomendamos fazer um backup na nuvem para salvar suas preferências.\n\nDepois de sair, você entrará no modo visitante com uma sessão dedicada: playlists e outras atividades reservadas para seu login serão apagadas da sessão local.',
 };

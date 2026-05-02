@@ -645,4 +645,8 @@ final Map<String, String> de = {
   'crossfade_duration': 'Crossfade-Dauer',
   'crossfade_duration_desc': 'Passen Sie die Überblendzeit zwischen den Songs an',
   'seconds_unit': '{0}s',
+  'guest_login_title': 'Gastzugang',
+  'guest_login_desc': 'Warnung: Im GAST-Modus können Sie Ihre Favoriten nicht mit anderen Geräten synchronisieren und einige erweiterte Funktionen, wie zum Beispiel synchronisierte Liedtexte, werden nicht aktiviert.\n\nMöchten Sie trotzdem fortfahren?',
+  'logout_confirm_title': 'Abmelden und zum Gast wechseln?',
+  'logout_confirm_desc': 'Bevor Sie sich abmelden, empfehlen wir, ein Cloud-Backup durchzuführen, um Ihre Einstellungen zu speichern.\n\nSobald Sie abgemeldet sind, wechseln Sie in den Gastmodus mit einer dedizierten Sitzung: Wiedergabelisten und andere Aktivitäten, die für Ihre Anmeldung reserviert sind, werden aus der lokalen Sitzung gelöscht.',
 };

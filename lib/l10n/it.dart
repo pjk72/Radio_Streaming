@@ -650,5 +650,12 @@ final Map<String, String> it = {
   'shazam_wizard_hint': 'Identifica la musica intorno a te per una ricerca mirata!',
   'music_recognition': 'Riconoscimento musicale',
   'music_recognition_disabled': 'Riconoscimento musicale (Non disponibile)',
-  'music_recognition_disabled_momentarily': 'Il servizio di riconoscimento musicale è momentaneamente disabilitato.',
+  'music_recognition_disabled_momentarily':
+      'Il servizio di riconoscimento musicale è momentaneamente disabilitato.',
+  'guest_login_title': 'Accesso Ospite',
+  'guest_login_desc':
+      'Attenzione: in modalità OSPITE non potrai sincronizzare i tuoi preferiti su altri dispositivi e alcune funzionalità avanzate, come i testi sincronizzati, non saranno attivate.\n\nVuoi continuare comunque?',
+  'logout_confirm_title': 'Uscire ed entrare in modalità Guest?',
+  'logout_confirm_desc':
+      'Prima di uscire, ti consigliamo di effettuare un backup in cloud per salvare le tue preferenze.\n\nUna volta uscito, entrerai in modalità Guest con una sessione dedicata: le playlist e altre attività riservate alla tua login verranno rimosse dalla sessione locale.',
 };

@@ -17,6 +17,7 @@ import 'trending_details_screen.dart';
 import 'artist_details_screen.dart';
 import '../services/lyrics_service.dart';
 import '../services/entitlement_service.dart';
+import '../services/log_service.dart';
 
 class SongDetailsScreen extends StatefulWidget {
   const SongDetailsScreen({super.key});
@@ -100,10 +101,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
   }
 
   Future<void> _updatePalette(String? imageUrl, Color fallback) async {
-    if (imageUrl == _lastPaletteImage) return; // No change
-
-    // reset if null
-    if (imageUrl == null) {
+    if (imageUrl == _lastPaletteImage) return;
+    
+    if (imageUrl == null || imageUrl.isEmpty) {
       if (mounted) {
         setState(() {
           _lastPaletteImage = null;
@@ -114,26 +114,24 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     }
 
     _lastPaletteImage = imageUrl;
-
     try {
-      final palette = await PaletteGenerator.fromImageProvider(
+      final PaletteGenerator palette = await PaletteGenerator.fromImageProvider(
         NetworkImage(imageUrl),
         maximumColorCount: 20,
-      );
-
+      ).timeout(const Duration(seconds: 4));
+      
       if (mounted && _lastPaletteImage == imageUrl) {
         setState(() {
-          // Try to find the liveliest color
-          _extractedColor =
-              palette.lightVibrantColor?.color ??
-              palette.dominantColor?.color ??
-              palette.vibrantColor?.color ??
-              palette.lightMutedColor?.color ??
-              fallback;
+          // Preferiamo colori vibranti per dare più "vita" all'interfaccia
+          _extractedColor = palette.vibrantColor?.color ?? 
+                           palette.lightVibrantColor?.color ??
+                           palette.dominantColor?.color ??
+                           palette.mutedColor?.color ??
+                           fallback;
         });
+        LogService().log("Palette updated for: $imageUrl");
       }
-    } catch (_) {
-      // On error fallback
+    } catch (e) {
       if (mounted && _lastPaletteImage == imageUrl) {
         setState(() {
           _extractedColor = fallback;
@@ -148,15 +146,19 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
           builder: (context) => AlertDialog(
             title: const Text("Elimina brano"),
             content: const Text(
-                "Questo brano esiste solo nei tuoi Preferiti. Vuoi eliminarlo definitivamente?"),
+              "Questo brano esiste solo nei tuoi Preferiti. Vuoi eliminarlo definitivamente?",
+            ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text("Annulla")),
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Annulla"),
+              ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                child:
-                    const Text("Elimina", style: TextStyle(color: Colors.red)),
+                child: const Text(
+                  "Elimina",
+                  style: TextStyle(color: Colors.red),
+                ),
               ),
             ],
           ),
@@ -206,7 +208,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
 
     // Determine images
     // During carousel preview, we prioritize the song art over the artist image for better visual feedback
-    final String? bgImage = provider.currentAlbumArt ?? provider.currentArtistImage ?? station.logo;
+    final String? bgImage =
+        provider.currentAlbumArt ?? provider.currentArtistImage ?? station.logo;
     final String? mainImage = provider.currentAlbumArt ?? station.logo;
 
     // Trigger Palette Update if needed
@@ -311,10 +314,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     return DraggableScrollableSheet(
       controller: _sheetController,
       initialChildSize: dynamicSize,
-      minChildSize: dynamicSize,
+      minChildSize: 0.05, // Ridotto per mostrare solo le icone
       maxChildSize: 0.95,
       snap: true,
-      snapSizes: [dynamicSize, 0.5, 0.95],
+      snapSizes: [0.05, dynamicSize, 0.25, 0.95],
       builder: (context, scrollController) {
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
@@ -429,7 +432,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                         final newSize =
                             (currentSize -
                                     delta / MediaQuery.of(context).size.height)
-                                .clamp(0.15, 0.95);
+                                .clamp(0.05, 0.95);
                         _sheetController.jumpTo(newSize);
                       },
                       child: Container(
@@ -476,7 +479,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                                 children: [
                                   Icon(
                                     Icons.lyrics_rounded,
-                                    color: accentColor.withValues(alpha: 0.7),
+                                    color: Theme.of(context).primaryColor,
                                     size: 20,
                                   ),
                                   const SizedBox(width: 12),
@@ -692,9 +695,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               ],
             ),
           ),
-          const SizedBox(
-            height: 16,
-          ), // Reduced space between art and info
+          const SizedBox(height: 16), // Reduced space between art and info
           // Bottom Section: Info + Controls + Visualizer
           _buildBottomSection(
             context,
@@ -806,22 +807,19 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
       ),
       child: Row(
         children: [
-          Container(
-            width: 110,
-            alignment: Alignment.centerLeft,
-            child: IconButton(
-              icon: const Icon(
-                Icons.keyboard_arrow_down,
-                color: Colors.white,
-                size: 32,
-              ),
-              onPressed: () => Navigator.of(context).pop(),
+          IconButton(
+            icon: const Icon(
+              Icons.keyboard_arrow_down,
+              color: Colors.white,
+              size: 32,
             ),
+            onPressed: () => Navigator.of(context).pop(),
           ),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               stationName,
-              textAlign: TextAlign.center,
+              textAlign: TextAlign.left,
               style: const TextStyle(
                 color: Colors.white70,
                 fontWeight: FontWeight.bold,
@@ -1010,7 +1008,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                   boxShadow: [
                     if (provider.isPlaying)
                       BoxShadow(
-                        color: Theme.of(context).primaryColor.withOpacity(0.5),
+                        color: visualizerColor.withOpacity(0.5),
                         blurRadius: 40,
                         spreadRadius: 5,
                         offset: Offset.zero,
@@ -1047,7 +1045,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
 
     return SingleChildScrollView(
       padding: EdgeInsets.only(
-        top: 0, 
+        top: 0,
         bottom: isLandscape ? 8 : 16,
         left: isLandscape ? MediaQuery.of(context).size.width * 0.14 : 0,
       ),
@@ -1063,66 +1061,54 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
             child: SizedBox(
               height: 90,
               child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              transitionBuilder: (child, animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0.2, 0.0),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
+                duration: const Duration(milliseconds: 400),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.2, 0.0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: Column(
+                  key: ValueKey(
+                    "${provider.currentTrack}|${provider.currentArtist}",
                   ),
-                );
-              },
-              child: Column(
-                key: ValueKey(
-                  "${provider.currentTrack}|${provider.currentArtist}",
-                ),
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          provider.currentTrack.isNotEmpty
-                              ? provider.currentTrack
-                                    .replaceFirst("⬇️ ", "")
-                                    .replaceFirst("📱 ", "")
-                              : Provider.of<LanguageProvider>(
-                                  context,
-                                  listen: false,
-                                ).translate('live_broadcast'),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            provider.currentTrack.isNotEmpty
+                                ? provider.currentTrack
+                                      .replaceFirst("⬇️ ", "")
+                                      .replaceFirst("📱 ", "")
+                                : Provider.of<LanguageProvider>(
+                                    context,
+                                    listen: false,
+                                  ).translate('live_broadcast'),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  MouseRegion(
-                    cursor:
-                        (provider.currentArtist.isNotEmpty &&
-                            (provider.currentPlayingPlaylistId != null ||
-                                (provider.currentTrack !=
-                                        Provider.of<LanguageProvider>(
-                                          context,
-                                          listen: false,
-                                        ).translate('live_broadcast') &&
-                                    !isDefaultLogo)))
-                        ? SystemMouseCursors.click
-                        : SystemMouseCursors.basic,
-                    child: GestureDetector(
-                      onTap:
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    MouseRegion(
+                      cursor:
                           (provider.currentArtist.isNotEmpty &&
                               (provider.currentPlayingPlaylistId != null ||
                                   (provider.currentTrack !=
@@ -1131,80 +1117,93 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                                             listen: false,
                                           ).translate('live_broadcast') &&
                                       !isDefaultLogo)))
-                          ? () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => ArtistDetailsScreen(
-                                    artistName: provider.currentArtist,
-                                    artistImage: provider.currentArtistImage,
-                                    genre: station.genre,
+                          ? SystemMouseCursors.click
+                          : SystemMouseCursors.basic,
+                      child: GestureDetector(
+                        onTap:
+                            (provider.currentArtist.isNotEmpty &&
+                                (provider.currentPlayingPlaylistId != null ||
+                                    (provider.currentTrack !=
+                                            Provider.of<LanguageProvider>(
+                                              context,
+                                              listen: false,
+                                            ).translate('live_broadcast') &&
+                                        !isDefaultLogo)))
+                            ? () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => ArtistDetailsScreen(
+                                      artistName: provider.currentArtist,
+                                      artistImage: provider.currentArtistImage,
+                                      genre: station.genre,
+                                    ),
                                   ),
-                                ),
-                              );
-                            }
-                          : null,
+                                );
+                              }
+                            : null,
 
-                      child: Text(
-                        provider.currentArtist.isNotEmpty
-                            ? provider.currentArtist
-                            : "",
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
-                          fontSize: 18,
-                          decoration:
-                              (provider.currentArtist.isNotEmpty &&
-                                  (provider.currentPlayingPlaylistId != null ||
-                                      (provider.currentTrack !=
-                                              Provider.of<LanguageProvider>(
-                                                context,
-                                                listen: false,
-                                              ).translate('live_broadcast') &&
-                                          !isDefaultLogo)))
-                              ? TextDecoration.underline
-                              : null,
-                          decorationColor: Colors.white54,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (provider.currentAlbum.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Builder(
-                      builder: (context) {
-                        String albumText = provider.currentAlbum;
-                        final stationName = station.name;
-
-                        if (stationName.isNotEmpty &&
-                            albumText.contains(stationName)) {
-                          albumText = albumText
-                              .replaceAll(stationName, "")
-                              .replaceAll("•", "")
-                              .trim();
-                        }
-
-                        if (albumText.isEmpty) return const SizedBox.shrink();
-
-                        return Text(
-                          albumText,
+                        child: Text(
+                          provider.currentArtist.isNotEmpty
+                              ? provider.currentArtist
+                              : "",
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 14,
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 18,
+                            decoration:
+                                (provider.currentArtist.isNotEmpty &&
+                                    (provider.currentPlayingPlaylistId !=
+                                            null ||
+                                        (provider.currentTrack !=
+                                                Provider.of<LanguageProvider>(
+                                                  context,
+                                                  listen: false,
+                                                ).translate('live_broadcast') &&
+                                            !isDefaultLogo)))
+                                ? TextDecoration.underline
+                                : null,
+                            decorationColor: Colors.white54,
                           ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
+                    if (provider.currentAlbum.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Builder(
+                        builder: (context) {
+                          String albumText = provider.currentAlbum;
+                          final stationName = station.name;
+
+                          if (stationName.isNotEmpty &&
+                              albumText.contains(stationName)) {
+                            albumText = albumText
+                                .replaceAll(stationName, "")
+                                .replaceAll("•", "")
+                                .trim();
+                          }
+
+                          if (albumText.isEmpty) return const SizedBox.shrink();
+
+                          return Text(
+                            albumText,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 14,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
-        ),
 
           // Progress Bar (Youtube) - Above Controls
           SizedBox(
@@ -1213,11 +1212,15 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               child: Builder(
                 builder: (context) {
                   if (provider.hiddenAudioController != null) {
-                    return _buildProgressBar(context, provider.hiddenAudioController!);
+                    return _buildProgressBar(
+                      context,
+                      provider.hiddenAudioController!,
+                    );
                   } else if (provider.isRecognizing ||
                       provider.currentPlayingPlaylistId != null ||
                       ((provider.currentStation != null ||
-                              provider.audioHandler.mediaItem.value?.duration != null ||
+                              provider.audioHandler.mediaItem.value?.duration !=
+                                  null ||
                               provider
                                       .audioHandler
                                       .mediaItem
@@ -1232,18 +1235,18 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                         isFast: true,
                       );
                     } else if (((provider
-                                  .audioHandler
-                                  .mediaItem
-                                  .value
-                                  ?.extras?['hasExactOffset'] ??
-                              true) &&
-                          (provider
-                                      .audioHandler
-                                      .mediaItem
-                                      .value
-                                      ?.extras?['isRecognized'] ??
-                                  true) !=
-                              false)) {
+                                .audioHandler
+                                .mediaItem
+                                .value
+                                ?.extras?['hasExactOffset'] ??
+                            true) &&
+                        (provider
+                                    .audioHandler
+                                    .mediaItem
+                                    .value
+                                    ?.extras?['isRecognized'] ??
+                                true) !=
+                            false)) {
                       return _buildNativeProgressBar(context, provider);
                     } else if (provider.isPlaying) {
                       return _buildIndeterminateProgressBar(
@@ -1274,8 +1277,10 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                     child: Builder(
                       builder: (context) {
                         // Favorite Heart (Left Side - Radio & Playlist)
-                        final bool isRadio = provider.currentPlayingPlaylistId == null;
-                        final bool isKnown = !isRadio ||
+                        final bool isRadio =
+                            provider.currentPlayingPlaylistId == null;
+                        final bool isKnown =
+                            !isRadio ||
                             (provider.currentTrack.isNotEmpty &&
                                 provider.currentTrack != "Live Broadcast" &&
                                 provider.currentTrack != "Unknown Title" &&
@@ -1299,7 +1304,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                             heartColor = Colors.white54;
                           } else {
                             // Radio Mode: Grey if in other, else Empty
-                            heartIcon = inOther ? Icons.favorite : Icons.favorite_border;
+                            heartIcon = inOther
+                                ? Icons.favorite
+                                : Icons.favorite_border;
                             heartColor = inOther ? Colors.grey : Colors.white54;
                           }
 
@@ -1309,13 +1316,17 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                             iconSize: 28,
                             tooltip: inFav
                                 ? "Remove from Favorites"
-                                : Provider.of<LanguageProvider>(context, listen: false)
-                                    .translate('add_to_genre_playlist'),
+                                : Provider.of<LanguageProvider>(
+                                    context,
+                                    listen: false,
+                                  ).translate('add_to_genre_playlist'),
                             onPressed: () async {
                               if (inFav) {
                                 // Logic for removing from Favorites
                                 if (inOther) {
-                                  await provider.removeCurrentSongFromPlaylist('favorites');
+                                  await provider.removeCurrentSongFromPlaylist(
+                                    'favorites',
+                                  );
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
@@ -1327,14 +1338,22 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                                   }
                                 } else {
                                   // Ask for confirmation
-                                  final confirmed = await _showDeleteConfirmation(context);
+                                  final confirmed =
+                                      await _showDeleteConfirmation(context);
                                   if (confirmed) {
-                                    await provider.removeCurrentSongFromPlaylist('favorites');
+                                    await provider
+                                        .removeCurrentSongFromPlaylist(
+                                          'favorites',
+                                        );
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           behavior: SnackBarBehavior.floating,
-                                          content: Text("Deleted from Favorites"),
+                                          content: Text(
+                                            "Deleted from Favorites",
+                                          ),
                                           duration: Duration(seconds: 2),
                                         ),
                                       );
@@ -1343,20 +1362,33 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                                 }
                               } else {
                                 // Logic for adding to Favorites
-                                final result = await provider.toggleCurrentSongFavorite();
+                                final result = await provider
+                                    .toggleCurrentSongFavorite();
                                 if (context.mounted && result == true) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       behavior: SnackBarBehavior.floating,
                                       content: Row(
                                         children: [
-                                          const Icon(Icons.favorite, color: Colors.white, size: 20),
+                                          const Icon(
+                                            Icons.favorite,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
-                                              Provider.of<LanguageProvider>(context, listen: false)
-                                                  .translate('added_to_playlist')
-                                                  .replaceAll('{0}', 'Favorites'),
+                                              Provider.of<LanguageProvider>(
+                                                    context,
+                                                    listen: false,
+                                                  )
+                                                  .translate(
+                                                    'added_to_playlist',
+                                                  )
+                                                  .replaceAll(
+                                                    '{0}',
+                                                    'Favorites',
+                                                  ),
                                             ),
                                           ),
                                         ],
@@ -1369,7 +1401,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                             },
                           );
                         }
-                        
+
                         return const SizedBox.shrink();
                       },
                     ),
@@ -1378,23 +1410,27 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                   // 2. Previous
                   IconButton(
                     onPressed: () => provider.playPrevious(),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.skip_previous_rounded,
-                      color: Colors.white,
+                      color: visualizerColor,
                       size: 36,
                     ),
                   ),
 
                   // 3. Play/Pause (Center)
-                  Container(
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
                     width: 64,
                     height: 64,
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+                      color: visualizerColor,
+                      borderRadius: BorderRadius.circular(
+                        provider.isPlaying ? 16 : 32,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: visualizerColor.withValues(alpha: 0.2),
                           blurRadius: 20,
                           offset: const Offset(0, 5),
                         ),
@@ -1407,7 +1443,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                               width: 32,
                               height: 32,
                               child: CircularProgressIndicator(
-                                color: Colors.black,
+                                color: Colors.white,
                                 strokeWidth: 3,
                               ),
                             )
@@ -1415,7 +1451,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                               provider.isPlaying
                                   ? Icons.pause_rounded
                                   : Icons.play_arrow_rounded,
-                              color: Colors.black,
+                              color: Colors.white,
                               size: 32,
                             ),
                     ),
@@ -1424,9 +1460,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                   // 4. Next
                   IconButton(
                     onPressed: () => provider.playNext(),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.skip_next_rounded,
-                      color: Colors.white,
+                      color: visualizerColor,
                       size: 36,
                     ),
                   ),
@@ -1468,7 +1504,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                             ),
                           );
                         }
-                        
+
                         // Shuffle (Playlist Mode - Right Side)
                         if (provider.currentPlayingPlaylistId != null) {
                           return IconButton(
@@ -1975,23 +2011,23 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                 borderRadius: 26,
                 isCarousel: true,
                 onTap: () {
-                    _playbackTimer?.cancel();
-                    if (provider.audioOnlySongId != song.id) {
-                      setState(() {
-                        _localLoadingId = song.id;
+                  _playbackTimer?.cancel();
+                  if (provider.audioOnlySongId != song.id) {
+                    setState(() {
+                      _localLoadingId = song.id;
+                    });
+                    // Yield to allow UI update before processing
+                    Future.delayed(const Duration(milliseconds: 50), () {
+                      provider.playPlaylistSong(song, playlist.id).then((_) {
+                        if (mounted) {
+                          setState(() {
+                            _localLoadingId = null;
+                          });
+                        }
                       });
-                      // Yield to allow UI update before processing
-                      Future.delayed(const Duration(milliseconds: 50), () {
-                        provider.playPlaylistSong(song, playlist.id).then((_) {
-                          if (mounted) {
-                            setState(() {
-                              _localLoadingId = null;
-                            });
-                          }
-                        });
-                      });
-                    }
-                  },
+                    });
+                  }
+                },
                 onDoubleTap: () {
                   _playbackTimer?.cancel();
                   Navigator.push(
@@ -2014,9 +2050,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                     Container(
                       color: Colors.black54,
                       child: const Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                        ),
+                        child: CircularProgressIndicator(color: Colors.white),
                       ),
                     ),
                 ],
@@ -2460,9 +2494,7 @@ class _ShadowedImageState extends State<_ShadowedImage>
             boxShadow: [
               if (showShadow)
                 BoxShadow(
-                  color: Theme.of(context)
-                      .primaryColor
-                      .withOpacity(0.8 * _fadeController.value),
+                  color: widget.visualizerColor.withOpacity(0.8 * _fadeController.value),
                   blurRadius: widget.isCarousel
                       ? 8 * _fadeController.value
                       : 3 * _fadeController.value,
@@ -2487,18 +2519,20 @@ class _ShadowedImageState extends State<_ShadowedImage>
                         fit: BoxFit.cover,
                         frameBuilder:
                             (context, child, frame, wasSynchronouslyLoaded) {
-                          if (frame != null && !_isLoaded) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted) {
-                                setState(() {
-                                  _isLoaded = true;
+                              if (frame != null && !_isLoaded) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (mounted) {
+                                    setState(() {
+                                      _isLoaded = true;
+                                    });
+                                    _fadeController.forward();
+                                  }
                                 });
-                                _fadeController.forward();
                               }
-                            });
-                          }
-                          return child;
-                        },
+                              return child;
+                            },
                         errorBuilder: (context, error, stackTrace) {
                           return _buildPlaceholder();
                         },

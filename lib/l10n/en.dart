@@ -639,6 +639,12 @@ final Map<String, String> en = {
   'shazam_wizard_hint': 'Identify music around you for targeted search!',
   'music_recognition': 'Music Recognition',
   'music_recognition_disabled': 'Music Recognition (Not available)',
-  'music_recognition_disabled_momentarily': 'The music recognition service is temporarily disabled.',
+  'music_recognition_disabled_momentarily':
+      'The music recognition service is temporarily disabled.',
+  'guest_login_title': 'Guest Access',
+  'guest_login_desc':
+      'Warning: in GUEST mode you will not be able to sync your favorites across other devices and some advanced features, such as synchronized lyrics, will not be activated.\n\nDo you want to continue anyway?',
+  'logout_confirm_title': 'Logout and Switch to Guest?',
+  'logout_confirm_desc':
+      'Before logging out, we recommend performing a cloud backup to save your preferences.\n\nOnce logged out, you will enter Guest mode with a dedicated session: playlists and other activities reserved for your login will be cleared from the local session.',
 };
-

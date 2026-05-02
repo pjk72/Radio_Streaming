@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/radio_provider.dart';
 
 import 'package:firebase_analytics/firebase_analytics.dart';
+import '../providers/language_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -71,6 +72,13 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     final auth = Provider.of<BackupService>(context, listen: false);
     try {
+      final radio = Provider.of<RadioProvider>(context, listen: false);
+      // Prepara lo switch: salva stato Guest e ferma musica
+      await radio.snapshotGuestSession();
+      try {
+        await radio.audioHandler.stop();
+      } catch (_) {}
+
       await auth.signIn();
       if (auth.isSignedIn && mounted) {
         // Login successful
@@ -131,6 +139,57 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _continueAsGuest() async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    final bool? proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.person_outline_rounded, color: Colors.white70),
+            const SizedBox(width: 12),
+            Text(
+              langProvider.translate('guest_login_title'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          langProvider.translate('guest_login_desc'),
+          style: const TextStyle(color: Colors.white70, fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              langProvider.translate('cancel'),
+              style: const TextStyle(color: Colors.white38),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0, bottom: 8.0),
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(langProvider.translate('continue')),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed != true) return;
+
     setState(() => _isLoading = true);
     try {
       final auth = Provider.of<BackupService>(context, listen: false);

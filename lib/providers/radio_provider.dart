@@ -1209,6 +1209,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   void resetForYou() {
     _forYouFuture = null;
+    _forYouList.clear();
+    _lastForYouCountryCode = null;
+    _lastForYouLanguageCode = null;
     notifyListeners();
   }
 
@@ -5537,7 +5540,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   String? _lastLyricsSearch;
 
   void setObservingLyrics(bool isObserving) {
-    _isObservingLyrics = isObserving;
+    if (_isObservingLyrics != isObserving) {
+      _isObservingLyrics = isObserving;
+      if (_isObservingLyrics) {
+        // Trigger immediate search when entering the SongDetailsScreen
+        fetchLyrics(force: true);
+      }
+    }
   }
 
   Future<void> refreshLyrics() async {
@@ -5549,18 +5558,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     bool force = false,
     bool fromRecognition = false,
   }) async {
-    // Only fetch if UI is observing or explicitly requested
+    // 1. Visibility & Entitlement Guards
     if (!_isObservingLyrics && !force) return;
-
-    // Entitlement Check
     if (!_entitlementService.isFeatureEnabled('lyrics')) return;
 
-    // Guard: Do not fetch if nothing is playing
-    if (!_isPlaying &&
-        _currentStation == null &&
-        _currentPlayingPlaylistId == null)
-      return;
-
+    // 2. Metadata Guard
     if (_currentTrack.isEmpty ||
         _currentTrack == "Live Broadcast" ||
         _currentArtist.isEmpty) {
@@ -5569,120 +5571,76 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       notifyListeners();
       return;
     }
-    if (_currentTrack == "Live Broadcast" ||
-        (_currentStation != null && _currentTrack == _currentStation!.name)) {
-      _currentLyrics = LyricsData.empty();
-      _lyricsOffset = Duration.zero; // Reset offset
-      _lastLyricsSearch = null;
-      notifyListeners();
-      return;
-    }
 
+    // 3. Prepare Search Key & Duplicate Guard
     final sanitizedArtist = _sanitizeArtistName(_currentArtist);
     final cleanArtist = LyricsService.cleanString(sanitizedArtist);
     final cleanTitle = LyricsService.cleanString(_currentTrack);
     final searchKey = "$cleanArtist|$cleanTitle";
 
-    // 0. Streaming Check: Ensure we have started streaming
-    // If _currentTrackStartTime is null, we are likely still buffering.
-    // The playback listener will re-call fetchLyrics() once state hits 'ready'.
+    // Prevent duplicate searches for the same song if already fetching or if we already have the lyrics
+    if (!force && _lastLyricsSearch == searchKey) {
+      if (_isFetchingLyrics || _currentLyrics.lines.isNotEmpty) {
+        return;
+      }
+    }
+
+    // 4. Radio/Playlist Context
+    final bool isRadio = _currentPlayingPlaylistId == null && _currentStation != null;
+
+    // 5. Radio-Specific Guard: Only fetch if recognized
+    if (isRadio && isACRCloudEnabled && !_isCurrentTrackRecognized) {
+      LogService().log("[Lyrics] Radio: Waiting for recognition for \"$_currentTrack\"");
+      _lastLyricsSearch = searchKey;
+      _isFetchingLyrics = false;
+      _currentLyrics = LyricsData.empty();
+      notifyListeners();
+      return;
+    }
+
+    // 6. Streaming Timing Guard (Wait for audio to actually start)
     if (_currentTrackStartTime == null && !force) {
       LogService().log("Lyrics Search: Waiting for streaming to start...");
       return;
     }
 
-    // 0. Universal Wait Logic: Ensure at least 5 seconds from stream start
-    final streamStartTime = _currentTrackStartTime ?? DateTime.now();
-    final elapsedSinceStream = DateTime.now().difference(streamStartTime);
-    if (!force && elapsedSinceStream < const Duration(seconds: 5)) {
-      final waitMs = (const Duration(seconds: 5) - elapsedSinceStream).inMilliseconds;
-      LogService().log(
-        "[Lyrics] Waiting ${waitMs}ms before search for \"$_currentTrack\"...",
-      );
-      await Future.delayed(const Duration(seconds: 5) - elapsedSinceStream);
-      // Re-check after wait: if song changed, abort this old call
-      final verArtistNow = LyricsService.cleanString(
-        _sanitizeArtistName(_currentArtist),
-      );
-      final verTitleNow = LyricsService.cleanString(_currentTrack);
-      if ("$verArtistNow|$verTitleNow" != searchKey) return;
-      // Post-delay: re-check recognition status. ACRCloud may have
-      // identified the song during the wait window, so we refresh
-      // _isCurrentTrackRecognized from the live mediaItem extras.
-      final liveRecognized =
-          _audioHandler.mediaItem.value?.extras?['isRecognized'] == true;
-      if (liveRecognized && !_isCurrentTrackRecognized) {
-        _isCurrentTrackRecognized = true;
-        LogService().log(
-          "[Lyrics] Recognition confirmed during wait for \"$_currentTrack\" — proceeding.",
-        );
+    // Optional: Keep a small delay for new tracks to let metadata settle, unless forced (page entry)
+    if (!force && !fromRecognition) {
+      final streamStartTime = _currentTrackStartTime ?? DateTime.now();
+      final elapsedSinceStream = DateTime.now().difference(streamStartTime);
+      if (elapsedSinceStream < const Duration(seconds: 4)) {
+        final waitMs = (const Duration(seconds: 4) - elapsedSinceStream).inMilliseconds;
+        LogService().log("[Lyrics] Throttling search for ${waitMs}ms...");
+        await Future.delayed(Duration(milliseconds: waitMs));
+        
+        // Re-verify after delay
+        if (_currentTrack.isEmpty || 
+            "$cleanArtist|$cleanTitle" != "$_currentArtist|$_currentTrack") return;
       }
     }
 
-    // 1. Auto-Clear Logic: Always clear if song changed
-    if (force || _lastLyricsSearch != searchKey) {
+    // 7. Initiate Search
+    _isFetchingLyrics = true;
+    _lastLyricsSearch = searchKey;
+    
+    // Clear old lyrics only if it's a new song
+    if (_currentLyrics.lines.isEmpty || _lastLyricsSearch != searchKey) {
       _currentLyrics = LyricsData.empty();
       _originalLyrics = null;
       _isLyricsTranslated = false;
-      _isFetchingLyrics = false; // STOP previous spinner immediately
       _lyricsOffset = Duration.zero;
-      notifyListeners();
     }
-
-    // 2. Control Flow Logic
-    final bool isRadio =
-        _currentPlayingPlaylistId == null && _currentStation != null;
-
-    // USER REQUEST: Only fetch lyrics if the song is recognized (for Radio)
-    if (isRadio && isACRCloudEnabled && !_isCurrentTrackRecognized) {
-      LogService().log(
-        "[Lyrics] Blocked — track not yet recognized: \"$_currentTrack\". "
-        "Waiting for ACRCloud identification before searching.",
-      );
-      _lastLyricsSearch = searchKey;
-      _isFetchingLyrics = false;
-      notifyListeners();
-      return;
-    }
-    if (!force) {
-      if (isRadio) {
-        if (!isACRCloudEnabled) {
-          _lastLyricsSearch = searchKey;
-          _isFetchingLyrics = false;
-          notifyListeners();
-          return;
-        }
-        if (!fromRecognition) {
-          _lastLyricsSearch = searchKey;
-          _isFetchingLyrics = false;
-          notifyListeners();
-          return;
-        }
-      }
-    }
-
-    // 3. Initiate Search State
-    _isFetchingLyrics = true;
-    _lastLyricsSearch = searchKey;
     notifyListeners();
 
     try {
-      // Final verification before calling service
-      final verArtist = LyricsService.cleanString(_sanitizeArtistName(_currentArtist));
-      final verTitle = LyricsService.cleanString(_currentTrack);
-      if ("$verArtist|$verTitle" != searchKey || _lastLyricsSearch != searchKey) {
-        _isFetchingLyrics = false;
-        notifyListeners();
-        return;
-      }
-
-      // Overall timeout for the search process
+      LogService().log("[Lyrics] Fetching for $searchKey (isRadio: $isRadio)...");
+      
       final results = await _lyricsService.fetchLyrics(
         artist: _currentArtist,
         title: _currentTrack,
-        isRadio: _currentPlayingPlaylistId == null,
+        isRadio: isRadio,
       ).timeout(
-        const Duration(seconds: 12),
+        const Duration(seconds: 10),
         onTimeout: () {
           LogService().log("[Lyrics] Search TIMEOUT for \"$_currentTrack\"");
           return LyricsData.empty();
@@ -5695,20 +5653,19 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           _currentLyrics = results;
           _originalLyrics = results;
           _isLyricsTranslated = false;
+        } else {
+          _currentLyrics = LyricsData.empty();
         }
       }
     } catch (e) {
       LogService().log("[Lyrics] Error fetching lyrics: $e");
-      _currentLyrics = LyricsData.empty();
-      _lastLyricsSearch = null; // Allow retry
+      if (_lastLyricsSearch == searchKey) {
+        _currentLyrics = LyricsData.empty();
+      }
     } finally {
       if (_lastLyricsSearch == searchKey) {
         _isFetchingLyrics = false;
         notifyListeners();
-      } else {
-        // If song changed during fetch, ensure we reset flag anyway
-        _isFetchingLyrics = false;
-        // No need to notify here as the next fetchLyrics call will do it
       }
     }
   }
@@ -6234,6 +6191,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   Future<void> restoreBackup() async {
     if (!_backupService.isSignedIn) return;
+
+    // Ferma la riproduzione per ripulire PlayerBar e NowPlayingHeader durante lo switch
+    try {
+      await _audioHandler.stop();
+    } catch (_) {}
 
     _isRestoring = true;
     notifyListeners();
@@ -9009,6 +8971,170 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     } catch (e) {
       LogService().log("Heavy Duty Scraper Failure: $e");
     }
+  }
+
+  static const List<String> _userSessionKeys = [
+    // Radio & stations
+    _keySavedStations,
+    _keyStartOption,
+    _keyStartupStationId,
+    _keyLastPlayedStationId,
+    _keyCompactView,
+    _keyShuffleMode,
+    _keyManageGridView,
+    _keyManageGroupingMode,
+    _keyCategoryCompactViews,
+    'station_order',
+    _keyFavorites,
+
+    // Playlists
+    'playlists_v2',
+
+    // Play history
+    _keyUserPlayHistory,
+    _keyHistoryMetadata,
+    _keyRecentSongsOrder,
+    _keyAAUserPlayHistory,
+    _keyAARecentSongsOrder,
+    _keyLastSourceMap,
+    _keyWeeklyPlayLog,
+
+    // Followed artists/albums
+    _keyFollowedArtists,
+    _keyFollowedAlbums,
+    _keyArtistImagesCache,
+
+    // UI customization
+    'pinned_library_actions',
+    'pinned_playlist_actions',
+
+    // Backup settings
+    'backup_frequency',
+    'last_backup_ts',
+    'last_backup_type',
+
+    // AI cache
+    'for_you_cache',
+    'for_you_cache_country',
+
+    // Trending Promoted Playlists
+    _keyPromotedPlaylists,
+  ];
+
+  Future<void> snapshotGuestSession() async {
+    LogService().log("[RadioProvider] Starting guest session snapshot...");
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final Map<String, dynamic> snapshot = {};
+
+      for (var key in _userSessionKeys) {
+        if (prefs.containsKey(key)) {
+          final val = prefs.get(key);
+          snapshot[key] = val;
+          LogService().log("[RadioProvider] Snapshot captured key: $key");
+        }
+      }
+      
+      final themeKeys = [
+        'theme_id',
+        'custom_primary',
+        'custom_bg',
+        'custom_card',
+        'custom_surface',
+        'custom_bg_image',
+        'initial_setup_v2'
+      ];
+      for (var key in themeKeys) {
+        if (prefs.containsKey(key)) {
+          snapshot[key] = prefs.get(key);
+        }
+      }
+
+      final jsonStr = jsonEncode(snapshot);
+      await prefs.setString('guest_session_snapshot', jsonStr);
+      LogService().log("[RadioProvider] Guest session snapshot saved. Size: ${jsonStr.length} chars.");
+    } catch (e) {
+      LogService().log("[RadioProvider] Error during guest snapshot: $e");
+    }
+  }
+
+  Future<void> _restoreGuestSessionToPrefs(SharedPreferences prefs) async {
+    final snapshotStr = prefs.getString('guest_session_snapshot');
+    if (snapshotStr != null) {
+      final Map<String, dynamic> snapshot = jsonDecode(snapshotStr);
+      for (var entry in snapshot.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        if (value is String) await prefs.setString(key, value);
+        else if (value is int) await prefs.setInt(key, value);
+        else if (value is bool) await prefs.setBool(key, value);
+        else if (value is double) await prefs.setDouble(key, value);
+        else if (value is List) await prefs.setStringList(key, value.map((e) => e.toString()).toList());
+      }
+      LogService().log("[RadioProvider] Guest session data restored to SharedPreferences.");
+    }
+  }
+
+  Future<void> resetAllData({ThemeProvider? themeProvider}) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Ferma la musica per ripulire PlayerBar e NowPlayingHeader
+    try {
+      await _audioHandler.stop();
+    } catch (_) {}
+
+    // 1. Clear memory state (RadioProvider)
+    stations.clear();
+    _currentStation = null;
+    _currentTrack = "";
+    _currentArtist = "";
+    _currentAlbum = "";
+    _currentAlbumArt = null;
+    _currentArtistImage = null;
+    _currentPlayingPlaylistId = null;
+    _stationOrder.clear();
+    _useCustomOrder = false;
+
+    _followedArtists.clear();
+    _followedAlbums.clear();
+    _userPlayHistory.clear();
+    _aaUserPlayHistory.clear();
+    _historyMetadata.clear();
+    _recentSongsOrder.clear();
+    _aaRecentSongsOrder.clear();
+    _lastSourceMap.clear();
+    _promotedPlaylists.clear();
+    _weeklyPlayLog.clear();
+    _favorites.clear();
+    _playlists.clear();
+    resetForYou(); // Pulisce le raccomandazioni AI "Per Te"
+
+    // 2. Clear all user-session SharedPreferences keys
+    for (var key in _userSessionKeys) {
+      await prefs.remove(key);
+    }
+
+    // 3. Ripristina il ThemeProvider di base (prima del restore ospite)
+    if (themeProvider != null) {
+      await themeProvider.resetCustomColors();
+      await themeProvider.setPreset('dark_default');
+      await prefs.remove('initial_setup_v2');
+    }
+
+    // 4. Ripristina la cache Guest salvata precedentemente
+    await _restoreGuestSessionToPrefs(prefs);
+
+    // 5. Ricarica i servizi locali e la UI (tema e playlist inclusi)
+    PlaylistService().clearCache();
+    if (themeProvider != null) {
+      await themeProvider.loadSettings();
+    }
+    
+    // 6. Ricarica lo stato Radio
+    await _loadStations();
+    await _loadPlaylists();
+    await _loadUserPlayHistory();
+    notifyListeners();
   }
 }
 

@@ -12,8 +12,10 @@ import 'debug_log_screen.dart';
 import 'local_library_screen.dart';
 import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
+import '../providers/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/glass_utils.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -291,11 +293,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               TextButton(
                                 onPressed: () async {
                                   if (auth.isSignedIn) {
-                                    await auth.signOut();
+                                    final confirm =
+                                        await GlassUtils.showGlassDialog<bool>(
+                                          context: context,
+                                          builder: (ctx) => AlertDialog(
+                                            surfaceTintColor:
+                                                Colors.transparent,
+                                            title: Text(
+                                              langProvider.translate(
+                                                'logout_confirm_title',
+                                              ),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            content: Text(
+                                              langProvider.translate(
+                                                'logout_confirm_desc',
+                                              ),
+                                              style: const TextStyle(
+                                                color: Colors.white70,
+                                              ),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(ctx, false),
+                                                child: Text(
+                                                  langProvider.translate(
+                                                    'cancel',
+                                                  ),
+                                                ),
+                                              ),
+                                              ElevatedButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(ctx, true),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      Colors.white12,
+                                                  foregroundColor: Colors.white,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  langProvider.translate(
+                                                    'sign_out',
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+
+                                    if (confirm == true) {
+                                      await auth.signOut();
+                                      // Clear ALL local session data for Guest mode
+                                      // (playlists, history, theme, artist follows, etc.)
+                                      final themeProvider =
+                                          Provider.of<ThemeProvider>(
+                                            context,
+                                            listen: false,
+                                          );
+                                      await radio.resetAllData(
+                                        themeProvider: themeProvider,
+                                      );
+                                      final prefs =
+                                          await SharedPreferences.getInstance();
+                                      await prefs.setBool('was_guest', true);
+                                    }
                                   } else {
                                     try {
+                                      final radio = Provider.of<RadioProvider>(
+                                        context,
+                                        listen: false,
+                                      );
+                                      await radio.snapshotGuestSession();
+                                      try {
+                                        await radio.audioHandler.stop();
+                                      } catch (_) {}
+
                                       await auth.signIn();
-                                      if (!auth.isSignedIn && context.mounted) {
+                                      if (auth.isSignedIn && context.mounted) {
+                                        final prefs = await SharedPreferences.getInstance();
+                                        await prefs.setBool('was_guest', false);
+                                      } else if (!auth.isSignedIn && context.mounted) {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(

@@ -629,4 +629,8 @@ final Map<String, String> zh = {
   'crossfade_duration': '交叉淡入淡出持续时间',
   'crossfade_duration_desc': '调整歌曲之间的淡入淡出时间',
   'seconds_unit': '{0}s',
+  'guest_login_title': '访客访问',
+  'guest_login_desc': '警告：在访客模式下，您将无法在其他设备之间同步您的收藏夹，并且某些高级功能（例如同步歌词）将无法激活。\n\n是否仍要继续？',
+  'logout_confirm_title': '注销并切换到访客？',
+  'logout_confirm_desc': '注销之前，我们建议执行云备份以保存您的首选项。\n\n注销后，您将进入带有专用会话的访客模式：为您登录保留的播放列表和其他活动将从本地会话中清除。',
 };

@@ -642,4 +642,8 @@ final Map<String, String> es = {
   'crossfade_duration': 'Duración del fundido cruzado',
   'crossfade_duration_desc': 'Ajustar el tiempo de desvanecimiento entre canciones.',
   'seconds_unit': '{0}s',
+  'guest_login_title': 'Acceso de invitados',
+  'guest_login_desc': 'Advertencia: en el modo INVITADO no podrás sincronizar tus favoritos en otros dispositivos y algunas funciones avanzadas, como las letras sincronizadas, no se activarán.\n\n¿Quieres continuar de todos modos?',
+  'logout_confirm_title': '¿Cerrar sesión y cambiar a invitado?',
+  'logout_confirm_desc': 'Antes de cerrar sesión, le recomendamos realizar una copia de seguridad en la nube para guardar sus preferencias.\n\nUna vez que cierre sesión, ingresará al modo Invitado con una sesión dedicada: las listas de reproducción y otras actividades reservadas para su inicio de sesión se borrarán de la sesión local.',
 };
