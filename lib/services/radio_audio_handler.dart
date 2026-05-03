@@ -587,7 +587,8 @@ class RadioAudioHandler extends BaseAudioHandler
     try {
       final prefs = await SharedPreferences.getInstance();
       _isACRCloudEnabled = prefs.getBool('acr_cloud_enabled') ?? true;
-      LogService().log("RadioAudioHandler: ACRCloud Enabled (from prefs): $_isACRCloudEnabled");
+      _crossfadeSeconds = prefs.getInt('crossfade_duration_v2') ?? 7;
+      LogService().log("RadioAudioHandler: State Load - ACRCloud: $_isACRCloudEnabled, Crossfade: $_crossfadeSeconds");
 
       // Ensure Analytics is active in background isolate (Non-blocking for core state load)
       _ensureFirebase().then((_) async {
@@ -5302,7 +5303,11 @@ class RadioAudioHandler extends BaseAudioHandler
       if (shouldPreload && !_hasTriggeredPreload && !_isSwapping) {
         _hasTriggeredPreload = true;
         LogService().log("Preload: Background Trigger for ${currentMedia?.title} (Rem: ${remaining.inSeconds}s)");
-        if (onPreloadNext != null) onPreloadNext!();
+        if (onPreloadNext != null) {
+          onPreloadNext!();
+        } else {
+          _autonomousPreload();
+        }
       }
 
       // 2. CROSSFADE TRIGGER
@@ -5314,5 +5319,70 @@ class RadioAudioHandler extends BaseAudioHandler
         }
       }
     }
+  }
+
+  Future<void> _autonomousPreload() async {
+    if (_playlistQueue.isEmpty) {
+      LogService().log("Preload: Queue is empty, cannot preload autonomously.");
+      return;
+    }
+
+    LogService().log("Preload: App inactive. Attempting autonomous resolution for background crossfade...");
+
+    // Find next song in queue
+    int nextIdx = (_playlistIndex + 1) % _playlistQueue.length;
+    final nextItem = _playlistQueue[nextIdx];
+    
+    final songId = nextItem.extras?['songId'];
+    String? videoId;
+    
+    // 1. Resolve videoId/Path
+    if (nextItem.extras?['localPath'] != null) {
+      videoId = nextItem.extras?['localPath'];
+    } else if (nextItem.extras?['rawStreamUrl'] != null) {
+       videoId = nextItem.extras?['rawStreamUrl'];
+    } else if (nextItem.extras?['youtubeUrl'] != null) {
+      videoId = _extractVideoIdFromUrl(nextItem.extras?['youtubeUrl']);
+    } else if (nextItem.id.length == 11) {
+      videoId = nextItem.id;
+    }
+
+    // 1.5. Search Fallback for AI/Trending playlists
+    if (videoId == null || videoId.isEmpty) {
+      LogService().log("Preload: videoId missing. Attempting YouTube search fallback...");
+      try {
+        final yt = YoutubeExplode();
+        final searchQuery = "${nextItem.title} ${nextItem.artist}";
+        final searchList = await yt.search.getVideos(searchQuery);
+        if (searchList.isNotEmpty) {
+          videoId = searchList.first.id.value;
+          LogService().log("Preload: Search Fallback resolved to $videoId");
+        }
+        yt.close();
+      } catch (e) {
+        LogService().log("Preload: Search Fallback failed: $e");
+      }
+    }
+    
+    if (videoId != null && songId != null) {
+      LogService().log("Preload: Resolved autonomous videoId=$videoId. Starting stream fetch...");
+      await preloadNextStream(videoId, songId, nextItem.extras ?? {});
+    } else {
+      LogService().log("Preload: Could not resolve next track for autonomous crossfade.");
+    }
+  }
+
+  String? _extractVideoIdFromUrl(String? url) {
+    if (url == null) return null;
+    if (url.length == 11) return url;
+    try {
+      final uri = Uri.parse(url);
+      if (uri.host.contains('youtube.com')) {
+        return uri.queryParameters['v'];
+      } else if (uri.host.contains('youtu.be')) {
+        return uri.pathSegments.last;
+      }
+    } catch (_) {}
+    return null;
   }
 }
