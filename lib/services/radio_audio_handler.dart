@@ -115,6 +115,45 @@ class RadioAudioHandler extends BaseAudioHandler
   bool get _isAudioPlaying => _player.state == PlayerState.playing || playbackState.value.playing;
   Timer? _analyticsHeartbeatTimer;
   DateTime? _lastHeartbeatTime;
+  Future<void>? _firebaseInitFuture;
+
+  Future<void> _ensureFirebase() async {
+    if (_firebaseInitFuture != null) {
+      try {
+        await _firebaseInitFuture;
+        return;
+      } catch (_) {
+        _firebaseInitFuture = null; // Retry on failure
+      }
+    }
+    _firebaseInitFuture = _initFirebaseInternal();
+    return _firebaseInitFuture;
+  }
+
+  Future<void> _initFirebaseInternal() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        // Use a timeout to prevent hanging the background isolate
+        await Firebase.initializeApp().timeout(const Duration(seconds: 10));
+      }
+      
+      final analytics = FirebaseAnalytics.instance;
+      await analytics.setAnalyticsCollectionEnabled(true);
+      
+      // Force immediate session pulse
+      await analytics.logAppOpen();
+      await analytics.setUserProperty(
+        name: 'last_interface', 
+        value: _isInAndroidAutoMode ? 'android_auto' : 'phone'
+      );
+      
+      LogService().log("Firebase Background Isolate: Initialization Complete (AA: $_isInAndroidAutoMode)");
+    } catch (e) {
+      LogService().log("Firebase Background Isolate: Init Error: $e");
+      _firebaseInitFuture = null; // Clear so next attempt tries again
+      rethrow;
+    }
+  }
 
   void _logAnalyticsEvent(String name, [Map<String, Object?>? parameters]) {
     if (kDebugMode) {
@@ -123,6 +162,7 @@ class RadioAudioHandler extends BaseAudioHandler
       );
     }
     Future.microtask(() async {
+      await _ensureFirebase();
       try {
         final Map<String, Object>? cleanParameters = parameters != null
             ? Map<String, Object>.fromEntries(
@@ -224,9 +264,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Ensure EncryptionService and Firebase are ready (Critical for Background Isolate)
     await EncryptionService().init();
-    try {
-      await Firebase.initializeApp();
-    } catch (_) {}
+    await _ensureFirebase();
 
     try {
       // 2. Abandon old players and create new ones immediately
@@ -550,6 +588,17 @@ class RadioAudioHandler extends BaseAudioHandler
       final prefs = await SharedPreferences.getInstance();
       _isACRCloudEnabled = prefs.getBool('acr_cloud_enabled') ?? true;
       LogService().log("RadioAudioHandler: ACRCloud Enabled (from prefs): $_isACRCloudEnabled");
+
+      // Ensure Analytics is active in background isolate (Non-blocking for core state load)
+      _ensureFirebase().then((_) async {
+        await FirebaseAnalytics.instance.logScreenView(
+          screenName: 'AA Background AutoStart',
+          screenClass: 'AutoService',
+        );
+        _startAnalyticsHeartbeat();
+      }).catchError((e) {
+        LogService().log("RadioAudioHandler: Deferred Firebase init failed: $e");
+      });
 
       await _quickRestore();
       await _loadStationsFromPrefs();
@@ -3403,18 +3452,33 @@ class RadioAudioHandler extends BaseAudioHandler
       _isInAndroidAutoMode = isCar;
 
       if (!_hasLoggedAndroidAutoStart) {
-        _logAnalyticsEvent('android_auto_usage', {
-          'action': 'browse_root',
-          'is_car': isCar,
-          'recent': options?['android.service.media.extra.RECENT'],
-        });
-        // Manually log screen view and car_user event to ensure "Active User" count in GA4
-        FirebaseAnalytics.instance.logScreenView(
-          screenName: 'Android Auto',
+        _hasLoggedAndroidAutoStart = true;
+        
+        // 1. Immediate robust initialization
+        await _ensureFirebase();
+
+        // 2. Log multiple signals to satisfy GA4 "Active User" criteria (Engagement > 10s + ScreenView)
+        await FirebaseAnalytics.instance.logScreenView(
+          screenName: 'Android Auto Home',
           screenClass: 'AutoService',
         );
-        _logAnalyticsEvent('car_user');
-        _hasLoggedAndroidAutoStart = true;
+        
+        _logAnalyticsEvent('android_auto_connected', {
+          'action': 'browse_root',
+          'is_car': isCar,
+          'engagement_time_msec': 15000, // 15s pulse to force active status
+          'recent': options?['android.service.media.extra.RECENT'],
+        });
+
+        _logAnalyticsEvent('car_user_session', {
+          'status': 'active',
+          'engagement_time_msec': 5000,
+        });
+
+        await FirebaseAnalytics.instance.setUserProperty(name: 'last_interface', value: 'android_auto');
+
+        // 3. Force start heartbeat to maintain active session while browsing
+        _startAnalyticsHeartbeat();
       }
       // Auto-start logic for Android Auto (First Run only)
       if (!_hasTriggeredEarlyStart &&
@@ -3494,8 +3558,24 @@ class RadioAudioHandler extends BaseAudioHandler
       ];
     }
 
+    // 2. Radio Section (All Stations)
+    if (parentMediaId == 'all_stations') {
+      _logAnalyticsEvent('aa_browse', {'category': 'radio_list'});
+      FirebaseAnalytics.instance.logScreenView(
+        screenName: 'AA Radio Stations',
+        screenClass: 'AutoService',
+      );
+      await _loadStationsFromPrefs();
+      return _stations.map((s) => _stationToMediaItem(s)).toList();
+    }
+
     // 2. Favorites Radio List
     if (parentMediaId == 'favorites_radio') {
+      _logAnalyticsEvent('aa_browse', {'category': 'favorites_radio'});
+      FirebaseAnalytics.instance.logScreenView(
+        screenName: 'AA Favorites Radio',
+        screenClass: 'AutoService',
+      );
       await _loadStationsFromPrefs();
       final prefs = await SharedPreferences.getInstance();
       final favStr = prefs.getStringList('favorites') ?? [];
@@ -3510,8 +3590,114 @@ class RadioAudioHandler extends BaseAudioHandler
       }).toList();
     }
 
+    // 2. Playlists Root
+    if (parentMediaId == 'playlists_root') {
+      _logAnalyticsEvent('aa_browse', {'category': 'playlists_root'});
+      FirebaseAnalytics.instance.logScreenView(
+        screenName: 'AA Playlists',
+        screenClass: 'AutoService',
+      );
+      final playlists = await _playlistService.loadPlaylists();
+      return playlists.map((p) {
+        return MediaItem(
+          id: 'playlist_${p.id}',
+          title: p.name,
+          artist: '${p.songs.length} songs',
+          playable: false,
+          artUri: p.songs.isNotEmpty && p.songs.first.artUri != null
+              ? Uri.parse(p.songs.first.artUri!)
+              : null,
+          extras: {'style': 'grid_item'},
+        );
+      }).toList();
+    }
+
+    // 2. Individual Playlist Content
+    if (parentMediaId.startsWith('playlist_')) {
+      final playlistId = parentMediaId.substring('playlist_'.length);
+      _logAnalyticsEvent('aa_browse', {
+        'category': 'playlist_detail',
+        'playlist_id': playlistId,
+      });
+      final playlists = await _playlistService.loadPlaylists();
+      try {
+        final playlist = playlists.firstWhere((p) => p.id == playlistId);
+        final List<MediaItem> songItems = playlist.songs
+            .map((s) => _songToMediaItem(s, playlist.id))
+            .toList();
+
+        // Add Play All Item at the top
+        if (songItems.isNotEmpty) {
+          final langCode = _detectLanguageCode();
+          final String playAllLabel =
+              AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
+
+          songItems.insert(
+            0,
+            MediaItem(
+              id: 'play_all_${playlist.id}',
+              title: playAllLabel,
+              playable: true,
+              artUri: Uri.parse(
+                "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+              ),
+              extras: {'style': 'list_item'},
+            ),
+          );
+        }
+        return songItems;
+      } catch (_) {
+        return [];
+      }
+    }
+
+    // 2. Downloads Root
+    if (parentMediaId == 'downloads_root') {
+      _logAnalyticsEvent('aa_browse', {'category': 'downloads'});
+      FirebaseAnalytics.instance.logScreenView(
+        screenName: 'AA Downloads',
+        screenClass: 'AutoService',
+      );
+      final result = await _playlistService.loadPlaylistsResult();
+      final downloadedSongs = result.uniqueSongs
+          .where((s) => s.localPath != null)
+          .toList();
+      final List<MediaItem> songItems = downloadedSongs.map((s) {
+        final String mId = s.youtubeUrl ?? 'song_${s.id}';
+        return _songToMediaItem(
+          s,
+          'downloads_root',
+          mediaIdOverride: 'ctx_downloads_root_$mId',
+        );
+      }).toList();
+
+      if (songItems.isNotEmpty) {
+        final langCode = _detectLanguageCode();
+        final String playAllLabel =
+            AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
+        songItems.insert(
+          0,
+          MediaItem(
+            id: 'play_all_downloads_root',
+            title: playAllLabel,
+            playable: true,
+            artUri: Uri.parse(
+              "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+            ),
+            extras: {'style': 'list_item'},
+          ),
+        );
+      }
+      return songItems;
+    }
+
     // 2. Per Te (For You) AI Mixes Folder
     if (parentMediaId == 'for_you_root') {
+      _logAnalyticsEvent('aa_browse', {'category': 'for_you'});
+      FirebaseAnalytics.instance.logScreenView(
+        screenName: 'AA For You',
+        screenClass: 'AutoService',
+      );
       if (_cachedForYouMixes.isEmpty ||
           _lastForYouFetch == null ||
           DateTime.now().difference(_lastForYouFetch!).inHours > 1) {
@@ -4470,6 +4656,13 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _attemptRecognition() async {
     if (!_isACRCloudEnabled) return;
 
+    // Critical: Ensure Firebase is ready for Remote Config keys
+    try {
+      await _ensureFirebase().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      LogService().log("Recognition: Firebase not ready, using fallback keys. Error: $e");
+    }
+
     // Validations
     final currentItem = mediaItem.value;
     if (currentItem == null) return;
@@ -4556,11 +4749,20 @@ class RadioAudioHandler extends BaseAudioHandler
         newExtras['offset'] = offsetSeconds;
         newExtras['hasExactOffset'] = hasExactOffset;
 
+        // Try to find artwork from Recognition service
+        String? recognitionArtwork;
+        if (trackInfo['images'] != null &&
+            trackInfo['images']['coverart'] != null) {
+          recognitionArtwork = trackInfo['images']['coverart'];
+        }
+
         final newMediaItem = currentItem.copyWith(
           title: title ?? "Unknown Title",
           artist: artists ?? "Unknown Artist",
           album: (album != null && album.isNotEmpty) ? album : "Unknown Album",
-          artUri: station?.logo != null ? Uri.parse(station!.logo!) : null,
+          artUri: recognitionArtwork != null
+              ? Uri.parse(recognitionArtwork)
+              : (station?.logo != null ? Uri.parse(station!.logo!) : null),
           extras: newExtras,
         );
 
@@ -4570,13 +4772,6 @@ class RadioAudioHandler extends BaseAudioHandler
         } else {
            LogService().log("RecognitionAPI: Match discarded because current media changed to ${mediaItem.value?.id}");
            return;
-        }
-
-        // Try to find artwork from Recognition service
-        String? recognitionArtwork;
-        if (trackInfo['images'] != null &&
-            trackInfo['images']['coverart'] != null) {
-          recognitionArtwork = trackInfo['images']['coverart'];
         }
 
         // Start Smart Link Resolution (Album Art Recovery)
@@ -4743,7 +4938,8 @@ class RadioAudioHandler extends BaseAudioHandler
           countryCode: 'US', // Default
         );
 
-        if (links.containsKey('thumbnailUrl')) {
+        // Only overwrite finalArt if it was null (no recognition artwork found)
+        if (finalArt == null && links.containsKey('thumbnailUrl')) {
           finalArt = links['thumbnailUrl'];
         }
 
@@ -5019,27 +5215,37 @@ class RadioAudioHandler extends BaseAudioHandler
     if (_lastHeartbeatTime != null) return; // Already running
     
     _lastHeartbeatTime = DateTime.now();
-    _sendHeartbeatEvent(msec: 1000); // Initial pulse
+    // Initial pulse to trigger session activity - Increased to 10s for stronger engagement signal
+    _sendHeartbeatEvent(msec: _isInAndroidAutoMode ? 10000 : 5000); 
     
+    // Log a screen view if in AA to ensure the session is marked as interactive
+    if (_isInAndroidAutoMode) {
+       _ensureFirebase().then((_) {
+         FirebaseAnalytics.instance.logScreenView(
+           screenName: 'AA Background Playback',
+           screenClass: 'AutoService',
+         );
+       });
+    }    
     // Start the continuous heartbeat loop
     _runHeartbeatLoop();
   }
 
   Future<void> _runHeartbeatLoop() async {
     while (_lastHeartbeatTime != null) {
-      await Future.delayed(const Duration(minutes: 2));
+      // Increased frequency for Android Auto to 1 minute to ensure session active status
+      final delay = _isInAndroidAutoMode ? const Duration(minutes: 1) : const Duration(minutes: 2);
+      await Future.delayed(delay);
       
       // Check if we should still be running
       if (_lastHeartbeatTime == null) break;
       
-      if (_isAudioPlaying) {
-        LogService().log("Analytics: Sending periodic heartbeat (Loop)...");
+      if (_isAudioPlaying || _isInAndroidAutoMode) {
+        LogService().log("Analytics: Sending periodic heartbeat (Loop - AA: $_isInAndroidAutoMode, Playing: $_isAudioPlaying)...");
         _lastHeartbeatTime = DateTime.now();
-        _sendHeartbeatEvent(msec: 120000);
+        _sendHeartbeatEvent(msec: delay.inMilliseconds);
       } else {
-        // If not playing, we don't stop the loop yet, we just wait for next tick 
-        // OR we stop it if we want to be strict.
-        // For now, let's stop it to save resources.
+        // If not playing and not in car, we stop the loop
         _stopAnalyticsHeartbeat();
         break;
       }
@@ -5059,6 +5265,7 @@ class RadioAudioHandler extends BaseAudioHandler
       'engagement_time_msec': msec,
       'playback_type': currentItem?.extras?['type'] ?? 'unknown',
       'is_android_auto': _isInAndroidAutoMode,
+      'session_active': 1,
       'is_background': true,
       'song_id': currentItem?.extras?['songId'] ?? currentItem?.id,
     });

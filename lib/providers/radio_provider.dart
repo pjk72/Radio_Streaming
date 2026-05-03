@@ -5985,7 +5985,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // Update State
     if (links.containsKey('thumbnailUrl')) {
-      if (!keepExistingArtwork || _currentAlbumArt == null) {
+      // Rule: Second source only replaces if first source found nothing.
+      // We consider "found nothing" if current art is null OR is just the station logo.
+      final bool isPlaceholder = _currentAlbumArt == null || 
+                                  (_currentStation?.logo != null && _currentAlbumArt == _currentStation!.logo);
+
+      if (!keepExistingArtwork || isPlaceholder) {
         _currentAlbumArt = links['thumbnailUrl'];
       }
     }
@@ -6974,9 +6979,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           }
           _currentGenre = genre;
 
+          // Try to find artwork from Shazam
+          String? shazamArtwork;
+          if (trackInfo['images'] != null &&
+              trackInfo['images']['coverart'] != null) {
+            shazamArtwork = trackInfo['images']['coverart'];
+          }
+
           // Reset artwork/state
-          // Preserve station logo as placeholder instead of null
-          _currentAlbumArt = _currentStation?.logo;
+          // Prioritize Shazam artwork, fallback to station logo
+          _currentAlbumArt = shazamArtwork ?? _currentStation?.logo;
           _currentArtistImage = null;
 
           // Reset External Links
@@ -6993,17 +7005,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           _songSyncTime = null;
 
           checkIfCurrentSongIsSaved(); // Check if this new song is already saved
-
-          // Try to find artwork from Shazam
-          String? shazamArtwork;
-          if (trackInfo['images'] != null &&
-              trackInfo['images']['coverart'] != null) {
-            shazamArtwork = trackInfo['images']['coverart'];
-          }
-
-          if (shazamArtwork != null) {
-            _currentAlbumArt = shazamArtwork;
-          }
 
           notifyListeners();
 
@@ -8180,8 +8181,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
           if (newArtwork != null && newArtwork.isNotEmpty) {
             // Only replace artwork if we don't already have a good one for this song.
-            final bool hasValidArt =
-                _currentAlbumArt != null && _currentAlbumArt!.isNotEmpty;
+            // "Good one" means not null, not empty, and NOT the station logo placeholder.
+            final bool hasValidArt = _currentAlbumArt != null && 
+                                     _currentAlbumArt!.isNotEmpty && 
+                                     _currentAlbumArt != _currentStation?.logo;
             if (!hasValidArt) {
               _currentAlbumArt = newArtwork;
             }
@@ -8282,7 +8285,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               _currentTrack = ytTitle;
               _currentArtist = ytArtist;
               // Only replace artwork if we don't already have a valid one.
-              final bool hasValidArt = _currentAlbumArt != null && _currentAlbumArt!.isNotEmpty;
+              final bool hasValidArt = _currentAlbumArt != null && 
+                                       _currentAlbumArt!.isNotEmpty && 
+                                       _currentAlbumArt != _currentStation?.logo;
               if (!hasValidArt) {
                 _currentAlbumArt = video.thumbnails.highResUrl;
               }
