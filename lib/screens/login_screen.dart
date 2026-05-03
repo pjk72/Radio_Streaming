@@ -9,6 +9,7 @@ import '../providers/radio_provider.dart';
 
 import 'package:firebase_analytics/firebase_analytics.dart';
 import '../providers/language_provider.dart';
+import '../providers/theme_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -44,7 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('was_guest') == true) {
       if (mounted) {
-        setState(() => _isCheckingAuth = false);
+        _goToHome();
       }
       return;
     }
@@ -78,10 +79,16 @@ class _LoginScreenState extends State<LoginScreen> {
       try {
         await radio.audioHandler.stop();
       } catch (_) {}
+      
+      // Pulisce tutto il vecchio stato Guest PRIMA di caricare Google
+      final theme = Provider.of<ThemeProvider>(context, listen: false);
+      await radio.resetAllData(themeProvider: theme, restoreGuest: false);
 
       await auth.signIn();
       if (auth.isSignedIn && mounted) {
-        // Login successful
+        // Login successful - Forza il ripristino totale dal cloud (isFullReplace: true)
+        await radio.restoreBackup(isFullReplace: true);
+
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('was_guest', false);
 
@@ -193,7 +200,16 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     try {
       final auth = Provider.of<BackupService>(context, listen: false);
-      await auth.signOut();
+      final radio = Provider.of<RadioProvider>(context, listen: false);
+      final theme = Provider.of<ThemeProvider>(context, listen: false);
+
+      // Reset state ONLY if we are switching from a Google account back to Guest
+      // This prevents wiping current Guest data if the user is already in Guest mode.
+      if (auth.isSignedIn) {
+        await auth.signOut();
+        // Recupera i dati Guest dallo snapshot salvato precedentemente
+        await radio.resetAllData(themeProvider: theme, restoreGuest: true);
+      }
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('was_guest', true);

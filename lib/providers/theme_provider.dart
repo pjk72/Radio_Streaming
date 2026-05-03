@@ -448,14 +448,21 @@ class ThemeProvider with ChangeNotifier {
     _customBackgroundColor = null;
     _customCardColor = null;
     _customSurfaceColor = null;
+    _customBackgroundImageUrl = null;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('custom_primary');
     await prefs.remove('custom_bg');
     await prefs.remove('custom_card');
     await prefs.remove('custom_surface');
-    _customBackgroundImageUrl = null;
     await prefs.remove('custom_bg_image');
+  }
+
+  Future<void> resetToDefaults() async {
+    await resetCustomColors();
+    await setPreset('dark_default');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyInitialSetup);
   }
 
   Future<void> setCustomBackgroundImage(String? url) async {

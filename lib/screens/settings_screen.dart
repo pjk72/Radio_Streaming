@@ -377,8 +377,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         await radio.audioHandler.stop();
                                       } catch (_) {}
 
+                                      // Pulisce tutto il vecchio stato Guest PRIMA di caricare Google
+                                      final theme = Provider.of<ThemeProvider>(context, listen: false);
+                                      await radio.resetAllData(themeProvider: theme, restoreGuest: false);
+
                                       await auth.signIn();
                                       if (auth.isSignedIn && context.mounted) {
+                                        // Forza il ripristino totale dal cloud (isFullReplace: true)
+                                        await radio.restoreBackup(isFullReplace: true);
+
                                         final prefs = await SharedPreferences.getInstance();
                                         await prefs.setBool('was_guest', false);
                                       } else if (!auth.isSignedIn && context.mounted) {

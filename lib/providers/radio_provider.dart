@@ -6189,7 +6189,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<void> restoreBackup() async {
+  Future<void> restoreBackup({bool isFullReplace = false}) async {
     if (!_backupService.isSignedIn) return;
 
     // Ferma la riproduzione per ripulire PlayerBar e NowPlayingHeader durante lo switch
@@ -6222,14 +6222,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             .map((e) => Station.fromJson(e))
             .toList();
 
-        // Merge Logic: Keep local "new" stations
-        final Map<int, Station> mergedMap = {for (var s in stations) s.id: s};
-
-        for (var s in backupStations) {
-          mergedMap[s.id] = s;
+        if (isFullReplace) {
+          stations = backupStations;
+        } else {
+          // Merge Logic: Keep local "new" stations
+          final Map<int, Station> mergedMap = {for (var s in stations) s.id: s};
+          for (var s in backupStations) {
+            mergedMap[s.id] = s;
+          }
+          stations = mergedMap.values.toList();
         }
-
-        stations = mergedMap.values.toList();
         await _saveStations(); // Persist
       }
 
@@ -6276,10 +6278,15 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             .map((e) => e.toString())
             .toList();
 
-        // Merge with existing
-        for (var id in loadedInvalid) {
-          if (!_invalidSongIds.contains(id)) {
-            _invalidSongIds.add(id);
+        if (isFullReplace) {
+          _invalidSongIds.clear();
+          _invalidSongIds.addAll(loadedInvalid);
+        } else {
+          // Merge with existing
+          for (var id in loadedInvalid) {
+            if (!_invalidSongIds.contains(id)) {
+              _invalidSongIds.add(id);
+            }
           }
         }
 
@@ -8986,6 +8993,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _keyCategoryCompactViews,
     'station_order',
     _keyFavorites,
+    _keyGenreOrder,
+    _keyCategoryOrder,
+    _keyUseCustomOrder,
 
     // Playlists
     'playlists_v2',
@@ -9003,6 +9013,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _keyFollowedArtists,
     _keyFollowedAlbums,
     _keyArtistImagesCache,
+    _keyInvalidSongIds,
 
     // UI customization
     'pinned_library_actions',
@@ -9019,9 +9030,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // Trending Promoted Playlists
     _keyPromotedPlaylists,
+
+    // Audio settings
+    _keyCrossfadeDuration,
+    _keyPreferYouTubeAudioOnly,
   ];
 
   Future<void> snapshotGuestSession() async {
+    if (_backupService.isSignedIn) {
+      LogService().log("[RadioProvider] snapshotGuestSession skipped: User is signed in to Google.");
+      return;
+    }
     LogService().log("[RadioProvider] Starting guest session snapshot...");
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -9075,7 +9094,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<void> resetAllData({ThemeProvider? themeProvider}) async {
+  Future<void> resetAllData({ThemeProvider? themeProvider, bool restoreGuest = true}) async {
     final prefs = await SharedPreferences.getInstance();
 
     // Ferma la musica per ripulire PlayerBar e NowPlayingHeader
@@ -9116,13 +9135,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // 3. Ripristina il ThemeProvider di base (prima del restore ospite)
     if (themeProvider != null) {
-      await themeProvider.resetCustomColors();
-      await themeProvider.setPreset('dark_default');
-      await prefs.remove('initial_setup_v2');
+      await themeProvider.resetToDefaults();
     }
 
-    // 4. Ripristina la cache Guest salvata precedentemente
-    await _restoreGuestSessionToPrefs(prefs);
+    if (restoreGuest) {
+      // 4. Ripristina la cache Guest salvata precedentemente
+      await _restoreGuestSessionToPrefs(prefs);
+    }
 
     // 5. Ricarica i servizi locali e la UI (tema e playlist inclusi)
     PlaylistService().clearCache();
@@ -9134,6 +9153,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     await _loadStations();
     await _loadPlaylists();
     await _loadUserPlayHistory();
+    await _loadStationOrder();
+    await _loadStartupSettings();
     notifyListeners();
   }
 }
