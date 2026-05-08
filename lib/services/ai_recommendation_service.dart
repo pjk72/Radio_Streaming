@@ -1,0 +1,490 @@
+import 'dart:math';
+import '../models/saved_song.dart';
+import 'music_metadata_service.dart';
+import 'trending_service.dart';
+import '../l10n/app_translations.dart';
+
+class AIRecommendationService {
+  final MusicMetadataService _metadataService = MusicMetadataService();
+  final TrendingService _trendingService = TrendingService();
+
+  /// Main entry point: Generates a list of tailored playlists
+  /// Generates a list of tailored playlists (Backward compatibility)
+  Future<List<TrendingPlaylist>> generateDiscoverWeekly({
+    required Map<String, int> phoneHistory,
+    required Map<String, int> aaHistory,
+    required Map<String, SavedSong> historyMetadata,
+    List<dynamic> weeklyLog = const [],
+    List<SavedSong> favorites = const [],
+    int targetCount = 25,
+    String? countryCode,
+    String? countryName,
+    String languageCode = 'en',
+  }) async {
+    final List<TrendingPlaylist> playlists = [];
+    await for (final playlist in generateDiscoverWeeklyStream(
+      phoneHistory: phoneHistory,
+      aaHistory: aaHistory,
+      historyMetadata: historyMetadata,
+      weeklyLog: weeklyLog,
+      favorites: favorites,
+      targetCount: targetCount,
+      countryCode: countryCode,
+      countryName: countryName,
+      languageCode: languageCode,
+    )) {
+      playlists.add(playlist);
+    }
+    return playlists;
+  }
+
+  /// Main entry point: yields each tailored playlist as it's ready
+  Stream<TrendingPlaylist> generateDiscoverWeeklyStream({
+    required Map<String, int> phoneHistory,
+    required Map<String, int> aaHistory,
+    required Map<String, SavedSong> historyMetadata,
+    List<dynamic> weeklyLog = const [],
+    List<SavedSong> favorites = const [],
+    int targetCount = 25,
+    String? countryCode,
+    String? countryName,
+    String languageCode = 'en',
+  }) async* {
+    final Set<String> globalSeenIds = {};
+    final Set<String> globalSeenTitles = {};
+
+    // Compute weekly counts from log
+    final Map<String, int> weeklyCounts = {};
+    for (var event in weeklyLog) {
+      if (event is Map && event.containsKey('id')) {
+        final id = event['id'] as String;
+        weeklyCounts[id] = (weeklyCounts[id] ?? 0) + 1;
+      }
+    }
+
+    final List<SavedSong> userHistoryMetadata = historyMetadata.values.toList();
+
+    // Sort history by: 1. Weekly count, 2. Global count
+    final List<SavedSong> sortedHistory = List.from(userHistoryMetadata);
+    sortedHistory.sort((a, b) {
+      // 1. Weekly count
+      final wA = weeklyCounts[a.id] ?? 0;
+      final wB = weeklyCounts[b.id] ?? 0;
+      if (wA != wB) return wB.compareTo(wA);
+
+      // 2. Global count
+      final countA = (phoneHistory[a.id] ?? 0) + (aaHistory[a.id] ?? 0);
+      final countB = (phoneHistory[b.id] ?? 0) + (aaHistory[b.id] ?? 0);
+      return countB.compareTo(countA);
+    });
+
+    // 0. PERSONAL MIXES
+    // 0.1 "Weekly Mix" - Most played (Weekly priority)
+    if (sortedHistory.isNotEmpty) {
+      final List<Map<String, dynamic>> weeklyTracks = [];
+      for (var s in sortedHistory) {
+        if (weeklyTracks.length >= 50) break;
+        final cleanedTitle = _cleanTitle(s.title).toLowerCase();
+        if (globalSeenIds.contains(s.id) ||
+            globalSeenTitles.contains(cleanedTitle))
+          continue;
+
+        weeklyTracks.add(_mapToTrack(s, true));
+        globalSeenIds.add(s.id);
+        globalSeenTitles.add(cleanedTitle);
+      }
+
+      await _recoverMissingImages(weeklyTracks);
+      yield _assemblePlaylist(
+        'weekly_mix',
+        weeklyTracks,
+        owner: 'weekly_mix_owner',
+      );
+    }
+
+    // 0.2 "Discovery Mix" - Similar to top artists
+    if (sortedHistory.isNotEmpty) {
+      final Set<String> topArtistsSet = {};
+      for (var s in sortedHistory) {
+        final firstArtist = s.artist.split(',').first.trim();
+        if (firstArtist.isNotEmpty) {
+          topArtistsSet.add(firstArtist);
+          if (topArtistsSet.length >= 20) break;
+        }
+      }
+      final topArtists = topArtistsSet.toList()
+        ..shuffle(Random(_getWeeklySeed()));
+      if (topArtists.length > 10) topArtists.removeRange(10, topArtists.length);
+
+      final discovery = await _createDynamicPlaylist(
+        title: 'discovery_mix',
+        query: topArtists.join('|'),
+        countryCode: countryCode,
+        countryName: countryName,
+        languageCode: languageCode,
+        history: [],
+        globalSeenIds: globalSeenIds,
+        globalSeenTitles: globalSeenTitles,
+      );
+      if (discovery != null) yield discovery;
+    }
+
+    // 0.3 "Latest Hits" - Always 3rd
+    TrendingPlaylist? latestHits;
+    if (countryCode != null) {
+      final appleCC = countryCode.toLowerCase();
+      // Use the pre-defined chart type for top-songs
+      final chart = TrendingService.appleChartTypes.firstWhere(
+        (c) => c.type == 'most-played' && !c.isPlaylist,
+        orElse: () => TrendingService.appleChartTypes.last,
+      );
+      latestHits = await _trendingService.fetchAppleMusicChart(
+        appleCC,
+        countryName ?? '',
+        chart,
+      );
+      if (latestHits != null) {
+        latestHits.title = 'latest_hits';
+        // Ensure it keeps the AI provider to maintain consistent "For You" card style
+        latestHits.provider = 'AI';
+      }
+    }
+
+    if (latestHits == null) {
+      latestHits = await _createDynamicPlaylist(
+        title: 'latest_hits',
+        query: 'Latest Hits',
+        countryCode: countryCode,
+        countryName: countryName,
+        languageCode: languageCode,
+        history: [],
+        globalSeenIds: globalSeenIds,
+        globalSeenTitles: globalSeenTitles,
+        periodFilter: 'Latest',
+      );
+    }
+    if (latestHits != null) yield latestHits;
+
+
+  }
+
+  /// Creates a single playlist by blending history (if allowed) and search results
+  Future<TrendingPlaylist?> _createDynamicPlaylist({
+    required String title,
+    required String query,
+    required List<SavedSong> history,
+    required Set<String> globalSeenIds,
+    required Set<String> globalSeenTitles,
+    String? countryCode,
+    String? countryName,
+    String languageCode = 'en',
+    String? periodFilter,
+    String? genreFilter,
+  }) async {
+    final List<Map<String, dynamic>> tracks = [];
+    final Set<String> playlistSeenIds = {};
+    final Set<String> artists = {};
+
+    // 1. FILL FROM USER HISTORY
+    final bool isChartBased = title.contains('Mix') || title.contains('Hits');
+
+    final int historyLimit = isChartBased ? 0 : 10;
+    if (historyLimit > 0) {
+      for (var s in history) {
+        if (tracks.length >= historyLimit) break;
+        final cleanedTitle = _cleanTitle(s.title).toLowerCase();
+        if (globalSeenIds.contains(s.id) ||
+            globalSeenTitles.contains(cleanedTitle))
+          continue;
+
+        bool matches = false;
+        if (periodFilter != null && _isSongInPeriod(s, periodFilter)) {
+          matches = true;
+        } else if (genreFilter == null && !isChartBased) {
+          if (tracks.length < 5) matches = true;
+        } else if (title == 'Mix Latin' && tracks.length < 10) {
+          // Allow history for Latin Mix as it's a "personal taste" exception
+          matches = true;
+        }
+
+        if (matches) {
+          tracks.add(_mapToTrack(s, true));
+          playlistSeenIds.add(s.id);
+          globalSeenIds.add(s.id);
+          globalSeenTitles.add(cleanedTitle);
+          artists.add(s.artist.split(',').first.trim());
+        }
+      }
+    }
+
+    // 2. FILL FROM SEARCH
+    final random = Random(_getWeeklySeed());
+    final List<String> searchQueries = title == 'Discovery Mix'
+        ? (query.split(
+            '|',
+          )..shuffle(random)).map((a) => "Similar to $a").toList()
+        : _generateSmartQueries(query, countryName, countryCode, languageCode);
+
+    final List<Map<String, dynamic>> searchTracks = [];
+    for (var q in searchQueries) {
+      if (!isChartBased && (tracks.length + searchTracks.length >= 25)) break;
+
+      final results = await _metadataService.searchSongs(
+        query: q,
+        limit: 40,
+        countryCode: (countryName != null && q.contains(countryName))
+            ? countryCode
+            : null,
+      );
+
+      bool isCountryQ = countryName != null && q.contains(countryName);
+
+      for (var r in results) {
+        final s = r.song;
+        final cleanedTitle = _cleanTitle(s.title).toLowerCase();
+        if (playlistSeenIds.contains(s.id) ||
+            globalSeenIds.contains(s.id) ||
+            globalSeenTitles.contains(cleanedTitle))
+          continue;
+        if (periodFilter != null && !_isSongInPeriod(s, periodFilter)) continue;
+
+        final artist = s.artist.split(',').first.trim();
+        if (artists.contains(artist) &&
+            (tracks.length + searchTracks.length < 15))
+          continue;
+
+        var t = _mapToTrack(s, false);
+        if (isChartBased) t['isLocal'] = isCountryQ;
+
+        searchTracks.add(t);
+        playlistSeenIds.add(s.id);
+        globalSeenIds.add(s.id);
+        globalSeenTitles.add(cleanedTitle);
+        artists.add(artist);
+
+        if (!isChartBased && (tracks.length + searchTracks.length >= 25)) break;
+      }
+    }
+
+    if (isChartBased) {
+      final local = searchTracks.where((t) => t['isLocal'] == true).toList()
+        ..shuffle(random);
+      final global = searchTracks.where((t) => t['isLocal'] != true).toList()
+        ..shuffle(random);
+
+      tracks.clear();
+      tracks.addAll(local.take(15));
+      int allowedGlobal = tracks.length;
+      tracks.addAll(global.take(allowedGlobal).take(25 - tracks.length));
+    } else {
+      searchTracks.shuffle(random);
+      tracks.addAll(searchTracks.take(25 - tracks.length));
+    }
+
+    // --- FALLBACK: ensure at least 25 tracks if possible ---
+    if (tracks.length < 25) {
+      final Set<String> currentIds = tracks
+          .map((t) => t['id'] as String)
+          .toSet();
+
+      // 1. Try to fill from existing search results (ignoring chart ratios)
+      for (var t in searchTracks) {
+        if (tracks.length >= 25) break;
+        if (!currentIds.contains(t['id'])) {
+          tracks.add(t);
+          currentIds.add(t['id'] as String);
+        }
+      }
+
+      // 2. If still < 25, search without any filters (period, genre, country)
+      if (tracks.length < 25) {
+        // Clean query if it's a pipe-separated list (Discovery Mix)
+        final String fallbackQuery = title == 'Discovery Mix'
+            ? query.split('|').first
+            : query;
+
+        final fallbackResults = await _metadataService.searchSongs(
+          query: fallbackQuery,
+          limit: 50,
+        );
+
+        for (var r in fallbackResults) {
+          if (tracks.length >= 25) break;
+          final s = r.song;
+          final cleanedTitle = _cleanTitle(s.title).toLowerCase();
+          if (currentIds.contains(s.id) ||
+              globalSeenIds.contains(s.id) ||
+              globalSeenTitles.contains(cleanedTitle)) {
+            continue;
+          }
+
+          tracks.add(_mapToTrack(s, false));
+          currentIds.add(s.id);
+          playlistSeenIds.add(s.id);
+          globalSeenIds.add(s.id);
+          globalSeenTitles.add(cleanedTitle);
+        }
+      }
+    }
+
+    if (tracks.length < 5) return null;
+
+    await _recoverMissingImages(tracks);
+
+    return _assemblePlaylist(title, tracks);
+  }
+
+  List<String> _generateSmartQueries(
+    String base,
+    String? country,
+    String? countryCode,
+    String languageCode,
+  ) {
+    // Helper for translations
+    String t(String key) => _t(key, languageCode: languageCode);
+
+    if (base == 'Latest Hits') {
+      final year = DateTime.now().year;
+      final List<String> q = [];
+      if (country != null) {
+        q.addAll([
+          "Top 50 $country",
+          "${t('ranking')} $country $year",
+          "$country Hits $year",
+        ]);
+      }
+      q.addAll(["Global Top $year", "Viral 50 $year"]);
+      return q;
+    }
+
+    if (RegExp(r'^\d{4}s$').hasMatch(base)) {
+      final decade = base.replaceAll('s', '');
+      final shortDecade = decade.substring(2);
+      final List<String> q = [];
+      if (country != null) {
+        q.addAll([
+          "${t('ranking')} $country ${t('years')} $shortDecade",
+          "Top Hits $country $decade",
+          "${t('music')} ${t('years')} $shortDecade $country",
+          "Best of $decade $country",
+        ]);
+      }
+      q.addAll(["Top $base Hits", "Best of the $decade"]);
+      return q;
+    }
+
+    final List<String> q = ["$base Hits"];
+    if (country != null) q.insert(0, "$base $country");
+    return q;
+  }
+
+  bool _isSongInPeriod(SavedSong song, String period) {
+    final yearStr = song.releaseDate?.split('-').first ?? '0';
+    final year = int.tryParse(yearStr) ?? 0;
+    if (period == 'Latest') return year >= 2020;
+    final pYear = int.tryParse(period.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    if (pYear > 0) return year >= pYear && year < pYear + 10;
+    return true;
+  }
+
+  String _cleanTitle(String rawTitle) {
+    String title = rawTitle;
+    bool cleaning = true;
+    while (cleaning) {
+      String start = title;
+      title = title.replaceFirst(RegExp(r'^[⬇️📱✨🎵🔥🎧📻]\s*'), '');
+      title = title.replaceFirst(
+        RegExp(r'^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}]\s*', unicode: true),
+        '',
+      );
+      title = title.trim();
+      if (start == title) cleaning = false;
+    }
+    return title;
+  }
+
+  Map<String, dynamic> _mapToTrack(SavedSong s, bool fromHistory) {
+    String title = _cleanTitle(s.title);
+
+    return {
+      'title': title,
+      'artist': s.artist.trim(),
+      'album': s.album.trim(),
+      'image': s.artUri ?? '',
+      'id': s.id,
+      'provider': 'AI',
+      'fromHistory': fromHistory,
+      if (s.youtubeUrl != null) 'youtubeUrl': s.youtubeUrl,
+    };
+  }
+
+  TrendingPlaylist _assemblePlaylist(
+    String title,
+    List<Map<String, dynamic>> tracks, {
+    String owner = "ai_discovery",
+  }) {
+    return TrendingPlaylist(
+      id: "ai_${title.hashCode}_${_getWeeklySeed()}",
+      title: title,
+      provider: 'AI',
+      trackCount: -1,
+      owner: owner,
+      predefinedTracks: tracks,
+      imageUrls: tracks
+          .map((t) => t['image'].toString())
+          .where((i) => i.isNotEmpty)
+          .take(4)
+          .toList(),
+    );
+  }
+
+  Future<void> _recoverMissingImages(List<Map<String, dynamic>> tracks) async {
+    final List<Future<void>> futures = [];
+    for (var i = 0; i < tracks.length && i < 15; i++) {
+      final t = tracks[i];
+      if (t['image'] == null || t['image'].toString().isEmpty) {
+        futures.add(() async {
+          try {
+            final results = await _metadataService.searchSongs(
+              query: "${t['artist']} ${t['title']}",
+              limit: 1,
+            );
+            if (results.isNotEmpty && results.first.song.artUri != null) {
+              t['image'] = results.first.song.artUri;
+            }
+          } catch (_) {}
+        }());
+      }
+    }
+
+    if (futures.isNotEmpty) {
+      await Future.wait(
+        futures,
+      ).timeout(const Duration(seconds: 3), onTimeout: () => []);
+    }
+  }
+
+  String _t(String key, {String? languageCode}) {
+    final Map<String, String>? translations = _getTranslationsFor(
+      languageCode ?? 'en',
+    );
+    return translations?[key] ?? _getTranslationsFor('en')?[key] ?? key;
+  }
+
+  Map<String, String>? _getTranslationsFor(String code) {
+    try {
+      return AppTranslations.translations[code];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int _getWeeklySeed() {
+    final now = DateTime.now();
+    final year = now.year;
+    // Simple week calculation: days since beginning of year / 7
+    final days = now.difference(DateTime(year, 1, 1)).inDays;
+    final week = days ~/ 7;
+    return year * 100 + week;
+  }
+}

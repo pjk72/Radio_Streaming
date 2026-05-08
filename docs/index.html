@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>MusicStream</title>
+
+    <!-- Google Search Console -->
+    <meta name="google-site-verification" content="jztC_YOr0Bv9p2F5x157ZYVnYUZnN41X9Nx-rxd6dbE" />
+
+    <!-- SEO -->
+    <meta name="description" content="MusicStreaming App è l'app per ascoltare musica in streaming, radio online e playlist sempre aggiornate.">
+    <meta name="author" content="PJK Developer">
+
+    <!-- FAVICON (usa l’icona Play Store dell’app) -->
+    <link rel="icon" type="image/png"
+          href="https://play-lh.googleusercontent.com/1xrvupxj_jVvqZF_me2PD4L930wyj9QHiQzpqKyHkb-8-Lv6_x834VwsUgeVEodx6nHatRgDWPoXb75FkCgL=s48">
+
+    <!-- Font elegante -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(180deg, #f4f6fb, #ffffff);
+            color: #1e293b;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1150px;
+            margin: auto;
+        }
+
+        /* Top bar */
+        .top-bar {
+            background: #0f172a;
+            color: #cbd5f5;
+            font-size: 0.9rem;
+        }
+
+        .top-bar-content {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+        }
+
+        .top-bar a {
+            color: #a5b4fc;
+            text-decoration: none;
+        }
+
+        .top-bar a:hover {
+            text-decoration: underline;
+        }
+
+        /* Hero */
+        .hero {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+            padding: 90px 0;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1.3fr 0.7fr;
+            gap: 50px;
+            align-items: center;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.95;
+            margin-bottom: 30px;
+            max-width: 520px;
+        }
+
+        /* CTA */
+        .cta {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary {
+            background: #ffffff;
+            color: #4f46e5;
+            padding: 14px 30px;
+            border-radius: 40px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.25s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .btn-secondary {
+            border: 2px solid rgba(255,255,255,0.6);
+            color: #fff;
+            padding: 13px 28px;
+            border-radius: 40px;
+            text-decoration: none;
+        }
+
+        /* App image */
+        .hero-image img {
+            width: 100%;
+            max-width: 260px;
+            border-radius: 26px;
+            box-shadow: 0 30px 70px rgba(0,0,0,0.35);
+        }
+
+        /* Features */
+        .features {
+            padding: 90px 0;
+            background: #ffffff;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 2.3rem;
+            margin-bottom: 50px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 30px;
+        }
+
+        .feature-card {
+            background: #f8fafc;
+            padding: 35px 30px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.08);
+            transition: transform 0.2s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        /* Footer */
+        .footer {
+            background: #0f172a;
+            color: #cbd5f5;
+            padding: 35px 0;
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .footer a {
+            color: #a5b4fc;
+            text-decoration: none;
+            margin-left: 15px;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+
+            .hero-image img {
+                margin: 40px auto 0;
+            }
+
+            .cta {
+                justify-content: center;
+            }
+
+            .subtitle {
+                margin: auto auto 30px;
+            }
+
+            .footer-content {
+                justify-content: center;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header class="top-bar">
+    <div class="container top-bar-content">
+        <span>PJK Developer</span>
+        <a href="https://play.google.com/store/apps/dev?id=6305350565263081254" target="_blank">
+            Profilo sviluppatore
+        </a>
+    </div>
+</header>
+
+<section class="hero">
+    <div class="container hero-grid">
+
+        <div>
+            <h1>MusicStream</h1>
+            <p class="subtitle">
+                Ascolta musica in streaming, radio online e playlist sempre aggiornate
+                con un’esperienza moderna e fluida.
+            </p>
+
+            <div class="cta">
+                <a class="btn-primary"
+                   href="https://play.google.com/store/apps/details?id=com.fazio.musicstream"
+                   target="_blank">
+                    Scarica su Google Play
+                </a>
+
+                <a class="btn-secondary"
+                   href="https://pjk72.github.io/Radio_Streaming/Policy.html">
+                    Privacy Policy
+                </a>
+            </div>
+        </div>
+
+        <div class="hero-image">
+            <img src="https://play-lh.googleusercontent.com/1xrvupxj_jVvqZF_me2PD4L930wyj9QHiQzpqKyHkb-8-Lv6_x834VwsUgeVEodx6nHatRgDWPoXb75FkCgL=w480-h960-rw"
+                 alt="MusicStreaming App screenshot">
+        </div>
+
+    </div>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2>Funzionalità principali</h2>
+
+        <div class="features-grid">
+            <div class="feature-card">🎧 Streaming continuo</div>
+            <div class="feature-card">📻 Radio online</div>
+            <div class="feature-card">🔥 Playlist aggiornate</div>
+            <div class="feature-card">📱 Design moderno</div>
+        </div>
+    </div>
+</section>
+
+<footer class="footer">
+    <div class="container footer-content">
+        <p>© 2026 PJK Developer</p>
+        <div>
+            <a href="https://pjk72.github.io/Radio_Streaming/Policy.html">Privacy Policy</a>
+            <a href="https://play.google.com/store/apps/dev?id=6305350565263081254" target="_blank">
+                Sviluppatore
+            </a>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>

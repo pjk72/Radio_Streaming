@@ -1,0 +1,537 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'backup_service.dart';
+import 'log_service.dart';
+
+class EntitlementService extends ChangeNotifier {
+  final BackupService _backupService;
+
+  final String _remoteConfigKey = "entitlements_json";
+  static const String _cacheConfigKey = "cached_entitlements";
+  static const String _cacheUserEmailKey = "cached_user_email";
+  static const String _cacheUserNameKey = "cached_user_name";
+
+  Map<String, dynamic> _config = {};
+  bool _isLoading = false;
+  bool _isUsingCachedConfig = false;
+  String? _cachedUserEmail;
+  String? _cachedUserName;
+
+  /// Public getters for the cached user info
+  String? get cachedUserEmail => _cachedUserEmail;
+  String? get cachedUserName => _cachedUserName;
+
+  StreamSubscription? _remoteConfigSubscription;
+  StreamSubscription? _connectivitySubscription;
+
+  EntitlementService(this._backupService) {
+    _backupService.addListener(_onAuthChanged);
+    _loadUserIdentityFromCache();
+    _initializeRemoteConfig();
+    _setupConnectivityListener();
+  }
+
+  Future<void> _loadUserIdentityFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _cachedUserEmail = prefs.getString(_cacheUserEmailKey);
+      _cachedUserName = prefs.getString(_cacheUserNameKey);
+      // No log or notify here to keep it silent unless config also arrives/fails
+    } catch (e) {
+      LogService().log("EntitlementService: Error loading user identity: $e");
+    }
+  }
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      results,
+    ) {
+      final hasConnection = !results.contains(ConnectivityResult.none);
+      if (hasConnection && _isUsingCachedConfig && !_isLoading) {
+        LogService().log(
+          "EntitlementService: Connection restored. Forcing remote config refresh...",
+        );
+        refreshConfig();
+      }
+    });
+  }
+
+  Future<void> _initializeRemoteConfig() async {
+    try {
+      final remoteConfig = FirebaseRemoteConfig.instance;
+
+      // Configure Remote Config
+      await remoteConfig.setConfigSettings(
+        RemoteConfigSettings(
+          fetchTimeout: const Duration(seconds: 10),
+          minimumFetchInterval: kDebugMode
+              ? const Duration(seconds: 0)
+              : const Duration(minutes: 5), // Near real-time
+        ),
+      );
+
+      // Initial fetch and activate
+      await refreshConfig();
+
+      // Listen for real-time updates (available in firebase_remote_config ^5.x.x)
+      _remoteConfigSubscription = remoteConfig.onConfigUpdated.listen((
+        event,
+      ) async {
+        LogService().log(
+          "EntitlementService: Real-time update received from Remote Config.",
+        );
+        await remoteConfig.activate();
+        await _updateConfigFromRemote();
+      });
+    } catch (e) {
+      await _loadCachedConfig("Failed to initialize Remote Config: $e");
+    }
+  }
+
+  bool get isLoading => _isLoading;
+  bool get isUsingCachedConfig => _isUsingCachedConfig;
+  bool get isUsingLocalConfig =>
+      _isUsingCachedConfig; // For backward compatibility
+
+  void _onAuthChanged() {
+    // When login status changes, we update the cache with new user info
+    _updateUserCache();
+    notifyListeners();
+  }
+
+  Future<void> _updateUserCache() async {
+    try {
+      final user = _backupService.currentUser;
+      final prefs = await SharedPreferences.getInstance();
+      if (user != null) {
+        await prefs.setString(_cacheUserEmailKey, user.email);
+        await prefs.setString(_cacheUserNameKey, user.displayName ?? "");
+        LogService().log(
+          "EntitlementService: User info updated in cache (Logged In).",
+        );
+      } else {
+        // Handle guest/logout by storing explicit "GUEST" value
+        await prefs.setString(_cacheUserEmailKey, "GUEST");
+        await prefs.setString(_cacheUserNameKey, "GUEST");
+        LogService().log(
+          "EntitlementService: User info updated in cache (Guest / Logged Out).",
+        );
+      }
+
+      // Update memory values
+      _cachedUserEmail = prefs.getString(_cacheUserEmailKey);
+      _cachedUserName = prefs.getString(_cacheUserNameKey);
+
+      _logCachedData();
+    } catch (e) {
+      LogService().log("EntitlementService: Error updating user cache: $e");
+    }
+  }
+
+  Future<void> refreshConfig() async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      final bool updated = await remoteConfig.fetchAndActivate();
+      LogService().log(
+        "EntitlementService: Remote Config fetchAndActivate completed. Updated: $updated",
+      );
+      await _updateConfigFromRemote();
+    } catch (e) {
+      await _loadCachedConfig("Failed to fetch Remote Config: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _updateConfigFromRemote() async {
+    try {
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      final jsonStr = remoteConfig.getString(_remoteConfigKey);
+
+      if (jsonStr.isNotEmpty) {
+        final newConfig = jsonDecode(jsonStr);
+        _config = newConfig;
+        _isUsingCachedConfig = false;
+        notifyListeners();
+        LogService().log(
+          "EntitlementService: Config updated from Remote Config.",
+        );
+
+        // Cache the config and user info
+        _cacheConfigAndUser(jsonStr);
+      } else {
+        // Debug: Print all available keys to see what we actually fetched
+        final allKeys = remoteConfig.getAll();
+        LogService().log(
+          "EntitlementService: ERROR - Key '$_remoteConfigKey' is empty or missing.",
+        );
+        LogService().log(
+          "EntitlementService: All available keys found on this client: ${allKeys.keys.toList()}",
+        );
+
+        // Also log sources to see if we are getting real remote data
+        allKeys.forEach((key, value) {
+          LogService().log("Config Item: $key (Source: ${value.source})");
+        });
+
+        await _loadCachedConfig(
+          "Remote Config value is empty for key '$_remoteConfigKey'",
+        );
+      }
+    } catch (e) {
+      await _loadCachedConfig("Error parsing Remote Config JSON: $e");
+    }
+  }
+
+  Future<void> _cacheConfigAndUser(String jsonStr) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cacheConfigKey, jsonStr);
+      LogService().log("EntitlementService: Config cached.");
+
+      // Always update user info as well to ensure it's in sync
+      await _updateUserCache();
+    } catch (e) {
+      LogService().log("EntitlementService: Error caching config: $e");
+    }
+  }
+
+  Future<void> _logCachedData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedConfig = prefs.getString(_cacheConfigKey);
+      final cachedEmail = prefs.getString(_cacheUserEmailKey);
+      final cachedName = prefs.getString(_cacheUserNameKey);
+
+      // Sync with memory
+      _cachedUserEmail = cachedEmail;
+      _cachedUserName = cachedName;
+
+      LogService().log("--- CACHE DATA START ---");
+      LogService().log("[Cached] Config: ${cachedConfig ?? 'None'}");
+      LogService().log("[Cached] User Email: ${cachedEmail ?? 'None'}");
+      LogService().log("[Cached] User Name: ${cachedName ?? 'None'}");
+      LogService().log("--- CACHE DATA END ---");
+    } catch (e) {
+      LogService().log("EntitlementService: Error reading cache for log: $e");
+    }
+  }
+
+  Future<void> _loadCachedConfig(String reason) async {
+    try {
+      LogService().log(
+        "EntitlementService: $reason. Falling back to cached config.",
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final String? cachedContent = prefs.getString(_cacheConfigKey);
+
+      if (cachedContent != null && cachedContent.isNotEmpty) {
+        _config = jsonDecode(cachedContent);
+        _isUsingCachedConfig = true;
+        LogService().log(
+          "EntitlementService: Cached config loaded successfully.",
+        );
+      } else {
+        LogService().log("EntitlementService: No cached config available.");
+        // If no cache, we might stay empty or handle as error
+      }
+
+      // Also ensure memory values for user are updated on config load
+      _cachedUserEmail = prefs.getString(_cacheUserEmailKey);
+      _cachedUserName = prefs.getString(_cacheUserNameKey);
+
+      notifyListeners();
+    } catch (e) {
+      LogService().log("EntitlementService: Error loading cached config: $e");
+    }
+  }
+
+  /// Checks if a feature is enabled for the current user.
+  /// featureKey: e.g., 'download_songs', 'recognize_songs'
+  bool isFeatureEnabled(String featureKey) {
+    if (_config.isEmpty) return false;
+
+    final features = _config['features'] as Map<String, dynamic>?;
+    if (features == null || !features.containsKey(featureKey)) {
+      return false; // Feature not defined
+    }
+
+    // SPECIAL LOGIC for specified ad attributes: prioritized specificity
+    if (featureKey == 'app_open_ad' ||
+        featureKey == 'interstitial_ad') {
+      return _getPrioritizedValue(featureKey) != 0;
+    }
+
+    final featureData = features[featureKey];
+
+    // Handle both List (old format) and Map (new format with limits)
+    List<String> allowedEntities = [];
+    if (featureData is List) {
+      allowedEntities = List<String>.from(featureData);
+    } else if (featureData is Map) {
+      // If it's a map, a feature is enabled if the limit is not 0
+      featureData.forEach((key, value) {
+        if (value is num && value != 0) {
+          allowedEntities.add(key.toString());
+        } else if (value is! num) {
+          // If value is not a number, we assume it's "enabled" if present
+          allowedEntities.add(key.toString());
+        }
+      });
+    }
+
+    if (allowedEntities.isEmpty) return false;
+
+    // 1. Check "All" (Everyone)
+    if (allowedEntities.any((e) => e.toLowerCase() == "all")) {
+      return true;
+    }
+
+    final currentUser = _backupService.currentUser;
+    String? userEmail = currentUser?.email;
+
+    // Fallback to cache (for Android Auto or background states where BackupService may be null)
+    if (userEmail == null || userEmail.isEmpty) {
+      if (_cachedUserEmail != null &&
+          _cachedUserEmail != "GUEST" &&
+          _cachedUserEmail != "None") {
+        userEmail = _cachedUserEmail;
+      }
+    }
+
+    // 2. Check "All Login" (Any logged in user)
+    if (userEmail != null &&
+        allowedEntities.any((e) => e.toLowerCase() == "all login")) {
+      return true;
+    }
+
+    if (userEmail == null) return false;
+
+    // 3. Check individual email
+    if (allowedEntities.contains(userEmail)) {
+      return true;
+    }
+
+    // 4. Check Groups
+    final groups = _config['groups'] as Map<String, dynamic>?;
+    if (groups != null) {
+      final String normalizedUserEmail = userEmail.toLowerCase().trim();
+      for (final entity in allowedEntities) {
+        if (groups.containsKey(entity)) {
+          final groupEmails = List<String>.from(groups[entity] ?? []);
+          if (groupEmails.any((email) => email.toLowerCase().trim() == normalizedUserEmail)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /// Returns the limit for a feature (e.g., max downloads).
+  /// -1: unlimited, 0: disabled, >0: specific count.
+  /// If multiple groups match, the highest limit is returned (-1 being highest).
+  int getFeatureLimit(String featureKey) {
+    if (_config.isEmpty) return 0;
+
+    final features = _config['features'] as Map<String, dynamic>?;
+    if (features == null || !features.containsKey(featureKey)) return 0;
+
+    final featureData = features[featureKey];
+
+    // SPECIAL LOGIC for specified ad attributes: prioritized specificity
+    if (featureKey == 'app_open_ad' ||
+        featureKey == 'interstitial_ad') {
+      return _getPrioritizedValue(featureKey);
+    }
+
+    if (featureData is! Map) {
+      // If it's a list, we assume -1 (unlimited) for everyone in the list
+      return isFeatureEnabled(featureKey) ? -1 : 0;
+    }
+
+    final Map<String, dynamic> limitsMap = Map<String, dynamic>.from(
+      featureData,
+    );
+    final currentUser = _backupService.currentUser;
+    String? userEmail = currentUser?.email;
+
+    // Fallback to cache (for Android Auto or background states where BackupService may be null)
+    if (userEmail == null || userEmail.isEmpty) {
+      if (_cachedUserEmail != null &&
+          _cachedUserEmail != "GUEST" &&
+          _cachedUserEmail != "None") {
+        userEmail = _cachedUserEmail;
+      }
+    }
+
+    final groups = _config['groups'] as Map<String, dynamic>?;
+    final String? normalizedUserEmail = userEmail?.toLowerCase().trim();
+
+    int maxLimit = 0; // Default to blocked
+
+    limitsMap.forEach((entity, limit) {
+      int currentLimit = (limit is num)
+          ? limit.toInt()
+          : (isFeatureEnabled(featureKey) ? -1 : 0);
+      bool matches = false;
+
+      if (entity.toLowerCase() == "all") {
+        matches = true;
+      } else if (normalizedUserEmail != null) {
+        // Normalize the entity name too just in case (though it should be the group name or email key)
+        final String normalizedEntity = entity.toLowerCase().trim();
+        
+        if (normalizedEntity == "all login") {
+          matches = true;
+        } else if (normalizedEntity == normalizedUserEmail) {
+          matches = true;
+        } else if (groups != null && groups.containsKey(entity)) {
+          final groupEmails = List<String>.from(groups[entity] ?? []);
+          if (groupEmails.any((email) => email.toLowerCase().trim() == normalizedUserEmail)) {
+            matches = true;
+          }
+        }
+      }
+
+      if (matches) {
+        if (currentLimit == -1) {
+          maxLimit = -1;
+        } else if (maxLimit != -1) {
+          // Priority logic:
+          // 1. Positive numbers/ -1 always win.
+          // 2. -99 wins over 0.
+          // 3. 0 is the absolute minimum.
+          if (currentLimit == -99 && (maxLimit == 0)) {
+            maxLimit = -99;
+          } else if (currentLimit > 0 && (maxLimit <= 0)) {
+            maxLimit = currentLimit;
+          } else if (currentLimit > maxLimit && maxLimit != -99) {
+             maxLimit = currentLimit;
+          }
+        }
+      }
+    });
+
+    return maxLimit;
+  }
+
+  /// New logic for specific attributes: Priority to the most specific rule.
+  /// 1: Email (Priority 1)
+  /// 2: Group (Priority 2)
+  /// 3: "All login" (Priority 3)
+  /// 4: "All" (Priority 4)
+  /// Value 0 is an explicit block. If no rules match, returns 0.
+  int _getPrioritizedValue(String featureKey) {
+    if (_config.isEmpty) return 0;
+
+    final features = _config['features'] as Map<String, dynamic>?;
+    if (features == null) return 0;
+
+    dynamic featureData = features[featureKey];
+
+    if (featureData is! Map) return 0;
+
+    final Map<String, dynamic> rules = Map<String, dynamic>.from(featureData);
+    final currentUser = _backupService.currentUser;
+    String? userEmail = currentUser?.email;
+
+    // Fallback to cache (for background/offline)
+    if (userEmail == null || userEmail.isEmpty) {
+      if (_cachedUserEmail != null &&
+          _cachedUserEmail != "GUEST" &&
+          _cachedUserEmail != "None") {
+        userEmail = _cachedUserEmail;
+      }
+    }
+
+    final String? normalizedUserEmail = userEmail?.toLowerCase().trim();
+    final groups = _config['groups'] as Map<String, dynamic>?;
+
+    int? bestPriority;
+    List<int> bestValues = [];
+
+    void evaluateRule(String entity, dynamic value, int priority) {
+      // If we already found a MORE specific rule, ignore this one
+      if (bestPriority != null && priority > bestPriority!) return;
+
+      int numericValue = (value is num) ? value.toInt() : 1;
+
+      if (bestPriority == null || priority < bestPriority!) {
+        // New most specific level found
+        bestPriority = priority;
+        bestValues = [numericValue];
+      } else {
+        // Same priority level (possible with multiple groups)
+        bestValues.add(numericValue);
+      }
+    }
+
+    LogService().log("[EntitlementDebug] Checking $featureKey for email: $normalizedUserEmail");
+
+    rules.forEach((entity, value) {
+      final String normalizedEntity = entity.toLowerCase().trim();
+      bool matched = false;
+      int priority = 0;
+
+      // Priority 1: Specific User Email
+      if (normalizedUserEmail != null && normalizedEntity == normalizedUserEmail) {
+        matched = true;
+        priority = 1;
+      }
+      // Priority 2: Groups (e.g., Administrator, beta_testers)
+      else if (normalizedUserEmail != null &&
+          groups != null &&
+          groups.containsKey(entity)) {
+        final groupEmails = List<String>.from(groups[entity] ?? []);
+        if (groupEmails.any(
+          (email) => email.toLowerCase().trim() == normalizedUserEmail,
+        )) {
+          matched = true;
+          priority = 2;
+        }
+      }
+      // Priority 3: "All login" (any authenticated user)
+      else if (normalizedUserEmail != null && normalizedEntity == "all login") {
+        matched = true;
+        priority = 3;
+      }
+      // Priority 4: "All" (everyone)
+      else if (normalizedEntity == "all") {
+        matched = true;
+        priority = 4;
+      }
+
+      if (matched) {
+        LogService().log("[EntitlementDebug] Match found: $entity (Priority $priority, Value $value)");
+        evaluateRule(entity, value, priority);
+      }
+    });
+
+    if (bestPriority == null) {
+      LogService().log("[EntitlementDebug] No rules matched for $featureKey. Access DENIED.");
+      return 0; // Not eligible by default
+    }
+
+    final result = bestValues.contains(0) ? 0 : (bestValues.isEmpty ? 0 : bestValues.reduce((a, b) => a > b ? a : b));
+    LogService().log("[EntitlementDebug] Winning priority $bestPriority with value $result");
+    return result;
+  }
+
+  @override
+  void dispose() {
+    _backupService.removeListener(_onAuthChanged);
+    _remoteConfigSubscription?.cancel();
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+}

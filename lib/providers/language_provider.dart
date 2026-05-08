@@ -1,0 +1,90 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../l10n/app_translations.dart';
+
+class LanguageProvider with ChangeNotifier {
+  static const String _languageKey = 'app_language_code';
+
+  // default to 'system'
+  String _currentLanguageCode = 'system';
+
+  // The actual resolved code based on system if 'system' is selected
+  String _resolvedLanguageCode = 'en';
+
+  String get currentLanguageCode => _currentLanguageCode;
+  String get resolvedLanguageCode => _resolvedLanguageCode;
+
+  LanguageProvider() {
+    _loadLanguage();
+  }
+
+  Future<void> _loadLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedCode = prefs.getString(_languageKey);
+
+    if (savedCode != null) {
+      _currentLanguageCode = savedCode;
+    } else {
+      _currentLanguageCode = 'system';
+    }
+
+    _resolveSystemLanguage();
+  }
+
+  void _resolveSystemLanguage() {
+    if (_currentLanguageCode == 'system') {
+      try {
+        final platformLocaleName = Platform.localeName;
+        final code = platformLocaleName.split('_').first;
+        _resolvedLanguageCode = _isSupported(code) ? code : 'en';
+      } catch (e) {
+        _resolvedLanguageCode = 'en';
+      }
+    } else {
+      _resolvedLanguageCode = _currentLanguageCode;
+    }
+    notifyListeners();
+  }
+
+  bool _isSupported(String code) {
+    return ['en', 'it', 'es', 'fr', 'de', 'ru', 'pt', 'zh', 'ar'].contains(code);
+  }
+
+  Future<void> setLanguage(String languageCode) async {
+    if (_currentLanguageCode == languageCode) return;
+
+    _currentLanguageCode = languageCode;
+    final prefs = await SharedPreferences.getInstance();
+
+    if (languageCode == 'system') {
+      await prefs.remove(_languageKey);
+    } else {
+      await prefs.setString(_languageKey, languageCode);
+    }
+
+    _resolveSystemLanguage();
+  }
+
+  String translate(String key, {List<String>? args}) {
+    // 1. Try the current resolved language
+    String? translation = AppTranslations.translations[_resolvedLanguageCode]?[key];
+
+    // 2. If not found, fallback to English ('en')
+    if (translation == null && _resolvedLanguageCode != 'en') {
+      translation = AppTranslations.translations['en']?[key];
+    }
+
+    // 3. Final safety: return translation, or key if nothing was found
+    String result = translation ?? key;
+
+    // Handle arguments if provided (e.g. {0}, {1})
+    if (args != null && args.isNotEmpty) {
+      for (int i = 0; i < args.length; i++) {
+        result = result.replaceAll('{$i}', args[i]);
+      }
+    }
+
+    return result;
+  }
+}
