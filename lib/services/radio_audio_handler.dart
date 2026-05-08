@@ -4790,12 +4790,18 @@ class RadioAudioHandler extends BaseAudioHandler
           } catch (_) {}
         }
 
-        LogService().log("RecognitionAPI: Match found: $title - $artists");
-
         // Lookup station for logo
         Station? station;
         try {
           station = _stations.firstWhere((s) => s.url == streamUrl);
+        } catch (_) {}
+
+        // Extract Genre
+        String? genre;
+        try {
+          if (trackInfo['genres'] != null && trackInfo['genres'] is List && (trackInfo['genres'] as List).isNotEmpty) {
+            genre = (trackInfo['genres'] as List)[0]['name'];
+          }
         } catch (_) {}
 
         // Check if favorite
@@ -4806,6 +4812,7 @@ class RadioAudioHandler extends BaseAudioHandler
         newExtras['isRecognized'] = true;
         newExtras['isFavorite'] = _isCurrentSongInFavorites;
         newExtras['isSearching'] = false; // Reset searching state
+        newExtras['genre'] = genre;
         final double offsetSeconds =
             (result['matches'] != null &&
                 result['matches'] is List &&
@@ -5195,6 +5202,7 @@ class RadioAudioHandler extends BaseAudioHandler
           album: current.album ?? 'Unknown Album',
           artUri: current.artUri?.toString(),
           dateAdded: DateTime.now(),
+          genre: current.extras?['genre'],
         );
       }
 
@@ -5208,16 +5216,20 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       final now = DateTime.now();
-      final sevenDaysAgo = now.subtract(const Duration(days: 7));
+      final ninetyDaysAgo = now.subtract(const Duration(days: 90));
 
-      // Add new event
-      weeklyLog.add({'id': songId, 'ts': now.toIso8601String()});
+      // Add new event with source for time-based filtering
+      weeklyLog.add({
+        'id': songId,
+        'ts': now.toIso8601String(),
+        'source': isCar ? 'car' : 'phone',
+      });
 
-      // Filter old events
+      // Keep up to 90 days of history for monthly/custom filters
       weeklyLog.removeWhere((event) {
         try {
           final ts = DateTime.parse(event['ts']);
-          return ts.isBefore(sevenDaysAgo);
+          return ts.isBefore(ninetyDaysAgo);
         } catch (_) {
           return true;
         }

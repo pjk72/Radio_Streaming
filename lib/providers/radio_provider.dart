@@ -164,6 +164,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Map<String, int> get userPlayHistory => _userPlayHistory;
   Map<String, int> get aaUserPlayHistory => _aaUserPlayHistory;
   Map<String, SavedSong> get historyMetadata => _historyMetadata;
+  List<dynamic> get weeklyPlayLog => List.unmodifiable(_weeklyPlayLog);
 
   // --- Background Enrichment Tracking ---
   final Set<String> _enrichingPlaylists = {};
@@ -1704,9 +1705,18 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     });
 
     // Sync background history updates from RadioAudioHandler
-    _audioHandler.customEvent.listen((event) {
+    _audioHandler.customEvent.listen((event) async {
       if (event is Map && event['type'] == 'history_updated') {
         _loadUserPlayHistory();
+        // Also reload the weekly play log (populated by RadioAudioHandler)
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final wStr = prefs.getString(_keyWeeklyPlayLog);
+          if (wStr != null) {
+            _weeklyPlayLog = List<dynamic>.from(jsonDecode(wStr));
+            notifyListeners();
+          }
+        } catch (_) {}
       }
     });
 

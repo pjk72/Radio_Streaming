@@ -13,6 +13,7 @@ class SavedSong {
   final String? localPath;
   final String? provider;
   final String? rawStreamUrl;
+  final String? genre;
 
   SavedSong({
     required this.id,
@@ -29,6 +30,7 @@ class SavedSong {
     this.localPath,
     this.provider,
     this.rawStreamUrl,
+    this.genre,
   });
 
   Map<String, dynamic> toJson() {
@@ -47,6 +49,7 @@ class SavedSong {
       'localPath': localPath,
       'provider': provider,
       'rawStreamUrl': rawStreamUrl,
+      'genre': genre,
     };
   }
 
@@ -68,6 +71,7 @@ class SavedSong {
       localPath: json['localPath'],
       provider: json['provider'],
       rawStreamUrl: json['rawStreamUrl'],
+      genre: json['genre'],
     );
   }
 
@@ -86,6 +90,7 @@ class SavedSong {
     String? localPath,
     String? provider,
     String? rawStreamUrl,
+    String? genre,
     bool forceClearLocalPath = false,
   }) {
     return SavedSong(
@@ -103,6 +108,7 @@ class SavedSong {
       localPath: forceClearLocalPath ? null : (localPath ?? this.localPath),
       provider: provider ?? this.provider,
       rawStreamUrl: rawStreamUrl ?? this.rawStreamUrl,
+      genre: genre ?? this.genre,
     );
   }
 
