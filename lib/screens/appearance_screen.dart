@@ -173,39 +173,42 @@ class AppearanceScreen extends StatelessWidget {
     ThemeProvider provider, {
     bool isDisabled = false,
   }) {
-    return ListTile(
-      enabled: !isDisabled,
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
-          color: isDisabled ? Colors.grey : null,
+    return Material(
+      color: Colors.black.withValues(alpha: 0.001),
+      child: ListTile(
+        enabled: !isDisabled,
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+            color: isDisabled ? Colors.grey : null,
+          ),
         ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 12, color: isDisabled ? Colors.grey : null),
-      ),
-      trailing: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: currentColor,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white24, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(fontSize: 12, color: isDisabled ? Colors.grey : null),
         ),
+        trailing: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: currentColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white24, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+        ),
+        onTap: isDisabled
+            ? null
+            : () => _showColorPicker(context, colorKey, provider),
       ),
-      onTap: isDisabled
-          ? null
-          : () => _showColorPicker(context, colorKey, provider),
     );
   }
 
@@ -388,41 +391,47 @@ class AppearanceScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          ListTile(
-            leading: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+          Material(
+            color: Colors.black.withValues(alpha: 0.001),
+            child: ListTile(
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.image, color: Theme.of(context).primaryColor),
               ),
-              child: Icon(Icons.image, color: Theme.of(context).primaryColor),
+              title: Text(
+                langProvider.translate('background_image'),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              subtitle: Text(
+                hasImage
+                    ? langProvider.translate('custom_search')
+                    : langProvider.translate('use_default'),
+                style: const TextStyle(fontSize: 12),
+              ),
+              onTap: () => _openImageSearch(context, provider),
             ),
-            title: Text(
-              langProvider.translate('background_image'),
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-            ),
-            subtitle: Text(
-              hasImage
-                  ? langProvider.translate('custom_search')
-                  : langProvider.translate('use_default'),
-              style: const TextStyle(fontSize: 12),
-            ),
-            onTap: () => _openImageSearch(context, provider),
           ),
           if (hasImage) ...[
             const Divider(height: 1, indent: 16, endIndent: 16),
-            ListTile(
-              leading: const Icon(
-                Icons.refresh,
-                color: Colors.redAccent,
-                size: 20,
+            Material(
+              color: Colors.black.withValues(alpha: 0.001),
+              child: ListTile(
+                leading: const Icon(
+                  Icons.refresh,
+                  color: Colors.redAccent,
+                  size: 20,
+                ),
+                title: Text(
+                  langProvider.translate('reset_background'),
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 14),
+                ),
+                onTap: () => provider.setCustomBackgroundImage(null),
               ),
-              title: Text(
-                langProvider.translate('reset_background'),
-                style: const TextStyle(color: Colors.redAccent, fontSize: 14),
-              ),
-              onTap: () => provider.setCustomBackgroundImage(null),
             ),
           ],
         ],

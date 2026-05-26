@@ -86,6 +86,9 @@ class InterstitialAdService {
             onAdShowedFullScreenContent: (ad) {
               LogService().log("InterstitialAdService: Ad displayed successfully.");
             },
+            onAdImpression: (ad) {
+              LogService().log("InterstitialAdService: Ad impression recorded by Google SDK.");
+            },
           );
         },
         onAdFailedToLoad: (LoadAdError error) {
@@ -126,6 +129,7 @@ class InterstitialAdService {
     try {
       LogService().log("InterstitialAdService: Attempting to call .show() on AdHash: ${_interstitialAd.hashCode}");
       _interstitialAd!.show();
+      _interstitialAd = null; // Recommended practice: clear the reference immediately after show
     } catch (e) {
       LogService().log("InterstitialAdService: Exception during .show(): $e");
       _interstitialAd = null;

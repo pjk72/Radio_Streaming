@@ -7,7 +7,6 @@ import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import 'package:audio_service/audio_service.dart';
 
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/icon_library.dart';
 
 import '../screens/song_details_screen.dart';
@@ -143,7 +142,7 @@ class PlayerBar extends StatelessWidget {
                                                             imgUrl,
                                                             fit: BoxFit.cover,
                                                             errorBuilder: (context, error, stackTrace) {
-                                                              return FaIcon(
+                                                              return Icon(
                                                                 IconLibrary.getIcon(station.icon),
                                                                 color: Color(int.parse(station.color)),
                                                                 size: 24,
@@ -151,7 +150,7 @@ class PlayerBar extends StatelessWidget {
                                                             },
                                                           );
                                                         } else {
-                                                          return FaIcon(
+                                                          return Icon(
                                                             IconLibrary.getIcon(station.icon),
                                                             color: Color(int.parse(station.color)),
                                                             size: 24,

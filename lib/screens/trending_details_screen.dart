@@ -889,66 +889,69 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             ? Border.all(color: theme.primaryColor, width: 2)
             : null,
       ),
-      child: ListTile(
-        leading: Text(
-          "${trackIndex + 1}",
-          style: TextStyle(
-            color: isPlaying ? Colors.white : Colors.white54,
-            fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        title: Text(
-          track.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: isPlaying ? theme.primaryColor : Colors.white,
-            fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        subtitle: Text(
-          track.artist,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Colors.white54),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isPlaying)
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: provider.isLoading
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: theme.primaryColor,
-                        ),
-                      )
-                    : MiniVisualizer(
-                        color: theme.primaryColor,
-                        width: 20,
-                        height: 20,
-                        active: isPlayingState,
-                      ),
-              ),
-            IconButton(
-              icon: Icon(
-                isSaved
-                    ? Icons.playlist_add_check_rounded
-                    : Icons.add_circle_outline,
-                color: isSaved ? theme.primaryColor : Colors.white54,
-              ),
-              onPressed: () => _showAddSongDialog(track),
-              tooltip: isSaved
-                  ? langProvider.translate('already_in_library')
-                  : langProvider.translate('add_to_playlist'),
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.001),
+        child: ListTile(
+          leading: Text(
+            "${trackIndex + 1}",
+            style: TextStyle(
+              color: isPlaying ? Colors.white : Colors.white54,
+              fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
             ),
-          ],
+          ),
+          title: Text(
+            track.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isPlaying ? theme.primaryColor : Colors.white,
+              fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          subtitle: Text(
+            track.artist,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white54),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isPlaying)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: provider.isLoading
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.primaryColor,
+                          ),
+                        )
+                      : MiniVisualizer(
+                          color: theme.primaryColor,
+                          width: 20,
+                          height: 20,
+                          active: isPlayingState,
+                        ),
+                ),
+              IconButton(
+                icon: Icon(
+                  isSaved
+                      ? Icons.playlist_add_check_rounded
+                      : Icons.add_circle_outline,
+                  color: isSaved ? theme.primaryColor : Colors.white54,
+                ),
+                onPressed: () => _showAddSongDialog(track),
+                tooltip: isSaved
+                    ? langProvider.translate('already_in_library')
+                    : langProvider.translate('add_to_playlist'),
+              ),
+            ],
+          ),
+          onTap: () => _playTrack(trackIndex),
         ),
-        onTap: () => _playTrack(trackIndex),
       ),
     );
   }
@@ -1126,34 +1129,40 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                     itemCount: playlists.length + 1,
                     itemBuilder: (ctx, index) {
                       if (index == 0) {
-                        return ListTile(
-                          leading: const Icon(
-                            Icons.add,
-                            color: Colors.blueAccent,
+                        return Material(
+                          color: Colors.black.withValues(alpha: 0.001),
+                          child: ListTile(
+                            leading: const Icon(
+                              Icons.add,
+                              color: Colors.blueAccent,
+                            ),
+                            title: Text(
+                              langProvider.translate('create_new_playlist'),
+                              style: const TextStyle(color: Colors.blueAccent),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _createNewPlaylist();
+                            },
                           ),
-                          title: Text(
-                            langProvider.translate('create_new_playlist'),
-                            style: const TextStyle(color: Colors.blueAccent),
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _createNewPlaylist();
-                          },
                         );
                       }
                       final p = playlists[index - 1];
-                      return ListTile(
-                        leading: const Icon(Icons.playlist_play_rounded),
-                        title: Text(
-                          p.name,
-                          style: TextStyle(
-                            color: Theme.of(context).textTheme.bodyLarge?.color,
+                      return Material(
+                        color: Colors.black.withValues(alpha: 0.001),
+                        child: ListTile(
+                          leading: const Icon(Icons.playlist_play_rounded),
+                          title: Text(
+                            p.name,
+                            style: TextStyle(
+                              color: Theme.of(context).textTheme.bodyLarge?.color,
+                            ),
                           ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _copySongsTo(p.id);
+                          },
                         ),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _copySongsTo(p.id);
-                        },
                       );
                     },
                   ),
@@ -1323,34 +1332,40 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                     itemCount: playlists.length + 1,
                     itemBuilder: (ctx, index) {
                       if (index == 0) {
-                        return ListTile(
-                          leading: const Icon(
-                            Icons.add,
-                            color: Colors.blueAccent,
+                        return Material(
+                          color: Colors.black.withValues(alpha: 0.001),
+                          child: ListTile(
+                            leading: const Icon(
+                              Icons.add,
+                              color: Colors.blueAccent,
+                            ),
+                            title: Text(
+                              langProvider.translate('create_new_playlist'),
+                              style: const TextStyle(color: Colors.blueAccent),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _createNewPlaylistAndAddSong(song);
+                            },
                           ),
-                          title: Text(
-                            langProvider.translate('create_new_playlist'),
-                            style: const TextStyle(color: Colors.blueAccent),
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _createNewPlaylistAndAddSong(song);
-                          },
                         );
                       }
                       final p = playlists[index - 1];
-                      return ListTile(
-                        leading: const Icon(Icons.playlist_add_rounded),
-                        title: Text(
-                          p.name,
-                          style: TextStyle(
-                            color: Theme.of(context).textTheme.bodyLarge?.color,
+                      return Material(
+                        color: Colors.black.withValues(alpha: 0.001),
+                        child: ListTile(
+                          leading: const Icon(Icons.playlist_add_rounded),
+                          title: Text(
+                            p.name,
+                            style: TextStyle(
+                              color: Theme.of(context).textTheme.bodyLarge?.color,
+                            ),
                           ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _performAddSong(p.id, song);
+                          },
                         ),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _performAddSong(p.id, song);
-                        },
                       );
                     },
                   ),

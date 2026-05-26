@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../utils/icon_library.dart';
 
@@ -870,7 +869,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                           const SizedBox(height: 8),
                                           Row(
                                             children: [
-                                              FaIcon(
+                                              Icon(
                                                 IconLibrary.getIcon(
                                                   station.icon,
                                                 ),

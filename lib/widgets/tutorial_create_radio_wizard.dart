@@ -1206,31 +1206,34 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   }
 
   Widget _buildCountryTile(String code, String name) {
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-      leading: Text(
-        code == "ALL" ? "🌍" : _getFlag(code),
-        style: const TextStyle(fontSize: 22),
+    return Material(
+      color: Colors.black.withValues(alpha: 0.001),
+      child: ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+        leading: Text(
+          code == "ALL" ? "🌍" : _getFlag(code),
+          style: const TextStyle(fontSize: 22),
+        ),
+        title: Text(
+          name,
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+        ),
+        trailing: Icon(
+          Icons.arrow_forward_ios,
+          size: 14,
+          color: Theme.of(
+            context,
+          ).textTheme.bodySmall?.color?.withValues(alpha: 0.3),
+        ),
+        onTap: () {
+          setState(() {
+            _selectedCountryCode = code;
+          });
+          _scanRadios();
+        },
       ),
-      title: Text(
-        name,
-        style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
-      ),
-      trailing: Icon(
-        Icons.arrow_forward_ios,
-        size: 14,
-        color: Theme.of(
-          context,
-        ).textTheme.bodySmall?.color?.withValues(alpha: 0.3),
-      ),
-      onTap: () {
-        setState(() {
-          _selectedCountryCode = code;
-        });
-        _scanRadios();
-      },
     );
   }
 
@@ -1390,7 +1393,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                   key: ValueKey(station['stationuuid'] ?? index),
                   color: isSelected
                       ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
-                      : Colors.transparent,
+                      : Colors.black.withValues(alpha: 0.001),
                   margin: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 4,

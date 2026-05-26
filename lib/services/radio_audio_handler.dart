@@ -1,4 +1,5 @@
 import 'package:http/http.dart' as http; // Added import
+import 'package:audio_session/audio_session.dart' hide AndroidAudioFocus, AVAudioSessionCategory;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
@@ -40,6 +41,32 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _isInAndroidAutoMode = false;
   int _crossfadeSeconds = 7;
 
+  static final AudioContext _appFocusContext = AudioContext(
+    android: AudioContextAndroid(
+      isSpeakerphoneOn: false,
+      stayAwake: true,
+      contentType: AndroidContentType.music,
+      usageType: AndroidUsageType.media,
+      audioFocus: AndroidAudioFocus.none,
+    ),
+    iOS: AudioContextIOS(
+      category: AVAudioSessionCategory.playAndRecord,
+      options: {
+        AVAudioSessionOptions.allowBluetooth,
+        AVAudioSessionOptions.defaultToSpeaker,
+        AVAudioSessionOptions.mixWithOthers,
+      },
+    ),
+  );
+
+  Future<void> _activateAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.setActive(true);
+    } catch (e) {
+      LogService().log("AudioSession error: $e");
+    }
+  }
   void setCrossfadeDuration(int seconds) {
     _crossfadeSeconds = seconds;
     LogService().log(
@@ -296,30 +323,20 @@ class RadioAudioHandler extends BaseAudioHandler
       // 3. Configure (Use defaults to match Test Screen, add minimal config)
 
       // 3. Configure both players for gapless/crossfade
-      for (var p in [_player, _nextPlayer]) {
-        try {
-          await p.setReleaseMode(ReleaseMode.stop);
-          await p.setAudioContext(
-            AudioContext(
-              android: const AudioContextAndroid(
-                isSpeakerphoneOn: false,
-                stayAwake: true,
-                contentType: AndroidContentType.music,
-                usageType: AndroidUsageType.media,
-                audioFocus: AndroidAudioFocus.none,
-              ),
-              iOS: AudioContextIOS(
-                category: AVAudioSessionCategory.playAndRecord,
-                options: {
-                  AVAudioSessionOptions.allowBluetooth,
-                  AVAudioSessionOptions.defaultToSpeaker,
-                  AVAudioSessionOptions.mixWithOthers,
-                },
-              ),
-            ),
-          );
-        } catch (_) {}
-      }
+      try {
+        final session = await AudioSession.instance;
+        await session.configure(const AudioSessionConfiguration.music());
+      } catch (_) {}
+
+      try {
+        await _player.setReleaseMode(ReleaseMode.stop);
+        await _player.setAudioContext(_appFocusContext);
+      } catch (_) {}
+      
+      try {
+        await _nextPlayer.setReleaseMode(ReleaseMode.stop);
+        await _nextPlayer.setAudioContext(_appFocusContext);
+      } catch (_) {}
 
       _setupPlayerListeners();
     } catch (e) {
@@ -1374,6 +1391,7 @@ class RadioAudioHandler extends BaseAudioHandler
     if (_player.state == PlayerState.paused) {
       _expectingStop = false;
       try {
+        await _activateAudioSession();
         await _player.resume();
       } catch (e) {
         _handleFatalPlayerError("Resume failed (State mismatch): $e");
@@ -1846,6 +1864,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 3. Start the NEW main player
     try {
+      await _activateAudioSession();
       await _player.resume();
     } catch (e) {
       _handleFatalPlayerError("Swap resume failed: $e");
@@ -2255,25 +2274,7 @@ class RadioAudioHandler extends BaseAudioHandler
           await _player.setPlaybackRate(1.0);
 
           // Configure Context (only needed on creation)
-          await _player.setAudioContext(
-            AudioContext(
-              android: const AudioContextAndroid(
-                isSpeakerphoneOn: false,
-                stayAwake: true,
-                contentType: AndroidContentType.music,
-                usageType: AndroidUsageType.media,
-                audioFocus: AndroidAudioFocus.none,
-              ),
-              iOS: AudioContextIOS(
-                category: AVAudioSessionCategory.playAndRecord,
-                options: {
-                  AVAudioSessionOptions.allowBluetooth,
-                  AVAudioSessionOptions.defaultToSpeaker,
-                  AVAudioSessionOptions.mixWithOthers,
-                },
-              ),
-            ),
-          );
+          await _player.setAudioContext(_appFocusContext);
         }
 
         final extraLocal = extras['isLocal'];
@@ -2295,9 +2296,6 @@ class RadioAudioHandler extends BaseAudioHandler
         // audioplayers handles stopping previous source internally during setSource.
 
         if (isLocal) {
-          // Stop any existing playback first to ensure clean state
-          await _player.stop();
-
           LogService().log(
             "LOCAL PLAYBACK: Attempting to play local file. Raw URL: $url",
           );
@@ -2411,6 +2409,7 @@ class RadioAudioHandler extends BaseAudioHandler
         }
 
         LogService().log("LOCAL PLAYBACK: Resuming player...");
+        await _activateAudioSession();
         await _player.resume();
         _isInitialBuffering = false;
 
@@ -2570,11 +2569,12 @@ class RadioAudioHandler extends BaseAudioHandler
       final outgoingPlayer = _player;
 
       await incomingPlayer.setVolume(0.0);
+      await _activateAudioSession();
       await incomingPlayer.resume();
 
-      // Wait for play confirmation (max 1s)
+      // Wait for play confirmation (max 5s)
       int retry = 0;
-      while (incomingPlayer.state != PlayerState.playing && retry < 10) {
+      while (incomingPlayer.state != PlayerState.playing && retry < 50) {
         await Future.delayed(const Duration(milliseconds: 100));
         retry++;
       }
@@ -2916,6 +2916,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
         await _player.setSource(UrlSource(finalUrl, mimeType: mimeType));
         await _player.setVolume(_volume);
+        await _activateAudioSession();
         await _player.resume();
 
         _expectingStop = false;

@@ -30,6 +30,12 @@ class RewardedAdService {
           _isAdLoading = false;
           
           _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+            onAdShowedFullScreenContent: (ad) {
+              LogService().log("RewardedAdService: Ad displayed successfully.");
+            },
+            onAdImpression: (ad) {
+              LogService().log("RewardedAdService: Ad impression recorded by Google SDK.");
+            },
             onAdDismissedFullScreenContent: (ad) {
               ad.dispose();
               _rewardedAd = null;
@@ -67,6 +73,16 @@ class RewardedAdService {
     // Extend callback to resolve completer
     final oldCallback = _rewardedAd!.fullScreenContentCallback;
     _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdShowedFullScreenContent: (ad) {
+        if (oldCallback?.onAdShowedFullScreenContent != null) {
+          oldCallback!.onAdShowedFullScreenContent!(ad);
+        }
+      },
+      onAdImpression: (ad) {
+        if (oldCallback?.onAdImpression != null) {
+          oldCallback!.onAdImpression!(ad);
+        }
+      },
       onAdDismissedFullScreenContent: (ad) {
         if (oldCallback?.onAdDismissedFullScreenContent != null) {
           oldCallback!.onAdDismissedFullScreenContent!(ad);
@@ -81,10 +97,18 @@ class RewardedAdService {
       },
     );
 
-    await _rewardedAd!.show(onUserEarnedReward: (ad, reward) {
-      earned = true;
-      onUserEarnedReward(ad, reward);
-    });
+    try {
+      await _rewardedAd!.show(onUserEarnedReward: (ad, reward) {
+        earned = true;
+        onUserEarnedReward(ad, reward);
+      });
+      _rewardedAd = null; // Recommended practice
+    } catch (e) {
+      LogService().log("RewardedAdService: Exception during .show(): $e");
+      _rewardedAd = null;
+      loadRewardedAd();
+      if (!completer.isCompleted) completer.complete(false);
+    }
 
     return completer.future;
   }

@@ -7,7 +7,6 @@ import '../providers/radio_provider.dart';
 import '../utils/icon_library.dart';
 import '../widgets/tutorial_create_radio_wizard.dart';
 import 'edit_station_screen.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../utils/glass_utils.dart';
 
 enum GroupingMode { none, genre, origin }
@@ -340,82 +339,85 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
     dynamic s,
     RadioProvider provider,
   ) {
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Color(
-            int.tryParse(s.color) ?? 0xFFFFFFFF,
-          ).withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(8),
+    return Material(
+      color: Colors.black.withValues(alpha: 0.001),
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Color(
+              int.tryParse(s.color) ?? 0xFFFFFFFF,
+            ).withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: s.logo != null && s.logo!.isNotEmpty
+                ? (s.logo!.startsWith('http')
+                      ? Image.network(
+                          s.logo!,
+                          errorBuilder: (c, e, s) =>
+                              const Icon(Icons.radio, color: Colors.white),
+                        )
+                      : Image.asset(
+                          s.logo!,
+                          errorBuilder: (c, e, s) =>
+                              const Icon(Icons.radio, color: Colors.white),
+                        ))
+                : Icon(
+                    IconLibrary.getIcon(s.icon),
+                    color: Colors.white,
+                    size: 20,
+                  ),
+          ),
         ),
-        child: Center(
-          child: s.logo != null && s.logo!.isNotEmpty
-              ? (s.logo!.startsWith('http')
-                    ? Image.network(
-                        s.logo!,
-                        errorBuilder: (c, e, s) =>
-                            const Icon(Icons.radio, color: Colors.white),
-                      )
-                    : Image.asset(
-                        s.logo!,
-                        errorBuilder: (c, e, s) =>
-                            const Icon(Icons.radio, color: Colors.white),
-                      ))
-              : FaIcon(
-                  IconLibrary.getIcon(s.icon),
-                  color: Colors.white,
-                  size: 20,
-                ),
+        title: Text(
+          s.name,
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
         ),
-      ),
-      title: Text(
-        s.name,
-        style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
-      ),
-      subtitle: Text(
-        s.genre,
-        style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(
-              provider.favorites.contains(s.id)
-                  ? Icons.favorite
-                  : Icons.favorite_border,
-              color: provider.favorites.contains(s.id)
-                  ? Colors.redAccent
-                  : Colors.white54,
+        subtitle: Text(
+          s.genre,
+          style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(
+                provider.favorites.contains(s.id)
+                    ? Icons.favorite
+                    : Icons.favorite_border,
+                color: provider.favorites.contains(s.id)
+                    ? Colors.redAccent
+                    : Colors.white54,
+              ),
+              onPressed: () => provider.toggleFavorite(s.id),
             ),
-            onPressed: () => provider.toggleFavorite(s.id),
-          ),
-          IconButton(
-            icon: Icon(
-              provider.isPlaying && provider.currentStation?.id == s.id
-                  ? Icons.stop_circle_outlined
-                  : Icons.play_circle_outline,
-              color: provider.isPlaying && provider.currentStation?.id == s.id
-                  ? Colors.redAccent
-                  : Theme.of(context).textTheme.bodyLarge?.color,
+            IconButton(
+              icon: Icon(
+                provider.isPlaying && provider.currentStation?.id == s.id
+                    ? Icons.stop_circle_outlined
+                    : Icons.play_circle_outline,
+                color: provider.isPlaying && provider.currentStation?.id == s.id
+                    ? Colors.redAccent
+                    : Theme.of(context).textTheme.bodyLarge?.color,
+              ),
+              onPressed: () {
+                if (provider.isPlaying && provider.currentStation?.id == s.id) {
+                  provider.stop();
+                } else {
+                  provider.playStation(s);
+                }
+              },
             ),
-            onPressed: () {
-              if (provider.isPlaying && provider.currentStation?.id == s.id) {
-                provider.stop();
-              } else {
-                provider.playStation(s);
-              }
-            },
-          ),
-          _buildPopupMenu(
-            context,
-            s,
-            provider,
-            iconColor: Theme.of(context).iconTheme.color,
-          ),
-        ],
+            _buildPopupMenu(
+              context,
+              s,
+              provider,
+              iconColor: Theme.of(context).iconTheme.color,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -570,7 +572,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                         : Container(
                             color: Colors.black26,
                             child: Center(
-                              child: FaIcon(
+                              child: Icon(
                                 IconLibrary.getIcon(s.icon),
                                 color: Colors.white54,
                                 size: 30,

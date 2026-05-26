@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
@@ -322,7 +321,7 @@ class _StationCardState extends State<StationCard> {
     IconData iconData = IconLibrary.getIcon(iconName);
 
     return Center(
-      child: FaIcon(
+      child: Icon(
         iconData,
         size: isBackground ? 70 : 32,
         color: Color(

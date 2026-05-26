@@ -658,68 +658,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             : stations.first)
                                       : null;
 
-                                  return ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    leading: Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white10,
-                                        shape: BoxShape.circle,
-                                        image:
-                                            selectedStation?.logo != null &&
-                                                selectedStation!
-                                                    .logo!
-                                                    .isNotEmpty
-                                            ? DecorationImage(
-                                                image:
-                                                    selectedStation.logo!
-                                                        .startsWith('http')
-                                                    ? NetworkImage(
-                                                        selectedStation.logo!,
-                                                      )
-                                                    : AssetImage(
-                                                            selectedStation
-                                                                .logo!,
-                                                          )
-                                                          as ImageProvider,
-                                                fit: BoxFit.cover,
+                                  return Material(
+                                    color: Colors.black.withValues(alpha: 0.001),
+                                    child: ListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      leading: Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white10,
+                                          shape: BoxShape.circle,
+                                          image:
+                                              selectedStation?.logo != null &&
+                                                  selectedStation!
+                                                      .logo!
+                                                      .isNotEmpty
+                                              ? DecorationImage(
+                                                  image:
+                                                      selectedStation.logo!
+                                                          .startsWith('http')
+                                                      ? NetworkImage(
+                                                          selectedStation.logo!,
+                                                        )
+                                                      : AssetImage(
+                                                              selectedStation
+                                                                  .logo!,
+                                                            )
+                                                            as ImageProvider,
+                                                  fit: BoxFit.cover,
+                                                )
+                                              : null,
+                                        ),
+                                        child:
+                                            selectedStation?.logo == null ||
+                                                selectedStation!.logo!.isEmpty
+                                            ? const Icon(
+                                                Icons.radio,
+                                                color: Colors.white70,
+                                                size: 20,
                                               )
                                             : null,
                                       ),
-                                      child:
-                                          selectedStation?.logo == null ||
-                                              selectedStation!.logo!.isEmpty
-                                          ? const Icon(
-                                              Icons.radio,
-                                              color: Colors.white70,
-                                              size: 20,
-                                            )
-                                          : null,
-                                    ),
-                                    title: Text(
-                                      selectedStation?.name ??
-                                          langProvider.translate(
-                                            'select_station',
-                                          ),
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      title: Text(
+                                        selectedStation?.name ??
+                                            langProvider.translate(
+                                              'select_station',
+                                            ),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                        ),
                                       ),
-                                    ),
-                                    subtitle: Text(
-                                      langProvider.translate('tap_to_choose'),
-                                      style: const TextStyle(
+                                      subtitle: Text(
+                                        langProvider.translate('tap_to_choose'),
+                                        style: const TextStyle(
+                                          color: Colors.white38,
+                                        ),
+                                      ),
+                                      trailing: const Icon(
+                                        Icons.chevron_right,
                                         color: Colors.white38,
                                       ),
-                                    ),
-                                    trailing: const Icon(
-                                      Icons.chevron_right,
-                                      color: Colors.white38,
-                                    ),
-                                    onTap: () => _showStationPicker(
-                                      context,
-                                      radio,
-                                      langProvider,
+                                      onTap: () => _showStationPicker(
+                                        context,
+                                        radio,
+                                        langProvider,
+                                      ),
                                     ),
                                   );
                                 },
@@ -1300,29 +1303,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+      child: Material(
         color: isActive
             ? Theme.of(context).primaryColor.withValues(alpha: 0.15)
             : cardColor.withValues(alpha: 0.2),
-        border: Border.all(
-          color: isActive
-              ? Theme.of(context).primaryColor.withValues(alpha: 0.5)
-              : contrastColor.withValues(alpha: 0.2),
-          width: isActive ? 2 : 1,
-        ),
-        boxShadow: isActive
-            ? [
-              BoxShadow(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-                blurRadius: 12,
-                spreadRadius: 2,
-              ),
-            ]
-            : null,
-      ),
-      child: ListTile(
-        leading: Container(
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isActive
+                  ? Theme.of(context).primaryColor.withValues(alpha: 0.5)
+                  : contrastColor.withValues(alpha: 0.2),
+              width: isActive ? 2 : 1,
+            ),
+            boxShadow: isActive
+                ? [
+                  BoxShadow(
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                  ),
+                ]
+                : null,
+          ),
+          child: ListTile(
+            leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
@@ -1382,6 +1388,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: onTap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
+      ),
+    ),
     );
   }
 
@@ -1520,34 +1528,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             final isSelected =
                                 langProvider.currentLanguageCode ==
                                 option['code'];
-                            return ListTile(
-                              leading: Text(
-                                option['flag']!,
-                                style: const TextStyle(fontSize: 24),
-                              ),
-                              title: Text(
-                                option['label']!,
-                                style: TextStyle(
-                                  color: isSelected
-                                      ? Theme.of(context).primaryColor
-                                      : Theme.of(
-                                          context,
-                                        ).textTheme.bodyLarge?.color,
-                                  fontWeight: isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
+                            return Material(
+                              color: Colors.black.withValues(alpha: 0.001),
+                              child: ListTile(
+                                leading: Text(
+                                  option['flag']!,
+                                  style: const TextStyle(fontSize: 24),
                                 ),
+                                title: Text(
+                                  option['label']!,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Theme.of(context).primaryColor
+                                        : Theme.of(
+                                            context,
+                                          ).textTheme.bodyLarge?.color,
+                                    fontWeight: isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        Icons.check,
+                                        color: Theme.of(context).primaryColor,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  langProvider.setLanguage(option['code']!);
+                                  Navigator.pop(ctx);
+                                },
                               ),
-                              trailing: isSelected
-                                  ? Icon(
-                                      Icons.check,
-                                      color: Theme.of(context).primaryColor,
-                                    )
-                                  : null,
-                              onTap: () {
-                                langProvider.setLanguage(option['code']!);
-                                Navigator.pop(ctx);
-                              },
                             );
                           },
                         ),
@@ -1725,30 +1736,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           itemBuilder: (ctx, index) {
                             final option = options[index];
                             final isSelected = currentValue == option['code'];
-                            return ListTile(
-                              title: Text(
-                                option['label']!,
-                                style: TextStyle(
-                                  color: isSelected
-                                      ? Theme.of(context).primaryColor
-                                      : Theme.of(
-                                          context,
-                                        ).textTheme.bodyLarge?.color,
-                                  fontWeight: isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
+                            return Material(
+                              color: Colors.black.withValues(alpha: 0.001),
+                              child: ListTile(
+                                title: Text(
+                                  option['label']!,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Theme.of(context).primaryColor
+                                        : Theme.of(
+                                            context,
+                                          ).textTheme.bodyLarge?.color,
+                                    fontWeight: isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
                                 ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        Icons.check,
+                                        color: Theme.of(context).primaryColor,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  onSelect(option['code']!);
+                                  Navigator.pop(ctx);
+                                },
                               ),
-                              trailing: isSelected
-                                  ? Icon(
-                                      Icons.check,
-                                      color: Theme.of(context).primaryColor,
-                                    )
-                                  : null,
-                              onTap: () {
-                                onSelect(option['code']!);
-                                Navigator.pop(ctx);
-                              },
                             );
                           },
                         ),
@@ -1818,32 +1832,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       itemCount: displayList.length,
                       itemBuilder: (context, index) {
                         final station = displayList[index];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.white10,
-                            backgroundImage:
-                                station.logo != null && station.logo!.isNotEmpty
-                                ? (station.logo!.startsWith('http')
-                                      ? NetworkImage(station.logo!)
-                                      : AssetImage(station.logo!)
-                                            as ImageProvider)
-                                : null,
-                            child: station.logo == null || station.logo!.isEmpty
-                                ? const Icon(Icons.radio, color: Colors.white)
-                                : null,
+                        return Material(
+                          color: Colors.black.withValues(alpha: 0.001),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.white10,
+                              backgroundImage:
+                                  station.logo != null && station.logo!.isNotEmpty
+                                  ? (station.logo!.startsWith('http')
+                                        ? NetworkImage(station.logo!)
+                                        : AssetImage(station.logo!)
+                                              as ImageProvider)
+                                  : null,
+                              child: station.logo == null || station.logo!.isEmpty
+                                  ? const Icon(Icons.radio, color: Colors.white)
+                                  : null,
+                            ),
+                            title: Text(
+                              station.name,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            onTap: () {
+                              if (onStationSelected != null) {
+                                onStationSelected(station);
+                              } else {
+                                radio.setStartupStationId(station.id);
+                              }
+                              Navigator.pop(ctx);
+                            },
                           ),
-                          title: Text(
-                            station.name,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          onTap: () {
-                            if (onStationSelected != null) {
-                              onStationSelected(station);
-                            } else {
-                              radio.setStartupStationId(station.id);
-                            }
-                            Navigator.pop(ctx);
-                          },
                         );
                       },
                     ),

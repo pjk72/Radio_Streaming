@@ -140,57 +140,60 @@ class _DuplicateResolutionDialogState
                                     widget.provider.isPlaying &&
                                     widget.provider.audioOnlySongId == song.id;
 
-                                return ListTile(
-                                  leading: IconButton(
-                                    icon: Icon(
-                                      isPlayingThis
-                                          ? Icons.stop_rounded
-                                          : Icons.play_arrow_rounded,
-                                      color: isPlayingThis
-                                          ? Colors.redAccent
-                                          : Theme.of(
-                                              context,
-                                            ).textTheme.bodyLarge?.color,
-                                      size: 32,
-                                    ),
-                                    onPressed: () {
-                                      if (isPlayingThis) {
-                                        widget.provider.stopYoutubeAudio();
-                                      } else {
-                                        widget.provider.playPlaylistSong(
-                                          song,
-                                          widget.playlist.id,
-                                        );
-                                      }
-                                    },
-                                  ),
-                                  title: Text(
-                                    "${Provider.of<LanguageProvider>(context, listen: false).translate('duration_label')} ${song.duration?.toString().split('.').first ?? '--:--'}",
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color
-                                          ?.withValues(alpha: 0.7),
-                                    ),
-                                  ),
-                                  trailing: Checkbox(
-                                    value: isMarked,
-                                    checkColor: Colors.black,
-                                    activeColor: Theme.of(context).primaryColor,
-                                    side: BorderSide(
-                                      color: Theme.of(context).dividerColor,
-                                    ),
-                                    onChanged: (val) {
-                                      setState(() {
-                                        if (val == true) {
-                                          _songsToRemove.add(song.id);
+                                return Material(
+                                  color: Colors.black.withValues(alpha: 0.001),
+                                  child: ListTile(
+                                    leading: IconButton(
+                                      icon: Icon(
+                                        isPlayingThis
+                                            ? Icons.stop_rounded
+                                            : Icons.play_arrow_rounded,
+                                        color: isPlayingThis
+                                            ? Colors.redAccent
+                                            : Theme.of(
+                                                context,
+                                              ).textTheme.bodyLarge?.color,
+                                        size: 32,
+                                      ),
+                                      onPressed: () {
+                                        if (isPlayingThis) {
+                                          widget.provider.stopYoutubeAudio();
                                         } else {
-                                          _songsToRemove.remove(song.id);
+                                          widget.provider.playPlaylistSong(
+                                            song,
+                                            widget.playlist.id,
+                                          );
                                         }
-                                      });
-                                    },
+                                      },
+                                    ),
+                                    title: Text(
+                                      "${Provider.of<LanguageProvider>(context, listen: false).translate('duration_label')} ${song.duration?.toString().split('.').first ?? '--:--'}",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.color
+                                            ?.withValues(alpha: 0.7),
+                                      ),
+                                    ),
+                                    trailing: Checkbox(
+                                      value: isMarked,
+                                      checkColor: Colors.black,
+                                      activeColor: Theme.of(context).primaryColor,
+                                      side: BorderSide(
+                                        color: Theme.of(context).dividerColor,
+                                      ),
+                                      onChanged: (val) {
+                                        setState(() {
+                                          if (val == true) {
+                                            _songsToRemove.add(song.id);
+                                          } else {
+                                            _songsToRemove.remove(song.id);
+                                          }
+                                        });
+                                      },
+                                    ),
                                   ),
                                 );
                               },

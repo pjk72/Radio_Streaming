@@ -53,24 +53,27 @@ class SleepTimerScreen extends StatelessWidget {
                         Icons.timer_outlined,
                       ),
                       const SizedBox(height: 16),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          langProvider.translate('sleep_timer'),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
+                      Material(
+                        color: Colors.black.withValues(alpha: 0.001),
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            langProvider.translate('sleep_timer'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
+                          subtitle: Text(
+                            radio.sleepTimerEnabled
+                                ? "${langProvider.translate('remaining_time')}: ${_formatDuration(radio.remainingSleepTime)}"
+                                : langProvider.translate('sleep_timer_desc'),
+                            style: const TextStyle(color: Colors.white38),
+                          ),
+                          value: radio.sleepTimerEnabled,
+                          onChanged: (val) => radio.setSleepTimerEnabled(val),
+                          activeColor: Theme.of(context).primaryColor,
                         ),
-                        subtitle: Text(
-                          radio.sleepTimerEnabled
-                              ? "${langProvider.translate('remaining_time')}: ${_formatDuration(radio.remainingSleepTime)}"
-                              : langProvider.translate('sleep_timer_desc'),
-                          style: const TextStyle(color: Colors.white38),
-                        ),
-                        value: radio.sleepTimerEnabled,
-                        onChanged: (val) => radio.setSleepTimerEnabled(val),
-                        activeColor: Theme.of(context).primaryColor,
                       ),
                       if (radio.sleepTimerEnabled) ...[
                         const Divider(color: Colors.white10, height: 32),

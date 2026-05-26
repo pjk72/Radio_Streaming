@@ -236,59 +236,62 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
                     ),
                     dividerColor: Colors.transparent,
                   ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    leading: ReorderableDragStartListener(
-                      index: widget.index,
-                      child: Icon(
-                        Icons.drag_indicator,
-                        color: localTheme.iconTheme.color?.withValues(
-                          alpha: 0.2,
-                        ),
+                  child: Material(
+                    color: Theme.of(ctx).cardColor,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
                       ),
-                    ),
-                    title: Text(
-                      widget.category,
-                      style: localTheme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: localTheme.textTheme.headlineSmall?.color,
-                        fontSize: widget.isDesktop ? 24 : 20,
-                      ),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(
-                            widget.isCompactView
-                                ? Icons.view_headline_rounded
-                                : Icons.grid_view_rounded,
-                            size: 20,
-                            color: localTheme.iconTheme.color?.withValues(
-                              alpha: 0.7,
-                            ),
+                      leading: ReorderableDragStartListener(
+                        index: widget.index,
+                        child: Icon(
+                          Icons.drag_indicator,
+                          color: localTheme.iconTheme.color?.withValues(
+                            alpha: 0.2,
                           ),
-                          onPressed: () {
-                            widget.provider.setCategoryCompact(
-                              widget.category,
-                              !widget.isCompactView,
-                            );
-                          },
                         ),
-                        Icon(
-                          _isExpanded ? Icons.expand_less : Icons.expand_more,
-                          color: localTheme.iconTheme.color,
+                      ),
+                      title: Text(
+                        widget.category,
+                        style: localTheme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: localTheme.textTheme.headlineSmall?.color,
+                          fontSize: widget.isDesktop ? 24 : 20,
                         ),
-                      ],
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              widget.isCompactView
+                                  ? Icons.view_headline_rounded
+                                  : Icons.grid_view_rounded,
+                              size: 20,
+                              color: localTheme.iconTheme.color?.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
+                            onPressed: () {
+                              widget.provider.setCategoryCompact(
+                                widget.category,
+                                !widget.isCompactView,
+                              );
+                            },
+                          ),
+                          Icon(
+                            _isExpanded ? Icons.expand_less : Icons.expand_more,
+                            color: localTheme.iconTheme.color,
+                          ),
+                        ],
+                      ),
+                      onTap: () {
+                        setState(() {
+                          _isExpanded = !_isExpanded;
+                        });
+                      },
                     ),
-                    onTap: () {
-                      setState(() {
-                        _isExpanded = !_isExpanded;
-                      });
-                    },
                   ),
                 ),
                 AnimatedCrossFade(

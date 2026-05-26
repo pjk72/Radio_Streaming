@@ -122,19 +122,18 @@ class _GlassBottomSheetTransitionState extends State<_GlassBottomSheetTransition
                     onVerticalDragUpdate: _onVerticalDragUpdate,
                     onVerticalDragEnd: _onVerticalDragEnd,
                     child: Material(
-                      color: Colors.transparent,
+                      color: Colors.black.withValues(alpha: 0.15),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(32),
+                      ),
+                      clipBehavior: Clip.antiAlias,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.15),
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(32),
-                          ),
                           border: Border.all(
                             color: Colors.white.withValues(alpha: 0.1),
                             width: 0.5,
                           ),
                         ),
-                        clipBehavior: Clip.antiAlias,
                         child: widget.builder(context),
                       ),
                     ),

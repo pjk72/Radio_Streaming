@@ -855,7 +855,7 @@ class _TrendingScreenState extends State<TrendingScreen>
   IconData _getGenreIcon(String title) {
     final String t = title.toLowerCase();
     if (t.contains('rock') || t.contains('metal') || t.contains('punk')) {
-      return FontAwesomeIcons.guitar;
+      return FontAwesomeIcons.guitar.data;
     }
     if (t.contains('workout') ||
         t.contains('gym') ||

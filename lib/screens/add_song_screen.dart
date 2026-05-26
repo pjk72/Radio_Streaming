@@ -484,28 +484,31 @@ class _AddSongScreenState extends State<AddSongScreen> {
               ),
               const SizedBox(height: 16),
               // Option: Create New Playlist
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).primaryColor.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
+              Material(
+                color: Colors.black.withValues(alpha: 0.001),
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).primaryColor.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.add, color: Theme.of(context).primaryColor),
                   ),
-                  child: Icon(Icons.add, color: Theme.of(context).primaryColor),
-                ),
-                title: Text(
-                  lang.translate('create_new_playlist'),
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
+                  title: Text(
+                    lang.translate('create_new_playlist'),
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _createNewPlaylistAndSave();
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _createNewPlaylistAndSave();
-                },
               ),
               const Divider(color: Colors.white10),
               // Playlists List
@@ -514,19 +517,22 @@ class _AddSongScreenState extends State<AddSongScreen> {
                   itemCount: playlists.length,
                   itemBuilder: (context, index) {
                     final p = playlists[index];
-                    return ListTile(
-                      leading: const Icon(
-                        Icons.playlist_play_rounded,
-                        color: Colors.white70,
+                    return Material(
+                      color: Colors.black.withValues(alpha: 0.001),
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.playlist_play_rounded,
+                          color: Colors.white70,
+                        ),
+                        title: Text(
+                          p.name,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _performSaveToPlaylist(p.id);
+                        },
                       ),
-                      title: Text(
-                        p.name,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _performSaveToPlaylist(p.id);
-                      },
                     );
                   },
                 ),
