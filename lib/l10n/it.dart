@@ -43,7 +43,6 @@ final Map<String, String> it = {
   'restore': 'Ripristina',
   'playback': 'Riproduzione',
 
-
   'crossfade_duration': 'Durata Crossfade',
   'crossfade_duration_desc': 'Regola il tempo di sfumatura tra i brani',
   'seconds_unit': '{0}s',
@@ -676,7 +675,8 @@ final Map<String, String> it = {
   'less_than_a_minute': 'meno di un minuto',
   'radio': 'Radio',
   'statistics': 'Statistiche',
-  'statistics_desc': 'Visualizza le tue abitudini di ascolto e i brani preferiti',
+  'statistics_desc':
+      'Visualizza le tue abitudini di ascolto e i brani preferiti',
   'total_songs': 'Brani Totali',
   'total_listening': 'Ascolti Totali',
   'stats_top_songs': 'Brani più ascoltati',
@@ -706,4 +706,7 @@ final Map<String, String> it = {
   'genre_distribution': 'Distribuzione Generi',
   'genre_unknown': 'Altro',
   'most_played_decades': 'Decenni più giocati',
+  'shazam_info_title': 'Riconoscimento dei brani',
+  'shazam_info_desc': 'Questa funzione proverà a identificare il brano attualmente in riproduzione ascoltando l\'audio. Assicurati che il volume sia adeguato.',
+  'dont_show_again': 'Non mostrare più questo messaggio',
 };

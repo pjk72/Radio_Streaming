@@ -23,6 +23,7 @@ import '../utils/glass_utils.dart';
 import '../services/entitlement_service.dart';
 import '../services/interstitial_ad_service.dart';
 import 'advanced_recognition_visualizer.dart';
+import '../utils/shazam_utils.dart';
 
 class NowPlayingHeader extends StatefulWidget {
   final double height;
@@ -1043,7 +1044,9 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                   ),
                           ),
                           tooltip: isShazamDisabled ? lang.translate('music_recognition_disabled') : lang.translate('music_recognition'),
-                          onPressed: _isListening ? null : _startListening,
+                          onPressed: _isListening ? null : () {
+                            ShazamUtils.checkAndShowShazamInfoDialog(context, _startListening);
+                          },
                         ),
                       ),
                     ),

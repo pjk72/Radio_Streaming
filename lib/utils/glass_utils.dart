@@ -128,6 +128,9 @@ class _GlassBottomSheetTransitionState extends State<_GlassBottomSheetTransition
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: Container(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.85,
+                        ),
                         decoration: BoxDecoration(
                           border: Border.all(
                             color: Colors.white.withValues(alpha: 0.1),

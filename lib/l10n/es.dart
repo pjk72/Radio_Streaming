@@ -489,7 +489,7 @@ final Map<String, String> es = {
   'find_new_music': 'Buscar nueva música',
   'unknown_title': 'Título desconocido',
   'share': 'Compartir',
-  
+
   // Update
   'update_available': 'Actualización Disponible',
   'update_desc':
@@ -513,7 +513,8 @@ final Map<String, String> es = {
   'undo': 'Deshacer',
   'delete': 'Eliminar',
   'delete_playlist_title': 'Eliminar Lista de Reproducción',
-  'delete_playlist_desc': '¿Eliminar \'{0}\'? Las canciones dentro se perderán.',
+  'delete_playlist_desc':
+      '¿Eliminar \'{0}\'? Las canciones dentro se perderán.',
   'copy_to_title': 'Copiar a...',
   'system_logs': 'Registros del Sistema',
   'api_debug_title': 'Depuración API',
@@ -546,8 +547,10 @@ final Map<String, String> es = {
   'share_playlist': 'Compartir lista de reproducción',
   'fetching_metadata': 'Recuperando información...',
   'syncing_yt': 'Sincronización de YouTube...',
-  'playlist_ready_share': '¡Lista de reproducción preparada y lista para compartir!',
-  'no_yt_songs_found': 'No se encontraron canciones de YouTube. Las canciones locales primero deben escanearse o corregirse en YouTube para poder compartirlas.',
+  'playlist_ready_share':
+      '¡Lista de reproducción preparada y lista para compartir!',
+  'no_yt_songs_found':
+      'No se encontraron canciones de YouTube. Las canciones locales primero deben escanearse o corregirse en YouTube para poder compartirlas.',
   'show_all_albums': 'Mostrar todos los álbumes',
   'show_bookmarked_only': 'Mostrar solo marcadores',
   'search_add_song': 'Buscar y agregar canción',
@@ -558,7 +561,8 @@ final Map<String, String> es = {
   'link_copied': 'Enlace copiado al portapapeles',
   'share_song': 'Compartir canción',
   'local_files_found': 'Archivos locales encontrados',
-  'local_files_desc': 'Encontradas canciones de{0}que están disponibles en tu dispositivo. Seleccione los que desea cambiar a versiones fuera de línea para un mejor rendimiento.',
+  'local_files_desc':
+      'Encontradas canciones de{0}que están disponibles en tu dispositivo. Seleccione los que desea cambiar a versiones fuera de línea para un mejor rendimiento.',
   'select_all': 'Seleccionar todo',
   'deselect_all': 'Deseleccionar todo',
   'update_selected_count': 'Actualización seleccionada ({0})',
@@ -567,7 +571,8 @@ final Map<String, String> es = {
   'view_song_details': 'Ver detalles de la canción',
   'remove_from_library': 'Eliminar de la biblioteca',
   'remove_song_title': 'Quitar canción',
-  'remove_song_desc': '¿Eliminar esta canción de tu biblioteca de forma permanente?',
+  'remove_song_desc':
+      '¿Eliminar esta canción de tu biblioteca de forma permanente?',
   'song_details_title': 'Detalles de la canción',
   'label_id': 'IDENTIFICACIÓN',
   'label_date_added': 'Fecha agregada',
@@ -580,8 +585,10 @@ final Map<String, String> es = {
   'shared_playlist': 'Lista de reproducción compartida',
   'fetched_from_yt': 'Obtenido de YT',
   'imported_playlist': 'Lista de reproducción importada',
-  'yt_playlists_disabled': 'Actualmente, las listas de reproducción de YouTube están deshabilitadas para su importación.',
-  'share_playlist_message': '¡Escucha mi lista de reproducción \'{0}\' en MusicStream!\n\n{1}',
+  'yt_playlists_disabled':
+      'Actualmente, las listas de reproducción de YouTube están deshabilitadas para su importación.',
+  'share_playlist_message':
+      '¡Escucha mi lista de reproducción \'{0}\' en MusicStream!\n\n{1}',
   'share_playlist_subject': 'Compartir lista de reproducción:{0}',
   'shared': 'Compartido',
   'syncing_yt_metadata': 'Sincronizando metadatos...',
@@ -590,7 +597,8 @@ final Map<String, String> es = {
   'show_all_artists': 'Mostrar todos los artistas',
   'show_followed_only': 'Mostrar solo seguidos',
   'clear_favorites': '¿Borrar favoritos?',
-  'clear_favorites_desc': '¿Estás seguro de que deseas eliminar todas las canciones de tus Favoritos?',
+  'clear_favorites_desc':
+      '¿Estás seguro de que deseas eliminar todas las canciones de tus Favoritos?',
   'found_duplicates_count': 'Se encontraron {0} conjuntos de duplicados',
   'scan_qr': 'Escanear Código QR',
   'qr_scan_error': 'Error al escanear el código QR',
@@ -604,7 +612,8 @@ final Map<String, String> es = {
   'alphabetical_order': 'Orden alfabético',
   'favorites': 'Favoritos',
   'recently_played_title': 'Jugado recientemente',
-  'permission_camera_denied': 'Se requiere permiso de la cámara para escanear códigos QR',
+  'permission_camera_denied':
+      'Se requiere permiso de la cámara para escanear códigos QR',
   'success': 'Éxito',
   'close': 'Cerrar',
   'imported_via_cloud': 'Importado vía Cloud',
@@ -616,16 +625,21 @@ final Map<String, String> es = {
   'filter_invalid_tracks': 'Mostrar sólo Inválido',
   'group_by_none_label': 'Sin agrupar',
   'ad_offer_title': 'Obtenga créditos de descarga',
-  'ad_offer_desc': 'Mire un video publicitario corto para ganar créditos adicionales para descargar sus canciones favoritas. Nota: Las descargas solo se podrán reproducir a través de la aplicación MusicStream.',
+  'ad_offer_desc':
+      'Mire un video publicitario corto para ganar créditos adicionales para descargar sus canciones favoritas. Nota: Las descargas solo se podrán reproducir a través de la aplicación MusicStream.',
   'loading_ad': 'Cargando anuncio...',
-  'ad_not_available': 'El anuncio aún no está listo. Inténtelo de nuevo en unos segundos.',
+  'ad_not_available':
+      'El anuncio aún no está listo. Inténtelo de nuevo en unos segundos.',
   'credits_earned_msg': '¡Óptimo! Has obtenido créditos de descarga de{0}.',
   'watch_ad': 'Ver vídeo',
-  'ad_offer_note': 'Nota: Las descargas solo se podrán reproducir a través de la aplicación MusicStream.',
+  'ad_offer_note':
+      'Nota: Las descargas solo se podrán reproducir a través de la aplicación MusicStream.',
   'sync_complete_title': 'Sincronización completa',
   'sync_complete_msg': 'La lista de reproducción se sincronizó correctamente.',
-  'sync_failed_removal': 'Error de sincronización: eliminando pistas no válidas.',
-  'shazam_mic_denied': 'Permiso de micrófono denegado. Permite el acceso desde los ajustes.',
+  'sync_failed_removal':
+      'Error de sincronización: eliminando pistas no válidas.',
+  'shazam_mic_denied':
+      'Permiso de micrófono denegado. Permite el acceso desde los ajustes.',
   'shazam_analyzing': 'Analizando audio...',
   'song_not_recognized': 'Canción no reconocida.',
   'already_in_favorites': '¡Ya en favoritos!',
@@ -633,21 +647,28 @@ final Map<String, String> es = {
   'genre': 'Género',
   'year': 'Año',
   'recognition_title': 'Reconocimiento de música',
-  'shazam_wizard_tip': 'Escucha la música que te rodea y grábala en tu lista de reproducción.',
-  'shazam_wizard_hint': '¡Identifica la música que te rodea para una búsqueda específica!',
+  'shazam_wizard_tip':
+      'Escucha la música que te rodea y grábala en tu lista de reproducción.',
+  'shazam_wizard_hint':
+      '¡Identifica la música que te rodea para una búsqueda específica!',
   'music_recognition': 'Reconocimiento de música',
   'music_recognition_disabled': 'Reconocimiento de música (no disponible)',
-  'music_recognition_disabled_momentarily': 'El servicio de reconocimiento de música está temporalmente deshabilitado.',
+  'music_recognition_disabled_momentarily':
+      'El servicio de reconocimiento de música está temporalmente deshabilitado.',
   'playback': 'Reproducción',
   'crossfade_duration': 'Duración del fundido cruzado',
-  'crossfade_duration_desc': 'Ajustar el tiempo de desvanecimiento entre canciones.',
+  'crossfade_duration_desc':
+      'Ajustar el tiempo de desvanecimiento entre canciones.',
   'seconds_unit': '{0}s',
   'guest_login_title': 'Acceso de invitados',
-  'guest_login_desc': 'Advertencia: en el modo INVITADO no podrás sincronizar tus favoritos en otros dispositivos y algunas funciones avanzadas, como las letras sincronizadas, no se activarán.\n\n¿Quieres continuar de todos modos?',
+  'guest_login_desc':
+      'Advertencia: en el modo INVITADO no podrás sincronizar tus favoritos en otros dispositivos y algunas funciones avanzadas, como las letras sincronizadas, no se activarán.\n\n¿Quieres continuar de todos modos?',
   'logout_confirm_title': '¿Cerrar sesión y cambiar a invitado?',
-  'logout_confirm_desc': 'Antes de cerrar sesión, le recomendamos realizar una copia de seguridad en la nube para guardar sus preferencias.\n\nUna vez que cierre sesión, ingresará al modo Invitado con una sesión dedicada: las listas de reproducción y otras actividades reservadas para su inicio de sesión se borrarán de la sesión local.',
+  'logout_confirm_desc':
+      'Antes de cerrar sesión, le recomendamos realizar una copia de seguridad en la nube para guardar sus preferencias.\n\nUna vez que cierre sesión, ingresará al modo Invitado con una sesión dedicada: las listas de reproducción y otras actividades reservadas para su inicio de sesión se borrarán de la sesión local.',
   'sleep_timer': 'Temporizador de apagado',
-  'sleep_timer_desc': 'Detiene la música y cierra la aplicación después de un intervalo.',
+  'sleep_timer_desc':
+      'Detiene la música y cierra la aplicación después de un intervalo.',
   'remaining_time': 'tiempo restante',
   'stop_at': 'Para en',
   'timer_off': 'Desactivado',
@@ -662,7 +683,8 @@ final Map<String, String> es = {
   'most_played_decades': 'Décadas más jugadas',
   'others': 'Otros',
   'statistics': 'Estadística',
-  'statistics_desc': 'Visualiza tus hábitos de escucha y tus mejores canciones.',
+  'statistics_desc':
+      'Visualiza tus hábitos de escucha y tus mejores canciones.',
   'total_songs': 'Canciones totales',
   'total_listening': 'Escuchas totales',
   'stats_top_songs': 'Canciones principales',
@@ -689,4 +711,7 @@ final Map<String, String> es = {
   'custom_range_label': 'RANURA0RANURA – RANURA1RANURA',
   'genre_distribution': 'Distribución de género',
   'genre_unknown': 'Otro',
+  'shazam_info_title': 'Reconocimiento de canciones',
+  'shazam_info_desc': 'Esta función intentará identificar la canción que se reproduce actualmente escuchando el audio. Asegúrese de que el volumen sea el adecuado.',
+  'dont_show_again': 'No mostrar este mensaje nuevamente',
 };

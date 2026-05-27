@@ -4506,9 +4506,20 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       builder: (ctx) {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              scrollbarTheme: ScrollbarThemeData(
+                thumbVisibility: WidgetStateProperty.all(true),
+                thumbColor: WidgetStateProperty.all(Colors.white54),
+                thickness: WidgetStateProperty.all(4),
+                radius: const Radius.circular(10),
+              ),
+            ),
+            child: Scrollbar(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
               Container(
                 width: 40,
                 height: 4,
@@ -4571,6 +4582,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               const SizedBox(height: 10),
             ],
           ),
+          ),
+          ),
+          ),
         );
       },
     );
@@ -4632,10 +4646,20 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  scrollbarTheme: ScrollbarThemeData(
+                    thumbVisibility: WidgetStateProperty.all(true),
+                    thumbColor: WidgetStateProperty.all(Colors.white54),
+                    thickness: WidgetStateProperty.all(4),
+                    radius: const Radius.circular(10),
+                  ),
+                ),
+                child: Scrollbar(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                     Container(
                       width: 40,
                       height: 4,
@@ -4859,6 +4883,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     const SizedBox(height: 10),
                   ],
                 ),
+              ),
+              ),
               ),
             );
           },

@@ -693,4 +693,7 @@ final Map<String, String> en = {
   'genre_distribution': 'Genre Distribution',
   'genre_unknown': 'Other',
   'radio': 'Radio',
+  'shazam_info_title': 'Song Recognition',
+  'shazam_info_desc': 'This feature will try to identify the currently playing song by listening to the audio. Please ensure the volume is adequate.',
+  'dont_show_again': 'Do not show this message again',
 };

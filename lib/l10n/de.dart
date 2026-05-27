@@ -493,7 +493,7 @@ final Map<String, String> de = {
   'now_playing': 'JETZT LÄUFT',
   'find_new_music': 'Neue Musik finden',
   'unknown_title': 'Unbekannter Titel',
-  'share': 'Teilen',    
+  'share': 'Teilen',
 
   // Update
   'update_available': 'Update verfügbar',
@@ -518,7 +518,8 @@ final Map<String, String> de = {
   'undo': 'Rückgängig',
   'delete': 'Löschen',
   'delete_playlist_title': 'Playlist löschen',
-  'delete_playlist_desc': '\'{0}\' löschen? Die enthaltenen Lieder gehen verloren.',
+  'delete_playlist_desc':
+      '\'{0}\' löschen? Die enthaltenen Lieder gehen verloren.',
   'copy_to_title': 'Kopieren nach...',
   'system_logs': 'Systemprotokolle',
   'api_debug_title': 'API-Debugging',
@@ -550,18 +551,21 @@ final Map<String, String> de = {
   'fetching_metadata': 'Informationen werden abgerufen...',
   'syncing_yt': 'YouTube-Synchronisierung...',
   'playlist_ready_share': 'Playlist vorbereitet und bereit zum Teilen!',
-  'no_yt_songs_found': 'Keine YouTube-Songs gefunden. Lokale Songs müssen zunächst auf YouTube gescannt oder repariert werden, damit sie geteilt werden können.',
+  'no_yt_songs_found':
+      'Keine YouTube-Songs gefunden. Lokale Songs müssen zunächst auf YouTube gescannt oder repariert werden, damit sie geteilt werden können.',
   'show_all_albums': 'Alle Alben anzeigen',
   'show_bookmarked_only': 'Nur Lesezeichen anzeigen',
   'search_add_song': 'Lied suchen und hinzufügen',
   'create_playlist_tooltip': 'Crea-Playlist',
-  'custom_order_tooltip': 'Benutzerdefinierte Reihenfolge\n(zum Neuanordnen ziehen)',
+  'custom_order_tooltip':
+      'Benutzerdefinierte Reihenfolge\n(zum Neuanordnen ziehen)',
   'alphabetical_order_tooltip': 'Alphabetische Reihenfolge',
   'copy': 'Kopie',
   'link_copied': 'Link in die Zwischenablage kopiert',
   'share_song': 'Lied teilen',
   'local_files_found': 'Lokale Dateien gefunden',
-  'local_files_desc': 'Es wurden{0}-Songs gefunden, die auf Ihrem Gerät verfügbar sind. Wählen Sie diejenigen aus, die Sie für eine bessere Leistung auf Offline-Versionen umstellen möchten.',
+  'local_files_desc':
+      'Es wurden{0}-Songs gefunden, die auf Ihrem Gerät verfügbar sind. Wählen Sie diejenigen aus, die Sie für eine bessere Leistung auf Offline-Versionen umstellen möchten.',
   'select_all': 'Wählen Sie „Alle“ aus',
   'deselect_all': 'Alle abwählen',
   'update_selected_count': 'Ausgewählte aktualisieren ({0})',
@@ -583,8 +587,10 @@ final Map<String, String> de = {
   'shared_playlist': 'Geteilte Playlist',
   'fetched_from_yt': 'Von YT abgerufen',
   'imported_playlist': 'Importierte Playlist',
-  'yt_playlists_disabled': 'Der Import von YouTube-Playlists ist derzeit deaktiviert.',
-  'share_playlist_message': 'Hören Sie sich meine Playlist „{0}“ auf MusicStream an!\n\n{1}',
+  'yt_playlists_disabled':
+      'Der Import von YouTube-Playlists ist derzeit deaktiviert.',
+  'share_playlist_message':
+      'Hören Sie sich meine Playlist „{0}“ auf MusicStream an!\n\n{1}',
   'share_playlist_subject': 'Playlist teilen:{0}',
   'shared': 'Geteilt',
   'syncing_yt_metadata': 'Metadaten werden synchronisiert...',
@@ -593,7 +599,8 @@ final Map<String, String> de = {
   'show_all_artists': 'Alle Künstler anzeigen',
   'show_followed_only': 'Nur „Gefolgt“ anzeigen',
   'clear_favorites': 'Favoriten löschen?',
-  'clear_favorites_desc': 'Möchten Sie wirklich alle Songs aus Ihren Favoriten entfernen?',
+  'clear_favorites_desc':
+      'Möchten Sie wirklich alle Songs aus Ihren Favoriten entfernen?',
   'found_duplicates_count': '{0} Sätze von Duplikaten gefunden',
   'scan_qr': 'QR-Code scannen',
   'qr_scan_error': 'Fehler beim Scannen des QR-Codes',
@@ -607,7 +614,8 @@ final Map<String, String> de = {
   'alphabetical_order': 'Alphabetische Reihenfolge',
   'favorites': 'Favoriten',
   'recently_played_title': 'Kürzlich gespielt',
-  'permission_camera_denied': 'Zum Scannen von QR-Codes ist eine Kameraerlaubnis erforderlich',
+  'permission_camera_denied':
+      'Zum Scannen von QR-Codes ist eine Kameraerlaubnis erforderlich',
   'success': 'Erfolg',
   'close': 'Schließen',
   'imported_via_cloud': 'Über Cloud importiert',
@@ -619,16 +627,21 @@ final Map<String, String> de = {
   'filter_invalid_tracks': 'Nur Ungültig anzeigen',
   'group_by_none_label': 'Ohne Gruppierung',
   'ad_offer_title': 'Holen Sie sich Download-Credits',
-  'ad_offer_desc': 'Sehen Sie sich ein kurzes Werbevideo an, um zusätzliche Credits für den Download Ihrer Lieblingssongs zu erhalten.',
+  'ad_offer_desc':
+      'Sehen Sie sich ein kurzes Werbevideo an, um zusätzliche Credits für den Download Ihrer Lieblingssongs zu erhalten.',
   'loading_ad': 'Anzeige wird geladen...',
-  'ad_not_available': 'Die Ankündigung ist noch nicht fertig. Bitte versuchen Sie es in ein paar Sekunden noch einmal.',
+  'ad_not_available':
+      'Die Ankündigung ist noch nicht fertig. Bitte versuchen Sie es in ein paar Sekunden noch einmal.',
   'credits_earned_msg': 'Optimal! Sie haben{0}-Download-Credits erhalten.',
   'watch_ad': 'Video ansehen',
-  'ad_offer_note': 'Hinweis: Downloads sind nur über die MusicStream-App abspielbar.',
+  'ad_offer_note':
+      'Hinweis: Downloads sind nur über die MusicStream-App abspielbar.',
   'sync_complete_title': 'Synchronisierung abgeschlossen',
   'sync_complete_msg': 'Die Playlist wurde erfolgreich synchronisiert.',
-  'sync_failed_removal': 'Synchronisierung fehlgeschlagen: Ungültige Titel werden entfernt.',
-  'shazam_mic_denied': 'Mikrofonberechtigung verweigert. Zugriff in den Einstellungen erlauben.',
+  'sync_failed_removal':
+      'Synchronisierung fehlgeschlagen: Ungültige Titel werden entfernt.',
+  'shazam_mic_denied':
+      'Mikrofonberechtigung verweigert. Zugriff in den Einstellungen erlauben.',
   'shazam_analyzing': 'Audio wird analysiert...',
   'song_not_recognized': 'Lied nicht erkannt.',
   'already_in_favorites': 'Schon bei Favoriten!',
@@ -636,21 +649,28 @@ final Map<String, String> de = {
   'genre': 'Genre',
   'year': 'Jahr',
   'recognition_title': 'Musikanerkennung',
-  'shazam_wizard_tip': 'Hören Sie die Musik um Sie herum und nehmen Sie sie auf Ihrer Playlist auf',
-  'shazam_wizard_hint': 'Identifizieren Sie Musik in Ihrer Nähe für eine gezielte Suche!',
+  'shazam_wizard_tip':
+      'Hören Sie die Musik um Sie herum und nehmen Sie sie auf Ihrer Playlist auf',
+  'shazam_wizard_hint':
+      'Identifizieren Sie Musik in Ihrer Nähe für eine gezielte Suche!',
   'music_recognition': 'Musikanerkennung',
   'music_recognition_disabled': 'Musikerkennung (nicht verfügbar)',
-  'music_recognition_disabled_momentarily': 'Der Musikerkennungsdienst ist vorübergehend deaktiviert.',
+  'music_recognition_disabled_momentarily':
+      'Der Musikerkennungsdienst ist vorübergehend deaktiviert.',
   'playback': 'Wiedergabe',
   'crossfade_duration': 'Crossfade-Dauer',
-  'crossfade_duration_desc': 'Passen Sie die Überblendzeit zwischen den Songs an',
+  'crossfade_duration_desc':
+      'Passen Sie die Überblendzeit zwischen den Songs an',
   'seconds_unit': '{0}s',
   'guest_login_title': 'Gastzugang',
-  'guest_login_desc': 'Warnung: Im GAST-Modus können Sie Ihre Favoriten nicht mit anderen Geräten synchronisieren und einige erweiterte Funktionen, wie zum Beispiel synchronisierte Liedtexte, werden nicht aktiviert.\n\nMöchten Sie trotzdem fortfahren?',
+  'guest_login_desc':
+      'Warnung: Im GAST-Modus können Sie Ihre Favoriten nicht mit anderen Geräten synchronisieren und einige erweiterte Funktionen, wie zum Beispiel synchronisierte Liedtexte, werden nicht aktiviert.\n\nMöchten Sie trotzdem fortfahren?',
   'logout_confirm_title': 'Abmelden und zum Gast wechseln?',
-  'logout_confirm_desc': 'Bevor Sie sich abmelden, empfehlen wir, ein Cloud-Backup durchzuführen, um Ihre Einstellungen zu speichern.\n\nSobald Sie abgemeldet sind, wechseln Sie in den Gastmodus mit einer dedizierten Sitzung: Wiedergabelisten und andere Aktivitäten, die für Ihre Anmeldung reserviert sind, werden aus der lokalen Sitzung gelöscht.',
+  'logout_confirm_desc':
+      'Bevor Sie sich abmelden, empfehlen wir, ein Cloud-Backup durchzuführen, um Ihre Einstellungen zu speichern.\n\nSobald Sie abgemeldet sind, wechseln Sie in den Gastmodus mit einer dedizierten Sitzung: Wiedergabelisten und andere Aktivitäten, die für Ihre Anmeldung reserviert sind, werden aus der lokalen Sitzung gelöscht.',
   'sleep_timer': 'Sleep-Timer',
-  'sleep_timer_desc': 'Stoppt die Musik und schließt die App nach einer gewissen Zeit',
+  'sleep_timer_desc':
+      'Stoppt die Musik und schließt die App nach einer gewissen Zeit',
   'remaining_time': 'Verbleibende Zeit',
   'stop_at': 'Stoppen Sie bei',
   'timer_off': 'Deaktiviert',
@@ -692,4 +712,7 @@ final Map<String, String> de = {
   'custom_range_label': '{0}–{1}',
   'genre_distribution': 'Genreverteilung',
   'genre_unknown': 'Andere',
+  'shazam_info_title': 'Liederkennung',
+  'shazam_info_desc': 'Diese Funktion versucht, das aktuell wiedergegebene Lied anhand des Audios zu identifizieren. Bitte stellen Sie sicher, dass die Lautstärke ausreichend ist.',
+  'dont_show_again': 'Diese Nachricht nicht mehr anzeigen',
 };

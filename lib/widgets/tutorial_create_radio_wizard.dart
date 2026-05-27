@@ -20,6 +20,7 @@ import '../utils/genre_mapper.dart';
 import '../utils/glass_utils.dart';
 import '../services/entitlement_service.dart';
 import '../services/interstitial_ad_service.dart';
+import '../utils/shazam_utils.dart';
 
 class TutorialCreateRadioWizard extends StatefulWidget {
   const TutorialCreateRadioWizard({super.key});
@@ -1074,7 +1075,9 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                       border: Border.all(color: baseColor.withValues(alpha: 0.15)),
                     ),
                     child: InkWell(
-                      onTap: _isListening ? null : _startListening,
+                      onTap: _isListening ? null : () {
+                        ShazamUtils.checkAndShowShazamInfoDialog(context, _startListening);
+                      },
                       borderRadius: BorderRadius.circular(16),
                       child: Padding(
                         padding: const EdgeInsets.all(12),

@@ -519,7 +519,8 @@ final Map<String, String> fr = {
   'undo': 'Annuler',
   'delete': 'Supprimer',
   'delete_playlist_title': 'Supprimer la Playlist',
-  'delete_playlist_desc': 'Supprimer \'{0}\' ? Les chansons à l\'intérieur seront perdues.',
+  'delete_playlist_desc':
+      'Supprimer \'{0}\' ? Les chansons à l\'intérieur seront perdues.',
   'copy_to_title': 'Copier vers...',
   'system_logs': 'Journaux Système',
   'api_debug_title': 'Débogage API',
@@ -551,18 +552,21 @@ final Map<String, String> fr = {
   'fetching_metadata': 'Récupération d\'informations...',
   'syncing_yt': 'Synchronisation YouTube...',
   'playlist_ready_share': 'Playlist préparée et prête à partager !',
-  'no_yt_songs_found': 'Aucune chanson YouTube trouvée. Les chansons locales doivent d\'abord être numérisées ou corrigées sur YouTube pour pouvoir être partagées.',
+  'no_yt_songs_found':
+      'Aucune chanson YouTube trouvée. Les chansons locales doivent d\'abord être numérisées ou corrigées sur YouTube pour pouvoir être partagées.',
   'show_all_albums': 'Afficher tous les albums',
   'show_bookmarked_only': 'Afficher uniquement les favoris',
   'search_add_song': 'Rechercher et ajouter une chanson',
   'create_playlist_tooltip': 'Créer une playlist',
-  'custom_order_tooltip': 'Commande personnalisée\n(faites glisser pour réorganiser)',
+  'custom_order_tooltip':
+      'Commande personnalisée\n(faites glisser pour réorganiser)',
   'alphabetical_order_tooltip': 'Ordre alphabétique',
   'copy': 'Copie',
   'link_copied': 'Lien copié dans le presse-papier',
   'share_song': 'Partager la chanson',
   'local_files_found': 'Fichiers locaux trouvés',
-  'local_files_desc': 'Chansons{0}trouvées disponibles sur votre appareil. Sélectionnez ceux que vous souhaitez passer aux versions hors ligne pour de meilleures performances.',
+  'local_files_desc':
+      'Chansons{0}trouvées disponibles sur votre appareil. Sélectionnez ceux que vous souhaitez passer aux versions hors ligne pour de meilleures performances.',
   'select_all': 'Sélectionner tout',
   'deselect_all': 'Désélectionner tout',
   'update_selected_count': 'Mise à jour sélectionnée ({0})',
@@ -571,7 +575,8 @@ final Map<String, String> fr = {
   'view_song_details': 'Afficher les détails de la chanson',
   'remove_from_library': 'Supprimer de la bibliothèque',
   'remove_song_title': 'Supprimer la chanson',
-  'remove_song_desc': 'Supprimer définitivement cette chanson de votre bibliothèque ?',
+  'remove_song_desc':
+      'Supprimer définitivement cette chanson de votre bibliothèque ?',
   'song_details_title': 'Détails de la chanson',
   'label_id': 'IDENTIFIANT',
   'label_date_added': 'Date d\'ajout',
@@ -584,8 +589,10 @@ final Map<String, String> fr = {
   'shared_playlist': 'Liste de lecture partagée',
   'fetched_from_yt': 'Extrait de YT',
   'imported_playlist': 'Liste de lecture importée',
-  'yt_playlists_disabled': 'Les listes de lecture YouTube sont actuellement désactivées pour l\'importation.',
-  'share_playlist_message': 'Écoutez ma playlist \'{0}\' sur MusicStream !\n\n{1}',
+  'yt_playlists_disabled':
+      'Les listes de lecture YouTube sont actuellement désactivées pour l\'importation.',
+  'share_playlist_message':
+      'Écoutez ma playlist \'{0}\' sur MusicStream !\n\n{1}',
   'share_playlist_subject': 'Partager la liste de lecture :{0}',
   'shared': 'Commun',
   'syncing_yt_metadata': 'Synchronisation des métadonnées...',
@@ -594,7 +601,8 @@ final Map<String, String> fr = {
   'show_all_artists': 'Afficher tous les artistes',
   'show_followed_only': 'Afficher uniquement les suivis',
   'clear_favorites': 'Effacer les favoris ?',
-  'clear_favorites_desc': 'Êtes-vous sûr de vouloir supprimer toutes les chansons de vos favoris ?',
+  'clear_favorites_desc':
+      'Êtes-vous sûr de vouloir supprimer toutes les chansons de vos favoris ?',
   'found_duplicates_count': 'Ensembles de doublons{0}trouvés',
   'scan_qr': 'Scanner le code QR',
   'qr_scan_error': 'Échec de l\'analyse du code QR',
@@ -608,7 +616,8 @@ final Map<String, String> fr = {
   'alphabetical_order': 'Ordre alphabétique',
   'favorites': 'Favoris',
   'recently_played_title': 'Joué récemment',
-  'permission_camera_denied': 'L\'autorisation de la caméra est requise pour scanner les codes QR',
+  'permission_camera_denied':
+      'L\'autorisation de la caméra est requise pour scanner les codes QR',
   'success': 'Succès',
   'close': 'Fermer',
   'imported_via_cloud': 'Importé via Cloud',
@@ -620,16 +629,22 @@ final Map<String, String> fr = {
   'filter_invalid_tracks': 'Afficher uniquement Invalide',
   'group_by_none_label': 'Sans regroupement',
   'ad_offer_title': 'Obtenez des crédits de téléchargement',
-  'ad_offer_desc': 'Regardez une courte vidéo publicitaire pour gagner des crédits supplémentaires per vos chansons préférées.',
+  'ad_offer_desc':
+      'Regardez une courte vidéo publicitaire pour gagner des crédits supplémentaires per vos chansons préférées.',
   'sync_complete_title': 'Synchronisation Terminée',
   'sync_complete_msg': 'La playlist a été synchronisée avec succès.',
   'loading_ad': 'Chargement de l\'annonce...',
-  'ad_not_available': 'La publicité n\'est pas encore prête. Réessayez dans quelques secondes.',
-  'credits_earned_msg': 'Super ! Vous avez gagné {0} crédits de téléchargement.',
+  'ad_not_available':
+      'La publicité n\'est pas encore prête. Réessayez dans quelques secondes.',
+  'credits_earned_msg':
+      'Super ! Vous avez gagné {0} crédits de téléchargement.',
   'watch_ad': 'Regarder la vidéo',
-  'ad_offer_note': 'Remarque : les téléchargements ne seront lisibles que via l\'application MusicStream.',
-  'sync_failed_removal': 'Échec de la synchronisation : suppression des pistes invalides.',
-  'shazam_mic_denied': 'Permission du micro refusée. Autorisez l\'accès dans les paramètres.',
+  'ad_offer_note':
+      'Remarque : les téléchargements ne seront lisibles que via l\'application MusicStream.',
+  'sync_failed_removal':
+      'Échec de la synchronisation : suppression des pistes invalides.',
+  'shazam_mic_denied':
+      'Permission du micro refusée. Autorisez l\'accès dans les paramètres.',
   'shazam_analyzing': 'Analyse de l\'audio...',
   'song_not_recognized': 'Chanson non reconnue.',
   'already_in_favorites': 'Déjà dans les favoris !',
@@ -637,21 +652,27 @@ final Map<String, String> fr = {
   'genre': 'Genre',
   'year': 'Année',
   'recognition_title': 'Reconnaissance musicale',
-  'shazam_wizard_tip': 'Écoutez la musique autour de vous et enregistrez-la sur votre playlist',
-  'shazam_wizard_hint': 'Identifiez la musique autour de vous pour une recherche ciblée !',
+  'shazam_wizard_tip':
+      'Écoutez la musique autour de vous et enregistrez-la sur votre playlist',
+  'shazam_wizard_hint':
+      'Identifiez la musique autour de vous pour une recherche ciblée !',
   'music_recognition': 'Reconnaissance musicale',
   'music_recognition_disabled': 'Reconnaissance musicale (non disponible)',
-  'music_recognition_disabled_momentarily': 'Le service de reconnaissance musicale est temporairement désactivé.',
+  'music_recognition_disabled_momentarily':
+      'Le service de reconnaissance musicale est temporairement désactivé.',
   'playback': 'Lecture',
   'crossfade_duration': 'Durée du fondu enchaîné',
   'crossfade_duration_desc': 'Ajustez le temps de fondu entre les chansons',
   'seconds_unit': '{0}s',
   'guest_login_title': 'Accès invité',
-  'guest_login_desc': 'Attention : en mode INVITÉ, vous ne pourrez pas synchroniser vos favoris sur d\'autres appareils et certaines fonctionnalités avancées, telles que les paroles synchronisées, ne seront pas activées.\n\nVoulez-vous quand même continuer ?',
+  'guest_login_desc':
+      'Attention : en mode INVITÉ, vous ne pourrez pas synchroniser vos favoris sur d\'autres appareils et certaines fonctionnalités avancées, telles que les paroles synchronisées, ne seront pas activées.\n\nVoulez-vous quand même continuer ?',
   'logout_confirm_title': 'Se déconnecter et passer en invité ?',
-  'logout_confirm_desc': 'Avant de vous déconnecter, nous vous recommandons d\'effectuer une sauvegarde cloud pour enregistrer vos préférences.\n\nUne fois déconnecté, vous entrerez en mode Invité avec une session dédiée : les playlists et autres activités réservées à votre connexion seront effacées de la session locale.',
+  'logout_confirm_desc':
+      'Avant de vous déconnecter, nous vous recommandons d\'effectuer une sauvegarde cloud pour enregistrer vos préférences.\n\nUne fois déconnecté, vous entrerez en mode Invité avec une session dédiée : les playlists et autres activités réservées à votre connexion seront effacées de la session locale.',
   'sleep_timer': 'Minuterie de mise en veille',
-  'sleep_timer_desc': 'Arrête la musique et ferme l\'application après un intervalle',
+  'sleep_timer_desc':
+      'Arrête la musique et ferme l\'application après un intervalle',
   'remaining_time': 'Temps restant',
   'stop_at': 'Arrêtez-vous à',
   'timer_off': 'Désactivé',
@@ -666,7 +687,8 @@ final Map<String, String> fr = {
   'most_played_decades': 'Décennies les plus jouées',
   'others': 'Autres',
   'statistics': 'Statistiques',
-  'statistics_desc': 'Visualisez vos habitudes d\'écoute et vos meilleurs morceaux',
+  'statistics_desc':
+      'Visualisez vos habitudes d\'écoute et vos meilleurs morceaux',
   'total_songs': 'Total des chansons',
   'total_listening': 'Total des écoutes',
   'stats_top_songs': 'Meilleurs morceaux',
@@ -693,4 +715,7 @@ final Map<String, String> fr = {
   'custom_range_label': 'EMPLACEMENT0EMPLACEMENT – EMPLACEMENT1EMPLACEMENT',
   'genre_distribution': 'Répartition des genres',
   'genre_unknown': 'Autre',
+  'shazam_info_title': 'Reconnaissance de chansons',
+  'shazam_info_desc': 'Cette fonctionnalité tentera d\'identifier la chanson en cours de lecture en écoutant l\'audio. Veuillez vous assurer que le volume est adéquat.',
+  'dont_show_again': 'Ne plus afficher ce message',
 };

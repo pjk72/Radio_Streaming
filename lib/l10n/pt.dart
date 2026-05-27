@@ -555,7 +555,8 @@ final Map<String, String> pt = {
   'link_copied': 'Link copiado para a área de transferência',
   'share_song': 'Compartilhar música',
   'local_files_found': 'Arquivos locais encontrados',
-  'local_files_desc': 'Encontrei músicas do{0}que estão disponíveis no seu dispositivo. Selecione aqueles que você deseja mudar para versões offline para melhor desempenho.',
+  'local_files_desc':
+      'Encontrei músicas do{0}que estão disponíveis no seu dispositivo. Selecione aqueles que você deseja mudar para versões offline para melhor desempenho.',
   'select_all': 'Selecionar tudo',
   'deselect_all': 'Desmarcar tudo',
   'update_selected_count': 'Atualização selecionada ({0})',
@@ -577,8 +578,10 @@ final Map<String, String> pt = {
   'shared_playlist': 'Lista de reprodução compartilhada',
   'fetched_from_yt': 'Obtido do YT',
   'imported_playlist': 'Lista de reprodução importada',
-  'yt_playlists_disabled': 'As listas de reprodução do YouTube estão atualmente desativadas para importação.',
-  'share_playlist_message': 'Ouça minha playlist \'{0}\' no MusicStream!\n\n{1}',
+  'yt_playlists_disabled':
+      'As listas de reprodução do YouTube estão atualmente desativadas para importação.',
+  'share_playlist_message':
+      'Ouça minha playlist \'{0}\' no MusicStream!\n\n{1}',
   'share_playlist_subject': 'Compartilhar lista de reprodução:{0}',
   'shared': 'Compartilhado',
   'syncing_yt_metadata': 'Sincronizando metadados...',
@@ -587,7 +590,8 @@ final Map<String, String> pt = {
   'show_all_artists': 'Mostrar todos os artistas',
   'show_followed_only': 'Mostrar apenas seguidos',
   'clear_favorites': 'Limpar favoritos?',
-  'clear_favorites_desc': 'Tem certeza de que deseja remover todas as músicas dos seus Favoritos?',
+  'clear_favorites_desc':
+      'Tem certeza de que deseja remover todas as músicas dos seus Favoritos?',
   'found_duplicates_count': 'Encontrados {0} conjuntos de duplicados',
   'scan_qr': 'Digitalizar Código QR',
   'qr_scan_error': 'Falha ao digitalizar código QR',
@@ -601,7 +605,8 @@ final Map<String, String> pt = {
   'alphabetical_order': 'Ordem Alfabética',
   'favorites': 'Favoritos',
   'recently_played_title': 'Jogado recentemente',
-  'permission_camera_denied': 'É necessária permissão da câmera para escanear códigos QR',
+  'permission_camera_denied':
+      'É necessária permissão da câmera para escanear códigos QR',
   'success': 'Sucesso',
   'close': 'Fechar',
   'imported_via_cloud': 'Importado via Cloud',
@@ -613,16 +618,20 @@ final Map<String, String> pt = {
   'filter_invalid_tracks': 'Mostrar apenas inválido',
   'group_by_none_label': 'Sem agrupamento',
   'ad_offer_title': 'Obtenha créditos de download',
-  'ad_offer_desc': 'Assista a um pequeno vídeo publicitário para ganhar créditos extras para baixar suas músicas favoritas.',
+  'ad_offer_desc':
+      'Assista a um pequeno vídeo publicitário para ganhar créditos extras para baixar suas músicas favoritas.',
   'loading_ad': 'Carregando anúncio...',
-  'ad_not_available': 'O anúncio ainda não está pronto. Tente novamente em alguns segundos.',
+  'ad_not_available':
+      'O anúncio ainda não está pronto. Tente novamente em alguns segundos.',
   'credits_earned_msg': 'Ótimo! Você ganhou créditos de download do{0}.',
   'watch_ad': 'Assistir ao vídeo',
-  'ad_offer_note': 'Observação: os downloads só poderão ser reproduzidos por meio do aplicativo MusicStream.',
+  'ad_offer_note':
+      'Observação: os downloads só poderão ser reproduzidos por meio do aplicativo MusicStream.',
   'sync_complete_title': 'Sincronização concluída',
   'sync_complete_msg': 'A lista de reprodução foi sincronizada com sucesso.',
   'sync_failed_removal': 'Falha na sincronização: remoção de faixas inválidas.',
-  'shazam_mic_denied': 'Permissão de microfone negada. Permita o acesso nas configurações.',
+  'shazam_mic_denied':
+      'Permissão de microfone negada. Permita o acesso nas configurações.',
   'shazam_analyzing': 'Analisando áudio...',
   'song_not_recognized': 'Música não reconhecida.',
   'already_in_favorites': 'Já está nos favoritos!',
@@ -631,20 +640,25 @@ final Map<String, String> pt = {
   'year': 'Ano',
   'recognition_title': 'Reconhecimento Musical',
   'shazam_wizard_tip': 'Ouça a música ao seu redor e grave-a em sua playlist',
-  'shazam_wizard_hint': 'Identifique a música ao seu redor para uma pesquisa direcionada!',
+  'shazam_wizard_hint':
+      'Identifique a música ao seu redor para uma pesquisa direcionada!',
   'music_recognition': 'Reconhecimento Musical',
   'music_recognition_disabled': 'Reconhecimento de música (não disponível)',
-  'music_recognition_disabled_momentarily': 'O serviço de reconhecimento de música está temporariamente desativado.',
+  'music_recognition_disabled_momentarily':
+      'O serviço de reconhecimento de música está temporariamente desativado.',
   'playback': 'Reprodução',
   'crossfade_duration': 'Duração do crossfade',
   'crossfade_duration_desc': 'Ajuste o tempo de fade entre as músicas',
   'seconds_unit': '{0}s',
   'guest_login_title': 'Acesso de convidado',
-  'guest_login_desc': 'Aviso: no modo CONVIDADO você não poderá sincronizar seus favoritos com outros dispositivos e alguns recursos avançados, como letras sincronizadas, não serão ativados.\n\nDeseja continuar mesmo assim?',
+  'guest_login_desc':
+      'Aviso: no modo CONVIDADO você não poderá sincronizar seus favoritos com outros dispositivos e alguns recursos avançados, como letras sincronizadas, não serão ativados.\n\nDeseja continuar mesmo assim?',
   'logout_confirm_title': 'Sair e mudar para convidado?',
-  'logout_confirm_desc': 'Antes de sair, recomendamos fazer um backup na nuvem para salvar suas preferências.\n\nDepois de sair, você entrará no modo visitante com uma sessão dedicada: playlists e outras atividades reservadas para seu login serão apagadas da sessão local.',
+  'logout_confirm_desc':
+      'Antes de sair, recomendamos fazer um backup na nuvem para salvar suas preferências.\n\nDepois de sair, você entrará no modo visitante com uma sessão dedicada: playlists e outras atividades reservadas para seu login serão apagadas da sessão local.',
   'sleep_timer': 'Temporizador',
-  'sleep_timer_desc': 'Interrompe a música e fecha o aplicativo após um intervalo',
+  'sleep_timer_desc':
+      'Interrompe a música e fecha o aplicativo após um intervalo',
   'remaining_time': 'Tempo restante',
   'stop_at': 'Pare em',
   'timer_off': 'Desabilitado',
@@ -686,4 +700,7 @@ final Map<String, String> pt = {
   'custom_range_label': '{0}–{1}',
   'genre_distribution': 'Distribuição de gênero',
   'genre_unknown': 'Outro',
+  'shazam_info_title': 'Reconhecimento de música',
+  'shazam_info_desc': 'Este recurso tentará identificar a música que está sendo reproduzida ouvindo o áudio. Certifique-se de que o volume seja adequado.',
+  'dont_show_again': 'Não mostrar esta mensagem novamente',
 };

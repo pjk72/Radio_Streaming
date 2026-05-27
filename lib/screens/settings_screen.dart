@@ -188,7 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                    
+
                     if (canUseSleepTimer)
                       _buildSettingsTile(
                         context,
@@ -205,7 +205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           );
                         },
                       ),
-                    
+
                     if (canUseStatistics)
                       _buildSettingsTile(
                         context,
@@ -659,7 +659,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       : null;
 
                                   return Material(
-                                    color: Colors.black.withValues(alpha: 0.001),
+                                    color: Colors.black.withValues(
+                                      alpha: 0.001,
+                                    ),
                                     child: ListTile(
                                       contentPadding: EdgeInsets.zero,
                                       leading: Container(
@@ -729,6 +731,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ],
 
+                            const SizedBox(height: 24),
                             // Actions section
 
                             // Actions
@@ -1319,77 +1322,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             boxShadow: isActive
                 ? [
-                  BoxShadow(
-                    color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-                    blurRadius: 12,
-                    spreadRadius: 2,
-                  ),
-                ]
+                    BoxShadow(
+                      color: Theme.of(
+                        context,
+                      ).primaryColor.withValues(alpha: 0.2),
+                      blurRadius: 12,
+                      spreadRadius: 2,
+                    ),
+                  ]
                 : null,
           ),
           child: ListTile(
             leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: Theme.of(context).primaryColor),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: Theme.of(context).textTheme.titleMedium?.color,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        subtitle: SizedBox(
-          height: 32, // Fixed height for 2 lines of text
-          child: Text(
-            subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(
-                context,
-              ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: Theme.of(context).primaryColor),
             ),
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isActive)
-              Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(context).primaryColor.withValues(alpha: 0.5),
-                      blurRadius: 4,
-                      spreadRadius: 2,
-                    ),
-                  ],
+            title: Text(
+              title,
+              style: TextStyle(
+                color: Theme.of(context).textTheme.titleMedium?.color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            subtitle: SizedBox(
+              height: 32, // Fixed height for 2 lines of text
+              child: Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                 ),
               ),
-            Icon(
-              Icons.chevron_right,
-              color: isActive
-                  ? Theme.of(context).primaryColor
-                  : Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
             ),
-          ],
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isActive)
+                  Container(
+                    width: 10,
+                    height: 10,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(
+                            context,
+                          ).primaryColor.withValues(alpha: 0.5),
+                          blurRadius: 4,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isActive
+                      ? Theme.of(context).primaryColor
+                      : Theme.of(
+                          context,
+                        ).iconTheme.color?.withValues(alpha: 0.5),
+                ),
+              ],
+            ),
+            onTap: onTap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
         ),
-        onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
-      ),
-    ),
     );
   }
 
@@ -1838,13 +1849,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             leading: CircleAvatar(
                               backgroundColor: Colors.white10,
                               backgroundImage:
-                                  station.logo != null && station.logo!.isNotEmpty
+                                  station.logo != null &&
+                                      station.logo!.isNotEmpty
                                   ? (station.logo!.startsWith('http')
                                         ? NetworkImage(station.logo!)
                                         : AssetImage(station.logo!)
                                               as ImageProvider)
                                   : null,
-                              child: station.logo == null || station.logo!.isEmpty
+                              child:
+                                  station.logo == null || station.logo!.isEmpty
                                   ? const Icon(Icons.radio, color: Colors.white)
                                   : null,
                             ),
@@ -1874,14 +1887,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  String _getTimerSummary(
-    RadioProvider radio,
-    LanguageProvider langProvider,
-  ) {
+  String _getTimerSummary(RadioProvider radio, LanguageProvider langProvider) {
     if (radio.sleepTimerEnabled) {
       return langProvider.translate('sleep_timer');
     }
     return langProvider.translate('timer_off');
   }
-
 }
