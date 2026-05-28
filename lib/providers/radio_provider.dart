@@ -109,7 +109,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   int _lifetimeDownloadCount = 0;
   int _earnedDownloadCredits = 0;
-  int _crossfadeDuration = 7;
+  int _crossfadeDuration = 15;
 
   int get crossfadeDuration => _crossfadeDuration;
 
