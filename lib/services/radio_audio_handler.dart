@@ -2969,7 +2969,7 @@ class RadioAudioHandler extends BaseAudioHandler
     Future.delayed(const Duration(seconds: 10), () {
       bool isPlaylistSong = extras?['type'] == 'playlist_song';
       if (_isInitialBuffering &&
-          mediaItem.value?.id == currentId &&
+          (mediaItem.value?.extras?['url'] as String? ?? mediaItem.value?.id) == currentId &&
           !_expectingStop &&
           !isPlaylistSong) {
         final hasDuration =
@@ -3316,7 +3316,8 @@ class RadioAudioHandler extends BaseAudioHandler
 
     final playing =
         (state == PlayerState.playing || _expectingStop || _isInitialBuffering);
-    final int index = _stations.indexWhere((s) => s.url == mediaItem.value?.id);
+    final String? currentUrl = mediaItem.value?.extras?['url'] as String? ?? mediaItem.value?.id;
+    final int index = _stations.indexWhere((s) => s.url == currentUrl);
 
     // Determine strict processing state
     AudioProcessingState pState = AudioProcessingState.idle;
@@ -3696,34 +3697,92 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 2. Individual Playlist Content
     if (parentMediaId.startsWith('playlist_')) {
-      final playlistId = parentMediaId.substring('playlist_'.length);
+      final isPart = parentMediaId.contains('_part_');
+      final playlistId = isPart
+          ? parentMediaId.substring('playlist_'.length, parentMediaId.indexOf('_part_'))
+          : parentMediaId.substring('playlist_'.length);
+
       final playlists = await _playlistService.loadPlaylists();
       try {
         final playlist = playlists.firstWhere((p) => p.id == playlistId);
-        final List<MediaItem> songItems = playlist.songs
-            .map((s) => _songToMediaItem(s, playlist.id))
-            .toList();
+        final totalSongs = playlist.songs.length;
+        final langCode = _detectLanguageCode();
+        final String playAllLabel =
+            AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
 
-        // Add Play All Item at the top
-        if (songItems.isNotEmpty) {
-          final langCode = _detectLanguageCode();
-          final String playAllLabel =
-              AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
+        if (isPart) {
+          // Sub-folder Content
+          final partStr = parentMediaId.substring(parentMediaId.indexOf('_part_') + 6);
+          final partIndex = int.tryParse(partStr) ?? 0;
+          final start = partIndex * 300;
+          final end = (start + 300 > totalSongs) ? totalSongs : start + 300;
 
-          songItems.insert(
-            0,
-            MediaItem(
-              id: 'play_all_${playlist.id}',
-              title: playAllLabel,
-              playable: true,
-              artUri: Uri.parse(
-                "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+          if (start >= totalSongs) return [];
+
+          final chunk = playlist.songs.sublist(start, end);
+          return chunk.map((s) => _songToMediaItem(s, playlist.id)).toList();
+        } else {
+          // Root of the playlist
+          if (totalSongs <= 300) {
+            final List<MediaItem> songItems = playlist.songs
+                .map((s) => _songToMediaItem(s, playlist.id))
+                .toList();
+
+            // Add Play All Item at the top
+            if (songItems.isNotEmpty) {
+              songItems.insert(
+                0,
+                MediaItem(
+                  id: 'play_all_${playlist.id}',
+                  title: playAllLabel,
+                  playable: true,
+                  artUri: Uri.parse(
+                    "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+                  ),
+                  extras: {'style': 'list_item'},
+                ),
+              );
+            }
+            return songItems;
+          } else {
+            // Large Playlist -> Split into sub-folders
+            final List<MediaItem> items = [];
+            
+            // Add Play All Item at the top
+            items.add(
+              MediaItem(
+                id: 'play_all_${playlist.id}',
+                title: playAllLabel,
+                playable: true,
+                artUri: Uri.parse(
+                  "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+                ),
+                extras: {'style': 'list_item'},
               ),
-              extras: {'style': 'list_item'},
-            ),
-          );
+            );
+
+            // Add sub-folders
+            final int parts = (totalSongs / 300).ceil();
+            for (int i = 0; i < parts; i++) {
+              final start = i * 300 + 1;
+              final end = (i * 300 + 300 > totalSongs) ? totalSongs : i * 300 + 300;
+              items.add(
+                MediaItem(
+                  id: 'playlist_${playlist.id}_part_$i',
+                  title: 'Part ${i + 1} ($start-$end)',
+                  playable: false,
+                  artUri: Uri.parse("https://img.icons8.com/fluency/240/folder-invoices.png"), // Folder icon
+                  extras: {
+                    'style': 'list_item',
+                    'android.media.metadata.DISPLAY_ICON_URI': "https://img.icons8.com/fluency/240/folder-invoices.png",
+                    'android.media.metadata.ART_URI': "https://img.icons8.com/fluency/240/folder-invoices.png",
+                  },
+                ),
+              );
+            }
+            return items;
+          }
         }
-        return songItems;
       } catch (_) {
         return [];
       }
@@ -4744,7 +4803,7 @@ class RadioAudioHandler extends BaseAudioHandler
       return; // Don't recognize playlist songs
     if (!_isAudioPlaying) return;
 
-    final streamUrl = currentItem.id;
+    final streamUrl = currentItem.extras?['url'] as String? ?? currentItem.id;
     _isSearching = true;
 
     LogService().log("ACRCloud: Starting recognition for $streamUrl");
@@ -4752,7 +4811,7 @@ class RadioAudioHandler extends BaseAudioHandler
     // Update MediaItem state
     final newExtras = Map<String, dynamic>.from(currentItem.extras ?? {});
 
-    if (currentItem.id == streamUrl) {
+    if ((currentItem.extras?['url'] as String? ?? currentItem.id) == streamUrl) {
       newExtras['isSearching'] = true;
 
       mediaItem.add(
@@ -4836,7 +4895,9 @@ class RadioAudioHandler extends BaseAudioHandler
           recognitionArtwork = trackInfo['images']['coverart'];
         }
 
+        final uniqueId = "${streamUrl}_${DateTime.now().millisecondsSinceEpoch}";
         final newMediaItem = currentItem.copyWith(
+          id: uniqueId,
           title: title ?? "Unknown Title",
           artist: artists ?? "Unknown Artist",
           album: (album != null && album.isNotEmpty) ? album : "Unknown Album",
@@ -4847,11 +4908,12 @@ class RadioAudioHandler extends BaseAudioHandler
         );
 
         // CRITICAL SAFETY CHECK: Ensure we haven't switched to a playlist song or another station
-        if (mediaItem.value?.id == streamUrl) {
+        final String currentUrl = mediaItem.value?.extras?['url'] as String? ?? mediaItem.value?.id ?? '';
+        if (currentUrl == streamUrl) {
           mediaItem.add(newMediaItem);
         } else {
           LogService().log(
-            "RecognitionAPI: Match discarded because current media changed to ${mediaItem.value?.id}",
+            "RecognitionAPI: Match discarded because current media changed to $currentUrl",
           );
           return;
         }
@@ -4949,7 +5011,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
   void _handleNoMatch() {
     // Reset to Station Info
-    final currentUrl = mediaItem.value?.id;
+    final currentUrl = mediaItem.value?.extras?['url'] as String? ?? mediaItem.value?.id;
     Station? station;
     try {
       station = _stations.firstWhere((s) => s.url == currentUrl);
@@ -4966,7 +5028,9 @@ class RadioAudioHandler extends BaseAudioHandler
       _isCurrentSongInFavorites = false;
       _lastRecognitionOffset = Duration.zero;
 
+      final uniqueId = "${currentUrl}_${DateTime.now().millisecondsSinceEpoch}";
       final newItem = mediaItem.value?.copyWith(
+        id: uniqueId,
         title: station.name,
         artist: station.genre,
         album: station.name,

@@ -59,3 +59,57 @@
 
 # Keep data models if they are used for JSON serialization in background
 -keep class com.fazio.musicstream.models.** { *; }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Firebase – Required for RecognitionApiService (Remote Config + Firestore)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Firebase Core
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.internal.firebase** { *; }
+-dontwarn com.google.firebase.**
+
+# Firebase Remote Config
+-keep class com.google.firebase.remoteconfig.** { *; }
+-keep class com.google.firebase.remoteconfig.internal.** { *; }
+
+# Cloud Firestore
+-keep class com.google.firebase.firestore.** { *; }
+-keep class com.google.firebase.firestore.internal.** { *; }
+-keep class io.grpc.** { *; }
+-dontwarn io.grpc.**
+
+# Firebase Auth (required by Firestore)
+-keep class com.google.firebase.auth.** { *; }
+
+# Firebase Installations
+-keep class com.google.firebase.installations.** { *; }
+
+# Firebase Analytics (used for heartbeat)
+-keep class com.google.firebase.analytics.** { *; }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OkHttp / Okio – Used by Firebase SDKs and http package
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+-dontwarn okhttp3.**
+-keep class okio.** { *; }
+-dontwarn okio.**
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Kotlin Coroutines / Serialization – Used by Firebase internally
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class kotlinx.coroutines.** { *; }
+-dontwarn kotlinx.coroutines.**
+-keep class kotlin.** { *; }
+-dontwarn kotlin.**
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Gson / JSON parsing (used for Remote Config key parsing in RecognitionApiService)
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class com.google.gson.** { *; }
+-keepattributes *Annotation*
+-keepclassmembers class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
