@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:marquee/marquee.dart';
 
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
@@ -225,32 +226,16 @@ class PlayerBar extends StatelessWidget {
                                                             Row(
                                                               children: [
                                                                 Flexible(
-                                                                  child: Text(
+                                                                  child: _buildMarqueeText(
                                                                     provider
                                                                         .currentTrack
-                                                                        .replaceFirst(
-                                                                          "⬇️ ",
-                                                                          "",
-                                                                        )
-                                                                        .replaceFirst(
-                                                                          "📱 ",
-                                                                          "",
-                                                                        ),
-                                                                    style: TextStyle(
-                                                                      color: playerTheme
-                                                                          .textTheme
-                                                                          .titleMedium
-                                                                          ?.color,
-                                                                      fontSize:
-                                                                          16,
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w700,
+                                                                        .replaceFirst("⬇️ ", "")
+                                                                        .replaceFirst("📱 ", ""),
+                                                                    TextStyle(
+                                                                      color: playerTheme.textTheme.titleMedium?.color,
+                                                                      fontSize: 16,
+                                                                      fontWeight: FontWeight.w700,
                                                                     ),
-                                                                    maxLines: 1,
-                                                                    overflow:
-                                                                        TextOverflow
-                                                                            .ellipsis,
                                                                   ),
                                                                 ),
                                                               ],
@@ -273,35 +258,17 @@ class PlayerBar extends StatelessWidget {
                                                                             ?.logo;
 
                                                                 final Widget
-                                                                artistText = Text(
-                                                                  provider
-                                                                          .currentArtist
-                                                                          .isNotEmpty
-                                                                      ? provider
-                                                                            .currentArtist
-                                                                      : langProvider.translate(
-                                                                          'unknown_artist',
-                                                                        ),
-                                                                  style: TextStyle(
-                                                                    color:
-                                                                        isLinkEnabled
-                                                                        ? Theme.of(
-                                                                            context,
-                                                                          ).primaryColor
-                                                                        : playerTheme
-                                                                              .textTheme
-                                                                              .bodySmall
-                                                                              ?.color,
-                                                                    fontSize:
-                                                                        13,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w600,
+                                                                artistText = _buildMarqueeText(
+                                                                  provider.currentArtist.isNotEmpty
+                                                                      ? provider.currentArtist
+                                                                      : langProvider.translate('unknown_artist'),
+                                                                  TextStyle(
+                                                                    color: isLinkEnabled
+                                                                        ? Theme.of(context).primaryColor
+                                                                        : playerTheme.textTheme.bodySmall?.color,
+                                                                    fontSize: 13,
+                                                                    fontWeight: FontWeight.w600,
                                                                   ),
-                                                                  maxLines: 1,
-                                                                  overflow:
-                                                                      TextOverflow
-                                                                          .ellipsis,
                                                                 );
 
                                                                 if (isLinkEnabled) {
@@ -584,14 +551,21 @@ class PlayerBar extends StatelessWidget {
     bool isDesktop,
   ) {
     final langProvider = Provider.of<LanguageProvider>(context);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
+    return Theme(
+      data: Theme.of(context).copyWith(
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
          _buildFavoriteButton(context, provider),
-         const SizedBox(width: 4),
+         SizedBox(width: isDesktop ? 12 : 8),
          // Shuffle Button (Left of Controls)
         if (provider.currentPlayingPlaylistId != null) ...[
           IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
             icon: Icon(
               provider.isShuffleMode
                   ? Icons.shuffle_rounded
@@ -604,19 +578,18 @@ class PlayerBar extends StatelessWidget {
             tooltip: langProvider.translate('shuffle'),
             onPressed: () => provider.toggleShuffle(),
           ),
-          const SizedBox(width: 4),
-
-
-
+          SizedBox(width: isDesktop ? 12 : 8),
         ],
 
         IconButton(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           icon: const Icon(Icons.skip_previous_rounded),
           color: Theme.of(context).iconTheme.color,
           iconSize: isDesktop ? 32 : 28,
           onPressed: () => provider.playPrevious(),
         ),
-        SizedBox(width: isDesktop ? 24 : 4),
+        SizedBox(width: isDesktop ? 20 : 16),
         Container(
           width: isDesktop ? 48 : 40,
           height: isDesktop ? 48 : 40,
@@ -632,10 +605,12 @@ class PlayerBar extends StatelessWidget {
             ],
           ),
           child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
             icon: provider.isLoading
                 ? SizedBox(
-                    width: 24,
-                    height: 24,
+                    width: isDesktop ? 24 : 20,
+                    height: isDesktop ? 24 : 20,
                     child: CircularProgressIndicator(
                       color: Theme.of(context).colorScheme.onPrimary,
                       strokeWidth: 3,
@@ -651,14 +626,17 @@ class PlayerBar extends StatelessWidget {
             onPressed: () => provider.togglePlay(),
           ),
         ),
-        SizedBox(width: isDesktop ? 24 : 4),
+        SizedBox(width: isDesktop ? 20 : 16),
         IconButton(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           icon: const Icon(Icons.skip_next_rounded),
           color: Theme.of(context).iconTheme.color,
           iconSize: isDesktop ? 32 : 28,
           onPressed: () => provider.playNext(),
         ),
       ],
+    ),
     );
   }
 
@@ -840,6 +818,7 @@ class PlayerBar extends StatelessWidget {
   }
 
   Widget _buildFavoriteButton(BuildContext context, RadioProvider provider) {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     final bool isRadio = provider.currentPlayingPlaylistId == null;
     final bool isKnown = !isRadio ||
         (provider.currentTrack.isNotEmpty &&
@@ -869,9 +848,13 @@ class PlayerBar extends StatelessWidget {
     }
 
     return IconButton(
-      icon: Icon(heartIcon),
-      color: heartColor,
-      iconSize: 20,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(),
+      icon: Icon(heartIcon, color: heartColor),
+      iconSize: 24,
+      tooltip: inFav
+          ? langProvider.translate('remove_favorite')
+          : langProvider.translate('add_favorite'),
       onPressed: () async {
         if (inFav) {
           if (inOther) {
@@ -948,6 +931,42 @@ class PlayerBar extends StatelessWidget {
           ),
         ) ??
         false;
+  }
+
+  Widget _buildMarqueeText(String text, TextStyle style) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final span = TextSpan(text: text, style: style);
+        final tp = TextPainter(
+          text: span,
+          maxLines: 1,
+          textDirection: TextDirection.ltr,
+        );
+        tp.layout(maxWidth: constraints.maxWidth);
+
+        if (tp.didExceedMaxLines) {
+          return SizedBox(
+            height: (style.fontSize ?? 14) * 1.5,
+            child: Marquee(
+              text: text,
+              style: style,
+              blankSpace: 30.0,
+              velocity: 25.0,
+              pauseAfterRound: const Duration(seconds: 2),
+              fadingEdgeEndFraction: 0.1,
+              fadingEdgeStartFraction: 0.1,
+            ),
+          );
+        } else {
+          return Text(
+            text,
+            style: style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+        }
+      },
+    );
   }
 }
 
