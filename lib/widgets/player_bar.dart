@@ -339,9 +339,9 @@ class PlayerBar extends StatelessWidget {
                                                                           top:
                                                                               1,
                                                                         ),
-                                                                    child: Text(
+                                                                    child: _buildMarqueeText(
                                                                       albumText,
-                                                                      style: TextStyle(
+                                                                      TextStyle(
                                                                         color: playerTheme
                                                                             .textTheme
                                                                             .bodySmall
@@ -354,11 +354,6 @@ class PlayerBar extends StatelessWidget {
                                                                         letterSpacing:
                                                                             0.3,
                                                                       ),
-                                                                      maxLines:
-                                                                          1,
-                                                                      overflow:
-                                                                          TextOverflow
-                                                                              .ellipsis,
                                                                     ),
                                                                   );
                                                                 }
