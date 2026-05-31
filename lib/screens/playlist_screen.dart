@@ -2989,7 +2989,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 ),
                                 const SizedBox(width: 12),
                                 Text(
-                                  "+5 ${lang.translate('watch_ad')}",
+                                  "${lang.translate('bonus')} - ${lang.translate('watch_ad')}",
                                   style: const TextStyle(
                                     color: Colors.amber,
                                     fontWeight: FontWeight.bold,

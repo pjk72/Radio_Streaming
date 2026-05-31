@@ -715,4 +715,5 @@ final Map<String, String> de = {
   'shazam_info_title': 'Liederkennung',
   'shazam_info_desc': 'Diese Funktion versucht, das aktuell wiedergegebene Lied anhand des Audios zu identifizieren. Bitte stellen Sie sicher, dass die Lautstärke ausreichend ist.',
   'dont_show_again': 'Diese Nachricht nicht mehr anzeigen',
+  'bonus': 'Bouus',
 };

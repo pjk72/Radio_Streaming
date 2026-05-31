@@ -703,4 +703,5 @@ final Map<String, String> pt = {
   'shazam_info_title': 'Reconhecimento de música',
   'shazam_info_desc': 'Este recurso tentará identificar a música que está sendo reproduzida ouvindo o áudio. Certifique-se de que o volume seja adequado.',
   'dont_show_again': 'Não mostrar esta mensagem novamente',
+  'bonus': 'Bouus',
 };

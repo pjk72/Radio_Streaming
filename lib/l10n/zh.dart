@@ -681,4 +681,5 @@ final Map<String, String> zh = {
   'shazam_info_title': '歌曲识别',
   'shazam_info_desc': '此功能将尝试通过收听音频来识别当前播放的歌曲。请确保音量足够。',
   'dont_show_again': '不再显示此消息',
+  'bonus': '布乌斯',
 };

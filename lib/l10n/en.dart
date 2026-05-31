@@ -696,4 +696,5 @@ final Map<String, String> en = {
   'shazam_info_title': 'Song Recognition',
   'shazam_info_desc': 'This feature will try to identify the currently playing song by listening to the audio. Please ensure the volume is adequate.',
   'dont_show_again': 'Do not show this message again',
+  'bonus': 'Bouus',
 };

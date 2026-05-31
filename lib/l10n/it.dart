@@ -373,6 +373,7 @@ final Map<String, String> it = {
       'L\'annuncio non è ancora pronto. Riprova tra pochi secondi.',
   'credits_earned_msg': 'Ottimo! Hai guadagnato {0} crediti download.',
   'watch_ad': 'Guarda Video',
+  'bonus' : 'Bonus',
   'clear_selection': 'Cancella Selezione',
   'copied_songs_to': 'Brani copiati in \'{0}\'',
   'favorites_cleared': 'Preferiti svuotati.',

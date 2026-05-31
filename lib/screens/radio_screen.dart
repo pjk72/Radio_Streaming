@@ -8,8 +8,8 @@ import '../widgets/station_card.dart';
 import '../widgets/now_playing_header.dart';
 import '../widgets/tutorial_create_radio_wizard.dart';
 
-class MusicStreamHome extends StatelessWidget {
-  const MusicStreamHome({super.key});
+class RadioScreen extends StatelessWidget {
+  const RadioScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

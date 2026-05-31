@@ -8,7 +8,7 @@ import '../widgets/sidebar.dart';
 
 import 'playlist_screen.dart';
 import 'settings_screen.dart';
-import 'musicstream_home.dart';
+import 'radio_screen.dart';
 import 'trending_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -80,9 +80,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           setState(() => _navIndex = index);
                         },
                         children: [
-                          const MusicStreamHome(),
-                          const PlaylistScreen(),
                           const TrendingScreen(),
+                          const PlaylistScreen(),
+                          const RadioScreen(),                          
                           const SettingsScreen(),
                         ],
                       ),
@@ -103,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 // 1. We are on the first tab (Radio) AND the wizard is active due to no stations
                 // 2. OR the wizard is explicitly open (e.g. from Manage Stations)
                 
-                // Logic for "auto-wizard" in MusicStreamHome:
+                // Logic for "auto-wizard" in RadioScreen:
                 final bool isHomeWizard = _navIndex == 0 && 
                   radio.stations.where((s) => radio.favorites.contains(s.id)).isEmpty;
                 
@@ -153,8 +153,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
                 children: [
                   _buildTopNavItem(
-                    Icons.radio,
-                    langProvider.translate('tab_radio'),
+                    Icons.whatshot,
+                    langProvider.translate('tab_trending'),
                     0,
                   ),
                   _buildTopNavItem(
@@ -163,8 +163,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     1,
                   ),
                   _buildTopNavItem(
-                    Icons.whatshot,
-                    langProvider.translate('tab_trending'),
+                    Icons.radio,
+                    langProvider.translate('tab_radio'),
                     2,
                   ),
                   _buildTopNavItem(
