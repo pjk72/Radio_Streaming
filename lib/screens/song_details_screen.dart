@@ -819,6 +819,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
           Expanded(
             child: Text(
               stationName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.left,
               style: const TextStyle(
                 color: Colors.white70,

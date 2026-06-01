@@ -8,6 +8,7 @@ import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 
 import '../services/trending_service.dart';
+import '../services/download_service.dart';
 import '../providers/radio_provider.dart';
 import '../models/saved_song.dart';
 import '../models/playlist.dart';
@@ -414,6 +415,70 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       developer.log("Error fetching tracks: $e");
     }
     return [];
+  }
+
+  Future<void> _downloadTrendingPlaylist() async {
+    if (_songs.isEmpty) return;
+
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    
+    String playlistName;
+    if (widget.playlist != null) {
+      playlistName = widget.playlist!.title;
+    } else {
+      playlistName = widget.albumName ?? langProvider.translate('tab_trending');
+    }
+    
+    Playlist? targetPlaylist;
+    try {
+      targetPlaylist = provider.playlists.firstWhere(
+        (p) => p.name == playlistName,
+      );
+    } catch (_) {
+      targetPlaylist = null;
+    }
+    
+    if (targetPlaylist == null) {
+      // Create empty playlist initially
+      targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
+    }
+
+    // Create a temporary playlist to drive the download service without persisting it
+    final tempPlaylist = Playlist(
+      id: 'temp_trending_${DateTime.now().millisecondsSinceEpoch}',
+      name: playlistName,
+      songs: List.from(_songs),
+      createdAt: DateTime.now(),
+    );
+
+    if (mounted) {
+      await downloadPlaylist(
+        context, 
+        provider, 
+        tempPlaylist,
+        onSongDownloaded: (downloadedSong) async {
+          LogService().log("DownloadService: onSongDownloaded Triggered for: ${downloadedSong.title}");
+          
+          try {
+            targetPlaylist = provider.playlists.firstWhere((p) => p.id == targetPlaylist!.id);
+          } catch (_) {
+            LogService().log("DownloadService: Warning: targetPlaylist not found in provider.playlists");
+          }
+          
+          final exists = targetPlaylist!.songs.any((s) => s.id == downloadedSong.id);
+          LogService().log("DownloadService: Song exists in Tendenza? $exists. targetPlaylist ID: ${targetPlaylist!.id}");
+          
+          if (!exists) {
+            await provider.addSongToPlaylist(targetPlaylist!.id, downloadedSong);
+            LogService().log("DownloadService: Added song to playlist ${targetPlaylist!.name}");
+          } else {
+            await provider.updateSongInPlaylist(targetPlaylist!.id, downloadedSong);
+            LogService().log("DownloadService: Updated song in playlist ${targetPlaylist!.name}");
+          }
+        }
+      );
+    }
   }
 
   void _buildItems() {
@@ -826,6 +891,19 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                     ? null
                     : _showCopyDialog,
                 tooltip: langProvider.translate('copy_list'),
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.download,
+                  color: _isLoading || _songs.isEmpty
+                      ? Colors.white24
+                      : Colors.greenAccent,
+                  size: 30,
+                ),
+                onPressed: _isLoading || _songs.isEmpty
+                    ? null
+                    : _downloadTrendingPlaylist,
+                tooltip: langProvider.translate('download'),
               ),
             ],
           ),

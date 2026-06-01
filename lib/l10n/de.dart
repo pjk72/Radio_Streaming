@@ -287,7 +287,7 @@ final Map<String, String> de = {
   // Trending Details
   'no_tracks_found': 'Keine Titel gefunden',
   'back': 'Zurück',
-  'shuffle_play': 'Zufallswiedergabe',
+  'shuffle_play': 'Abspielen',
   'stop': 'Stopp',
   'copy_list': 'Liste kopieren',
   'loading_tracks': 'Titel werden geladen...',
@@ -542,7 +542,7 @@ final Map<String, String> de = {
   'APPLEMUSIC': 'Apple Music',
   'AI': 'KI',
   'arabic': 'Arabisch',
-  'play_all': 'Alle abspielen',
+  'play_all': 'Spielen',
   'live_radio': 'Live-Radio',
   'playlist': 'Wiedergabeliste',
   'share_song_text': '{0}\n\n📱 Ascolta con MusicStream:\n{3}',

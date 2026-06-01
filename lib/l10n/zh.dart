@@ -284,7 +284,7 @@ final Map<String, String> zh = {
   // Trending Details
   'no_tracks_found': '未找到曲目',
   'back': '返回',
-  'shuffle_play': '随机播放',
+  'shuffle_play': '播放',
   'stop': '停止',
   'copy_list': '复制列表',
   'loading_tracks': '仍在加载曲目...',
@@ -525,7 +525,7 @@ final Map<String, String> zh = {
   'APPLEMUSIC': 'Apple Music',
   'AI': 'AI',
   'arabic': '阿拉伯',
-  'play_all': '播放全部',
+  'play_all': '播放',
   'live_radio': '现场广播',
   'playlist': '播放列表',
   'share_song_text': '{0}\n\n📱 Ascolta 与 MusicStream:\n{3}',

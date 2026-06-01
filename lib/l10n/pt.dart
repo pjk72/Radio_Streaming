@@ -286,7 +286,7 @@ final Map<String, String> pt = {
   // Trending Details
   'no_tracks_found': 'Nenhuma faixa encontrada',
   'back': 'Voltar',
-  'shuffle_play': 'Reprodução Aleatória',
+  'shuffle_play': 'Reprodução',
   'stop': 'Parar',
   'copy_list': 'Copiar Lista',
   'loading_tracks': 'Carregando faixas...',
@@ -534,7 +534,7 @@ final Map<String, String> pt = {
   'APPLEMUSIC': 'Apple Music',
   'AI': 'IA',
   'arabic': 'árabe',
-  'play_all': 'Jogue tudo',
+  'play_all': 'Tocar',
   'live_radio': 'Rádio ao vivo',
   'playlist': 'Lista de reprodução',
   'share_song_text': '{0}\n\n📱 Ouça com MusicStream:\n{3}',

@@ -298,7 +298,7 @@ final Map<String, String> en = {
   // Trending Details
   'no_tracks_found': 'No tracks found',
   'back': 'Back',
-  'shuffle_play': 'Shuffle Play',
+  'shuffle_play': 'Play',
   'stop': 'Stop',
   'copy_list': 'Copy List',
   'loading_tracks': 'Still loading tracks...',
@@ -546,7 +546,7 @@ final Map<String, String> en = {
   'DEEZER': 'Deezer',
   'APPLEMUSIC': 'Apple Music',
   'AI': 'AI',
-  'play_all': 'Play All',
+  'play_all': 'Play',
   'live_radio': 'Live Radio',
   'playlist': 'Playlist',
   'shared_songs': 'Shared Songs',

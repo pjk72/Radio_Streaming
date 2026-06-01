@@ -293,7 +293,7 @@ final Map<String, String> it = {
   // Trending Details
   'no_tracks_found': 'Nessun brano trovato',
   'back': 'Indietro',
-  'shuffle_play': 'Riproduzione Casuale',
+  'shuffle_play': 'Riproduzione',
   'stop': 'Stop',
   'copy_list': 'Copia Elenco',
   'loading_tracks': 'Caricamento brani in corso...',
@@ -558,7 +558,7 @@ final Map<String, String> it = {
   'DEEZER': 'Deezer',
   'APPLEMUSIC': 'Apple Music',
   'AI': 'AI',
-  'play_all': 'Riproduci Tutto',
+  'play_all': 'Riproduci',
   'live_radio': 'Radio dal Vivo',
   'playlist': 'Playlist',
   'shared_songs': 'Brani Condivisi',

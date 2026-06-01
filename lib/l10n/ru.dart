@@ -286,7 +286,7 @@ final Map<String, String> ru = {
   // Trending Details
   'no_tracks_found': 'Треки не найдены',
   'back': 'Назад',
-  'shuffle_play': 'В случайном порядке',
+  'shuffle_play': 'Воспроизведение',
   'stop': 'Стоп',
   'copy_list': 'Копировать список',
   'loading_tracks': 'Загрузка треков...',
@@ -533,7 +533,7 @@ final Map<String, String> ru = {
   'APPLEMUSIC': 'Apple Music',
   'AI': 'AI',
   'arabic': 'арабский',
-  'play_all': 'Воспроизвести все',
+  'play_all': 'Воспроизвести',
   'live_radio': 'Живое радио',
   'playlist': 'Плейлист',
   'share_song_text': '{0}\n\n📱 Слушайте с MusicStream:\n{3}',
