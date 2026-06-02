@@ -481,6 +481,67 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     }
   }
 
+  Future<void> _downloadSingleSong(SavedSong song) async {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    
+    String playlistName;
+    if (widget.playlist != null) {
+      playlistName = widget.playlist!.title;
+    } else {
+      playlistName = widget.albumName ?? langProvider.translate('tab_trending');
+    }
+    
+    Playlist? targetPlaylist;
+    try {
+      targetPlaylist = provider.playlists.firstWhere(
+        (p) => p.name == playlistName,
+      );
+    } catch (_) {
+      targetPlaylist = null;
+    }
+    
+    if (targetPlaylist == null) {
+      // Create empty playlist initially
+      targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
+    }
+
+    // Create a temporary playlist to drive the download service without persisting it
+    final tempPlaylist = Playlist(
+      id: 'temp_trending_single_${DateTime.now().millisecondsSinceEpoch}',
+      name: playlistName,
+      songs: [song],
+      createdAt: DateTime.now(),
+    );
+
+    if (mounted) {
+      await downloadPlaylist(
+        context, 
+        provider, 
+        tempPlaylist,
+        onSongDownloaded: (downloadedSong) async {
+          LogService().log("DownloadService: onSongDownloaded Triggered for single song: ${downloadedSong.title}");
+          
+          try {
+            targetPlaylist = provider.playlists.firstWhere((p) => p.id == targetPlaylist!.id);
+          } catch (_) {
+            LogService().log("DownloadService: Warning: targetPlaylist not found in provider.playlists");
+          }
+          
+          final exists = targetPlaylist!.songs.any((s) => s.id == downloadedSong.id);
+          
+          if (!exists) {
+            await provider.addSongToPlaylist(targetPlaylist!.id, downloadedSong);
+            LogService().log("DownloadService: Added song to playlist ${targetPlaylist!.name}");
+          } else {
+            await provider.updateSongInPlaylist(targetPlaylist!.id, downloadedSong);
+            LogService().log("DownloadService: Updated song in playlist ${targetPlaylist!.name}");
+          }
+        }
+      );
+    }
+  }
+
   void _buildItems() {
     _items = [];
     if (_songs.isNotEmpty) {
@@ -848,7 +909,8 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              ElevatedButton.icon(
+              Expanded(
+                child: ElevatedButton.icon(
                 onPressed: _playRandom,
                 icon: const Icon(Icons.shuffle, size: 18),
                 label: Text(langProvider.translate('shuffle_play')),
@@ -867,6 +929,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                   ),
                 ),
               ),
+              ),  
               const SizedBox(width: 12),
               IconButton(
                 icon: const Icon(
@@ -958,6 +1021,12 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
     final isSaved = savedIds.contains(trackId) || savedKeys.contains(trackKey);
 
+    final savedSongInstance = provider.allUniqueSongs.cast<SavedSong?>().firstWhere(
+      (s) => s?.id == trackId || "${_normalize(s?.title ?? '')}|${_normalize(s?.artist ?? '')}" == trackKey,
+      orElse: () => null,
+    );
+    final isDownloaded = savedSongInstance?.isDownloaded ?? false;
+
     return Container(
       decoration: BoxDecoration(
         color: isPlaying
@@ -1014,6 +1083,16 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                           active: isPlayingState,
                         ),
                 ),
+              IconButton(
+                icon: Icon(
+                  isDownloaded ? Icons.check_circle : Icons.download,
+                  color: isDownloaded ? theme.primaryColor : Colors.white54,
+                ),
+                onPressed: isDownloaded ? null : () => _downloadSingleSong(track),
+                tooltip: isDownloaded 
+                    ? langProvider.translate('downloaded') 
+                    : langProvider.translate('download'),
+              ),
               IconButton(
                 icon: Icon(
                   isSaved

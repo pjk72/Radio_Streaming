@@ -1446,7 +1446,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
                         // Case 2: Prominent Play All Button (Anchored to the left in Selection Mode)
                         if (isSelectionActive)
-                          Padding(
+                        Expanded(
+                          child:Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: ElevatedButton.icon(
                               onPressed: () =>
@@ -1480,6 +1481,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               ),
                             ),
                           ),
+                        ),
 
                         // Scrollable section for all other Icons (Pins + Status Indicators)
                         Expanded(
@@ -3332,6 +3334,31 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
+              if (song.isDownloaded)
+                _buildMenuItem(
+                  context,
+                  icon: Icons.check_circle_rounded,
+                  label: lang.translate('download'),
+                  color: Theme.of(context).primaryColor,
+                  onTap: () {},
+                )
+              else
+                _buildMenuItem(
+                  context,
+                  icon: Icons.download_rounded,
+                  label: lang.translate('download'),
+                  color: Theme.of(context).primaryColor,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    final tempPlaylist = Playlist(
+                      id: 'temp_download_${song.id}',
+                      name: song.title,
+                      songs: [song],
+                      createdAt: DateTime.now(),
+                    );
+                    downloadPlaylist(context, provider, tempPlaylist);
+                  },
+                ),
               _buildMenuItem(
                 context,
                 icon: Icons.share_rounded,
