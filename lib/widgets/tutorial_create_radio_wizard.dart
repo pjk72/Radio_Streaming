@@ -311,6 +311,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           }
 
           if (result != null && result['track'] != null) {
+            InterstitialAdService().loadAd();
             _showShazamResultPopup(result['track']);
           } else {
             if (mounted) {

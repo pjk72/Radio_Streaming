@@ -25,18 +25,11 @@ class InterstitialAdService {
     
     // Listen for config changes so we can load the ad as soon as the feature is enabled
     _entitlements!.addListener(_onEntitlementsChanged);
-    
-    // Immediate try
-    loadAd();
   }
 
   void _onEntitlementsChanged() {
-    if (_interstitialAd == null && !_isAdLoading) {
-      if (_entitlements!.isFeatureEnabled('interstitial_ad')) {
-        LogService().log("InterstitialAdService: Feature enabled by config change. Loading now...");
-        loadAd();
-      }
-    }
+    // Non carichiamo più automaticamente l'annuncio.
+    // Verrà richiesto on-demand quando necessario.
   }
 
   /// Preload the ad
@@ -75,13 +68,11 @@ class InterstitialAdService {
               LogService().log("InterstitialAdService: Ad dismissed by user.");
               ad.dispose();
               _interstitialAd = null;
-              loadAd(); // Pre-load next
             },
             onAdFailedToShowFullScreenContent: (ad, error) {
               LogService().log("InterstitialAdService: Ad failed to show: $error");
               ad.dispose();
               _interstitialAd = null;
-              loadAd();
             },
             onAdShowedFullScreenContent: (ad) {
               LogService().log("InterstitialAdService: Ad displayed successfully.");
@@ -133,7 +124,6 @@ class InterstitialAdService {
     } catch (e) {
       LogService().log("InterstitialAdService: Exception during .show(): $e");
       _interstitialAd = null;
-      loadAd();
     }
   }
 

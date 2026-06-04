@@ -177,6 +177,8 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
             }
 
             if (result != null && result['track'] != null) {
+              // Pre-carica l'annuncio ora che sappiamo che è un successo
+              InterstitialAdService().loadAd();
               // Fase 3: Risultato (Sfondo sfocato e popup glass)
               _showShazamResultPopup(result['track']);
             } else {
