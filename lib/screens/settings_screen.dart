@@ -12,7 +12,6 @@ import 'api_debug_screen.dart';
 import 'debug_log_screen.dart';
 import 'local_library_screen.dart';
 import 'sleep_timer_screen.dart';
-import 'statistics_screen.dart';
 import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
@@ -101,7 +100,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canUseAppearance = entitlements.isFeatureEnabled('appearance');
     final canUseDebugLogs = entitlements.isFeatureEnabled('debug_logs');
     final canUseSleepTimer = entitlements.isFeatureEnabled('timer_alarm');
-    final canUseStatistics = entitlements.isFeatureEnabled('statistics');
 
     return Stack(
       children: [
@@ -201,22 +199,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const SleepTimerScreen(),
-                            ),
-                          );
-                        },
-                      ),
-
-                    if (canUseStatistics)
-                      _buildSettingsTile(
-                        context,
-                        icon: Icons.bar_chart_rounded,
-                        title: langProvider.translate('statistics'),
-                        subtitle: langProvider.translate('statistics_desc'),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const StatisticsScreen(),
                             ),
                           );
                         },

@@ -12,7 +12,6 @@ final Map<String, String> en = {
   'portuguese': 'Portuguese',
   'chinese': 'Chinese',
   'arabic': 'Arabic',
-
   'settings': 'Settings',
   'search': 'Search...',
   'appearance': 'Appearance',
@@ -23,7 +22,6 @@ final Map<String, String> en = {
   'local_library_desc': 'Manage local folders and playlists',
   'logs': 'Logs',
   'logs_desc': 'View API responses and app logs',
-
   'compact_view': 'Compact View',
   'compact_view_desc': 'Show more stations in less space',
   'song_recognition': 'Enable Song Recognition',
@@ -42,23 +40,15 @@ final Map<String, String> en = {
   'backup': 'Backup',
   'restore': 'Restore',
   'playback': 'Playback',
-
-
-
   'crossfade_duration': 'Crossfade Duration',
   'crossfade_duration_desc': 'Adjust the fade time between songs',
-  'release_years': 'Release Decades',
-  'most_played_decades': 'Most Played Decades',
-  'others': 'Others',
   'seconds_unit': '{0}s',
-
   // Navigation / Tabs
   'tab_home': 'Home',
   'tab_radio': 'Radio',
   'tab_trending': 'Trending',
   'tab_library': 'Library',
   'tab_profile': 'Profile',
-
   // Appearance
   'manual_overrides': 'Manual Overrides',
   'manual_overrides_desc':
@@ -94,7 +84,6 @@ final Map<String, String> en = {
   'no_images_found': 'No images found.',
   'searching_images': 'Searching images...',
   'select_as_background': 'Set as Background',
-
   // Manage Stations
   'manage_stations_title': 'Manage Stations',
   'search_stations': 'Search Stations...',
@@ -108,11 +97,9 @@ final Map<String, String> en = {
   'delete_station_title': 'Delete Station?',
   'delete_station_desc': 'Are you sure you want to delete \'{0}\'?',
   'edit': 'Edit',
-
   'list_view': 'List View',
   'grid_view': 'Grid View',
   'group_by': 'Group by',
-
   // Edit Station
   'add_station': 'Add Station',
   'edit_station': 'Edit Station',
@@ -144,7 +131,6 @@ final Map<String, String> en = {
   'new_genre_name': 'New Genre Name',
   'search_categories': 'Search categories...',
   'new_category_name': 'New Category Name',
-
   // Wizard
   'wizard_welcome': 'Welcome! Let\'s set up your radio.',
   'wizard_desc':
@@ -164,7 +150,6 @@ final Map<String, String> en = {
   'select_logo_for': 'Select Logo for {0}',
   'stream_verify_failed': 'Stream verify failed: {0}',
   'processed_count': 'Processed {0} stations!',
-
   // Player & General
   'guest': 'Guest',
   'unknown_artist': 'Unknown Artist',
@@ -176,7 +161,6 @@ final Map<String, String> en = {
   'add_to_genre_playlist': 'Add to Genre Playlist',
   'added_to_playlist': 'Added to {0} Playlist',
   'could_not_identify_song': 'Could not identify song to save.',
-
   // Edit Station Extra
   'please_enter_name_or_country':
       'Please enter a name or select a specific Country',
@@ -186,7 +170,6 @@ final Map<String, String> en = {
   'select_min_one_genre': 'Please select at least one Genre',
   'select_category_error': 'Please select a Category',
   'category_too_long': 'Category must be 35 characters or less',
-
   // Trending
   'trending_playlists': 'Trending Playlists',
   'songs_count': '{0} songs',
@@ -195,7 +178,6 @@ final Map<String, String> en = {
   'custom_search_hint': 'Custom Search (e.g. Best Rock 2020)',
   'no_trending_found': 'No trending playlists found.',
   'error_prefix': 'Error: {0}',
-
   // Countries
   'country_ALL': 'Global',
   'country_AL': 'Albania',
@@ -294,7 +276,6 @@ final Map<String, String> en = {
   'country_UY': 'Uruguay',
   'country_VE': 'Venezuela',
   'country_VN': 'Vietnam',
-
   // Trending Details
   'no_tracks_found': 'No tracks found',
   'back': 'Back',
@@ -315,7 +296,6 @@ final Map<String, String> en = {
   'adding_to_playlist': 'Adding to playlist...',
   'song_added': 'Added \'{0}\'!',
   'station_selected': 'Selected: {0}',
-
   // Local Library Extra
   'sync_local_library': 'Synchronized local library & folder names',
   'unknown_album': 'Unknown Album',
@@ -323,7 +303,6 @@ final Map<String, String> en = {
   'added_to_playlists': 'Added \'{0}\' to playlists',
   'no_music_folders': 'No music folders found',
   'swipe_down_scan': 'Swipe down to scan again',
-
   // Playlist Screen
   'tab_playlists': 'Playlist',
   'tab_artists': 'Artists',
@@ -331,23 +310,19 @@ final Map<String, String> en = {
   'tab_songs': 'Songs',
   'no_playlists': 'No playlists',
   'no_playlists_search': 'No playlists match your search',
-
   'local_music': 'Local Music',
   'offline': 'Offline',
   'add_folders_device': 'Add folders from your device',
   'no_artists_found': 'No artists found',
   'no_albums_found': 'No albums found',
   'no_songs_found': 'No songs found',
-
   // Filter Playlists popup
   'filter_playlists': 'Filter Playlists',
   'user_created': 'User Created',
   'app_created': 'App Created (Favorites/Genres)',
   'local_device': 'Local Device',
   'folders_from_device': 'Folders from this device',
-
   'clear_filters': 'Clear Filters (Show All)',
-
   // Extra Playlist Screen UI
   'keep_holding_unlock': 'Keep holding to unlock...',
   'song_unlocked': 'Song unlocked!',
@@ -397,7 +372,6 @@ final Map<String, String> en = {
   'move_to': 'Move To',
   'moved_to': 'Moved to {0}',
   'no_other_playlists_to_move': 'No other playlists to move to.',
-
   // Add Song Screen
   'add_new_song': 'Add New Song',
   'search_hint': 'Search song, artist, or album...',
@@ -418,7 +392,6 @@ final Map<String, String> en = {
   'log_detail': 'Log Detail',
   'raw_log_copied': 'Raw log copied',
   'no_valid_logo_suggestions': 'No valid logo suggestions found.',
-
   'manual': 'Manual',
   'daily': 'Daily',
   'weekly': 'Weekly',
@@ -518,7 +491,6 @@ final Map<String, String> en = {
   'find_new_music': 'Find New Music',
   'unknown_title': 'Unknown Title',
   'share': 'Share',
-
   // Update
   'update_available': 'Update Available',
   'update_desc':
@@ -532,7 +504,6 @@ final Map<String, String> en = {
   'weekly_mix': 'Weekly Mix',
   'discovery_mix': 'Discovery Mix',
   'latest_hits': 'Latest Hits',
-
   'weekly_mix_owner': 'Your weekly mix',
   'most_played_playlists': 'Most Played Playlists',
   'top_playlists': 'Top Playlists',
@@ -663,35 +634,6 @@ final Map<String, String> en = {
   'hours': 'hours',
   'minutes': 'minutes',
   'less_than_a_minute': 'less than a minute',
-  'statistics': 'Statistics',
-  'statistics_desc': 'Visualize your listening habits and top tracks',
-  'total_songs': 'Total Songs',
-  'total_listening': 'Total Listenings',
-  'stats_top_songs': 'Top Songs',
-  'listening_source': 'Listening Source',
-  'smartphone': 'Smartphone',
-  'android_auto': 'Android Auto',
-  'most_played_artists': 'Most Played Artists',
-  'downloads_stats': 'Download Stats',
-  'total_playlists': 'Playlists',
-  'estimated_listening_time': 'Est. Listening Time',
-  'total_artists': 'Total Artists',
-  'total_albums': 'Total Albums',
-  'playlist_distribution': 'Playlist Distribution',
-  'download_efficiency': 'Download Efficiency',
-  'credits_remaining': 'Credits Remaining',
-  'hours_unit': '{0}h',
-  'top_decades': 'Top Decades',
-  
-  'time_filter': 'Time Range',
-  'lifetime': 'Lifetime',
-  'last_7_days': 'Last 7 Days',
-  'last_week': 'Last Week',
-  'last_month': 'Last Month',
-  'custom_range': 'Custom Range',
-  'custom_range_label': '{0} – {1}',
-  'genre_distribution': 'Genre Distribution',
-  'genre_unknown': 'Other',
   'radio': 'Radio',
   'shazam_info_title': 'Song Recognition',
   'shazam_info_desc': 'This feature will try to identify the currently playing song by listening to the audio. Please ensure the volume is adequate.',

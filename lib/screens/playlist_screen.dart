@@ -22,6 +22,7 @@ import '../models/saved_song.dart';
 import '../providers/language_provider.dart';
 
 import '../services/backup_service.dart';
+import '../services/music_metadata_service.dart';
 import 'trending_details_screen.dart';
 import 'artist_details_screen.dart';
 import '../widgets/youtube_popup.dart';
@@ -383,6 +384,23 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     return lang.translate('tab_library');
   }
 
+  /// Returns formatted total duration of the currently selected playlist
+  String get headerDuration {
+    final playlist = rawEffectivePlaylist;
+    if (playlist == null) return '';
+    final total = playlist.songs.fold<Duration>(
+      Duration.zero,
+      (sum, s) => sum + (s.duration ?? Duration.zero),
+    );
+    if (total == Duration.zero) return '';
+    final h = total.inHours;
+    final m = total.inMinutes.remainder(60);
+    final s = total.inSeconds.remainder(60);
+    if (h > 0) return '${h}h ${m.toString().padLeft(2,'0')}m';
+    if (m > 0) return '${m}m ${s.toString().padLeft(2,'0')}s';
+    return '${s}s';
+  }
+
   /// Helper to access all songs across playlists (for creating ad-hoc playlists)
   List<SavedSong> get _allSongs {
     final provider = Provider.of<RadioProvider>(context, listen: false);
@@ -713,7 +731,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showSongDetailsDialog(context, song);
+                  _showSongDetailsDialog(context, song, provider: provider, playlistId: playlistId);
                 },
               ),
             ),
@@ -1094,107 +1112,355 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
   }
 
-  void _showSongDetailsDialog(BuildContext context, SavedSong song) {
+  void _showSongDetailsDialog(BuildContext context, SavedSong initialSong, {RadioProvider? provider, String? playlistId}) {
+    SavedSong song = initialSong;
+    bool isFetching = false;
+    bool needsFetch = song.duration == null || song.duration!.inSeconds == 0 || song.genre == null || song.genre!.isEmpty || song.releaseDate == null || song.releaseDate!.isEmpty || song.youtubeUrl == null || song.youtubeUrl!.isEmpty || song.extras == null;
+
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
     GlassUtils.showGlassDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        surfaceTintColor: Colors.transparent,
-        title: Text(
-          Provider.of<LanguageProvider>(
-            context,
-            listen: false,
-          ).translate('song_details_title'),
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: SingleChildScrollView(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) {
+          if (needsFetch && !isFetching) {
+            isFetching = true;
+            Future.microtask(() async {
+              try {
+                SavedSong newSong = song;
+                bool wasEnriched = false;
+
+                // 1. Fetch iTunes metadata if missing
+                if (newSong.duration == null || newSong.duration!.inSeconds == 0 || newSong.genre == null || newSong.genre!.isEmpty || newSong.releaseDate == null || newSong.releaseDate!.isEmpty || newSong.extras == null) {
+                  final results = await MusicMetadataService().searchSongs(query: "${newSong.title} ${newSong.artist}", limit: 1);
+                  if (results.isNotEmpty) {
+                    final fetched = results.first.song;
+                    newSong = newSong.copyWith(
+                      duration: (newSong.duration == null || newSong.duration!.inSeconds == 0) ? fetched.duration : newSong.duration,
+                      genre: (newSong.genre == null || newSong.genre!.isEmpty) ? results.first.genre : newSong.genre,
+                      releaseDate: (newSong.releaseDate == null || newSong.releaseDate!.isEmpty) ? fetched.releaseDate : newSong.releaseDate,
+                      extras: (newSong.extras == null || newSong.extras!.isEmpty) ? fetched.extras : newSong.extras,
+                      artUri: (newSong.artUri == null || newSong.artUri!.isEmpty) ? fetched.artUri : newSong.artUri,
+                      appleMusicUrl: (newSong.appleMusicUrl == null || newSong.appleMusicUrl!.isEmpty) ? fetched.appleMusicUrl : newSong.appleMusicUrl,
+                    );
+                    wasEnriched = true;
+                  }
+                }
+
+                // 2. Fetch YouTube URL if missing
+                if (newSong.youtubeUrl == null || newSong.youtubeUrl!.isEmpty) {
+                  try {
+                    var yt = ye.YoutubeExplode();
+                    var searchResults = await yt.search.search("${newSong.title} ${newSong.artist} audio");
+                    if (searchResults.isNotEmpty) {
+                      newSong = newSong.copyWith(youtubeUrl: searchResults.first.url);
+                      wasEnriched = true;
+                    }
+                    yt.close();
+                  } catch (e) {
+                    print("Error fetching YouTube URL in details dialog: $e");
+                  }
+                }
+
+                // 3. Update the UI with the enriched data
+                if (ctx.mounted) {
+                  setState(() {
+                    song = newSong;
+                    needsFetch = false;
+                  });
+                }
+
+                // 4. Persist enriched data to storage so it's found next time
+                if (wasEnriched && provider != null && playlistId != null && playlistId.isNotEmpty) {
+                  await provider.updateSongInPlaylist(playlistId, newSong);
+                }
+              } catch (e) {
+                print("Error enriching song in details dialog: $e");
+              } finally {
+                if (ctx.mounted) {
+                  setState(() {
+                    isFetching = false;
+                    needsFetch = false;
+                  });
+                }
+              }
+            });
+          }
+
+          return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          width: double.maxFinite,
+          constraints: const BoxConstraints(maxHeight: 650),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white12, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _detailItem(
-                Provider.of<LanguageProvider>(
-                  context,
-                  listen: false,
-                ).translate('song_title'),
-                song.title,
-              ),
-              _detailItem(
-                Provider.of<LanguageProvider>(
-                  context,
-                  listen: false,
-                ).translate('artist_name'),
-                song.artist,
-              ),
-              _detailItem(
-                Provider.of<LanguageProvider>(
-                  context,
-                  listen: false,
-                ).translate('label_album'),
-                song.album,
-              ),
-              _detailItem(
-                Provider.of<LanguageProvider>(
-                  context,
-                  listen: false,
-                ).translate('label_id'),
-                song.id,
-              ),
-              _detailItem(
-                Provider.of<LanguageProvider>(
-                  context,
-                  listen: false,
-                ).translate('label_date_added'),
-                song.dateAdded.toString(),
-              ),
-              if (song.youtubeUrl != null)
-                _detailItem(
-                  Provider.of<LanguageProvider>(
-                    context,
-                    listen: false,
-                  ).translate('label_youtube_url'),
-                  song.youtubeUrl!,
+              // Header Image
+              if (song.artUri != null && song.artUri!.isNotEmpty)
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  child: SizedBox(
+                    height: 180,
+                    width: double.infinity,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CachedNetworkImage(
+                          imageUrl: song.artUri!,
+                          fit: BoxFit.cover,
+                          errorWidget: (context, url, error) => Container(color: const Color(0xFF2A2A2A)),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                const Color(0xFF1E1E1E).withOpacity(0.8),
+                                const Color(0xFF1E1E1E),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 16,
+                          left: 16,
+                          right: 16,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                song.title,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                song.artist,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 16,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  height: 100,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  alignment: Alignment.bottomLeft,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        song.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        song.artist,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
+
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildInfoCard([
+                        _buildRowItem(Icons.album_rounded, lang.translate('label_album'), song.album),
+                        if (song.genre != null && song.genre!.isNotEmpty)
+                          _buildRowItem(Icons.music_note_rounded, lang.translate('genre'), song.genre!),
+                        if (song.releaseDate != null && song.releaseDate!.isNotEmpty)
+                          _buildRowItem(Icons.calendar_today_rounded, lang.translate('year'), song.releaseDate!),
+                        if (song.duration != null)
+                          _buildRowItem(
+                            Icons.timer_rounded, 
+                            lang.translate('duration_label'), 
+                            "${song.duration!.inMinutes}:${(song.duration!.inSeconds % 60).toString().padLeft(2, '0')}"
+                          ),
+                        _buildRowItem(Icons.date_range_rounded, lang.translate('label_date_added'), song.dateAdded.toString().split('.')[0]),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildInfoCard([
+                        _buildRowItem(Icons.fingerprint_rounded, lang.translate('label_id'), song.id),
+                        if (song.provider != null && song.provider!.isNotEmpty)
+                          _buildRowItem(Icons.cloud_circle_rounded, "Provider", song.provider!),
+                        if (song.youtubeUrl != null)
+                          _buildRowItem(Icons.play_circle_fill_rounded, lang.translate('label_youtube_url'), song.youtubeUrl!),
+                        if (song.localPath != null && song.localPath!.isNotEmpty)
+                          _buildRowItem(Icons.folder_rounded, "Local Path", song.localPath!),
+                      ]),
+                      
+                      if (song.extras != null && song.extras!.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Theme(
+                          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            collapsedIconColor: Colors.white54,
+                            iconColor: Colors.white,
+                            title: const Text(
+                              "Raw Metadata",
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: const Text(
+                              "Tap to view provider specific data",
+                              style: TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.black26,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  children: song.extras!.entries.map((e) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 8.0),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            flex: 2,
+                                            child: Text(
+                                              e.key,
+                                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            flex: 3,
+                                            child: SelectableText(
+                                              e.value.toString(),
+                                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              // Close Button
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: Text(
+                      lang.translate('close'),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              Provider.of<LanguageProvider>(
-                context,
-                listen: false,
-              ).translate('close'),
-              style: const TextStyle(color: Colors.blue),
-            ),
-          ),
-        ],
+      );
+    },
+   ),
+  );
+}
+
+  Widget _buildInfoCard(List<Widget> children) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        children: children,
       ),
     );
   }
 
-  Widget _detailItem(String label, String value) {
+  Widget _buildRowItem(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Theme.of(
-                context,
-              ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 2),
-          SelectableText(
-            value,
-            style: TextStyle(
-              color: Theme.of(context).textTheme.bodyLarge?.color,
-              fontSize: 14,
+          Icon(icon, size: 18, color: Colors.white54),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+                const SizedBox(height: 2),
+                SelectableText(
+                  value,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ],
             ),
           ),
         ],
@@ -1375,19 +1641,48 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           left: 16,
                           right: 16,
                         ),
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: Text(
-                            headerTitle,
-                            style: TextStyle(
-                              color: headerContrastColor.withValues(alpha: 0.7),
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                headerTitle,
+                                style: TextStyle(
+                                  color: headerContrastColor.withValues(alpha: 0.7),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            if (headerDuration.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: headerContrastColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.schedule_rounded, size: 11, color: headerContrastColor.withValues(alpha: 0.6)),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      headerDuration,
+                                      style: TextStyle(
+                                        color: headerContrastColor.withValues(alpha: 0.6),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
 
@@ -3397,6 +3692,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 onTap: () {
                   Navigator.pop(ctx);
                   _showMoveSongDialog(context, provider, playlist, song.id);
+                },
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.info_outline_rounded,
+                label: lang.translate('view_song_details'),
+                color: Colors.tealAccent,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showSongDetailsDialog(context, song, provider: provider, playlistId: playlist.id);
                 },
               ),
               _buildMenuItem(

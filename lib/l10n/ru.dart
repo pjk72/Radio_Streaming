@@ -11,7 +11,6 @@ final Map<String, String> ru = {
   'russian': 'Русский',
   'portuguese': 'Португальский',
   'chinese': 'Китайский',
-
   'settings': 'Настройки',
   'search': 'Поиск...',
   'appearance': 'Внешний вид',
@@ -22,7 +21,6 @@ final Map<String, String> ru = {
   'local_library_desc': 'Управление локальными папками и плейлистами',
   'logs': 'Журналы',
   'logs_desc': 'Просмотр ответов API и журналов приложения',
-
   'compact_view': 'Компактный вид',
   'compact_view_desc': 'Показывать больше станций',
   'song_recognition': 'Распознавание песен',
@@ -40,14 +38,12 @@ final Map<String, String> ru = {
   'tap_to_choose': 'Нажмите, чтобы выбрать',
   'backup': 'Резервная копия',
   'restore': 'Восстановить',
-
   // Navigation / Tabs
   'tab_home': 'Главная',
   'tab_radio': 'Радио',
   'tab_trending': 'В тренде',
   'tab_library': 'Библиотека',
   'tab_profile': 'Профиль',
-
   // Appearance
   'manual_overrides': 'Ручные настройки',
   'manual_overrides_desc': 'Изменение конкретных цветов текущей темы',
@@ -83,7 +79,6 @@ final Map<String, String> ru = {
   'no_images_found': 'Изображения не найдены.',
   'searching_images': 'Поиск изображений...',
   'select_as_background': 'Установить как фон',
-
   // Manage Stations
   'manage_stations_title': 'Управление станциями',
   'search_stations': 'Поиск станций...',
@@ -101,7 +96,6 @@ final Map<String, String> ru = {
   'list_view': 'В виде списка',
   'grid_view': 'В виде сетки',
   'group_by': 'Группировать по',
-
   // Edit Station
   'add_station': 'Добавить станцию',
   'edit_station': 'Редактировать станцию',
@@ -133,7 +127,6 @@ final Map<String, String> ru = {
   'new_genre_name': 'Имя нового жанра',
   'search_categories': 'Поиск категорий...',
   'new_category_name': 'Имя новой категории',
-
   // Wizard
   'wizard_welcome': 'Добро пожаловать! Давайте настроим радио.',
   'wizard_desc': 'Выберите ваш регион, чтобы найти лучшие станции.',
@@ -152,7 +145,6 @@ final Map<String, String> ru = {
   'select_logo_for': 'Выбрать логотип для {0}',
   'stream_verify_failed': 'Ошибка проверки потока: {0}',
   'processed_count': 'Обработано {0} станций!',
-
   // Player & General
   'guest': 'Гость',
   'unknown_artist': 'Неизвестный исполнитель',
@@ -164,7 +156,6 @@ final Map<String, String> ru = {
   'add_to_genre_playlist': 'Добавить в плейлист по жанрам',
   'added_to_playlist': 'Добавлено в плейлист {0}',
   'could_not_identify_song': 'Не удалось определить песню.',
-
   // Edit Station Extra
   'please_enter_name_or_country':
       'Пожалуйста, введите название или выберите страну',
@@ -174,7 +165,6 @@ final Map<String, String> ru = {
   'select_min_one_genre': 'Выберите хотя бы один жанр',
   'select_category_error': 'Выберите категорию',
   'category_too_long': 'Название категории должно быть короче 35 символов',
-
   // Trending
   'trending_playlists': 'Популярные плейлисты',
   'songs_count': '{0} песен',
@@ -183,7 +173,6 @@ final Map<String, String> ru = {
   'custom_search_hint': 'Пользовательский поиск (напр. Лучший рок)',
   'no_trending_found': 'Популярные плейлисты не найдены.',
   'error_prefix': 'Ошибка: {0}',
-
   // Countries
   'country_ALL': 'Глобальный',
   'country_AL': 'Албания',
@@ -282,7 +271,6 @@ final Map<String, String> ru = {
   'country_UY': 'Уругвай',
   'country_VE': 'Венесуэла',
   'country_VN': 'Вьетнам',
-
   // Trending Details
   'no_tracks_found': 'Треки не найдены',
   'back': 'Назад',
@@ -303,7 +291,6 @@ final Map<String, String> ru = {
   'adding_to_playlist': 'Добавление в плейлист...',
   'song_added': 'Добавлено \'{0}\'!',
   'station_selected': 'Выбрано: {0}',
-
   // Local Library Extra
   'sync_local_library': 'Синхронизированы имена папок локальной библиотеки',
   'unknown_album': 'Неизвестный альбом',
@@ -311,7 +298,6 @@ final Map<String, String> ru = {
   'added_to_playlists': 'Добавлено \'{0}\' в плейлисты',
   'no_music_folders': 'Музыкальные папки не найдены',
   'swipe_down_scan': 'Проведите вниз для сканирования',
-
   // Playlist Screen
   'tab_playlists': 'Плейлисты',
   'tab_artists': 'Исполнители',
@@ -325,7 +311,6 @@ final Map<String, String> ru = {
   'no_artists_found': 'Исполнители не найдены',
   'no_albums_found': 'Альбомы не найдены',
   'no_songs_found': 'Песни не найдены',
-
   // Filter Playlists popup
   'filter_playlists': 'Фильтр плейлистов',
   'user_created': 'Созданные пользователем',
@@ -333,7 +318,6 @@ final Map<String, String> ru = {
   'local_device': 'Локальное устройство',
   'folders_from_device': 'Папки с этого устройства',
   'clear_filters': 'Очистить фильтры',
-
   // Extra Playlist Screen UI
   'keep_holding_unlock': 'Удерживайте для разблокировки...',
   'song_unlocked': 'Песня разблокирована!',
@@ -384,7 +368,6 @@ final Map<String, String> ru = {
   'move_to': 'Переместить в',
   'moved_to': 'Перемещено в {0}',
   'no_other_playlists_to_move': 'Нет других плейлистов для перемещения.',
-
   // Add Song Screen
   'add_new_song': 'Добавить новую песню',
   'search_hint': 'Поиск песни, исполнителя или альбома...',
@@ -489,7 +472,6 @@ final Map<String, String> ru = {
   'find_new_music': 'Найти новую музыку',
   'unknown_title': 'Неизвестное название',
   'share': 'Поделиться',
-
   // Update
   'update_available': 'Доступно обновление',
   'update_desc': 'Доступна новая версия приложения. Хотите обновить сейчас?',
@@ -502,9 +484,7 @@ final Map<String, String> ru = {
   'weekly_mix': 'Еженедельный микс',
   'discovery_mix': 'Микс открытий',
   'latest_hits': 'Последние хиты',
-
   'weekly_mix_owner': 'Твой еженедельный микс',
-
   // Missing keys
   'top_songs': 'Топ песен',
   'song_removed_from_library': 'Песня удалена из библиотеки',
@@ -670,38 +650,6 @@ final Map<String, String> ru = {
   'minutes': 'минуты',
   'less_than_a_minute': 'меньше минуты',
   'radio': 'Радио',
-  'release_years': 'Выпуск Десятилетия',
-  'most_played_decades': 'Самые популярные десятилетия',
-  'others': 'Другие',
-  'statistics': 'Статистика',
-  'statistics_desc':
-      'Визуализируйте свои привычки прослушивания и популярные треки',
-  'total_songs': 'Всего песен',
-  'total_listening': 'Всего прослушиваний',
-  'stats_top_songs': 'Лучшие песни',
-  'listening_source': 'Источник прослушивания',
-  'smartphone': 'Смартфон',
-  'android_auto': 'Андроид Авто',
-  'most_played_artists': 'Самые популярные исполнители',
-  'downloads_stats': 'Скачать статистику',
-  'total_playlists': 'Плейлисты',
-  'estimated_listening_time': 'Восток. Время прослушивания',
-  'total_artists': 'Всего исполнителей',
-  'total_albums': 'Всего альбомов',
-  'playlist_distribution': 'Распределение плейлистов',
-  'download_efficiency': 'Скачать Эффективность',
-  'credits_remaining': 'Оставшиеся кредиты',
-  'hours_unit': 'СЛОТ0СЛОТ ч',
-  'top_decades': 'Лучшие десятилетия',
-  'time_filter': 'Временной диапазон',
-  'lifetime': 'Продолжительность жизни',
-  'last_7_days': 'Последние 7 дней',
-  'last_week': 'На прошлой неделе',
-  'last_month': 'В прошлом месяце',
-  'custom_range': 'Пользовательский диапазон',
-  'custom_range_label': 'СЛОТ0СЛОТ – СЛОТ1СЛОТ',
-  'genre_distribution': 'Жанровое распространение',
-  'genre_unknown': 'Другой',
   'shazam_info_title': 'Распознавание песен',
   'shazam_info_desc': 'Эта функция попытается идентифицировать воспроизводимую в данный момент песню, прослушивая звук. Пожалуйста, убедитесь, что громкость достаточна.',
   'dont_show_again': 'Больше не показывать это сообщение',

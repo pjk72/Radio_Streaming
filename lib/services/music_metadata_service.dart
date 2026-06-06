@@ -53,6 +53,9 @@ class MusicMetadataService {
           // iTunes date format: "2005-03-01T08:00:00Z"
           String releaseDate = item['releaseDate'] ?? '';
 
+          final int trackTimeMillis = item['trackTimeMillis'] as int? ?? 0;
+          final duration = trackTimeMillis > 0 ? Duration(milliseconds: trackTimeMillis) : null;
+
           final song = SavedSong(
             id: item['trackId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
             title: item['trackName'] ?? 'Unknown Title',
@@ -61,9 +64,10 @@ class MusicMetadataService {
             artUri: artworkUrl,
             appleMusicUrl: item['trackViewUrl'],
             youtubeUrl: null,
-            dateAdded:
-                DateTime.now(), // This is "now" because we are creating the object now
+            dateAdded: DateTime.now(), // This is "now" because we are creating the object now
             releaseDate: releaseDate,
+            duration: duration,
+            extras: item, // Store all iTunes metadata
           );
 
           return SongSearchResult(

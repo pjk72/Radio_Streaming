@@ -7,7 +7,6 @@ import 'ru.dart';
 import 'pt.dart';
 import 'zh.dart';
 import 'ar.dart';
-
 class AppTranslations {
   static final Map<String, Map<String, String>> translations = {
     'en': en,

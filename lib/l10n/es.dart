@@ -11,7 +11,6 @@ final Map<String, String> es = {
   'russian': 'Ruso',
   'portuguese': 'Portugués',
   'chinese': 'Chino',
-
   'settings': 'Configuración',
   'search': 'Buscar...',
   'appearance': 'Apariencia',
@@ -22,7 +21,6 @@ final Map<String, String> es = {
   'local_library_desc': 'Gestionar carpetas y listas de reproducción locales',
   'logs': 'Registros',
   'logs_desc': 'Ver respuestas API y registros de la app',
-
   'compact_view': 'Vista Compacta',
   'compact_view_desc': 'Mostrar más estaciones en menos espacio',
   'song_recognition': 'Habilitar Reconocimiento de Canciones',
@@ -40,14 +38,12 @@ final Map<String, String> es = {
   'tap_to_choose': 'Toca para elegir',
   'backup': 'Respaldar',
   'restore': 'Restaurar',
-
   // Navigation / Tabs
   'tab_home': 'Inicio',
   'tab_radio': 'Radio',
   'tab_trending': 'Tendencias',
   'tab_library': 'Biblioteca',
   'tab_profile': 'Perfil',
-
   // Appearance
   'manual_overrides': 'Anulaciones Manuales',
   'manual_overrides_desc':
@@ -83,7 +79,6 @@ final Map<String, String> es = {
   'no_images_found': 'No se encontraron imágenes.',
   'searching_images': 'Buscando imágenes...',
   'select_as_background': 'Establecer como Fondo',
-
   // Manage Stations
   'manage_stations_title': 'Gestionar Emisoras',
   'search_stations': 'Buscar Emisoras...',
@@ -97,11 +92,9 @@ final Map<String, String> es = {
   'delete_station_title': '¿Eliminar Emisora?',
   'delete_station_desc': '¿Estás seguro de que deseas eliminar \'{0}\'?',
   'edit': 'Editar',
-
   'list_view': 'Vista de Lista',
   'grid_view': 'Vista de Cuadrícula',
   'group_by': 'Agrupar por',
-
   // Edit Station
   'add_station': 'Añadir Emisora',
   'edit_station': 'Editar Emisora',
@@ -133,7 +126,6 @@ final Map<String, String> es = {
   'new_genre_name': 'Nuevo Nombre de Género',
   'search_categories': 'Buscar categorías...',
   'new_category_name': 'Nuevo Nombre de Categoría',
-
   // Wizard
   'wizard_welcome': '¡Bienvenido! Configuremos tu radio.',
   'wizard_desc':
@@ -153,7 +145,6 @@ final Map<String, String> es = {
   'select_logo_for': 'Seleccionar logotipo para {0}',
   'stream_verify_failed': 'La verificación de la transmisión falló: {0}',
   'processed_count': '¡Se procesaron {0} emisoras!',
-
   // Player & General
   'guest': 'Invitado',
   'unknown_artist': 'Artista Desconocido',
@@ -165,7 +156,6 @@ final Map<String, String> es = {
   'add_to_genre_playlist': 'Añadir a la Playlist de Género',
   'added_to_playlist': 'Añadido a la Playlist de {0}',
   'could_not_identify_song': 'No se pudo identificar la canción para guardar.',
-
   // Edit Station Extra
   'please_enter_name_or_country':
       'Por favor, introduce un nombre o selecciona un país específico',
@@ -175,7 +165,6 @@ final Map<String, String> es = {
   'select_min_one_genre': 'Por favor, selecciona al menos un género',
   'select_category_error': 'Por favor, selecciona una categoría',
   'category_too_long': 'La categoría debe tener 35 caracteres o menos',
-
   // Trending
   'trending_playlists': 'Listas de Éxitos',
   'songs_count': '{0} canciones',
@@ -184,7 +173,6 @@ final Map<String, String> es = {
   'custom_search_hint': 'Búsqueda Personalizada (ej. Best Rock 2020)',
   'no_trending_found': 'No se encontraron listas de éxitos.',
   'error_prefix': 'Error: {0}',
-
   // Countries
   'country_ALL': 'Global',
   'country_AL': 'Albania',
@@ -283,7 +271,6 @@ final Map<String, String> es = {
   'country_UY': 'Uruguay',
   'country_VE': 'Venezuela',
   'country_VN': 'Vietnam',
-
   // Trending Details
   'no_tracks_found': 'No se encontraron canciones',
   'back': 'Atrás',
@@ -303,7 +290,6 @@ final Map<String, String> es = {
   'create': 'Crear',
   'adding_to_playlist': 'Añadiendo a la lista...',
   'song_added': '¡Se añadió \'{0}\'!',
-
   // Local Library Extra
   'sync_local_library': 'Librería local y nombres de carpetas sincronizados',
   'unknown_album': 'Álbum Desconocido',
@@ -311,7 +297,6 @@ final Map<String, String> es = {
   'added_to_playlists': 'Añadido \'{0}\' a las listas de reproducción',
   'no_music_folders': 'No se encontraron carpetas de música',
   'swipe_down_scan': 'Desliza hacia abajo para escanear de nuevo',
-
   // Playlist Screen
   'tab_playlists': 'Listas de reproducción',
   'tab_artists': 'Artistas',
@@ -325,7 +310,6 @@ final Map<String, String> es = {
   'no_artists_found': 'No se encontraron artistas',
   'no_albums_found': 'No se encontraron álbumes',
   'no_songs_found': 'No se encontraron canciones',
-
   // Filter Playlists popup
   'filter_playlists': 'Filtrar Listas de Reproducción',
   'user_created': 'Creadas por el Usuario',
@@ -333,7 +317,6 @@ final Map<String, String> es = {
   'local_device': 'Dispositivo Local',
   'folders_from_device': 'Carpetas de este dispositivo',
   'clear_filters': 'Borrar Filtros (Mostrar Todas)',
-
   // Extra Playlist Screen UI
   'keep_holding_unlock': 'Mantén presionado para desbloquear...',
   'song_unlocked': '¡Canción desbloqueada!',
@@ -386,7 +369,6 @@ final Map<String, String> es = {
   'moved_to': 'Movido a {0}',
   'no_other_playlists_to_move':
       'No hay otras listas de reproducción para mover.',
-
   // Add Song Screen
   'add_new_song': 'Añadir Nueva Canción',
   'search_hint': 'Buscar canción, artista o álbum...',
@@ -489,7 +471,6 @@ final Map<String, String> es = {
   'find_new_music': 'Buscar nueva música',
   'unknown_title': 'Título desconocido',
   'share': 'Compartir',
-
   // Update
   'update_available': 'Actualización Disponible',
   'update_desc':
@@ -503,9 +484,7 @@ final Map<String, String> es = {
   'weekly_mix': 'Mix Semanal',
   'discovery_mix': 'Mix de Descubrimiento',
   'latest_hits': 'Últimos Éxitos',
-
   'weekly_mix_owner': 'Tu mezcla semanal',
-
   // Missing keys
   'top_songs': 'Canciones Principales',
   'song_removed_from_library': 'Canción eliminada de la biblioteca',
@@ -679,38 +658,6 @@ final Map<String, String> es = {
   'minutes': 'minutos',
   'less_than_a_minute': 'menos de un minuto',
   'radio': 'Radio',
-  'release_years': 'Décadas de lanzamiento',
-  'most_played_decades': 'Décadas más jugadas',
-  'others': 'Otros',
-  'statistics': 'Estadística',
-  'statistics_desc':
-      'Visualiza tus hábitos de escucha y tus mejores canciones.',
-  'total_songs': 'Canciones totales',
-  'total_listening': 'Escuchas totales',
-  'stats_top_songs': 'Canciones principales',
-  'listening_source': 'Fuente de escucha',
-  'smartphone': 'teléfono inteligente',
-  'android_auto': 'Android Auto',
-  'most_played_artists': 'Artistas más reproducidos',
-  'downloads_stats': 'Descargar Estadísticas',
-  'total_playlists': 'Listas de reproducción',
-  'estimated_listening_time': 'Este. Tiempo de escucha',
-  'total_artists': 'Artistas totales',
-  'total_albums': 'Álbumes totales',
-  'playlist_distribution': 'Distribución de listas de reproducción',
-  'download_efficiency': 'Descargar Eficiencia',
-  'credits_remaining': 'Créditos restantes',
-  'hours_unit': '{0}h',
-  'top_decades': 'Décadas principales',
-  'time_filter': 'Rango de tiempo',
-  'lifetime': 'Vida',
-  'last_7_days': 'Últimos 7 días',
-  'last_week': 'La semana pasada',
-  'last_month': 'Mes pasado',
-  'custom_range': 'Rango personalizado',
-  'custom_range_label': 'RANURA0RANURA – RANURA1RANURA',
-  'genre_distribution': 'Distribución de género',
-  'genre_unknown': 'Otro',
   'shazam_info_title': 'Reconocimiento de canciones',
   'shazam_info_desc': 'Esta función intentará identificar la canción que se reproduce actualmente escuchando el audio. Asegúrese de que el volumen sea el adecuado.',
   'dont_show_again': 'No mostrar este mensaje nuevamente',

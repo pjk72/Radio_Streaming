@@ -11,7 +11,6 @@ final Map<String, String> zh = {
   'russian': '俄语',
   'portuguese': '葡萄牙语',
   'chinese': '中文',
-
   'settings': '设置',
   'search': '搜索...',
   'appearance': '外观',
@@ -22,7 +21,6 @@ final Map<String, String> zh = {
   'local_library_desc': '管理本地文件夹和播放列表',
   'logs': '日志',
   'logs_desc': '查看 API 响应和应用日志',
-
   'compact_view': '紧凑视图',
   'compact_view_desc': '在更少的空间内显示更多的电台',
   'song_recognition': '启用歌曲识别',
@@ -40,14 +38,12 @@ final Map<String, String> zh = {
   'tap_to_choose': '点击选择',
   'backup': '备份',
   'restore': '恢复',
-
   // Navigation / Tabs
   'tab_home': '首页',
   'tab_radio': '电台',
   'tab_trending': '热门',
   'tab_library': '媒体库',
   'tab_profile': '个人资料',
-
   // Appearance
   'manual_overrides': '手动覆盖',
   'manual_overrides_desc': '手动修改当前主题的特定颜色',
@@ -82,7 +78,6 @@ final Map<String, String> zh = {
   'no_images_found': '未找到图片。',
   'searching_images': '正在搜索图片...',
   'select_as_background': '设为背景',
-
   // Manage Stations
   'manage_stations_title': '管理电台',
   'search_stations': '搜索电台...',
@@ -100,7 +95,6 @@ final Map<String, String> zh = {
   'list_view': '列表视图',
   'grid_view': '网格视图',
   'group_by': '分组方式',
-
   // Edit Station
   'add_station': '添加电台',
   'edit_station': '编辑电台',
@@ -132,7 +126,6 @@ final Map<String, String> zh = {
   'new_genre_name': '新流派名称',
   'search_categories': '搜索分类...',
   'new_category_name': '新分类名称',
-
   // Wizard
   'wizard_welcome': '欢迎！我们来设置你的收音机。',
   'wizard_desc': '选择您偏好的地区以寻找最佳的电台。',
@@ -151,7 +144,6 @@ final Map<String, String> zh = {
   'select_logo_for': '为 {0} 选择徽标',
   'stream_verify_failed': '流媒体验证失败：{0}',
   'processed_count': '已处理 {0} 个电台！',
-
   // Player & General
   'guest': '游客',
   'unknown_artist': '未知艺术家',
@@ -163,7 +155,6 @@ final Map<String, String> zh = {
   'add_to_genre_playlist': '添加到流派播放列表',
   'added_to_playlist': '已添加到 {0} 播放列表',
   'could_not_identify_song': '无法识别要保存的歌曲。',
-
   // Edit Station Extra
   'please_enter_name_or_country': '请输入名称或选择特定的国家/地区',
   'no_stations_found': '找不到电台。正在搜索徽标...',
@@ -172,7 +163,6 @@ final Map<String, String> zh = {
   'select_min_one_genre': '请至少选择一种类型',
   'select_category_error': '请选择分类',
   'category_too_long': '分类长度必须为35个字符或更少',
-
   // Trending
   'trending_playlists': '热门播放列表',
   'songs_count': '{0} 首歌',
@@ -181,7 +171,6 @@ final Map<String, String> zh = {
   'custom_search_hint': '自定义搜索（例如：最佳摇滚乐队）',
   'no_trending_found': '未找到热门播放列表。',
   'error_prefix': '错误：{0}',
-
   // Countries
   'country_ALL': '全球',
   'country_AL': '阿尔巴尼亚',
@@ -280,7 +269,6 @@ final Map<String, String> zh = {
   'country_UY': '乌拉圭',
   'country_VE': '委内瑞拉',
   'country_VN': '越南',
-
   // Trending Details
   'no_tracks_found': '未找到曲目',
   'back': '返回',
@@ -301,7 +289,6 @@ final Map<String, String> zh = {
   'adding_to_playlist': '正在添加到播放列表...',
   'song_added': '已添加 \'{0}\'！',
   'station_selected': '已选择：{0}',
-
   // Local Library Extra
   'sync_local_library': '同步了本地媒体库及文件夹名称',
   'unknown_album': '未知专辑',
@@ -309,7 +296,6 @@ final Map<String, String> zh = {
   'added_to_playlists': '已将 \'{0}\' 添加至播放列表',
   'no_music_folders': '找不到音乐文件夹',
   'swipe_down_scan': '向下滑动以再次扫描',
-
   // Playlist Screen
   'tab_playlists': '播放列表',
   'tab_artists': '艺术家',
@@ -323,7 +309,6 @@ final Map<String, String> zh = {
   'no_artists_found': '未找到艺术家',
   'no_albums_found': '未找到专辑',
   'no_songs_found': '未找到歌曲',
-
   // Filter Playlists popup
   'filter_playlists': '过滤播放列表',
   'user_created': '用户创建',
@@ -331,7 +316,6 @@ final Map<String, String> zh = {
   'local_device': '本设备',
   'folders_from_device': '来自此设备的文件夹',
   'clear_filters': '清除过滤（显示全部）',
-
   // Extra Playlist Screen UI
   'keep_holding_unlock': '继续按住解锁...',
   'song_unlocked': '歌曲已解锁！',
@@ -381,7 +365,6 @@ final Map<String, String> zh = {
   'move_to': '移动到',
   'moved_to': '已移动到 {0}',
   'no_other_playlists_to_move': '没有其他可移动的播放列表。',
-
   // Add Song Screen
   'add_new_song': '添加新歌',
   'search_hint': '搜索歌曲、艺术家或专辑...',
@@ -481,7 +464,6 @@ final Map<String, String> zh = {
   'find_new_music': '寻找新音乐',
   'unknown_title': '未知标题',
   'share': '分享',
-
   // Update
   'update_available': '可用更新',
   'update_desc': '应用程序有新版本可用。你想现在更新吗？',
@@ -494,9 +476,7 @@ final Map<String, String> zh = {
   'weekly_mix': '每周推荐',
   'discovery_mix': '探索发现',
   'latest_hits': '最新流行',
-
   'weekly_mix_owner': '您的每周专属推荐',
-
   // Missing keys
   'top_songs': '热门歌曲',
   'song_removed_from_library': '歌曲已从库中删除',
@@ -647,37 +627,6 @@ final Map<String, String> zh = {
   'minutes': '分钟',
   'less_than_a_minute': '不到一分钟',
   'radio': '收音机',
-  'release_years': '发布十年',
-  'most_played_decades': '数十年来最常玩的游戏',
-  'others': '其他的',
-  'statistics': '统计数据',
-  'statistics_desc': '可视化您的收听习惯和热门曲目',
-  'total_songs': '歌曲总数',
-  'total_listening': '总收听次数',
-  'stats_top_songs': '热门歌曲',
-  'listening_source': '收听源',
-  'smartphone': '手机',
-  'android_auto': '安卓汽车',
-  'most_played_artists': '演奏次数最多的艺术家',
-  'downloads_stats': '下载统计数据',
-  'total_playlists': '播放列表',
-  'estimated_listening_time': '东方。聆听时间',
-  'total_artists': '艺术家总数',
-  'total_albums': '专辑总数',
-  'playlist_distribution': '播放列表分发',
-  'download_efficiency': '下载效率',
-  'credits_remaining': '剩余学分',
-  'hours_unit': '槽0槽h',
-  'top_decades': '前十年',
-  'time_filter': '时间范围',
-  'lifetime': '寿命',
-  'last_7_days': '过去 7 天',
-  'last_week': '上星期',
-  'last_month': '上个月',
-  'custom_range': '定制范围',
-  'custom_range_label': '插槽0插槽 – 插槽1插槽',
-  'genre_distribution': '流派分布',
-  'genre_unknown': '其他',
   'shazam_info_title': '歌曲识别',
   'shazam_info_desc': '此功能将尝试通过收听音频来识别当前播放的歌曲。请确保音量足够。',
   'dont_show_again': '不再显示此消息',
