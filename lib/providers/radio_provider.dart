@@ -4842,7 +4842,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         );
       } catch (_) {}
     }
-    _isShuffleMode = prefs.getBool(_keyShuffleMode) ?? false;
+    _isShuffleMode = prefs.getBool(_keyShuffleMode) ?? true;
     // Sync initial state to AudioHandler
     if (_isShuffleMode) {
       _audioHandler.setShuffleMode(AudioServiceShuffleMode.all);

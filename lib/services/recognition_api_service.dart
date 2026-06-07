@@ -96,7 +96,7 @@ class RecognitionApiService {
     try {
       LogService().log("RecognitionAPI: Identifying from microphone bytes...");
       
-      final result = await _trySolutionWithRetry(2, audioData);
+      final result = await _trySolutionWithRetry(1, audioData);
       return result;
     } catch (e) {
       LogService().log("RecognitionAPI Exception (Microphone): $e");
