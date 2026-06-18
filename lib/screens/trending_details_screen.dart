@@ -220,7 +220,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             if (data['resultCount'] > 0) {
               final track = data['results'][0];
               _songs = [_trackToSavedSong(track)];
-              if (_albumData == null) _albumData = track;
+              _albumData ??= track;
             }
           }
         } catch (_) {}
@@ -438,11 +438,6 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     } catch (_) {
       targetPlaylist = null;
     }
-    
-    if (targetPlaylist == null) {
-      // Create empty playlist initially
-      targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
-    }
 
     // Create a temporary playlist to drive the download service without persisting it
     final tempPlaylist = Playlist(
@@ -460,10 +455,15 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         onSongDownloaded: (downloadedSong) async {
           LogService().log("DownloadService: onSongDownloaded Triggered for: ${downloadedSong.title}");
           
-          try {
-            targetPlaylist = provider.playlists.firstWhere((p) => p.id == targetPlaylist!.id);
-          } catch (_) {
-            LogService().log("DownloadService: Warning: targetPlaylist not found in provider.playlists");
+          if (targetPlaylist == null) {
+            targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
+          } else {
+            try {
+              targetPlaylist = provider.playlists.firstWhere((p) => p.id == targetPlaylist!.id);
+            } catch (_) {
+              LogService().log("DownloadService: Warning: targetPlaylist not found in provider.playlists");
+              targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
+            }
           }
           
           final exists = targetPlaylist!.songs.any((s) => s.id == downloadedSong.id);
@@ -500,11 +500,6 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     } catch (_) {
       targetPlaylist = null;
     }
-    
-    if (targetPlaylist == null) {
-      // Create empty playlist initially
-      targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
-    }
 
     // Create a temporary playlist to drive the download service without persisting it
     final tempPlaylist = Playlist(
@@ -522,10 +517,15 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         onSongDownloaded: (downloadedSong) async {
           LogService().log("DownloadService: onSongDownloaded Triggered for single song: ${downloadedSong.title}");
           
-          try {
-            targetPlaylist = provider.playlists.firstWhere((p) => p.id == targetPlaylist!.id);
-          } catch (_) {
-            LogService().log("DownloadService: Warning: targetPlaylist not found in provider.playlists");
+          if (targetPlaylist == null) {
+            targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
+          } else {
+            try {
+              targetPlaylist = provider.playlists.firstWhere((p) => p.id == targetPlaylist!.id);
+            } catch (_) {
+              LogService().log("DownloadService: Warning: targetPlaylist not found in provider.playlists");
+              targetPlaylist = await provider.createPlaylist(playlistName, songs: []);
+            }
           }
           
           final exists = targetPlaylist!.songs.any((s) => s.id == downloadedSong.id);
@@ -984,7 +984,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     final item = _items[index];
 
     if (item is _AdItem) {
-      return const NativeAdWidget();
+      return NativeAdWidget();
     }
 
     final track = item as SavedSong;
@@ -1181,6 +1181,15 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             "hash_${_normalize(t['title'] ?? '')}_${_normalize(t['artist'] ?? '')}";
       }
 
+      // Parse duration if present (may come as int ms from some providers)
+      Duration? trendingDuration;
+      final rawDur = t['duration'];
+      if (rawDur is int && rawDur > 0) {
+        trendingDuration = Duration(milliseconds: rawDur);
+      } else if (rawDur is double && rawDur > 0) {
+        trendingDuration = Duration(milliseconds: rawDur.toInt());
+      }
+
       final lang = Provider.of<LanguageProvider>(context, listen: false);
       return SavedSong(
         id: songId,
@@ -1195,6 +1204,10 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         rawStreamUrl: t['provider'] == 'Audius'
             ? "https://api.audius.co/v1/tracks/${t['id']}/stream?app_name=RadioStreamApp"
             : null,
+        genre: t['genre'] as String?,
+        duration: trendingDuration,
+        releaseDate: t['releaseDate'] as String?,
+        appleMusicUrl: t['appleMusicUrl'] as String?,
         dateAdded: DateTime.now(),
       );
     } else {
@@ -1205,13 +1218,20 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           lang.translate('unknown_artist');
       final trackName = t['trackName'] ?? lang.translate('unknown_track');
 
+      // iTunes already provides trackTimeMillis and primaryGenreName — use them directly
+      Duration? itunesDuration;
+      final millis = t['trackTimeMillis'];
+      if (millis is int && millis > 0) {
+        itunesDuration = Duration(milliseconds: millis);
+      }
+
       return SavedSong(
         id:
             t['trackId']?.toString() ??
             "${DateTime.now().millisecondsSinceEpoch}_${t['trackNumber'] ?? 0}",
         title: trackName,
         artist: trackArtist,
-        album: widget.albumName ?? lang.translate('unknown_album'),
+        album: t['collectionName'] ?? widget.albumName ?? lang.translate('unknown_album'),
         artUri:
             t['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
             widget.artworkUrl ??
@@ -1219,6 +1239,8 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         appleMusicUrl: t['trackViewUrl'],
         dateAdded: DateTime.now(),
         releaseDate: t['releaseDate'],
+        duration: itunesDuration,
+        genre: t['primaryGenreName'] as String?,
       );
     }
   }

@@ -771,7 +771,30 @@ class TrendingService {
 
       // 3. YouTube Handling
       if (playlist.provider == 'YouTube') {
-        final videos = await _yt.playlists.getVideos(playlist.id).toList();
+        List<Video> videos = await _yt.playlists.getVideos(playlist.id).toList();
+        
+        // Fallback for broken playlist parser in youtube_explode_dart
+        if (videos.isEmpty) {
+           try {
+             final response = await http.get(Uri.parse('https://www.youtube.com/playlist?list=${playlist.id}'));
+             if (response.statusCode == 200) {
+                final videoIdRegex = RegExp(r'"videoId":"([^"]{11})"');
+                final matches = videoIdRegex.allMatches(response.body);
+                final Set<String> videoIds = {};
+                for (var match in matches) {
+                  videoIds.add(match.group(1)!);
+                }
+                if (videoIds.isNotEmpty) {
+                  // Fetch the first 25 unique videos in parallel to load the playlist fast
+                  final futures = videoIds.take(25).map((id) => _yt.videos.get(id));
+                  videos = await Future.wait(futures);
+                }
+             }
+           } catch(e) {
+             LogService().log('Fallback YouTube playlist error: $e');
+           }
+        }
+        
         return videos
             .map(
               (v) => {

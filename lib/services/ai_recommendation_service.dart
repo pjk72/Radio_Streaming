@@ -415,6 +415,8 @@ class AIRecommendationService {
       'provider': 'AI',
       'fromHistory': fromHistory,
       if (s.youtubeUrl != null) 'youtubeUrl': s.youtubeUrl,
+      if (s.genre != null) 'genre': s.genre,
+      if (s.duration != null) 'duration': s.duration!.inMilliseconds,
     };
   }
 

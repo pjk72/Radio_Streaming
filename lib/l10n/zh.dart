@@ -631,4 +631,9 @@ final Map<String, String> zh = {
   'shazam_info_desc': '此功能将尝试通过收听音频来识别当前播放的歌曲。请确保音量足够。',
   'dont_show_again': '不再显示此消息',
   'bonus': '布乌斯',
+  'no_new_metadata': '未找到新的元数据。',
+  'metadata_updated': '元数据更新成功！',
+  'reload': '重新加载',
+  'sync_interrupted_title': '同步中断',
+  'sync_interrupted_desc': '您已达到允许的最大同步数。请稍后重试。',
 };

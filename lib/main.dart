@@ -41,6 +41,7 @@ import 'utils/glass_utils.dart';
 import 'utils/http_overrides.dart';
 
 late AudioHandler audioHandler;
+final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> main() async {
@@ -178,7 +179,6 @@ class RadioApp extends StatefulWidget {
 }
 
 class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _isInitialized = false;
   String? _error;
 
@@ -190,6 +190,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   }
 
   Future<void> _initApp() async {
+    final entitlements = Provider.of<EntitlementService>(context, listen: false);
+    final backupService = Provider.of<BackupService>(context, listen: false);
+
     // 1. Start the minimum splash timer immediately (2.5s)
     final splashTimer = Future.delayed(const Duration(milliseconds: 2500));
 
@@ -203,7 +206,6 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         } catch (_) {}
       }
 
-      final entitlements = Provider.of<EntitlementService>(context, listen: false);
       AppOpenAdManager().init(entitlements);
 
       // Preload Interstitial Ads after library is initialized with entitlements
@@ -212,7 +214,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       // 3. SECONDARY INITIALIZATIONS (Wait for these but with a safety timeout)
       // This ensures the splash stays until they are done, but doesn't hang forever
       await Future.wait([
-        _initNotifications().timeout(const Duration(seconds: 10)),
+        _initNotifications(backupService).timeout(const Duration(seconds: 10)),
         splashTimer, // Ensure we stay at least 2.5s regardless
       ]).catchError((e) {
         debugPrint("Secondary initialization timed out or failed: $e");
@@ -236,12 +238,10 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _initNotifications() async {
+  Future<void> _initNotifications(BackupService backupService) async {
     final notificationService = NotificationService();
     await notificationService.init();
-    final userSyncService = UserSyncService(
-      Provider.of<BackupService>(context, listen: false),
-    );
+    final userSyncService = UserSyncService(backupService);
     await userSyncService.syncUserInfo();
     await notificationService.triggerInAppEvent('app_opened');
   }
@@ -269,7 +269,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   }
 
   void _showUpdateDialog() {
-    final navContext = _navigatorKey.currentContext;
+    final navContext = globalNavigatorKey.currentContext;
     if (navContext == null) return;
 
     final languageProvider = Provider.of<LanguageProvider>(
@@ -330,7 +330,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
             : Brightness.dark,
       ),
       child: MaterialApp(
-        navigatorKey: _navigatorKey,
+        navigatorKey: globalNavigatorKey,
         title: 'MusicStream',
         debugShowCheckedModeBanner: false,
         theme: themeProvider.themeData,

@@ -22,7 +22,6 @@ import '../models/saved_song.dart';
 import '../providers/language_provider.dart';
 
 import '../services/backup_service.dart';
-import '../services/music_metadata_service.dart';
 import 'trending_details_screen.dart';
 import 'artist_details_screen.dart';
 import '../widgets/youtube_popup.dart';
@@ -33,6 +32,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'playlist_screen_duplicates_logic.dart';
 import '../widgets/native_ad_widget.dart';
+import '../widgets/player_bar.dart';
 import 'add_song_screen.dart';
 import '../services/entitlement_service.dart';
 import '../utils/glass_utils.dart';
@@ -1115,7 +1115,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   void _showSongDetailsDialog(BuildContext context, SavedSong initialSong, {RadioProvider? provider, String? playlistId}) {
     SavedSong song = initialSong;
     bool isFetching = false;
-    bool needsFetch = song.duration == null || song.duration!.inSeconds == 0 || song.genre == null || song.genre!.isEmpty || song.releaseDate == null || song.releaseDate!.isEmpty || song.youtubeUrl == null || song.youtubeUrl!.isEmpty || song.extras == null;
+    bool isSaving = false;
+    bool needsFetch = false; // Fetch only triggered manually via the Reload button
+
+    final titleController = TextEditingController(text: initialSong.title);
+    final artistController = TextEditingController(text: initialSong.artist);
 
     final lang = Provider.of<LanguageProvider>(context, listen: false);
     GlassUtils.showGlassDialog(
@@ -1124,54 +1128,53 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         builder: (ctx, setState) {
           if (needsFetch && !isFetching) {
             isFetching = true;
-            Future.microtask(() async {
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
               try {
-                SavedSong newSong = song;
-                bool wasEnriched = false;
-
-                // 1. Fetch iTunes metadata if missing
-                if (newSong.duration == null || newSong.duration!.inSeconds == 0 || newSong.genre == null || newSong.genre!.isEmpty || newSong.releaseDate == null || newSong.releaseDate!.isEmpty || newSong.extras == null) {
-                  final results = await MusicMetadataService().searchSongs(query: "${newSong.title} ${newSong.artist}", limit: 1);
-                  if (results.isNotEmpty) {
-                    final fetched = results.first.song;
-                    newSong = newSong.copyWith(
-                      duration: (newSong.duration == null || newSong.duration!.inSeconds == 0) ? fetched.duration : newSong.duration,
-                      genre: (newSong.genre == null || newSong.genre!.isEmpty) ? results.first.genre : newSong.genre,
-                      releaseDate: (newSong.releaseDate == null || newSong.releaseDate!.isEmpty) ? fetched.releaseDate : newSong.releaseDate,
-                      extras: (newSong.extras == null || newSong.extras!.isEmpty) ? fetched.extras : newSong.extras,
-                      artUri: (newSong.artUri == null || newSong.artUri!.isEmpty) ? fetched.artUri : newSong.artUri,
-                      appleMusicUrl: (newSong.appleMusicUrl == null || newSong.appleMusicUrl!.isEmpty) ? fetched.appleMusicUrl : newSong.appleMusicUrl,
-                    );
-                    wasEnriched = true;
-                  }
-                }
-
-                // 2. Fetch YouTube URL if missing
-                if (newSong.youtubeUrl == null || newSong.youtubeUrl!.isEmpty) {
+                if (provider != null) {
+                  await provider.findMissingArtworks(
+                    playlistId: playlistId,
+                    songIdToSync: song.id,
+                    explicitSong: song,
+                  );
+                  
+                  // Re-fetch the updated song from provider memory
+                  SavedSong? updatedSong;
                   try {
-                    var yt = ye.YoutubeExplode();
-                    var searchResults = await yt.search.search("${newSong.title} ${newSong.artist} audio");
-                    if (searchResults.isNotEmpty) {
-                      newSong = newSong.copyWith(youtubeUrl: searchResults.first.url);
-                      wasEnriched = true;
+                    if (playlistId != null) {
+                      final p = provider.playlists.firstWhere((p) => p.id == playlistId);
+                      updatedSong = p.songs.firstWhere((s) => s.id == song.id);
+                    } else {
+                      updatedSong = provider.allUniqueSongs.firstWhere((s) => s.id == song.id);
                     }
-                    yt.close();
-                  } catch (e) {
-                    print("Error fetching YouTube URL in details dialog: $e");
+                  } catch (_) {}
+                  
+                  if (updatedSong != null && ctx.mounted) {
+                    bool changed = updatedSong.duration != song.duration || updatedSong.genre != song.genre || updatedSong.artUri != song.artUri || updatedSong.album != song.album;
+                    // Update controllers with fresh data from provider
+                    titleController.text = updatedSong.title;
+                    artistController.text = updatedSong.artist;
+                    setState(() {
+                      song = updatedSong!;
+                      needsFetch = false;
+                    });
+                    if (!changed) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(lang.translate('no_new_metadata')),
+                          backgroundColor: Colors.orangeAccent,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(lang.translate('metadata_updated')),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   }
-                }
-
-                // 3. Update the UI with the enriched data
-                if (ctx.mounted) {
-                  setState(() {
-                    song = newSong;
-                    needsFetch = false;
-                  });
-                }
-
-                // 4. Persist enriched data to storage so it's found next time
-                if (wasEnriched && provider != null && playlistId != null && playlistId.isNotEmpty) {
-                  await provider.updateSongInPlaylist(playlistId, newSong);
                 }
               } catch (e) {
                 print("Error enriching song in details dialog: $e");
@@ -1207,104 +1210,168 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header Image
-              if (song.artUri != null && song.artUri!.isNotEmpty)
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  child: SizedBox(
-                    height: 180,
-                    width: double.infinity,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        CachedNetworkImage(
-                          imageUrl: song.artUri!,
-                          fit: BoxFit.cover,
-                          errorWidget: (context, url, error) => Container(color: const Color(0xFF2A2A2A)),
+              // Header Area with Loading Indicator
+              Stack(
+                children: [
+                  if (song.artUri != null && song.artUri!.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                      child: SizedBox(
+                        height: 180,
+                        width: double.infinity,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            CachedNetworkImage(
+                              imageUrl: song.artUri!,
+                              fit: BoxFit.cover,
+                              errorWidget: (context, url, error) => Container(color: const Color(0xFF2A2A2A)),
+                            ),
+                            Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    const Color(0xFF1E1E1E).withOpacity(0.8),
+                                    const Color(0xFF1E1E1E),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 16,
+                              left: 16,
+                              right: 16,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  TextField(
+                                    controller: titleController,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 2,
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                      hintText: lang.translate('title'),
+                                      hintStyle: const TextStyle(color: Colors.white38),
+                                      filled: true,
+                                      fillColor: Colors.black26,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(color: Colors.white38, width: 1),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextField(
+                                    controller: artistController,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 16,
+                                    ),
+                                    maxLines: 1,
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                      hintText: lang.translate('artist'),
+                                      hintStyle: const TextStyle(color: Colors.white38),
+                                      filled: true,
+                                      fillColor: Colors.black26,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(color: Colors.white38, width: 1),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                const Color(0xFF1E1E1E).withOpacity(0.8),
-                                const Color(0xFF1E1E1E),
-                              ],
+                      ),
+                    )
+                  else
+                    Container(
+                      height: 100,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF2A2A2A),
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      alignment: Alignment.bottomLeft,
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: titleController,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                              hintText: lang.translate('title'),
+                              hintStyle: const TextStyle(color: Colors.white38),
+                              filled: true,
+                              fillColor: Colors.black26,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: Colors.white38, width: 1),
+                              ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          bottom: 16,
-                          left: 16,
-                          right: 16,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                song.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: artistController,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                              hintText: lang.translate('artist'),
+                              hintStyle: const TextStyle(color: Colors.white38),
+                              filled: true,
+                              fillColor: Colors.black26,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide.none,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                song.artist,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 16,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: Colors.white38, width: 1),
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                )
-              else
-                Container(
-                  height: 100,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  ),
-                  alignment: Alignment.bottomLeft,
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        song.artist,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
+                ],
+              ),
 
               // Content
               Expanded(
@@ -1397,23 +1464,115 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 ),
               ),
 
-              // Close Button
+              // Action Buttons: Save / Reload / Close
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  children: [
+                    // Save & Reload row
+                    Row(
+                      children: [
+                        // Save button
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: (isSaving || provider == null || playlistId == null)
+                                ? null
+                                : () async {
+                                    final newTitle = titleController.text.trim();
+                                    final newArtist = artistController.text.trim();
+                                    if (newTitle.isEmpty) return;
+                                    setState(() => isSaving = true);
+                                    try {
+                                      final updated = song.copyWith(
+                                        title: newTitle,
+                                        artist: newArtist,
+                                      );
+                                      await provider.updateSongInPlaylist(playlistId, updated);
+                                      song = updated;
+                                      if (ctx.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(lang.translate('metadata_updated')),
+                                            backgroundColor: Colors.green,
+                                            duration: const Duration(seconds: 2),
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (ctx.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error: $e'),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                      }
+                                    } finally {
+                                      if (ctx.mounted) setState(() => isSaving = false);
+                                    }
+                                  },
+                            icon: isSaving
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Icon(Icons.save_rounded, size: 18),
+                            label: Text(
+                              lang.translate('save'),
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // Reload button
+                        ElevatedButton.icon(
+                          onPressed: isFetching
+                              ? null
+                              : () {
+                                  setState(() {
+                                    needsFetch = true;
+                                    isFetching = false;
+                                  });
+                                },
+                          icon: isFetching
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.sync_rounded, size: 18),
+                          label: Text(
+                            lang.translate('reload'),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueGrey.shade700,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                          ),
+                        ),
+                      ],
                     ),
-                    child: Text(
-                      lang.translate('close'),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    const SizedBox(height: 8),
+                    // Close button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: Text(
+                          lang.translate('close'),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ],
@@ -1644,6 +1803,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            if (_selectedPlaylistId != null && provider.enrichingPlaylists.contains(_selectedPlaylistId))
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: _SpinningSyncIcon(
+                                  size: 14,
+                                  color: headerContrastColor.withValues(alpha: 0.7),
+                                ),
+                              ),
                             Flexible(
                               child: Text(
                                 headerTitle,
@@ -1689,19 +1856,24 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     Row(
                       children: [
                         if (isSelectionActive)
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                            color: headerContrastColor,
-                            onPressed: () {
-                              FocusManager.instance.primaryFocus?.unfocus();
-                              setState(() {
-                                _selectedPlaylistId = null;
-                                _selectedArtist = null;
-                                _selectedAlbum = null;
-                                _searchController.clear();
-                                _lastScrolledSongId = null;
-                              });
-                            },
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                                color: headerContrastColor,
+                                onPressed: () {
+                                  FocusManager.instance.primaryFocus?.unfocus();
+                                  setState(() {
+                                    _selectedPlaylistId = null;
+                                    _selectedArtist = null;
+                                    _selectedAlbum = null;
+                                    _searchController.clear();
+                                    _lastScrolledSongId = null;
+                                  });
+                                },
+                              ),
+                            ],
                           )
                         else
                           Padding(
@@ -4326,7 +4498,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           final item = listItems[index];
 
           if (item is _AdItem) {
-            return const NativeAdWidget();
+            return NativeAdWidget();
           }
 
           final group = item as List<dynamic>;
@@ -4353,7 +4525,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         final item = listItems[index];
 
         if (item is _AdItem) {
-          return const NativeAdWidget();
+          return NativeAdWidget();
         }
 
         final group = item as List<dynamic>;
@@ -4668,8 +4840,20 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         song.artist == lang.translate('syncing_yt') ||
         song.artist == "SINC_METADATA";
 
-    return Container(
-      margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 8),
+    // A song is considered incomplete if any of these 6 metadata fields is missing
+    final bool hasIncompleteMetadata =
+        (song.artUri == null || song.artUri!.isEmpty) ||
+        song.title.trim().isEmpty ||
+        song.artist.trim().isEmpty ||
+        song.album.trim().isEmpty ||
+        (song.genre == null || song.genre!.trim().isEmpty) ||
+        song.duration == null;
+
+    return Stack(
+      clipBehavior: Clip.hardEdge,
+      children: [
+        Container(
+      margin: isGrouped ? EdgeInsets.zero : const EdgeInsets.only(bottom: 6),
       child: Material(
         color: isInvalid
             ? Theme.of(
@@ -4712,6 +4896,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ListTile(
+                      dense: true,
                       onTap: isSyncing
                           ? null
                           : isInvalid
@@ -4730,8 +4915,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
                       // onLongPress removed, handled by GestureDetector's 3s timer via onTapDown
                       visualDensity: const VisualDensity(
-                        horizontal: 0,
-                        vertical: -4,
+                        horizontal: -4,
+                        vertical: 0,
                       ),
                       minVerticalPadding: 0, // Reduce vertical padding
 
@@ -4739,8 +4924,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           ? const EdgeInsets.all(0)
                           : const EdgeInsets.only(
                               top: 0,
-                              left: 8,
-                              right: 4,
+                              left: 0,
+                              right: 0,
                               bottom: 0,
                             ),
 
@@ -4760,7 +4945,25 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             )
                           : MouseRegion(
                               cursor: SystemMouseCursors.click,
-                              child: GestureDetector(
+                              child: _DoubleTapSpinnerWrapper(
+                                onDoubleTap: () async {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        Provider.of<LanguageProvider>(
+                                          context,
+                                          listen: false,
+                                        ).translate('fetching_metadata'),
+                                      ),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                  await provider.findMissingArtworks(
+                                    playlistId: playlist.id,
+                                    songIdToSync: song.id,
+                                    explicitSong: song,
+                                  );
+                                },
                                 onTap: () {
                                   var albumName = song.album.trim();
                                   // Clean song title: remove content in parentheses/brackets for better search
@@ -4783,24 +4986,28 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                             albumName: albumName,
                                             artistName: cleanArtist,
                                             songName: songTitle,
+                                            artworkUrl: song.artUri,
+                                            originalSong: song,
                                           ),
                                     ),
                                   );
                                 },
                                 child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(4),
                                   child: Stack(
                                     children: [
                                       song.artUri != null
-                                          ? CachedNetworkImage(
-                                              imageUrl: song.artUri!,
-                                              width: 48,
-                                              height: 48,
-                                              fit: BoxFit.cover,
+                                          ? Container(
+                                              width: 55,
+                                              height: 60,
+                                              color: Colors.black,
+                                              child: CachedNetworkImage(
+                                                imageUrl: song.artUri!,
+                                                fit: BoxFit.fitHeight,
                                               errorWidget: (_, _, _) =>
                                                   Container(
-                                                    width: 48,
-                                                    height: 48,
+                                                    width: 55,
+                                                    height: 60,
                                                     color: Colors.grey[900],
                                                     child: Icon(
                                                       Icons.music_note,
@@ -4810,11 +5017,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                                           ),
                                                     ),
                                                   ),
+                                              ),
                                             )
                                           : song.artist == "SINC_METADATA"
                                           ? Container(
-                                              width: 48,
-                                              height: 48,
+                                              width: 80,
+                                              height: 80,
                                               color: Colors.grey[900],
                                               child: const Center(
                                                 child: SizedBox(
@@ -4830,8 +5038,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                               ),
                                             )
                                           : Container(
-                                              width: 48,
-                                              height: 48,
+                                              width: 55,
+                                              height: 80,
                                               color: Colors.grey[900],
                                               child: Icon(
                                                 Icons.music_note,
@@ -4870,204 +5078,289 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 ),
                               ),
                             ),
-                      title: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (song.artist == "SINC_METADATA")
-                                  Row(
-                                    children: [
-                                      const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.blueAccent,
+                          title: Stack(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(right: 10),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (song.artist == "SINC_METADATA")
+                                      Row(
+                                        children: [
+                                          const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.blueAccent,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Text(
+                                            lang.translate('fetching_metadata'),
+                                            style: TextStyle(
+                                              color: contrastColor.withValues(alpha: 0.6),
+                                              fontSize: 14,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    else
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: Text(
+                                          song.title,
+                                          style: TextStyle(
+                                            color:
+                                                (provider.audioOnlySongId == song.id ||
+                                                        (provider.currentTrack.isNotEmpty &&
+                                                            song.title.trim().toLowerCase() ==
+                                                                provider.currentTrack
+                                                                    .trim()
+                                                                    .toLowerCase() &&
+                                                            song.artist.trim().toLowerCase() ==
+                                                                provider.currentArtist
+                                                                    .trim()
+                                                                    .toLowerCase()))
+                                                    ? Theme.of(context).primaryColor
+                                                    : (isInvalid
+                                                        ? contrastColor.withValues(alpha: 0.5)
+                                                        : contrastColor),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+
+                                    if (!isGrouped)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 2.0,
+                                          right: 70,
+                                        ),
+                                        child: Text(
+                                          song.artist == "SINC_METADATA"
+                                              ? lang.translate('syncing_yt')
+                                              : song.artist,
+                                          style: TextStyle(
+                                            color: contrastColor.withValues(alpha: 0.5),
+                                            fontWeight: FontWeight.normal,
+                                            fontSize: 13,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ) 
+                                    else 
+                                      SizedBox(height: 18),
+                                    if (song.genre != null ||
+                                        song.duration != null ||
+                                        song.album.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 0.0),
+                                        child: SizedBox(
+                                          width: double.infinity,
+                                          child: Row(
+                                            children: [
+                                              if (song.duration != null)
+                                                Text(
+                                                  "${song.duration!.inHours > 0 ? '${song.duration!.inHours}:' : ''}${song.duration!.inMinutes.remainder(60).toString().padLeft(song.duration!.inHours > 0 ? 2 : 1, '0')}:${song.duration!.inSeconds.remainder(60).toString().padLeft(2, '0')}",
+                                                  style: TextStyle(
+                                                    color:
+                                                        contrastColor.withValues(alpha: 0.6),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+
+                                              if (song.duration != null &&
+                                                  song.album.isNotEmpty &&
+                                                  !isGrouped)
+                                                Text(
+                                                  " • ",
+                                                  style: TextStyle(
+                                                    color:
+                                                        contrastColor.withValues(alpha: 0.5),
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+
+                                              if (!isGrouped && song.album.isNotEmpty)
+                                                Expanded(
+                                                  flex: 4,
+                                                  child: SizedBox(
+                                                    height: 16,
+                                                    child: PlayerBar.buildMarqueeText(
+                                                      song.album,
+                                                      TextStyle(
+                                                        color:
+                                                            contrastColor.withValues(alpha: 0.6),
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+
+                                              if (song.genre != null &&
+                                                  song.genre!.isNotEmpty)
+                                                Text(
+                                                  " • ",
+                                                  style: TextStyle(
+                                                    color:
+                                                        contrastColor.withValues(alpha: 0.5),
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+
+                                              if (song.genre != null &&
+                                                  song.genre!.isNotEmpty)
+                                                Text(
+                                                  song.genre ?? '',
+                                                  textAlign: TextAlign.end,
+                                                  style: TextStyle(
+                                                    color:
+                                                        contrastColor.withValues(alpha: 0.6),
+                                                    fontSize: 12,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+
+                              Positioned(
+                                top: 0,
+                                bottom: 0,
+                                right: 0,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (playlist.id != 'favorites' &&
+                                        !isInvalid &&
+                                        !isSyncing) ...[
+                                      GestureDetector(
+                                        onTap: () async {
+                                          if (isFavorite) {
+                                            final favSongId = favPlaylist.songs
+                                                .firstWhere(
+                                                  (s) =>
+                                                      s.id == song.id ||
+                                                      (s.title == song.title &&
+                                                          s.artist == song.artist),
+                                                  orElse: () => song,
+                                                )
+                                                .id;
+
+                                            await provider.removeFromPlaylist(
+                                              'favorites',
+                                              favSongId,
+                                            );
+
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .clearSnackBars();
+
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    Provider.of<LanguageProvider>(
+                                                      context,
+                                                      listen: false,
+                                                    ).translate(
+                                                      'removed_from_favorites',
+                                                    ),
+                                                  ),
+                                                  duration:
+                                                      const Duration(seconds: 1),
+                                                ),
+                                              );
+                                            }
+                                          } else {
+                                            if (playlist.creator == 'local') {
+                                              isFavorite = true;
+
+                                              await provider.addSongToPlaylist(
+                                                'favorites',
+                                                song,
+                                              );
+                                            } else {
+                                              await provider.copySong(
+                                                song.id,
+                                                playlist.id,
+                                                'favorites',
+                                              );
+                                            }
+
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .clearSnackBars();
+
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    Provider.of<LanguageProvider>(
+                                                      context,
+                                                      listen: false,
+                                                    ).translate(
+                                                      'added_to_favorites',
+                                                    ),
+                                                  ),
+                                                  duration:
+                                                      const Duration(seconds: 1),
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        },
+                                        child: Icon(
+                                          isFavorite
+                                              ? Icons.favorite
+                                              : Icons.favorite_border,
+                                          color: isFavorite
+                                              ? Colors.pinkAccent
+                                              : contrastColor.withValues(alpha: 0.5),
+                                          size: 18,
                                         ),
                                       ),
                                       const SizedBox(width: 10),
-                                      Text(
-                                        lang.translate('fetching_metadata'),
-                                        style: TextStyle(
-                                          color: contrastColor.withValues(
-                                            alpha: 0.6,
-                                          ),
-                                          fontSize: 14,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      ),
                                     ],
-                                  )
-                                else
-                                  Text(
-                                    song.title,
-                                    style: TextStyle(
-                                      color:
-                                          (provider.audioOnlySongId ==
-                                                  song.id ||
-                                              (provider
-                                                      .currentTrack
-                                                      .isNotEmpty &&
-                                                  song.title
-                                                          .trim()
-                                                          .toLowerCase() ==
-                                                      provider.currentTrack
-                                                          .trim()
-                                                          .toLowerCase() &&
-                                                  song.artist
-                                                          .trim()
-                                                          .toLowerCase() ==
-                                                      provider.currentArtist
-                                                          .trim()
-                                                          .toLowerCase()))
-                                          ? Theme.of(context).primaryColor
-                                          : (isInvalid
-                                                ? contrastColor.withValues(
-                                                    alpha: 0.5,
-                                                  )
-                                                : contrastColor),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
+
+                                    _InvalidSongIndicator(
+                                      songId: song.id,
+                                      isStaticInvalid: !song.isValid,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                if (!isGrouped)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2.0),
-                                    child: Text(
-                                      song.artist == "SINC_METADATA"
-                                          ? lang.translate('syncing_yt')
-                                          : song.artist,
-                                      style: TextStyle(
-                                        color: contrastColor.withValues(
-                                          alpha: 0.5,
+
+                                    if (!isInvalid && !isSyncing)
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.more_vert_rounded,
+                                          color: contrastColor,
                                         ),
-                                        fontWeight: FontWeight.normal,
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (playlist.id != 'favorites' &&
-                                  !isInvalid &&
-                                  !isSyncing) ...[
-                                GestureDetector(
-                                  onTap: () async {
-                                    if (isFavorite) {
-                                      final favSongId = favPlaylist.songs
-                                          .firstWhere(
-                                            (s) =>
-                                                s.id == song.id ||
-                                                (s.title == song.title &&
-                                                    s.artist == song.artist),
-                                            orElse: () => song,
-                                          )
-                                          .id;
-                                      await provider.removeFromPlaylist(
-                                        'favorites',
-                                        favSongId,
-                                      );
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(
+                                        onPressed: () => _showSongMenu(
                                           context,
-                                        ).clearSnackBars();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              Provider.of<LanguageProvider>(
-                                                context,
-                                                listen: false,
-                                              ).translate(
-                                                'removed_from_favorites',
-                                              ),
-                                            ),
-                                            duration: Duration(seconds: 1),
-                                          ),
-                                        );
-                                      }
-                                    } else {
-                                      if (playlist.creator == 'local') {
-                                        isFavorite = true; // Optimistic update
-                                        await provider.addSongToPlaylist(
-                                          'favorites',
+                                          provider,
+                                          playlist,
                                           song,
-                                        );
-                                      } else {
-                                        await provider.copySong(
-                                          song.id,
-                                          playlist.id,
-                                          'favorites',
-                                        );
-                                      }
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).clearSnackBars();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              Provider.of<LanguageProvider>(
-                                                context,
-                                                listen: false,
-                                              ).translate('added_to_favorites'),
-                                            ),
-                                            duration: Duration(seconds: 1),
-                                          ),
-                                        );
-                                      }
-                                    }
-                                  },
-                                  child: Icon(
-                                    isFavorite
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                    color: isFavorite
-                                        ? Colors.pinkAccent
-                                        : contrastColor.withValues(alpha: 0.5),
-                                    size: 18,
-                                  ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                                const SizedBox(width: 10),
-                              ],
-
-                              _InvalidSongIndicator(
-                                songId: song.id,
-                                isStaticInvalid: !song.isValid,
                               ),
-                              if (!isInvalid && !isSyncing) ...[
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.more_vert_rounded,
-                                    color: contrastColor,
-                                  ),
-                                  onPressed: () => _showSongMenu(
-                                    context,
-                                    provider,
-                                    playlist,
-                                    song,
-                                  ),
-                                ),
-                              ],
-                            ], // close else...[ and children
-                          ),
-                        ],
-                      ),
+                            ],
+                          ),                            
                     ),
                     if (song.localPath != null &&
                         !(song.localPath!.contains('_secure.') ||
@@ -5075,7 +5368,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             song.localPath!.contains('offline_music')))
                       Padding(
                         padding: const EdgeInsets.only(
-                          left: 8,
+                          left: 2,
                           bottom: 2,
                           top: 0,
                           right: 2,
@@ -5098,6 +5391,20 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           ),
         ),
       ),
+    ),
+        // \u2500\u2500 Missing-metadata corner triangle (card level) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        if (!isGrouped && hasIncompleteMetadata)
+          Positioned(
+            top: 0,
+            right: 0,
+            child: CustomPaint(
+              size: const Size(16, 16),
+              painter: _MissingMetadataCornerPainter(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.90),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -5121,6 +5428,24 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     // Otherwise, use the provider's optimized playlist song player
     // This handles background resolution, optimistic UI, and auto-skip on error.
     provider.playPlaylistSong(song, playlistId);
+
+    // If the song has incomplete metadata (same condition that shows the
+    // corner triangle badge), silently fetch the missing data in the background.
+    final bool hasIncompleteMetadata =
+        (song.artUri == null || song.artUri!.isEmpty) ||
+        song.title.trim().isEmpty ||
+        song.artist.trim().isEmpty ||
+        song.album.trim().isEmpty ||
+        (song.genre == null || song.genre!.trim().isEmpty) ||
+        song.duration == null;
+
+    if (hasIncompleteMetadata) {
+      provider.findMissingArtworks(
+        playlistId: playlistId,
+        songIdToSync: song.id,
+        explicitSong: song,
+      );
+    }
   }
 
   void _showDeletePlaylistDialog(
@@ -5637,31 +5962,32 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 4,
+                      vertical: 0,
                     ),
                     leading: ClipRRect(
                       borderRadius: BorderRadius.zero,
                       child: song.artUri != null
-                          ? CachedNetworkImage(
-                              imageUrl: song.artUri!,
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Container(
-                                width: 48,
-                                height: 48,
-                                color: Theme.of(context).cardColor,
-                                child: Icon(
-                                  Icons.music_note,
-                                  color: Theme.of(
-                                    context,
-                                  ).iconTheme.color?.withValues(alpha: 0.5),
+                          ? Container(
+                              width: 72,
+                              height: 72,
+                              color: Colors.black,
+                              child: CachedNetworkImage(
+                                imageUrl: song.artUri!,
+                                fit: BoxFit.contain,
+                                errorWidget: (_, __, ___) => Container(
+                                  width: 72,
+                                  height: 72,
+                                  color: Theme.of(context).cardColor,
+                                  child: Icon(
+                                    Icons.music_note,
+                                    color: Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
+                                  ),
                                 ),
                               ),
                             )
                           : Container(
-                              width: 48,
-                              height: 48,
+                              width: 72,
+                              height: 72,
                               color: Colors.grey[900],
                               child: const Icon(
                                 Icons.music_note,
@@ -6231,16 +6557,18 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     // Background Image
                     Positioned.fill(
                       child: displaySong.artUri != null
-                          ? CachedNetworkImage(
-                              imageUrl: displaySong.artUri!,
-                              fit: BoxFit.cover,
+                          ? Container(
+                              color: Colors.black,
+                              child: CachedNetworkImage(
+                                  imageUrl: displaySong.artUri!,
+                                  fit: BoxFit.contain,
                               errorWidget: (_, __, ___) => Container(
                                 color: Colors.white10,
                                 child: const Icon(
                                   Icons.album,
                                   color: Colors.white24,
-                                  size: 40,
                                 ),
+                              ),
                               ),
                             )
                           : Container(
@@ -7200,7 +7528,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
               },
               borderRadius: BorderRadius.zero,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+                padding: const EdgeInsets.fromLTRB(2, 2, 6, 2),
                 child: Row(
                   children: [
                     GestureDetector(
@@ -7220,25 +7548,28 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                       child: Stack(
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(4),
                             child: artUri != null
-                                ? CachedNetworkImage(
-                                    imageUrl: artUri,
-                                    width: 60,
-                                    height: 60,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => Container(
-                                      width: 60,
-                                      height: 60,
-                                      color: contrastColor.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                      child: Icon(
-                                        Icons.album,
-                                        color: contrastColor.withValues(
-                                          alpha: 0.5,
+                                ? Container(
+                                    width: 55,
+                                    height: 55,
+                                    color: Colors.black,
+                                    child: CachedNetworkImage(
+                                        imageUrl: artUri,
+                                        fit: BoxFit.fitHeight,
+                                        errorWidget: (_, __, ___) => Container(
+                                          width: 55,
+                                          height: 55,
+                                          color: contrastColor.withValues(
+                                            alpha: 0.1,
+                                          ),
+                                          child: Icon(
+                                            Icons.album,
+                                            color: contrastColor.withValues(
+                                              alpha: 0.5,
+                                            ),
+                                          ),
                                         ),
-                                      ),
                                     ),
                                   )
                                 : Container(
@@ -7407,7 +7738,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
               itemBuilder: (ctx, i) {
                 final item = widget.groupItems[i];
                 if (item is _AdItem) {
-                  return const NativeAdWidget();
+                  return NativeAdWidget();
                 }
                 final song = item as SavedSong;
                 // Calculate index based on its position in the pure song list
@@ -7739,6 +8070,33 @@ class _InvalidSongIndicator extends StatelessWidget {
       },
     );
   }
+}
+
+
+/// Paints a small right-angle triangle in the top-right corner of its canvas.
+/// Used to signal missing metadata on a song card thumbnail.
+class _MissingMetadataCornerPainter extends CustomPainter {
+  final Color color;
+
+  const _MissingMetadataCornerPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final path = Path()
+      ..moveTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, 0)
+      ..close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_MissingMetadataCornerPainter old) => old.color != color;
 }
 
 class _DuplicateResolutionDialog extends StatefulWidget {
@@ -8075,6 +8433,70 @@ class _SpinningSyncIconState extends State<_SpinningSyncIcon>
     return RotationTransition(
       turns: _controller,
       child: Icon(Icons.sync_rounded, color: widget.color, size: widget.size),
+    );
+  }
+}
+
+class _DoubleTapSpinnerWrapper extends StatefulWidget {
+  final Widget child;
+  final Future<void> Function() onDoubleTap;
+  final VoidCallback onTap;
+
+  const _DoubleTapSpinnerWrapper({
+    Key? key,
+    required this.child,
+    required this.onDoubleTap,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  State<_DoubleTapSpinnerWrapper> createState() => _DoubleTapSpinnerWrapperState();
+}
+
+class _DoubleTapSpinnerWrapperState extends State<_DoubleTapSpinnerWrapper> {
+  bool _isFetching = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onDoubleTap: () async {
+        if (_isFetching) return;
+        setState(() {
+          _isFetching = true;
+        });
+        await widget.onDoubleTap();
+        if (mounted) {
+          setState(() {
+            _isFetching = false;
+          });
+        }
+      },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          widget.child,
+          if (_isFetching)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  color: Colors.black54,
+                  child: const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

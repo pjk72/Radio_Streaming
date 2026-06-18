@@ -666,4 +666,9 @@ final Map<String, String> fr = {
   'shazam_info_desc': 'Cette fonctionnalité tentera d\'identifier la chanson en cours de lecture en écoutant l\'audio. Veuillez vous assurer que le volume est adéquat.',
   'dont_show_again': 'Ne plus afficher ce message',
   'bonus': 'Bouus',
+  'no_new_metadata': 'Aucune nouvelle métadonnée trouvée.',
+  'metadata_updated': 'Métadonnées mises à jour avec succès !',
+  'reload': 'Recharger',
+  'sync_interrupted_title': 'Synchronisation interrompue',
+  'sync_interrupted_desc': 'Vous avez atteint le nombre maximum de synchronisations autorisées. Veuillez réessayer plus tard.',
 };

@@ -3962,6 +3962,8 @@ class RadioAudioHandler extends BaseAudioHandler
             artUri: t['image'],
             youtubeUrl: t['youtubeUrl'],
             dateAdded: DateTime.now(),
+            genre: t['genre']?.toString(),
+            duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
           );
 
           final String mId = s.youtubeUrl ?? 'song_${s.id}';
@@ -4024,6 +4026,8 @@ class RadioAudioHandler extends BaseAudioHandler
             artUri: t['image']?.toString(),
             youtubeUrl: t['youtubeUrl'] ?? t['url'],
             dateAdded: DateTime.now(),
+            genre: t['genre']?.toString(),
+            duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
           );
 
           final String mId = s.youtubeUrl ?? 'song_${s.id}';
@@ -4279,6 +4283,8 @@ class RadioAudioHandler extends BaseAudioHandler
               artUri: t['image'],
               youtubeUrl: t['youtubeUrl'],
               dateAdded: DateTime.now(),
+              genre: t['genre']?.toString(),
+              duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
             );
             final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
             return _songToMediaItem(
@@ -4330,6 +4336,8 @@ class RadioAudioHandler extends BaseAudioHandler
               artUri: t['image']?.toString(),
               youtubeUrl: t['youtubeUrl'] ?? t['url'],
               dateAdded: DateTime.now(),
+              genre: t['genre']?.toString(),
+              duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
             );
             final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
             return _songToMediaItem(
@@ -4483,6 +4491,8 @@ class RadioAudioHandler extends BaseAudioHandler
                     artUri: t['image'],
                     youtubeUrl: t['youtubeUrl'],
                     dateAdded: DateTime.now(),
+                    genre: t['genre']?.toString(),
+                    duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
                   );
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
                   return _songToMediaItem(
@@ -4553,6 +4563,8 @@ class RadioAudioHandler extends BaseAudioHandler
                     artUri: t['image']?.toString(),
                     youtubeUrl: t['youtubeUrl'] ?? t['url'],
                     dateAdded: DateTime.now(),
+                    genre: t['genre']?.toString(),
+                    duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
                   );
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
                   return _songToMediaItem(

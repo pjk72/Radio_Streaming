@@ -43,10 +43,19 @@ class LyricsService {
     // 1. Radio Requirement: Go DIRECTLY to Lyrics.ovh
     if (isRadio) {
       try {
-        final ovhResult = await _tryLyricsOvh(
-          artist: cleanArtist,
-          title: cleanTitle,
-        );
+      final ovhResult = await _tryLrclib(
+        artist: cleanArtist,
+        title: cleanTitle,
+        isRadio: false,
+      );
+
+      // try {
+      //   final ovhResult = await _tryLyricsOvh(
+      //     artist: cleanArtist,
+      //     title: cleanTitle,
+      //   );
+
+      
         if (ovhResult != null) return ovhResult;
       } catch (e) {
         LogService().log("Lyrics.ovh Error (Radio): $e");
@@ -155,9 +164,9 @@ class LyricsService {
       final uri = Uri.parse(
         _lrclibBaseUrl,
       ).replace(queryParameters: queryParameters);
-      LogService().log("Trying LRCLIB: $uri");
+      LogService().log("Lyrics: Trying LRCLIB: $uri");
 
-      final response = await http.get(uri).timeout(const Duration(seconds: 4));
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -193,7 +202,9 @@ class LyricsService {
           );
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      LogService().log("Lyrics: LRCLIB ERROR: $e");
+    }
     return null;
   }
 

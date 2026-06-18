@@ -639,4 +639,9 @@ final Map<String, String> en = {
   'shazam_info_desc': 'This feature will try to identify the currently playing song by listening to the audio. Please ensure the volume is adequate.',
   'dont_show_again': 'Do not show this message again',
   'bonus': 'Bouus',
+  'no_new_metadata': 'No new metadata found.',
+  'metadata_updated': 'Metadata updated successfully!',
+  'reload': 'Reload',
+  'sync_interrupted_title': 'Synchronization Interrupted',
+  'sync_interrupted_desc': 'You have reached the maximum number of syncs allowed. Please try again later.',
 };

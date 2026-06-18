@@ -471,7 +471,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         );
       },
     );
-    InterstitialAdService().showAd();
+    InterstitialAdService().showAdIfAvailable();
   }
 
   Map<String, String> get _countryMap {

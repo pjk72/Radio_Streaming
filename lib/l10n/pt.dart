@@ -653,4 +653,9 @@ final Map<String, String> pt = {
   'shazam_info_desc': 'Este recurso tentará identificar a música que está sendo reproduzida ouvindo o áudio. Certifique-se de que o volume seja adequado.',
   'dont_show_again': 'Não mostrar esta mensagem novamente',
   'bonus': 'Bouus',
+  'no_new_metadata': 'Nenhum novo metadado encontrado.',
+  'metadata_updated': 'Metadados atualizados com sucesso!',
+  'reload': 'Recarregar',
+  'sync_interrupted_title': 'Sincronização interrompida',
+  'sync_interrupted_desc': 'Você atingiu o número máximo de sincronizações permitidas. Por favor, tente novamente mais tarde.',
 };

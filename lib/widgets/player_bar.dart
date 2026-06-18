@@ -106,7 +106,7 @@ class PlayerBar extends StatelessWidget {
                     alignment: Alignment.center,
                     child: Padding(
                       padding: EdgeInsets.symmetric(
-                        horizontal: isDesktop ? 24 : 16,
+                        horizontal: isDesktop ? 24 : 8,                        
                       ),
                       child: Row(
                         children: [
@@ -131,8 +131,8 @@ class PlayerBar extends StatelessWidget {
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                   child: Container(
-                                                    width: isDesktop ? 44 : 36,
-                                                    height: isDesktop ? 44 : 36,
+                                                    width: 45,
+                                                    height: 45,
                                                     color: Colors.black,
                                                     alignment: Alignment.center,
                                                     child: Builder(
@@ -166,7 +166,7 @@ class PlayerBar extends StatelessWidget {
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 12),
+                                      const SizedBox(width: 6),
                                       Expanded(
                                         child: provider.errorMessage != null
                                             ? Row(
@@ -226,7 +226,7 @@ class PlayerBar extends StatelessWidget {
                                                             Row(
                                                               children: [
                                                                 Flexible(
-                                                                  child: _buildMarqueeText(
+                                                                  child: buildMarqueeText(
                                                                     provider
                                                                         .currentTrack
                                                                         .replaceFirst("⬇️ ", "")
@@ -258,7 +258,7 @@ class PlayerBar extends StatelessWidget {
                                                                             ?.logo;
 
                                                                 final Widget
-                                                                artistText = _buildMarqueeText(
+                                                                artistText = buildMarqueeText(
                                                                   provider.currentArtist.isNotEmpty
                                                                       ? provider.currentArtist
                                                                       : langProvider.translate('unknown_artist'),
@@ -339,7 +339,7 @@ class PlayerBar extends StatelessWidget {
                                                                           top:
                                                                               1,
                                                                         ),
-                                                                    child: _buildMarqueeText(
+                                                                    child: buildMarqueeText(
                                                                       albumText,
                                                                       TextStyle(
                                                                         color: playerTheme
@@ -813,6 +813,8 @@ class PlayerBar extends StatelessWidget {
   }
 
   Widget _buildFavoriteButton(BuildContext context, RadioProvider provider) {
+    if (provider.currentStation == null) return const SizedBox.shrink();
+
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     final bool isRadio = provider.currentPlayingPlaylistId == null;
     final bool isKnown = !isRadio ||
@@ -928,7 +930,7 @@ class PlayerBar extends StatelessWidget {
         false;
   }
 
-  Widget _buildMarqueeText(String text, TextStyle style) {
+  static Widget buildMarqueeText(String text, TextStyle style) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final span = TextSpan(text: text, style: style);
@@ -940,7 +942,7 @@ class PlayerBar extends StatelessWidget {
         tp.layout(maxWidth: constraints.maxWidth);
 
         if (tp.didExceedMaxLines) {
-          return SizedBox(
+          return SizedBox(            
             height: (style.fontSize ?? 14) * 1.5,
             child: Marquee(
               text: text,

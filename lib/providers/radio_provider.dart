@@ -8,10 +8,14 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart'; // For AlertDialog, Text, etc
 import 'package:flutter/widgets.dart'; // For AppLifecycleState
 import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
+
+import '../main.dart';
+import '../utils/glass_utils.dart';
 
 import '../models/station.dart';
 
@@ -2403,6 +2407,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     await _playlistService.addSongToPlaylist(playlistId, songToSave);
     await _loadPlaylists();
+
+    // Trigger background enrichment to update UI in real-time as metadata comes in
+    findMissingArtworks(playlistId: playlistId);
   }
 
   Future<void> updateSongInPlaylist(String playlistId, SavedSong song) async {
@@ -2445,6 +2452,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       'lyric video',
       'lyrics',
       'official',
+      'vevo'
+      'ft.',
+      'ft',
+      'feat.',
+      'feat',
       'full hd',
       '4k',
       '8k',
@@ -2465,7 +2477,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // 3. Handle separators (iTunes likes clean title artist)
-    res = res.replaceAll(RegExp(r'[\-\:\|\\\/]'), ' ');
+    res = res.replaceAll(RegExp(r'[\:\|\\\/]'), ' ');
 
     // 4. Clean up file extensions
     res = res.replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$'), '');
@@ -2591,12 +2603,17 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     List<SavedSong> songs,
   ) async {
     if (playlistId.startsWith('local_')) return;
+    
     await _playlistService.addSongsToPlaylist(playlistId, songs);
     await _loadPlaylists();
+
+    // Trigger background enrichment to update UI in real-time as metadata comes in
+    findMissingArtworks(playlistId: playlistId);
   }
 
   Future<void> refreshPlaylistInBackground(String playlistId) async {
     _isSyncingMetadata = true;
+    _enrichingPlaylists.add(playlistId);
     notifyListeners();
     // 1. Locate the playlist
     Playlist? target;
@@ -2604,6 +2621,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       target = _playlists.firstWhere((p) => p.id == playlistId);
     } catch (_) {
       _isSyncingMetadata = false;
+      _enrichingPlaylists.remove(playlistId);
       notifyListeners();
       return;
     }
@@ -2649,8 +2667,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       // Playlist might have been deleted
     } finally {
       _isSyncingMetadata = false;
+      _enrichingPlaylists.remove(playlistId);
       notifyListeners();
     }
+
+    // 4. Chain to metadata enrichment (duration, genre, artwork) in background
+    findMissingArtworks(playlistId: playlistId);
   }
 
   Future<void> resolvePlaylistLinksInBackground(
@@ -2699,9 +2721,20 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                       : currentSong.artUri,
                   album:
                       (currentSong.album.isEmpty ||
-                          currentSong.album == 'Unknown Album')
+                          currentSong.album == 'Unknown Album' || currentSong.album == 'YouTube')
                       ? best.album
                       : currentSong.album,
+                  // Harvest all available metadata from this already-fetched result
+                  duration: currentSong.duration ?? best.duration,
+                  genre: (currentSong.genre == null || currentSong.genre!.isEmpty)
+                      ? best.genre
+                      : currentSong.genre,
+                  releaseDate: (currentSong.releaseDate == null || currentSong.releaseDate!.isEmpty)
+                      ? best.releaseDate
+                      : currentSong.releaseDate,
+                  appleMusicUrl: (currentSong.appleMusicUrl == null || currentSong.appleMusicUrl!.isEmpty)
+                      ? best.appleMusicUrl
+                      : currentSong.appleMusicUrl,
                 );
                 changed = true;
                 successCount++;
@@ -2712,6 +2745,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           } catch (e) {
             failedCount++;
             debugPrint("Error resolving links for ${currentSong.title}: $e");
+            if (e.toString().contains('RateLimited')) break;
           }
         } else {
           successCount++;
@@ -2721,33 +2755,36 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         try {
           final cleanTitle = _cleanQuery(currentSong.title);
           final cleanArtist = _cleanQuery(currentSong.artist);
-          final metaResults = await searchMusic("$cleanTitle $cleanArtist");
+          if (currentSong.isYoutubeArt) {
+            final metaResults = await searchMusic("$cleanTitle $cleanArtist");
 
-          if (metaResults.isNotEmpty) {
-            final bestMatch = metaResults.first.song;
-            // Update artwork if available and different, or if we are replacing YouTube art
-            if (bestMatch.artUri != null &&
-                bestMatch.artUri!.isNotEmpty &&
-                (bestMatch.artUri != currentSong.artUri ||
-                    (currentSong.isYoutubeArt && !bestMatch.isYoutubeArt))) {
-              currentSong = currentSong.copyWith(
-                artUri: bestMatch.artUri,
-                // Also update Album/ReleaseDate if missing or better
-                album:
-                    (currentSong.album.isEmpty ||
-                        currentSong.album == 'Unknown Album')
-                    ? bestMatch.album
-                    : currentSong.album,
-                releaseDate:
-                    (currentSong.releaseDate == null ||
-                        currentSong.releaseDate!.isEmpty)
-                    ? bestMatch.releaseDate
-                    : currentSong.releaseDate,
-              );
-              changed = true;
-            }
+            if (metaResults.isNotEmpty) {
+              final bestMatch = metaResults.first.song;
+              // Update artwork if available and different, or if we are replacing YouTube art
+              if (bestMatch.artUri != null && bestMatch.artUri!.isNotEmpty && (currentSong.isYoutubeArt || !bestMatch.isYoutubeArt)) {
+                currentSong = currentSong.copyWith(
+                  artUri: bestMatch.artUri,
+                  album:
+                      (currentSong.album.isEmpty || currentSong.album == 'Unknown Album')
+                      ? bestMatch.album
+                      : currentSong.album,
+                  releaseDate:
+                      (currentSong.releaseDate == null || currentSong.releaseDate!.isEmpty)
+                      ? bestMatch.releaseDate
+                      : currentSong.releaseDate,
+                  // Harvest all available metadata from this already-fetched result
+                  duration: currentSong.duration ?? bestMatch.duration,
+                  genre: (currentSong.genre == null || currentSong.genre!.isEmpty)
+                      ? bestMatch.genre
+                      : currentSong.genre,
+                  appleMusicUrl: (currentSong.appleMusicUrl == null || currentSong.appleMusicUrl!.isEmpty)
+                      ? bestMatch.appleMusicUrl
+                      : currentSong.appleMusicUrl,
+                );
+                changed = true;
+              }
+            }        
           }
-
           // Fallback to Odesli (SongLink) if iTunes failed to provide non-YouTube artwork
           if (!changed && currentSong.isYoutubeArt) {
             final links = await resolveLinks(
@@ -2775,9 +2812,58 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           }
         } catch (e) {
           debugPrint("Error enriching metadata for ${currentSong.title}: $e");
+          if (e.toString().contains('RateLimited')) break;
         }
 
+        // Sync any metadata already stored in _playlists (populated by _trackToSavedSong
+        // or a previous findMissingArtworks run) that is missing on the current snapshot.
+        // This ensures fields like duration/genre/releaseDate are carried forward even when
+        // Steps 1-2 above did not trigger a network call for this song.
+        try {
+          final memPlaylist = _playlists.firstWhere(
+            (p) => p.id == playlistId,
+            orElse: () => Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()),
+          );
+          if (memPlaylist.id.isNotEmpty) {
+            final memIdx = memPlaylist.songs.indexWhere((s) => s.id == currentSong.id);
+            if (memIdx != -1) {
+              final mem = memPlaylist.songs[memIdx];
+              final needsDuration = (currentSong.duration == null || currentSong.duration == Duration.zero) &&
+                  mem.duration != null && mem.duration != Duration.zero;
+              final needsGenre = (currentSong.genre == null || currentSong.genre!.isEmpty) &&
+                  mem.genre != null && mem.genre!.isNotEmpty;
+              final needsRelease = (currentSong.releaseDate == null || currentSong.releaseDate!.isEmpty) &&
+                  mem.releaseDate != null && mem.releaseDate!.isNotEmpty;
+              final needsApple = (currentSong.appleMusicUrl == null || currentSong.appleMusicUrl!.isEmpty) &&
+                  mem.appleMusicUrl != null && mem.appleMusicUrl!.isNotEmpty;
+              if (needsDuration || needsGenre || needsRelease || needsApple) {
+                currentSong = currentSong.copyWith(
+                  duration: needsDuration ? mem.duration : currentSong.duration,
+                  genre: needsGenre ? mem.genre : currentSong.genre,
+                  releaseDate: needsRelease ? mem.releaseDate : currentSong.releaseDate,
+                  appleMusicUrl: needsApple ? mem.appleMusicUrl : currentSong.appleMusicUrl,
+                );
+                changed = true;
+              }
+            }
+          }
+        } catch (_) {}
+
         if (changed) {
+          // Merge with current in-memory state to preserve fields (e.g. duration, genre)
+          // that may have been updated by concurrent findMissingArtworks
+          final currentIdx = _playlists
+              .firstWhere((p) => p.id == playlistId, orElse: () => Playlist(id: '', name: '', songs: [], createdAt: DateTime.now()))
+              .songs
+              .indexWhere((s) => s.id == currentSong.id);
+          if (currentIdx != -1) {
+            final currentInMemory = _playlists.firstWhere((p) => p.id == playlistId).songs[currentIdx];
+            currentSong = currentSong.copyWith(
+              duration: currentSong.duration ?? currentInMemory.duration,
+              genre: currentSong.genre ?? currentInMemory.genre,
+              localPath: currentInMemory.localPath,
+            );
+          }
           updatedSongs.add(currentSong);
         }
 
@@ -3263,7 +3349,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // 2. Search via YouTube (as fallback or supplement)
-    List<SongSearchResult> youtubeResults = [];
+/*     List<SongSearchResult> youtubeResults = [];
     try {
       final yt = yt_explode.YoutubeExplode();
       final searchList = await yt.search
@@ -3295,12 +3381,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       yt.close();
     } catch (e) {
       LogService().log('YouTube Search Error: $e');
-    }
+    } */
 
     // 3. Merge results: prioritizing iTunes for high-quality metadata, then YouTube
     final List<SongSearchResult> combined = [...itunesResults];
 
-    // Add YouTube results that are not already present (based on title/artist matching if possible, but for now just append)
+/*     // Add YouTube results that are not already present (based on title/artist matching if possible, but for now just append)
     // We only add YouTube if itunesResults are few OR if the user specifically searched for something only on YT
     for (var ytRes in youtubeResults) {
       bool alreadyPresent = itunesResults.any(
@@ -3311,7 +3397,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       if (!alreadyPresent) {
         combined.add(ytRes);
       }
-    }
+    } */
 
     return combined;
   }
@@ -3392,11 +3478,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
         // Batch update to show progress in UI
         if (anyChanged && (i % 5 == 0 || i == songsToProcess.length - 1)) {
-          // BUG FIX: Only pass the subset that was modified in this batch if possible,
-          // but PlaylistService.updateSongsInPlaylist merges by ID, so it is safe to pass the FULL list
-          // ONLY IF the list is not stale. To avoid data loss from stale lists, we re-fetch the playlist structure
-          // before updating, or simply use the current mutated state if we are sure no concurrent edits happened.
-          // For now, we use a more precise update by passing ONLY the current modified song or the batch.
           await _playlistService.updateSongsInPlaylist(
             playlistId,
             updatedSongs,
@@ -5336,6 +5417,28 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _playNextInPlaylist();
       return;
     }
+
+    // Auto-fetch missing metadata if the corner triangle would be shown.
+    // This is the single choke-point for ALL playback paths (tap, skip next/prev,
+    // Android Auto, auto-skip) so it reliably covers every case.
+    if (playlistId != null) {
+      final bool hasIncompleteMetadata =
+          (song.artUri == null || song.artUri!.isEmpty) ||
+          song.title.trim().isEmpty ||
+          song.artist.trim().isEmpty ||
+          song.album.trim().isEmpty ||
+          (song.genre == null || song.genre!.trim().isEmpty) ||
+          song.duration == null;
+
+      if (hasIncompleteMetadata) {
+        findMissingArtworks(
+          playlistId: playlistId,
+          songIdToSync: song.id,
+          explicitSong: song,
+        );
+      }
+    }
+
     // Optimistic UI update
     _currentTrack = song.title;
     _currentArtist = song.artist;
@@ -7337,7 +7440,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _saveArtistImagesCache(); // Persist
       return result;
     } else if (result == "NOT_FOUND") {
-      _artistImageCache[rawKey] = null;
+_artistImageCache[rawKey] = null;
       _saveArtistImagesCache(); // Persist even if not found to avoid repeated searches
       return null;
     } else {
@@ -7346,37 +7449,44 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<void> findMissingArtworks({String? playlistId}) async {
+  bool _hasIncompleteMetadata(SavedSong song) {
+    return (song.artUri == null || song.artUri!.isEmpty) ||
+        song.title.trim().isEmpty ||
+        song.artist.trim().isEmpty ||
+        song.album.trim().isEmpty || song.album.trim() == "YouTube" ||
+        (song.genre == null || song.genre!.trim().isEmpty) ||
+        song.duration == null;
+  }
+
+  Future<void> findMissingArtworks({String? playlistId, String? songIdToSync, SavedSong? explicitSong}) async {
     _isSyncingMetadata = true;
     notifyListeners();
+
     try {
-      final List<SavedSong> toProcess = [];
-      if (playlistId != null) {
+      List<SavedSong> toProcess = [];
+
+      if (explicitSong != null) {
+        toProcess.add(explicitSong);
+      } else if (songIdToSync != null) {
+        try {
+          final s = _allUniqueSongs.firstWhere((s) => s.id == songIdToSync);
+          if (_hasIncompleteMetadata(s)) {
+            toProcess.add(s);
+          }
+        } catch (_) {}
+      } else if (playlistId != null) {
+        _enrichingPlaylists.add(playlistId);
         try {
           final p = _playlists.firstWhere((p) => p.id == playlistId);
           for (var s in p.songs) {
-            if (s.artUri == null ||
-                s.artUri!.isEmpty ||
-                s.artUri!.contains('placeholder') ||
-                s.isYoutubeArt ||
-                s.album == 'Unknown Album' ||
-                s.album.isEmpty ||
-                s.youtubeUrl == null ||
-                s.youtubeUrl!.isEmpty) {
+            if (_hasIncompleteMetadata(s)) {
               toProcess.add(s);
             }
           }
         } catch (_) {
           // If it's a temp playlist (artist/album view), we can't find it by ID in _playlists.
           for (var s in _allUniqueSongs) {
-            if (s.artUri == null ||
-                s.artUri!.isEmpty ||
-                s.artUri!.contains('placeholder') ||
-                s.isYoutubeArt ||
-                s.album == 'Unknown Album' ||
-                s.album.isEmpty ||
-                s.youtubeUrl == null ||
-                s.youtubeUrl!.isEmpty) {
+            if (_hasIncompleteMetadata(s)) {
               toProcess.add(s);
             }
           }
@@ -7384,14 +7494,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       } else {
         // Process all unique songs that are missing art or video links
         for (var s in _allUniqueSongs) {
-          if (s.artUri == null ||
-              s.artUri!.isEmpty ||
-              s.artUri!.contains('placeholder') ||
-              s.isYoutubeArt ||
-              s.album == 'Unknown Album' ||
-              s.album.isEmpty ||
-              s.youtubeUrl == null ||
-              s.youtubeUrl!.isEmpty) {
+          if (_hasIncompleteMetadata(s)) {
             toProcess.add(s);
           }
         }
@@ -7409,32 +7512,72 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           orElse: () => toProcess.firstWhere((tp) => tp.id == songId),
         );
 
-        try {
-          String cleanTitle = song.title
-              .replaceAll(
-                RegExp(r'^\d+[\s.-]+'),
-                '',
-              ) // Remove leading track numbers (e.g., "01 - ")
-              .replaceAll(
-                RegExp(r'\.(mp3|m4a|wav|flac|ogg)$', caseSensitive: false),
-                '',
-              ) // Remove extensions
-              .trim();
-          String cleanArtist = song.artist
-              .replaceAll('Unknown Artist', '')
-              .trim();
+        try {      
+          String cleanTitle = _cleanQuery(song.title).trim();
+          String cleanArtist = _cleanQuery(song.artist).trim();
 
-          final results = await _musicMetadataService.searchSongs(
+          if (cleanArtist.isNotEmpty) {
+            cleanTitle = cleanTitle
+                .replaceAll(
+                  RegExp(RegExp.escape(cleanArtist), caseSensitive: false),
+                  '',
+                )
+                .replaceAll(RegExp(r'^\s*-\s*|\s*-\s*$'), '')
+                .trim();
+          }          
+
+          List<SongSearchResult> results = await _musicMetadataService.searchSongs(
             query: "$cleanTitle $cleanArtist".trim(),
             limit: 1,
           );
 
-          if (results.isNotEmpty) {
-            final match = results.first.song;
-            if (match.artUri != null &&
+          if (results.isEmpty && cleanTitle.contains('-')) {
+             final parts = cleanTitle.split('-');
+             if (parts.length >= 2) {
+                final potentialArtist = parts[0].trim();
+                final potentialTitle = parts[1].trim();
+                results = await _musicMetadataService.searchSongs(
+                   query: "$potentialTitle $potentialArtist".trim(),
+                   limit: 1,
+                );
+                
+                if (results.isNotEmpty) {
+                  cleanTitle = potentialTitle;
+                  cleanArtist = potentialArtist;
+                }
+             }
+          }
+
+          if (results.isNotEmpty) {            
+            final ytMatch = results.first.song;
+            final match = ytMatch.copyWith(
+              title: cleanTitle,
+              artist: cleanArtist,
+            );
+            bool currentArtIsMissingOrYoutube = song.artUri == null ||
+                song.artUri!.isEmpty ||
+                song.artUri!.contains('placeholder') ||
+                song.isYoutubeArt;
+
+            bool hasBetterArt = match.artUri != null &&
                 match.artUri!.isNotEmpty &&
-                (match.artUri != song.artUri ||
-                    (song.isYoutubeArt && !match.isYoutubeArt))) {
+                currentArtIsMissingOrYoutube &&
+                match.artUri != song.artUri;
+            
+            bool hasNewGenre = match.genre != null && match.genre!.isNotEmpty;
+                
+            bool hasNewDuration = match.duration != null && match.duration != Duration.zero;
+
+            bool hasNewAlbum = match.album.isNotEmpty &&
+                (song.album == 'Unknown Album' || song.album == 'YouTube' || song.album.isEmpty || song.album == song.provider);
+
+            String capitalizeWords(String s) => s.split(' ').map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1).toLowerCase()).join(' ');
+            cleanTitle = capitalizeWords(cleanTitle);
+            cleanArtist = capitalizeWords(cleanArtist);
+
+            bool titleOrArtistChanged = song.title != cleanTitle || song.artist != cleanArtist;
+
+            if (hasBetterArt || hasNewGenre || hasNewDuration || hasNewAlbum || titleOrArtistChanged) {
               // Update metadata in all playlists
               bool songChanged = false;
               for (int i = 0; i < _playlists.length; i++) {
@@ -7445,15 +7588,19 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                 if (songIndex != -1) {
                   final updatedSongs = List<SavedSong>.from(playlist.songs);
                   updatedSongs[songIndex] = updatedSongs[songIndex].copyWith(
-                    artUri: match.artUri,
-                    album:
-                        (updatedSongs[songIndex].album == 'Unknown Album' ||
-                            updatedSongs[songIndex].album.isEmpty)
+                    title: titleOrArtistChanged ? cleanTitle : updatedSongs[songIndex].title,
+                    artist: titleOrArtistChanged ? cleanArtist : updatedSongs[songIndex].artist,
+                    artUri: hasBetterArt ? match.artUri : updatedSongs[songIndex].artUri,
+                    album: (hasBetterArt
                         ? match.album
-                        : updatedSongs[songIndex].album,
+                        : (hasNewAlbum ? match.album : updatedSongs[songIndex].album))
+                        .replaceAll(RegExp(r'\s*-\s*$'), '')
+                        .trim(),
                     appleMusicUrl:
                         updatedSongs[songIndex].appleMusicUrl ??
                         match.appleMusicUrl,
+                    genre: hasNewGenre ? match.genre : updatedSongs[songIndex].genre,
+                    duration: hasNewDuration ? match.duration : updatedSongs[songIndex].duration,
                   );
                   _playlists[i] = playlist.copyWith(songs: updatedSongs);
                   songChanged = true;
@@ -7462,19 +7609,25 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               }
               if (songChanged) {
                 final idx = _allUniqueSongs.indexWhere((s) => s.id == songId);
-                if (idx != -1) {
+                if (idx != -1) {                  
                   _allUniqueSongs[idx] = _allUniqueSongs[idx].copyWith(
-                    artUri: match.artUri,
-                    album:
-                        (_allUniqueSongs[idx].album == 'Unknown Album' ||
-                            (_allUniqueSongs[idx].album.isEmpty))
+                    title: titleOrArtistChanged ? cleanTitle : _allUniqueSongs[idx].title,
+                    artist: titleOrArtistChanged ? cleanArtist : _allUniqueSongs[idx].artist,
+                    artUri: hasBetterArt ? match.artUri : _allUniqueSongs[idx].artUri,
+                    album: (hasBetterArt
                         ? match.album
-                        : _allUniqueSongs[idx].album,
+                        : (hasNewAlbum ? match.album : _allUniqueSongs[idx].album))
+                        .replaceAll(RegExp(r'\s*-\s*$'), '')
+                        .trim(),
                     appleMusicUrl:
                         _allUniqueSongs[idx].appleMusicUrl ??
                         match.appleMusicUrl,
+                    genre: hasNewGenre ? match.genre : _allUniqueSongs[idx].genre,
+                    duration: hasNewDuration ? match.duration : _allUniqueSongs[idx].duration,
                   );
                 }
+                // Notify immediately so UI refreshes duration and artwork in real-time
+                notifyListeners();
               }
             }
           } else if (song.isYoutubeArt) {
@@ -7486,7 +7639,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
               youtubeUrl: song.youtubeUrl,
             );
 
-            final extraThumb = links['thumbnailUrl'];
+            final extraThumb  = links['thumbnailUrl'];
             if (extraThumb != null && extraThumb.isNotEmpty) {
               final bool isExtraThumbYoutube =
                   extraThumb.contains('ytimg.com') ||
@@ -7555,12 +7708,31 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             LogService().log(
               "iTunes Rate Limit hit (403/429). Aborting metadata sync for now.",
             );
+            
+            final context = globalNavigatorKey.currentContext;
+            if (context != null) {
+              GlassUtils.showGlassDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  surfaceTintColor: Colors.transparent,
+                  title: Text(_translate('sync_interrupted_title')),
+                  content: Text(_translate('sync_interrupted_desc')),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text("OK"),
+                    ),
+                  ],
+                ),
+              );
+            }
+            
             break; // Stop spamming API
           }
         }
 
         // Small delay to avoid rate limits
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(seconds: 4));
       }
 
       if (anyChanged) {
@@ -7569,6 +7741,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
     } finally {
       _isSyncingMetadata = false;
+      if (playlistId != null) {
+        _enrichingPlaylists.remove(playlistId);
+      }
       notifyListeners();
     }
   }

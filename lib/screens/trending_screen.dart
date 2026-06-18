@@ -168,8 +168,6 @@ class _TrendingScreenState extends State<TrendingScreen>
       _trendingService = TrendingService();
 
       final results = await _trendingService.searchTrending(
-        // Robust extraction: Handle "🇮🇹 Italy" vs "Italy" vs legacy
-        // We take everything AFTER the first space to get the full country name ("South Africa", not just "Africa")
         countryMap[_selectedCountryCode]!.contains(' ')
             ? countryMap[_selectedCountryCode]!.substring(
                 countryMap[_selectedCountryCode]!.indexOf(' ') + 1,

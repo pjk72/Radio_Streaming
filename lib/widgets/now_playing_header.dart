@@ -368,7 +368,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         );
       },
     );
-    InterstitialAdService().showAd();
+    InterstitialAdService().showAdIfAvailable();
   }
 
   @override
