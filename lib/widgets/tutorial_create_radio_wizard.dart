@@ -1381,7 +1381,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         Expanded(
           child: ListView.builder(
             primary: false, // Prevent conflict
-            padding: const EdgeInsets.only(bottom: 140),
+            padding: const EdgeInsets.only(bottom: 24),
             itemCount: filteredStations.length,
             itemBuilder: (context, i) {
               final entry = filteredStations[i];

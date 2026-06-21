@@ -104,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 // 2. OR the wizard is explicitly open (e.g. from Manage Stations)
                 
                 // Logic for "auto-wizard" in RadioScreen:
-                final bool isHomeWizard = _navIndex == 0 && 
+                final bool isHomeWizard = _navIndex == 2 && 
                   radio.stations.where((s) => radio.favorites.contains(s.id)).isEmpty;
                 
                 // The isWizardOpen flag is also set when opening from Manage Stations
