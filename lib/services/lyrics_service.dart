@@ -22,7 +22,6 @@ class LyricsData {
 
 class LyricsService {
   static const String _lrclibBaseUrl = 'https://lrclib.net/api/get';
-  static const String _lyricsOvhBaseUrl = 'https://api.lyrics.ovh/v1';
 
   Future<LyricsData> fetchLyrics({
     required String artist,
@@ -40,70 +39,30 @@ class LyricsService {
       return LyricsData.empty();
     }
 
-    // 1. Radio Requirement: Go DIRECTLY to Lyrics.ovh
-    if (isRadio) {
-      try {
-      final ovhResult = await _tryLrclib(
-        artist: cleanArtist,
-        title: cleanTitle,
-        isRadio: false,
-      );
-
-      // try {
-      //   final ovhResult = await _tryLyricsOvh(
-      //     artist: cleanArtist,
-      //     title: cleanTitle,
-      //   );
-
-      
-        if (ovhResult != null) return ovhResult;
-      } catch (e) {
-        LogService().log("Lyrics.ovh Error (Radio): $e");
-      }
-      LogService().log("Lyrics NOT FOUND (Radio) for: $cleanArtist - $cleanTitle");
-      return LyricsData.empty();
-    }
-
-    // 2. Playlist Requirement: Try LRCLIB first (Primary - supports Synced Lyrics)
+    // 1. Primary: Try LRCLIB
     try {
       final result = await _tryLrclib(
         artist: cleanArtist,
         title: cleanTitle,
-        isRadio: false,
+        isRadio: isRadio,
       );
       if (result != null) return result;
     } catch (e) {
-      LogService().log("LRCLIB Error (Playlist): $e");
+      LogService().log("LRCLIB Error: $e");
     }
 
-    // 3. Playlist Fallback: Try Lyrics.ovh
-    try {
-      final ovhResult = await _tryLyricsOvh(
-        artist: cleanArtist,
-        title: cleanTitle,
-      );
-      if (ovhResult != null) return ovhResult;
-    } catch (e) {
-      LogService().log("Lyrics.ovh Error (Playlist Fallback): $e");
-    }
-
-    // 4. Fallback: Parse "Artist - Title" from the title parameter (Requested Feature)
+    // 2. Fallback: Parse "Artist - Title" from the title parameter
     // "prendere solo il titolo della canzone se trovi questo se esiste questo simbolo " - "
     // considera la prima parte come il nome dell'artista e la seconda parte il titolo della canzone"
     if (title.contains(' - ')) {
       final parts = title.split(' - ');
-      // Take the first part as artist, and the REST as title (in case of multiple dashes, rare but possible)
-      // Or just strictly 2 parts? The user said "prima parte... seconda parte".
-      // Let's assume standard "Artist - Title".
       if (parts.length >= 2) {
         final derivedArtist = parts[0];
-        final derivedTitle = parts.sublist(1).join(' - '); // Rejoin the rest
+        final derivedTitle = parts.sublist(1).join(' - ');
 
         final cleanDerivedArtist = cleanString(derivedArtist);
         final cleanDerivedTitle = cleanString(derivedTitle);
 
-        // Avoid re-trying exactly what we just tried if the cleanup makes them identical
-        // to the passed arguments.
         final bool isSameAsOriginal =
             cleanDerivedArtist.toLowerCase() == cleanArtist.toLowerCase() &&
             cleanDerivedTitle.toLowerCase() == cleanTitle.toLowerCase();
@@ -112,10 +71,9 @@ class LyricsService {
             cleanDerivedArtist.isNotEmpty &&
             cleanDerivedTitle.isNotEmpty) {
           LogService().log(
-            "Lyrics Fallback 2: Splitting title '$title' -> Artist: '$cleanDerivedArtist', Title: '$cleanDerivedTitle'",
+            "Lyrics Fallback: Splitting title '$title' -> Artist: '$cleanDerivedArtist', Title: '$cleanDerivedTitle'",
           );
 
-          // Retry LRCLIB
           try {
             final result = await _tryLrclib(
               artist: cleanDerivedArtist,
@@ -125,20 +83,7 @@ class LyricsService {
             if (result != null) return result;
           } catch (e) {
             LogService().log(
-              "LRCLIB Fallback 2 Error ($cleanDerivedArtist - $cleanDerivedTitle): $e",
-            );
-          }
-
-          // Retry Lyrics.ovh
-          try {
-            final ovhResult = await _tryLyricsOvh(
-              artist: cleanDerivedArtist,
-              title: cleanDerivedTitle,
-            );
-            if (ovhResult != null) return ovhResult;
-          } catch (e) {
-            LogService().log(
-              "Lyrics.ovh Fallback 2 Error ($cleanDerivedArtist - $cleanDerivedTitle): $e",
+              "LRCLIB Fallback Error ($cleanDerivedArtist - $cleanDerivedTitle): $e",
             );
           }
         }
@@ -175,18 +120,7 @@ class LyricsService {
 
         LogService().log("LRCLIB Success for '$artist' - '$title'");
 
-        if (isRadio && plainLyrics != null && plainLyrics.isNotEmpty) {
-          return LyricsData(
-            lines: plainLyrics
-                .split('\n')
-                .map((l) => LyricLine(time: Duration.zero, text: l.trim()))
-                .toList(),
-            source: 'LRCLIB (Plain)',
-            isSynced: false,
-          );
-        }
-
-        if (syncedLyrics != null && syncedLyrics.isNotEmpty && !isRadio) {
+        if (syncedLyrics != null && syncedLyrics.isNotEmpty) {
           return LyricsData(
             lines: _parseLrc(syncedLyrics),
             source: 'LRCLIB (Synced)',
@@ -199,6 +133,7 @@ class LyricsService {
                 .map((l) => LyricLine(time: Duration.zero, text: l.trim()))
                 .toList(),
             source: 'LRCLIB (Plain)',
+            isSynced: false,
           );
         }
       }
@@ -208,38 +143,6 @@ class LyricsService {
     return null;
   }
 
-  Future<LyricsData?> _tryLyricsOvh({
-    required String artist,
-    required String title,
-  }) async {
-    try {
-      final uri = Uri.parse(
-        '$_lyricsOvhBaseUrl/${Uri.encodeComponent(artist)}/${Uri.encodeComponent(title)}',
-      );
-
-      LogService().log("Trying Lyrics.ovh: $uri");
-
-      final response = await http.get(uri).timeout(const Duration(seconds: 4));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final String? lyrics = data['lyrics'];
-
-        if (lyrics != null && lyrics.isNotEmpty) {
-          LogService().log("Lyrics.ovh Success for '$artist' - '$title'");
-          return LyricsData(
-            lines: lyrics
-                .split('\n')
-                .where((l) => l.trim().isNotEmpty)
-                .map((l) => LyricLine(time: Duration.zero, text: l.trim()))
-                .toList(),
-            source: 'Lyrics.ovh',
-          );
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
 
   List<LyricLine> _parseLrc(String lrcContent) {
     if (lrcContent.isEmpty) {

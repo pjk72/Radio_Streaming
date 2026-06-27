@@ -37,12 +37,9 @@ class InterstitialAdService {
     _entitlements!.addListener(_onEntitlementsChanged);
     _isInitialized = true;
 
-    // Preload iniziale se la feature è attiva
-    if (_isInterstitialEnabled) {
-      loadAd();
-    } else {
-      LogService().log("InterstitialAdService: interstitial_ad disabled at init.");
-    }
+    // Nessun preload automatico all'avvio. La richiesta parte solo
+    // quando espressamente richiesto (es. riconoscimento brano).
+    LogService().log("InterstitialAdService: initialized (no automatic preload).");
   }
 
   bool get _isInterstitialEnabled {
@@ -71,9 +68,8 @@ class InterstitialAdService {
       return;
     }
 
-    if (_interstitialAd == null && !_isAdLoading) {
-      loadAd();
-    }
+    // Nessun preload automatico al cambio di entitlements.
+    // Il caricamento avverrà solo quando esplicitamente richiesto.
   }
 
   bool get isAdReady => _interstitialAd != null;
@@ -138,8 +134,8 @@ class InterstitialAdService {
                 _interstitialAd = null;
               }
 
-              // Preload immediato del prossimo ad
-              loadAd();
+              // Nessun preload automatico del prossimo ad.
+              // Verrà ricaricato solo alla prossima richiesta esplicita.
             },
             onAdFailedToShowFullScreenContent: (ad, error) {
               LogService().log("InterstitialAdService: Ad failed to show: $error");
@@ -149,8 +145,8 @@ class InterstitialAdService {
                 _interstitialAd = null;
               }
 
-              // Riprova a caricare il prossimo
-              loadAd();
+              // Nessun preload automatico del prossimo ad.
+              // Verrà ricaricato solo alla prossima richiesta esplicita.
             },
           );
         },

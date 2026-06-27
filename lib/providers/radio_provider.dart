@@ -5810,6 +5810,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       if (_isFetchingLyrics || _currentLyrics.lines.isNotEmpty) {
         return;
       }
+    } else if (_lastLyricsSearch != null && _lastLyricsSearch != searchKey) {
+      // Clear old lyrics immediately when changing track (for UI responsiveness)
+      _currentLyrics = LyricsData.empty();
+      _originalLyrics = null;
+      _isLyricsTranslated = false;
+      _lyricsOffset = Duration.zero;
+      notifyListeners();
     }
 
     // 4. Radio/Playlist Context

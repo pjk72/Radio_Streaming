@@ -40,7 +40,9 @@ class RewardedAdService {
     loadRewardedAd();
   }
 
-  /// Carica un rewarded se non ce n'è già uno pronto o in caricamento
+  /// Carica un rewarded se non ce n'è già uno pronto o in caricamento.
+  /// Restituisce il [Completer] corrente così i caller possono attenderne
+  /// il completamento anche se il caricamento era già in corso.
   void loadRewardedAd() {
     if (!_isInitialized) {
       LogService().log("RewardedAdService: loadRewardedAd() skipped, service not initialized.");
@@ -48,7 +50,10 @@ class RewardedAdService {
     }
 
     if (_isAdLoading) {
-      LogService().log("RewardedAdService: load skipped, ad already loading.");
+      // FIX Bug 2: se il caricamento è già in corso assicuriamo che il
+      // completer esista, così i caller possono aspettarlo.
+      _loadCompleter ??= Completer<void>();
+      LogService().log("RewardedAdService: load already in progress, caller can await existing completer.");
       return;
     }
 
@@ -61,7 +66,8 @@ class RewardedAdService {
     _retryTimer = null;
 
     _isAdLoading = true;
-    _loadCompleter ??= Completer<void>();
+    // Crea sempre un nuovo completer fresco prima di iniziare il load.
+    _loadCompleter = Completer<void>();
 
     LogService().log("RewardedAdService: Starting load for ID: $_adUnitId");
 
@@ -76,12 +82,12 @@ class RewardedAdService {
           _isAdLoading = false;
           _loadAttempts = 0;
 
+          _attachDefaultCallbacks(ad);
+
           if (_loadCompleter != null && !_loadCompleter!.isCompleted) {
             _loadCompleter!.complete();
           }
           _loadCompleter = null;
-
-          _attachDefaultCallbacks(ad);
         },
         onAdFailedToLoad: (LoadAdError error) {
           _isAdLoading = false;
@@ -119,7 +125,7 @@ class RewardedAdService {
   Future<bool> showAdIfAvailable({
     required void Function(AdWithoutView ad, RewardItem reward) onUserEarnedReward,
     required VoidCallback onAdNotAvailable,
-    Duration waitTimeout = const Duration(seconds: 4),
+    Duration waitTimeout = const Duration(seconds: 5),
   }) async {
     LogService().log("RewardedAdService: showAdIfAvailable() called.");
 
@@ -133,16 +139,22 @@ class RewardedAdService {
       return false;
     }
 
+    // FIX Bug 2: se l'ad non è pronto avvia (o mantieni) il caricamento e
+    // recupera sempre il completer DOPO la chiamata a loadRewardedAd(),
+    // così è garantito che esista anche se il load era già in corso.
     if (_rewardedAd == null) {
       LogService().log("RewardedAdService: No ad ready. Trying to load and wait up to ${waitTimeout.inSeconds}s...");
       loadRewardedAd();
 
-      try {
-        if (_loadCompleter != null) {
-          await _loadCompleter!.future.timeout(waitTimeout);
+      // A questo punto _loadCompleter è sicuramente non-null
+      // (creato/verificato dentro loadRewardedAd).
+      final completerToAwait = _loadCompleter;
+      if (completerToAwait != null) {
+        try {
+          await completerToAwait.future.timeout(waitTimeout);
+        } catch (e) {
+          LogService().log("RewardedAdService: Ad was not loaded in time or load failed: $e");
         }
-      } catch (e) {
-        LogService().log("RewardedAdService: Ad was not loaded in time or load failed: $e");
       }
     }
 
@@ -156,38 +168,37 @@ class RewardedAdService {
     _isShowingAd = true;
     _rewardedAd = null;
 
-    final completer = Completer<bool>();
+    final showCompleter = Completer<bool>();
     bool hasEarnedReward = false;
 
-    final oldCallback = ad.fullScreenContentCallback;
-
+    // FIX Bug 1: non cattenare la oldCallback (quella di _attachDefaultCallbacks)
+    // perché provocherebbe un doppio dispose/loadRewardedAd.
+    // Gestiamo direttamente tutto qui: dispose + preload del prossimo ad.
     ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (shownAd) {
         LogService().log("RewardedAdService: onAdShowedFullScreenContent.");
-        oldCallback?.onAdShowedFullScreenContent?.call(shownAd);
       },
       onAdImpression: (shownAd) {
         LogService().log("RewardedAdService: onAdImpression.");
-        oldCallback?.onAdImpression?.call(shownAd);
       },
       onAdDismissedFullScreenContent: (shownAd) {
         LogService().log("RewardedAdService: onAdDismissedFullScreenContent.");
-        oldCallback?.onAdDismissedFullScreenContent?.call(shownAd);
-
         _isShowingAd = false;
+        shownAd.dispose();
+        loadRewardedAd(); // preload del prossimo
 
-        if (!completer.isCompleted) {
-          completer.complete(hasEarnedReward);
+        if (!showCompleter.isCompleted) {
+          showCompleter.complete(hasEarnedReward);
         }
       },
       onAdFailedToShowFullScreenContent: (shownAd, error) {
         LogService().log("RewardedAdService: onAdFailedToShowFullScreenContent: $error");
-        oldCallback?.onAdFailedToShowFullScreenContent?.call(shownAd, error);
-
         _isShowingAd = false;
+        shownAd.dispose();
+        loadRewardedAd();
 
-        if (!completer.isCompleted) {
-          completer.complete(false);
+        if (!showCompleter.isCompleted) {
+          showCompleter.complete(false);
         }
       },
     );
@@ -197,6 +208,9 @@ class RewardedAdService {
 
       ad.show(
         onUserEarnedReward: (rewardAd, reward) {
+          // FIX Bug 1: il premio viene settato prima che onAdDismissedFullScreenContent
+          // venga chiamato, quindi hasEarnedReward sarà true quando il
+          // completer viene completato.
           hasEarnedReward = true;
           LogService().log(
             "RewardedAdService: User earned reward: ${reward.amount} ${reward.type}",
@@ -211,12 +225,12 @@ class RewardedAdService {
       ad.dispose();
       loadRewardedAd();
 
-      if (!completer.isCompleted) {
-        completer.complete(false);
+      if (!showCompleter.isCompleted) {
+        showCompleter.complete(false);
       }
     }
 
-    return completer.future.timeout(
+    return showCompleter.future.timeout(
       const Duration(seconds: 45),
       onTimeout: () {
         LogService().log("RewardedAdService: show flow timed out.");
@@ -227,7 +241,8 @@ class RewardedAdService {
     );
   }
 
-  /// Callback standard legate al ciclo di vita dell'ad
+  /// Callback standard legate al ciclo di vita dell'ad (usate solo durante il preload,
+  /// NON durante la visualizzazione — in quel caso gestisce tutto showAdIfAvailable).
   void _attachDefaultCallbacks(RewardedAd ad) {
     ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {

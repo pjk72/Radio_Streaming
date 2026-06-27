@@ -34,6 +34,12 @@ class AppOpenAdManager {
       return;
     }
 
+    // Prevent making a request based on stale cache data
+    if (_entitlements != null && _entitlements!.isUsingCachedConfig) {
+      debugPrint('AppOpenAd: Skipping ad request - waiting for fresh remote config to avoid unauthorized requests.');
+      return;
+    }
+
     AppOpenAd.load(
       adUnitId: adUnitId,
       request: const AdRequest(),
