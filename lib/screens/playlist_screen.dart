@@ -5000,7 +5000,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           ? Container(
                                               width: 55,
                                               height: 60,
-                                              color: Colors.black,
+                                              color: Colors.white.withValues(
+                                                alpha: 0.0,
+                                              ),
                                               child: CachedNetworkImage(
                                                 imageUrl: song.artUri!,
                                                 fit: BoxFit.fitHeight,

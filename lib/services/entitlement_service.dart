@@ -40,7 +40,10 @@ class EntitlementService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _cachedUserEmail = prefs.getString(_cacheUserEmailKey);
       _cachedUserName = prefs.getString(_cacheUserNameKey);
-      // No log or notify here to keep it silent unless config also arrives/fails
+      
+      // Notify listeners because the user identity is required for evaluating
+      // config rules correctly (like checking group memberships).
+      notifyListeners();
     } catch (e) {
       LogService().log("EntitlementService: Error loading user identity: $e");
     }

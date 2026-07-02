@@ -2514,6 +2514,20 @@ class _ShadowedImageState extends State<_ShadowedImage>
             child: Stack(
               fit: StackFit.expand,
               children: [
+                // Blurred background to fill any transparent/black areas
+                if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty)
+                  ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: Image.network(
+                      widget.imageUrl!,
+                      fit: BoxFit.cover,
+                      // Scale up slightly to avoid blur edge artifacts
+                      width: widget.size * 1.2,
+                      height: widget.size * 1.2,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                // Main cover image
                 widget.imageUrl != null && widget.imageUrl!.isNotEmpty
                     ? Image.network(
                         widget.imageUrl!,

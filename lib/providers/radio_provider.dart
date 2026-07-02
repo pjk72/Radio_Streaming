@@ -5164,8 +5164,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   void resume() async {
-    if (_currentStation != null || _currentPlayingPlaylistId != null) {
+    if (_currentPlayingPlaylistId != null) {
       await _audioHandler.play();
+    } else if (_currentStation != null) {
+      playStation(_currentStation!);
     }
   }
 

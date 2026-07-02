@@ -1387,8 +1387,12 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _playInternal(bool logEvent) async {
     await _initializationComplete;
     _startupLock = false; // User Action unlocks
-    // If paused, just resume without reloading
-    if (_player.state == PlayerState.paused) {
+    
+    final currentItem = mediaItem.value;
+    final isRadio = currentItem?.extras?['type'] == 'station';
+
+    // If paused, just resume without reloading (only for playlists, Radio needs full restart)
+    if (!isRadio && _player.state == PlayerState.paused) {
       _expectingStop = false;
       try {
         await _activateAudioSession();
@@ -1413,17 +1417,29 @@ class RadioAudioHandler extends BaseAudioHandler
       return;
     }
 
-    final currentItem = mediaItem.value;
     if (currentItem != null) {
       _expectingStop = false;
       if (logEvent) {
         _logAnalyticsEvent('toggle_play', {'action': 'play'});
       }
-      await playFromUri(
-        Uri.parse(currentItem.id),
-        currentItem.extras,
-        logEvent,
-      );
+
+      // AA FIX: For radio stations, simulate a tap on the station in the AA list
+      // by routing through playFromMediaId with user_initiated:true.
+      // This prevents Android Auto from misinterpreting the resume as a skipToNext,
+      // which happened when playFromUri was called with stale extras lacking user_initiated.
+      if (isRadio) {
+        final stationUrl = currentItem.extras?['url'] as String? ?? currentItem.id;
+        await playFromMediaId(stationUrl, {
+          ...?currentItem.extras,
+          'user_initiated': true,
+        });
+      } else {
+        await playFromUri(
+          Uri.parse(currentItem.id),
+          currentItem.extras,
+          logEvent,
+        );
+      }
       _startAnalyticsHeartbeat();
     }
   }

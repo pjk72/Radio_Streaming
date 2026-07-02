@@ -513,29 +513,33 @@ class PlayerBar extends StatelessWidget {
 
   Widget _buildImage(
     String url, {
-    BoxFit? fit,
+    BoxFit fit = BoxFit.cover,
     ImageErrorWidgetBuilder? errorBuilder,
   }) {
     if (url.startsWith('assets/')) {
-      return Image.asset(
-        url,
-        key: ValueKey(url),
-        fit: fit,
-        errorBuilder: errorBuilder,
-        gaplessPlayback: true,
+      return SizedBox.expand(
+        child: Image.asset(
+          url,
+          key: ValueKey(url),
+          fit: fit,
+          errorBuilder: errorBuilder,
+          gaplessPlayback: true,
+        ),
       );
     } else {
-      return CachedNetworkImage(
-        key: ValueKey(url),
-        imageUrl: url,
-        fit: fit,
-        errorWidget: errorBuilder != null
-            ? (context, url, error) =>
-                  errorBuilder(context, error, StackTrace.current)
-            : null,
-        memCacheWidth: 150, // Optimize memory for small thumbnail
-        maxWidthDiskCache: 150, // Optimize disk storage
-        fadeInDuration: const Duration(milliseconds: 300), // Smooth transition
+      return SizedBox.expand(
+        child: CachedNetworkImage(
+          key: ValueKey(url),
+          imageUrl: url,
+          fit: fit,
+          errorWidget: errorBuilder != null
+              ? (context, url, error) =>
+                    errorBuilder(context, error, StackTrace.current)
+              : null,
+          memCacheWidth: 150, // Optimize memory for small thumbnail
+          maxWidthDiskCache: 150, // Optimize disk storage
+          fadeInDuration: const Duration(milliseconds: 300), // Smooth transition
+        ),
       );
     }
   }
