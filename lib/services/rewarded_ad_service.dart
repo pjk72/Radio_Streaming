@@ -230,15 +230,7 @@ class RewardedAdService {
       }
     }
 
-    return showCompleter.future.timeout(
-      const Duration(seconds: 45),
-      onTimeout: () {
-        LogService().log("RewardedAdService: show flow timed out.");
-        _isShowingAd = false;
-        loadRewardedAd();
-        return false;
-      },
-    );
+    return showCompleter.future;
   }
 
   /// Callback standard legate al ciclo di vita dell'ad (usate solo durante il preload,

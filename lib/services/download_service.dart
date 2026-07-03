@@ -384,7 +384,13 @@ Future<void> downloadPlaylist(
                             final int bonus = earnedAmount > 0
                                 ? earnedAmount
                                 : 1;
+                            // Salviamo sempre il premio, indipendentemente
+                            // dallo stato dei context (che potrebbero essere
+                            // stale dopo un ad full-screen).
                             await provider.addEarnedDownloadCredits(bonus);
+                            if (ctx.mounted) {
+                              Navigator.pop(ctx, null);
+                            }
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
@@ -396,7 +402,6 @@ Future<void> downloadPlaylist(
                                   backgroundColor: Colors.green,
                                 ),
                               );
-                              Navigator.pop(ctx, null);
                               downloadPlaylist(context, provider, playlist);
                             }
                           }
