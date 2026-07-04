@@ -13,6 +13,7 @@ import 'package:flutter/widgets.dart'; // For AppLifecycleState
 import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../main.dart';
 import '../utils/glass_utils.dart';
@@ -7563,30 +7564,38 @@ _artistImageCache[rawKey] = null;
               title: cleanTitle,
               artist: cleanArtist,
             );
+            bool isExplicitUpdate = explicitSong != null && explicitSong.id == songId;
+
             bool currentArtIsMissingOrYoutube = song.artUri == null ||
                 song.artUri!.isEmpty ||
                 song.artUri!.contains('placeholder') ||
                 song.isYoutubeArt;
 
+            bool hasNewAlbum = match.album.isNotEmpty && match.album != song.album;
+
+            bool forceArtUpdate = isExplicitUpdate || hasNewAlbum;
+
             bool hasBetterArt = match.artUri != null &&
                 match.artUri!.isNotEmpty &&
-                currentArtIsMissingOrYoutube &&
+                (currentArtIsMissingOrYoutube || forceArtUpdate) &&
                 match.artUri != song.artUri;
             
             bool hasNewGenre = match.genre != null && match.genre!.isNotEmpty;
                 
             bool hasNewDuration = match.duration != null && match.duration != Duration.zero;
 
-            bool hasNewAlbum = match.album.isNotEmpty &&
-                (song.album == 'Unknown Album' || song.album == 'YouTube' || song.album.isEmpty || song.album == song.provider);
-
             String capitalizeWords(String s) => s.split(' ').map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1).toLowerCase()).join(' ');
             cleanTitle = capitalizeWords(cleanTitle);
             cleanArtist = capitalizeWords(cleanArtist);
 
-            bool titleOrArtistChanged = song.title != cleanTitle || song.artist != cleanArtist;
+            bool titleOrArtistChanged = song.title != cleanTitle || song.artist != cleanArtist || isExplicitUpdate;
 
             if (hasBetterArt || hasNewGenre || hasNewDuration || hasNewAlbum || titleOrArtistChanged) {
+              if (hasBetterArt && match.artUri != null) {
+                try {
+                  CachedNetworkImageProvider(match.artUri!).resolve(const ImageConfiguration());
+                } catch (_) {}
+              }
               // Update metadata in all playlists
               bool songChanged = false;
               for (int i = 0; i < _playlists.length; i++) {
@@ -7656,6 +7665,9 @@ _artistImageCache[rawKey] = null;
                   extraThumb.contains('img.youtube.com');
 
               if (!isExtraThumbYoutube) {
+                try {
+                  CachedNetworkImageProvider(extraThumb).resolve(const ImageConfiguration());
+                } catch (_) {}
                 // Update globally
                 anyChanged = true;
                 for (int i = 0; i < _playlists.length; i++) {

@@ -9,6 +9,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
 
@@ -230,11 +231,13 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
         children: [
           // 1. Background Image
           if (bgImage != null)
-            Image.network(
-              bgImage,
+            CachedNetworkImage(
+              imageUrl: bgImage,
               key: ValueKey(bgImage), // Force rebuild on image change
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
+              placeholder: (_, __) =>
+                  Container(color: Color(int.parse(station.color))),
+              errorWidget: (_, __, ___) =>
                   Container(color: Color(int.parse(station.color))),
             )
           else
@@ -2518,38 +2521,40 @@ class _ShadowedImageState extends State<_ShadowedImage>
                 if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty)
                   ImageFiltered(
                     imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: Image.network(
-                      widget.imageUrl!,
+                    child: CachedNetworkImage(
+                      imageUrl: widget.imageUrl!,
                       fit: BoxFit.cover,
                       // Scale up slightly to avoid blur edge artifacts
                       width: widget.size * 1.2,
                       height: widget.size * 1.2,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      placeholder: (_, __) => const SizedBox.shrink(),
+                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
                 // Main cover image
                 widget.imageUrl != null && widget.imageUrl!.isNotEmpty
-                    ? Image.network(
-                        widget.imageUrl!,
+                    ? CachedNetworkImage(
+                        imageUrl: widget.imageUrl!,
                         key: ValueKey(widget.imageUrl),
                         fit: BoxFit.cover,
-                        frameBuilder:
-                            (context, child, frame, wasSynchronouslyLoaded) {
-                              if (frame != null && !_isLoaded) {
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (mounted) {
-                                    setState(() {
-                                      _isLoaded = true;
-                                    });
-                                    _fadeController.forward();
-                                  }
+                        imageBuilder: (context, imageProvider) {
+                          if (!_isLoaded) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) {
+                                setState(() {
+                                  _isLoaded = true;
                                 });
+                                _fadeController.forward();
                               }
-                              return child;
-                            },
-                        errorBuilder: (context, error, stackTrace) {
+                            });
+                          }
+                          return Image(
+                            image: imageProvider,
+                            fit: BoxFit.cover,
+                          );
+                        },
+                        placeholder: (context, url) => _buildPlaceholder(),
+                        errorWidget: (context, url, error) {
                           return _buildPlaceholder();
                         },
                       )

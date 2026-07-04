@@ -43,17 +43,30 @@ class _LoginScreenState extends State<LoginScreen> {
     await Permission.notification.request();
 
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('was_guest') == true) {
+    final bool? wasGuest = prefs.getBool('was_guest');
+
+    if (wasGuest == true) {
       if (mounted) {
         _goToHome();
       }
       return;
     }
 
+    if (wasGuest == false) {
+      // Returning Google user. Do not await to prevent blocking when offline.
+      auth.signInSilently();
+      if (mounted) {
+        _goToHome();
+      }
+      return;
+    }
+
+    // First time opening app (wasGuest is null)
     // Attempt silent sign in
     await auth.signInSilently();
 
     if (auth.isSignedIn && mounted) {
+      await prefs.setBool('was_guest', false);
       _goToHome();
     } else {
       if (mounted) {
