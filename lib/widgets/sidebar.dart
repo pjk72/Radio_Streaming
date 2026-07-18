@@ -141,8 +141,8 @@ class Sidebar extends StatelessWidget {
                     _navItem(
                       context,
                       0,
-                      Icons.radio,
-                      langProvider.translate('tab_radio'),
+                      Icons.whatshot,
+                      langProvider.translate('tab_trending'),
                     ),
                     _navItem(
                       context,
@@ -153,8 +153,8 @@ class Sidebar extends StatelessWidget {
                     _navItem(
                       context,
                       2,
-                      Icons.whatshot,
-                      langProvider.translate('tab_trending'),
+                      Icons.radio,
+                      langProvider.translate('tab_radio'),
                     ),
 
                     // const SizedBox(height: 24),

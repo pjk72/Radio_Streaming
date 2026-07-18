@@ -49,6 +49,11 @@ subprojects {
             force("androidx.glance:glance-appwidget:1.1.0")
         }
     }
+    tasks.withType<KotlinCompile> {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {
