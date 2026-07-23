@@ -11,7 +11,7 @@ import 'manage_stations_screen.dart';
 import 'api_debug_screen.dart';
 import 'debug_log_screen.dart';
 import 'local_library_screen.dart';
-import 'sleep_timer_screen.dart';
+import 'statistics_screen.dart';
 import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
@@ -99,7 +99,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canManageStations = entitlements.isFeatureEnabled('manage_stations');
     final canUseAppearance = entitlements.isFeatureEnabled('appearance');
     final canUseDebugLogs = entitlements.isFeatureEnabled('debug_logs');
-    final canUseSleepTimer = entitlements.isFeatureEnabled('timer_alarm');
 
     return Stack(
       children: [
@@ -187,23 +186,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-                    if (canUseSleepTimer)
+                    if (entitlements.isFeatureEnabled('statistics_page'))
                       _buildSettingsTile(
                         context,
-                        icon: Icons.access_time_filled_rounded,
-                        title: langProvider.translate('sleep_timer'),
-                        subtitle: _getTimerSummary(radio, langProvider),
-                        isActive: radio.sleepTimerEnabled,
+                        icon: Icons.bar_chart_rounded,
+                        title: langProvider.translate('statistics'),
+                        subtitle: langProvider.translate('statistics_desc'),
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const SleepTimerScreen(),
+                              builder: (_) => const StatisticsScreen(),
                             ),
                           );
                         },
                       ),
 
+
+
+                    const SizedBox(height: 32),
+                    Text(
+                      langProvider.translate('playback'),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).textTheme.titleLarge?.color,
+                      ),
+                    ),
                     const SizedBox(height: 32),
                     Text(
                       langProvider.translate('playback'),
@@ -234,8 +243,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         border: Border.all(
                           color: Theme.of(
                             context,
-                          ).dividerColor.withValues(alpha: 0.05),
+                          ).dividerColor.withValues(alpha: 0.5),
                         ),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,149 +580,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-
-                            // Startup Playback
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  langProvider.translate('startup_playback'),
-                                  style: TextStyle(
-                                    color: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.color
-                                        ?.withValues(alpha: 0.7),
-                                  ),
-                                ),
-                                InkWell(
-                                  onTap: () => _showStartOptionPicker(
-                                    context,
-                                    radio,
-                                    langProvider,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        langProvider.translate(
-                                          radio.startOption == 'none'
-                                              ? 'none'
-                                              : radio.startOption == 'last'
-                                              ? 'last_played'
-                                              : 'specific_station',
-                                        ),
-                                        style: TextStyle(
-                                          color: Theme.of(context).primaryColor,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Icon(
-                                        Icons.chevron_right,
-                                        size: 16,
-                                        color: Theme.of(context).primaryColor,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (radio.startOption == 'specific') ...[
-                              const SizedBox(height: 8),
-                              Builder(
-                                builder: (context) {
-                                  final stations = radio.stations;
-                                  final selectedStation =
-                                      radio.startupStationId != null &&
-                                          stations.isNotEmpty
-                                      ? (stations.any(
-                                              (s) =>
-                                                  s.id ==
-                                                  radio.startupStationId,
-                                            )
-                                            ? stations.firstWhere(
-                                                (s) =>
-                                                    s.id ==
-                                                    radio.startupStationId,
-                                              )
-                                            : stations.first)
-                                      : null;
-
-                                  return Material(
-                                    color: Colors.black.withValues(
-                                      alpha: 0.001,
-                                    ),
-                                    child: ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      leading: Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white10,
-                                          shape: BoxShape.circle,
-                                          image:
-                                              selectedStation?.logo != null &&
-                                                  selectedStation!
-                                                      .logo!
-                                                      .isNotEmpty
-                                              ? DecorationImage(
-                                                  image:
-                                                      selectedStation.logo!
-                                                          .startsWith('http')
-                                                      ? NetworkImage(
-                                                          selectedStation.logo!,
-                                                        )
-                                                      : AssetImage(
-                                                              selectedStation
-                                                                  .logo!,
-                                                            )
-                                                            as ImageProvider,
-                                                  fit: BoxFit.cover,
-                                                )
-                                              : null,
-                                        ),
-                                        child:
-                                            selectedStation?.logo == null ||
-                                                selectedStation!.logo!.isEmpty
-                                            ? const Icon(
-                                                Icons.radio,
-                                                color: Colors.white70,
-                                                size: 20,
-                                              )
-                                            : null,
-                                      ),
-                                      title: Text(
-                                        selectedStation?.name ??
-                                            langProvider.translate(
-                                              'select_station',
-                                            ),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        langProvider.translate('tap_to_choose'),
-                                        style: const TextStyle(
-                                          color: Colors.white38,
-                                        ),
-                                      ),
-                                      trailing: const Icon(
-                                        Icons.chevron_right,
-                                        color: Colors.white38,
-                                      ),
-                                      onTap: () => _showStationPicker(
-                                        context,
-                                        radio,
-                                        langProvider,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-
                             const SizedBox(height: 24),
                             // Actions section
 
@@ -1204,8 +1071,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.05),
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
         ),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1268,6 +1136,219 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
           ),
+          
+          const Divider(color: Colors.white10, height: 32),
+
+          // Startup Playback
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                lang.translate('startup_playback'),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                ),
+              ),
+              InkWell(
+                onTap: () => _showStartOptionPicker(
+                  context,
+                  radio,
+                  lang,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      lang.translate(
+                        radio.startOption == 'none'
+                            ? 'none'
+                            : radio.startOption == 'last'
+                            ? 'last_played'
+                            : 'specific_station',
+                      ),
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (radio.startOption == 'specific') ...[
+            const SizedBox(height: 8),
+            Builder(
+              builder: (context) {
+                final stations = radio.stations;
+                final selectedStation =
+                    radio.startupStationId != null &&
+                        stations.isNotEmpty
+                    ? (stations.any(
+                            (s) =>
+                                s.id ==
+                                radio.startupStationId,
+                          )
+                          ? stations.firstWhere(
+                              (s) =>
+                                  s.id ==
+                                  radio.startupStationId,
+                            )
+                          : stations.first)
+                    : null;
+
+                return Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        shape: BoxShape.circle,
+                        image:
+                            selectedStation?.logo != null &&
+                                selectedStation!
+                                    .logo!
+                                    .isNotEmpty
+                            ? DecorationImage(
+                                image:
+                                    selectedStation.logo!
+                                        .startsWith('http')
+                                    ? NetworkImage(
+                                        selectedStation.logo!,
+                                      )
+                                    : AssetImage(
+                                            selectedStation
+                                                .logo!,
+                                          )
+                                          as ImageProvider,
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child:
+                          selectedStation?.logo == null ||
+                              selectedStation!.logo!.isEmpty
+                          ? const Icon(
+                              Icons.radio,
+                              color: Colors.white70,
+                              size: 20,
+                            )
+                          : null,
+                    ),
+                    title: Text(
+                      selectedStation?.name ??
+                          lang.translate(
+                            'select_station',
+                          ),
+                      style: const TextStyle(
+                        color: Colors.white,
+                      ),
+                    ),
+                    subtitle: Text(
+                      lang.translate('tap_to_choose'),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white38,
+                    ),
+                    onTap: () => _showStationPicker(
+                      context,
+                      radio,
+                      lang,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+          
+          if (Provider.of<EntitlementService>(context).isFeatureEnabled('timer_alarm')) ...[
+            const Divider(color: Colors.white10, height: 32),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lang.translate('sleep_timer'),
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge?.color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      radio.sleepTimerEnabled
+                          ? "${lang.translate('remaining_time')}: ${_formatDuration(radio.remainingSleepTime)}"
+                          : lang.translate('sleep_timer_desc'),
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                Switch(
+                  value: radio.sleepTimerEnabled,
+                  onChanged: (val) => radio.setSleepTimerEnabled(val),
+                  activeColor: Theme.of(context).primaryColor,
+                  inactiveTrackColor: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                ),
+              ],
+            ),
+            if (radio.sleepTimerEnabled) ...[
+              const SizedBox(height: 16),
+              InkWell(
+                onTap: () => _showTimePicker(
+                  context,
+                  radio: radio,
+                  langProvider: lang,
+                  isDuration: true,
+                  title: lang.translate('set_duration'),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      lang.translate('set_duration'),
+                      style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          _formatDuration(radio.sleepTimerDuration),
+                          style: TextStyle(
+                            color: Theme.of(context).primaryColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -1296,12 +1377,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         clipBehavior: Clip.antiAlias,
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(
+            border: Border.all(              
               color: isActive
                   ? Theme.of(context).primaryColor.withValues(alpha: 0.5)
                   : contrastColor.withValues(alpha: 0.2),
               width: isActive ? 2 : 1,
             ),
+            borderRadius: BorderRadius.circular(16),
             boxShadow: isActive
                 ? [
                     BoxShadow(
@@ -1316,7 +1398,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           child: ListTile(
             leading: Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
@@ -1869,10 +1951,132 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  String _getTimerSummary(RadioProvider radio, LanguageProvider langProvider) {
-    if (radio.sleepTimerEnabled) {
-      return langProvider.translate('sleep_timer');
-    }
-    return langProvider.translate('timer_off');
+  String _formatDuration(Duration? d) {
+    if (d == null) return "00:00";
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    return "${twoDigits(d.inHours)}:${twoDigits(d.inMinutes.remainder(60))}";
+  }
+
+  void _showTimePicker(
+    BuildContext context, {
+    required RadioProvider radio,
+    required LanguageProvider langProvider,
+    required bool isDuration,
+    required String title,
+  }) {
+    int selectedHour = isDuration ? radio.sleepTimerDuration.inHours : DateTime.now().hour;
+    int selectedMinute = isDuration ? radio.sleepTimerDuration.inMinutes.remainder(60) : DateTime.now().minute;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.45,
+              decoration: BoxDecoration(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.titleLarge?.color,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildTimeColumn(
+                          context: context,
+                          max: 23,
+                          current: selectedHour,
+                          onChanged: (val) => setModalState(() => selectedHour = val),
+                        ),
+                        Text(":", style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontSize: 30, fontWeight: FontWeight.bold)),
+                        _buildTimeColumn(
+                          context: context,
+                          max: 59,
+                          current: selectedMinute,
+                          onChanged: (val) => setModalState(() => selectedMinute = val),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 55,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        ),
+                        onPressed: () {
+                          if (isDuration) {
+                            radio.setSleepTimerDuration(Duration(hours: selectedHour, minutes: selectedMinute));
+                          }
+                          Navigator.pop(ctx);
+                        },
+                        child: Text(langProvider.translate('done').toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildTimeColumn({required BuildContext context, required int max, required int current, required ValueChanged<int> onChanged}) {
+    return SizedBox(
+      width: 80,
+      child: ListWheelScrollView.useDelegate(
+        itemExtent: 50,
+        perspective: 0.005,
+        diameterRatio: 1.2,
+        physics: const FixedExtentScrollPhysics(),
+        onSelectedItemChanged: onChanged,
+        childDelegate: ListWheelChildBuilderDelegate(
+          childCount: max + 1,
+          builder: (context, index) {
+            final isSelected = index == current;
+            return Center(
+              child: Text(
+                index.toString().padLeft(2, '0'),
+                style: TextStyle(
+                  color: isSelected ? Theme.of(context).textTheme.bodyLarge?.color : Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.5),
+                  fontSize: isSelected ? 28 : 20,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            );
+          },
+        ),
+        controller: FixedExtentScrollController(initialItem: current),
+      ),
+    );
   }
 }

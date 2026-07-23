@@ -269,7 +269,8 @@ class EntitlementService extends ChangeNotifier {
 
     // SPECIAL LOGIC for specified ad attributes: prioritized specificity
     if (featureKey == 'app_open_ad' ||
-        featureKey == 'interstitial_ad') {
+        featureKey == 'interstitial_ad' ||
+        featureKey == 'statistics_page') {
       return _getPrioritizedValue(featureKey) != 0;
     }
 
@@ -353,7 +354,8 @@ class EntitlementService extends ChangeNotifier {
 
     // SPECIAL LOGIC for specified ad attributes: prioritized specificity
     if (featureKey == 'app_open_ad' ||
-        featureKey == 'interstitial_ad') {
+        featureKey == 'interstitial_ad' ||
+        featureKey == 'statistics_page') {
       return _getPrioritizedValue(featureKey);
     }
 

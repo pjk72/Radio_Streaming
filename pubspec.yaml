@@ -97,6 +97,7 @@ dependencies:
   record: ^6.2.0
   audio_session: ^0.2.3
   marquee: ^2.3.0
+  fl_chart: ^1.2.0
 
 dev_dependencies:
   flutter_test:

@@ -47,6 +47,8 @@ Future<bool> _performBackgroundBackup() async {
     final genreOrder = prefs.getStringList('genre_order');
     final categoryOrder = prefs.getStringList('category_order');
     final playlistsJson = prefs.getString('playlists_v2');
+    final weeklyPlayLogJson = prefs.getString('weekly_play_log');
+    final historyMetadataJson = prefs.getString('history_metadata');
 
     final data = {
       'stations': stationsJson != null ? jsonDecode(stationsJson) : [],
@@ -57,6 +59,8 @@ Future<bool> _performBackgroundBackup() async {
       'genre_order': genreOrder ?? [],
       'category_order': categoryOrder ?? [],
       'playlists': playlistsJson != null ? jsonDecode(playlistsJson) : [],
+      'weekly_play_log': weeklyPlayLogJson != null ? jsonDecode(weeklyPlayLogJson) : [],
+      'history_metadata': historyMetadataJson != null ? jsonDecode(historyMetadataJson) : {},
       'theme_settings': {
         'theme_id': prefs.getString('theme_id'),
         'custom_primary': prefs.getInt('custom_primary'),

@@ -3881,6 +3881,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String? overrideArtist,
     String? overrideAlbum,
     String? overrideArtUri,
+    String? overrideGenre,
     bool isLocal = false,
     bool isResolved = false,
   }) async {
@@ -3903,6 +3904,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String artist = overrideArtist ?? "YouTube";
     String? artwork = overrideArtUri;
     String? album = overrideAlbum;
+    String? genre = overrideGenre;
     String? releaseDate;
     Duration? songDuration;
 
@@ -3940,6 +3942,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           artist = match.artist;
           artwork = match.artUri;
           album = match.album;
+          genre = match.genre ?? genre; // preserve override genre if lookup has none
           releaseDate = match.releaseDate;
           songDuration = match.duration;
           break;
@@ -4007,6 +4010,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'artist': artist,
         'artUri': artwork,
         'album': album ?? (isLocal ? "Local Device" : "Playlist"),
+        'genre': genre,
         'duration': (songDuration != null && songDuration.inSeconds > 0)
             ? songDuration.inSeconds
             : null,
@@ -5424,22 +5428,20 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Auto-fetch missing metadata if the corner triangle would be shown.
     // This is the single choke-point for ALL playback paths (tap, skip next/prev,
     // Android Auto, auto-skip) so it reliably covers every case.
-    if (playlistId != null) {
-      final bool hasIncompleteMetadata =
-          (song.artUri == null || song.artUri!.isEmpty) ||
-          song.title.trim().isEmpty ||
-          song.artist.trim().isEmpty ||
-          song.album.trim().isEmpty ||
-          (song.genre == null || song.genre!.trim().isEmpty) ||
-          song.duration == null;
+    final bool hasIncompleteMetadata =
+        (song.artUri == null || song.artUri!.isEmpty) ||
+        song.title.trim().isEmpty ||
+        song.artist.trim().isEmpty ||
+        song.album.trim().isEmpty ||
+        (song.genre == null || song.genre!.trim().isEmpty) ||
+        song.duration == null;
 
-      if (hasIncompleteMetadata) {
-        findMissingArtworks(
-          playlistId: playlistId,
-          songIdToSync: song.id,
-          explicitSong: song,
-        );
-      }
+    if (hasIncompleteMetadata) {
+      findMissingArtworks(
+        playlistId: playlistId,
+        songIdToSync: song.id,
+        explicitSong: song,
+      );
     }
 
     // Optimistic UI update
@@ -5587,6 +5589,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           overrideArtist: song.artist,
           overrideAlbum: song.album,
           overrideArtUri: song.artUri,
+          overrideGenre: song.genre,
           isLocal: false,
           isResolved: true,
         );
@@ -5707,6 +5710,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           overrideArtist: song.artist,
           overrideAlbum: song.album,
           overrideArtUri: song.artUri,
+          overrideGenre: song.genre,
         ); // Recursive metadata update
       } else {
         _isLoading = false;
@@ -6388,6 +6392,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'invalid_song_ids': _invalidSongIds,
         'playlists': _playlists.map((p) => p.toJson()).toList(),
         'user_play_history': _userPlayHistory,
+        'weekly_play_log': _weeklyPlayLog,
         'history_metadata': _historyMetadata.map(
           (k, v) => MapEntry(k, v.toJson()),
         ),
@@ -6568,6 +6573,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       if (data['user_play_history'] != null) {
         final Map<String, dynamic> history = data['user_play_history'];
         _userPlayHistory = history.map((k, v) => MapEntry(k, v as int));
+      }
+      if (data['weekly_play_log'] != null) {
+        _weeklyPlayLog = List<dynamic>.from(data['weekly_play_log']);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_keyWeeklyPlayLog, jsonEncode(_weeklyPlayLog));
       }
       if (data['history_metadata'] != null) {
         final Map<String, dynamic> meta = data['history_metadata'];
@@ -7596,6 +7606,71 @@ _artistImageCache[rawKey] = null;
                   CachedNetworkImageProvider(match.artUri!).resolve(const ImageConfiguration());
                 } catch (_) {}
               }
+
+              // Write genre hint to SharedPreferences so _recordSongInHistory
+              // can read it even if the MediaItem wasn't updated in time (race condition)
+              if (hasNewGenre && match.genre != null) {
+                try {
+                  final prefs = await SharedPreferences.getInstance();
+                  final hintsStr = prefs.getString('genre_hints');
+                  final Map<String, dynamic> hints = hintsStr != null
+                      ? Map<String, dynamic>.from(jsonDecode(hintsStr))
+                      : {};
+                  hints[songId] = match.genre;
+                  // Keep hints map from growing unboundedly (max 200 entries)
+                  if (hints.length > 200) {
+                    final oldest = hints.keys.take(hints.length - 200).toList();
+                    for (final k in oldest) hints.remove(k);
+                  }
+                  await prefs.setString('genre_hints', jsonEncode(hints));
+                } catch (_) {}
+              }
+              // Update metadata in history if it exists
+              if (_historyMetadata.containsKey(songId)) {
+                _historyMetadata[songId] = _historyMetadata[songId]!.copyWith(
+                  title: titleOrArtistChanged ? cleanTitle : _historyMetadata[songId]!.title,
+                  artist: titleOrArtistChanged ? cleanArtist : _historyMetadata[songId]!.artist,
+                  artUri: hasBetterArt ? match.artUri : _historyMetadata[songId]!.artUri,
+                  album: (hasBetterArt
+                      ? match.album
+                      : (hasNewAlbum ? match.album : _historyMetadata[songId]!.album))
+                      .replaceAll(RegExp(r'\s*-\s*$'), '')
+                      .trim(),
+                  appleMusicUrl:
+                      _historyMetadata[songId]!.appleMusicUrl ??
+                      match.appleMusicUrl,
+                  genre: hasNewGenre ? match.genre : _historyMetadata[songId]!.genre,
+                  duration: hasNewDuration ? match.duration : _historyMetadata[songId]!.duration,
+                );
+                await _saveUserPlayHistory();
+              }
+
+              // If currently playing, update running MediaItem in the audio handler so history records it correctly
+              if (songId == _audioOnlySongId) {
+                _currentTrack = cleanTitle;
+                _currentArtist = cleanArtist;
+                _currentAlbum = match.album;
+                _currentAlbumArt = match.artUri;
+                
+                _audioHandler.updateMediaItem(
+                  MediaItem(
+                    id: songId,
+                    title: cleanTitle,
+                    artist: cleanArtist,
+                    album: match.album,
+                    artUri: match.artUri != null ? Uri.tryParse(match.artUri!) : null,
+                    duration: match.duration,
+                    extras: {
+                      'isLocal': song.localPath != null,
+                      'type': 'playlist_song',
+                      'songId': songId,
+                      'playlistId': playlistId,
+                      'genre': match.genre,
+                    },
+                  ),
+                );
+              }
+
               // Update metadata in all playlists
               bool songChanged = false;
               for (int i = 0; i < _playlists.length; i++) {

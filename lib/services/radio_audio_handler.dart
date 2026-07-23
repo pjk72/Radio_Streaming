@@ -4768,6 +4768,7 @@ class RadioAudioHandler extends BaseAudioHandler
         'appleMusicUrl': s.appleMusicUrl,
         'releaseDate': s.releaseDate,
         'provider': s.provider,
+        'genre': s.genre,
         'isLocal': s.localPath != null,
         'localPath': s.localPath,
         'isCar': _isInAndroidAutoMode,
@@ -5288,6 +5289,20 @@ class RadioAudioHandler extends BaseAudioHandler
 
       final current = mediaItem.value;
       if (current != null) {
+        // Primary: genre from MediaItem extras (set by playYoutubeAudio or updateMediaItem after enrichment)
+        String? genre = current.extras?['genre'] as String?;
+
+        // Fallback: genre_hints map written by findMissingArtworks when enrichment finishes
+        if (genre == null || genre.isEmpty) {
+          try {
+            final hintsStr = prefs.getString('genre_hints');
+            if (hintsStr != null) {
+              final Map<String, dynamic> hints = jsonDecode(hintsStr);
+              genre = hints[songId] as String?;
+            }
+          } catch (_) {}
+        }
+
         metadata[songId] = SavedSong(
           id: songId,
           title: current.title,
@@ -5295,7 +5310,7 @@ class RadioAudioHandler extends BaseAudioHandler
           album: current.album ?? 'Unknown Album',
           artUri: current.artUri?.toString(),
           dateAdded: DateTime.now(),
-          genre: current.extras?['genre'],
+          genre: genre,
         );
       }
 
