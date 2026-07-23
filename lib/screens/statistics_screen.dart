@@ -38,6 +38,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
   String _selectedPeriod = 'last_7_days';
   DateTime? _customStartDate;
   DateTime? _customEndDate;
+  bool _groupByDate = true;
 
   final List<String> _periodOptions = [
     'today',
@@ -606,6 +607,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         // Calcola andamento giornaliero per il grafico
         Map<String, int> dailyListens = {};
         Map<String, Map<String, int>> dailySongCounts = {};
+        Map<String, int> totalSongCounts = {};
         Map<String, int> artistCounts = {};
         Map<String, int> genreCounts = {};
         
@@ -620,6 +622,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             
             dailySongCounts.putIfAbsent(fullDateKey, () => {});
             dailySongCounts[fullDateKey]![id] = (dailySongCounts[fullDateKey]![id] ?? 0) + 1;
+            totalSongCounts[id] = (totalSongCounts[id] ?? 0) + 1;
 
             final info = songLookup[id];
             if (info != null) {
@@ -719,9 +722,32 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             const SizedBox(height: 24),
             
             // Lista top canzoni (Trending style)
-            Text(
-              langProvider.translate('top_songs'),
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  langProvider.translate('top_songs'),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      langProvider.translate('group_by_date').isNotEmpty && langProvider.translate('group_by_date') != 'group_by_date'
+                          ? langProvider.translate('group_by_date')
+                          : 'Raggruppa per data',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    Switch(
+                      value: _groupByDate,
+                      onChanged: (val) {
+                        setState(() {
+                          _groupByDate = val;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             
@@ -733,175 +759,65 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                 ),
               ),
               
-            ...sortedDays.expand((day) {
-              final parsedDate = DateTime.parse(day);
-              final displayDate = DateFormat('dd/MM/yyyy').format(parsedDate);
-              final sortedSongsForDay = dailySongCounts[day]!.entries.toList()
-                ..sort((a, b) => b.value.compareTo(a.value));
-                
-              List<Widget> widgets = [];
-              widgets.add(
-                Padding(
-                  padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      displayDate,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).primaryColor,
+            if (_groupByDate)
+              ...sortedDays.expand((day) {
+                final parsedDate = DateTime.parse(day);
+                final displayDate = DateFormat('dd/MM/yyyy').format(parsedDate);
+                final sortedSongsForDay = dailySongCounts[day]!.entries.toList()
+                  ..sort((a, b) => b.value.compareTo(a.value));
+                  
+                List<Widget> widgets = [];
+                widgets.add(
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
+                      ),
+                      child: Text(
+                        displayDate,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).primaryColor,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-              
-              for (var entry in sortedSongsForDay) {
-                final songId = entry.key;
-                final count = entry.value;
-                final song = metadata[songId];
+                );
                 
-                if (song == null) continue;
-                
-                widgets.add(
-                  ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: song.artUri != null && song.artUri!.isNotEmpty
-                      ? Image.network(song.artUri!, width: 50, height: 50, fit: BoxFit.cover)
-                      : Container(width: 50, height: 50, color: Colors.white10, child: const Icon(Icons.music_note)),
-                ),
-                title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54)),
-                trailing: Text(langProvider.translate('listens_count').replaceAll('{0}', count.toString()), style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
-                onTap: () {
-                  // Mostra un bottom sheet di anteprima, lasciando all'utente la scelta
-                  showModalBottomSheet(
-                    context: context,
-                    backgroundColor:Theme.of(context).cardColor.withValues(alpha: 0.7),
-                    builder: (sheetCtx) {
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).cardColor,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                        ),
-                        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Handle bar
-                            Container(
-                              width: 40, height: 4,
-                              margin: const EdgeInsets.only(bottom: 20),
-                              decoration: BoxDecoration(
-                                color: Colors.white24,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            // Cover + info
-                            Row(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: song.artUri != null && song.artUri!.isNotEmpty
-                                      ? Image.network(song.artUri!, width: 80, height: 80, fit: BoxFit.cover)
-                                      : Container(width: 80, height: 80, color: Colors.white10, child: const Icon(Icons.music_note, size: 36)),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(song.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                      const SizedBox(height: 4),
-                                      Text(song.artist, style: const TextStyle(color: Colors.white54, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          Icon(Icons.headphones, size: 14, color: Theme.of(context).primaryColor),
-                                          const SizedBox(width: 4),
-                                          Text(langProvider.translate('listens_count').replaceAll('{0}', count.toString()), style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 13, fontWeight: FontWeight.w600)),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
-                            // Pulsante Ascolta
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                icon: const Icon(Icons.play_circle_fill, size: 22),
-                                label: Text(langProvider.translate('listen_now'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(context).primaryColor,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                ),
-                                onPressed: () async {
-                                  Navigator.pop(sheetCtx); // chiudi il bottom sheet
-
-                                  // Trova la playlist che contiene questo brano
-                                  String? playlistId;
-                                  for (final playlist in provider.playlists) {
-                                    if (playlist.songs.any((s) => s.id == song.id)) {
-                                      playlistId = playlist.id;
-                                      break;
-                                    }
-                                  }
-                                  final songToPlay = playlistId != null
-                                      ? provider.playlists
-                                          .firstWhere((p) => p.id == playlistId)
-                                          .songs
-                                          .firstWhere((s) => s.id == song.id, orElse: () => song)
-                                      : song;
-
-                                  await provider.playPlaylistSong(songToPlay, playlistId);
-
-                                  if (context.mounted) {
-                                    Navigator.of(context).push(
-                                      PageRouteBuilder(
-                                        pageBuilder: (context, animation, secondaryAnimation) =>
-                                            const SongDetailsScreen(),
-                                        transitionsBuilder:
-                                            (context, animation, secondaryAnimation, child) {
-                                          const begin = Offset(0.0, 1.0);
-                                          const end = Offset.zero;
-                                          const curve = Curves.easeOutQuart;
-                                          return SlideTransition(
-                                            position: animation
-                                                .drive(Tween(begin: begin, end: end)
-                                                    .chain(CurveTween(curve: curve))),
-                                            child: child,
-                                          );
-                                        },
-                                      ),
-                                    );
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                for (var entry in sortedSongsForDay) {
+                  final songId = entry.key;
+                  final count = entry.value;
+                  final song = metadata[songId];
+                  
+                  if (song == null) continue;
+                  
+                  widgets.add(_buildSongTile(song, count, provider, langProvider, context));
+                }
+                return widgets;
+              })
+            else
+              Builder(
+                builder: (context) {
+                  final sortedAllSongs = totalSongCounts.entries.toList()
+                    ..sort((a, b) => b.value.compareTo(a.value));
+                  return Column(
+                    children: sortedAllSongs.map((entry) {
+                      final songId = entry.key;
+                      final count = entry.value;
+                      final song = metadata[songId];
+                      if (song == null) return const SizedBox.shrink();
+                      return _buildSongTile(song, count, provider, langProvider, context);
+                    }).toList(),
                   );
-                },
-              ));
-              }
-              return widgets;
-            }),
+                }
+              ),
+            
             
             const SizedBox(height: 90),
           ],
@@ -997,6 +913,137 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSongTile(dynamic song, int count, RadioProvider provider, LanguageProvider langProvider, BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: song.artUri != null && song.artUri!.isNotEmpty
+            ? Image.network(song.artUri!, width: 50, height: 50, fit: BoxFit.cover)
+            : Container(width: 50, height: 50, color: Colors.white10, child: const Icon(Icons.music_note)),
+      ),
+      title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54)),
+      trailing: Text(langProvider.translate('listens_count').replaceAll('{0}', count.toString()), style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
+      onTap: () {
+        // Mostra un bottom sheet di anteprima, lasciando all'utente la scelta
+        showModalBottomSheet(
+          context: context,
+          backgroundColor:Theme.of(context).cardColor.withValues(alpha: 0.7),
+          builder: (sheetCtx) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle bar
+                  Container(
+                    width: 40, height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  // Cover + info
+                  Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: song.artUri != null && song.artUri!.isNotEmpty
+                            ? Image.network(song.artUri!, width: 80, height: 80, fit: BoxFit.cover)
+                            : Container(width: 80, height: 80, color: Colors.white10, child: const Icon(Icons.music_note, size: 36)),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(song.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 4),
+                            Text(song.artist, style: const TextStyle(color: Colors.white54, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.headphones, size: 14, color: Theme.of(context).primaryColor),
+                                const SizedBox(width: 4),
+                                Text(langProvider.translate('listens_count').replaceAll('{0}', count.toString()), style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  // Pulsante Ascolta
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.play_circle_fill, size: 22),
+                      label: Text(langProvider.translate('listen_now'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(sheetCtx); // chiudi il bottom sheet
+
+                        // Trova la playlist che contiene questo brano
+                        String? playlistId;
+                        for (final playlist in provider.playlists) {
+                          if (playlist.songs.any((s) => s.id == song.id)) {
+                            playlistId = playlist.id;
+                            break;
+                          }
+                        }
+                        final songToPlay = playlistId != null
+                            ? provider.playlists
+                                .firstWhere((p) => p.id == playlistId)
+                                .songs
+                                .firstWhere((s) => s.id == song.id, orElse: () => song)
+                            : song;
+
+                        await provider.playPlaylistSong(songToPlay, playlistId);
+
+                        if (context.mounted) {
+                          Navigator.of(context).push(
+                            PageRouteBuilder(
+                              pageBuilder: (context, animation, secondaryAnimation) =>
+                                  const SongDetailsScreen(),
+                              transitionsBuilder:
+                                  (context, animation, secondaryAnimation, child) {
+                                const begin = Offset(0.0, 1.0);
+                                const end = Offset.zero;
+                                const curve = Curves.easeOutQuart;
+                                return SlideTransition(
+                                  position: animation
+                                      .drive(Tween(begin: begin, end: end)
+                                          .chain(CurveTween(curve: curve))),
+                                  child: child,
+                                );
+                              },
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

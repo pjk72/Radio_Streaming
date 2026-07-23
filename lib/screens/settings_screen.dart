@@ -202,17 +202,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                       ),
 
-
-
-                    const SizedBox(height: 32),
-                    Text(
-                      langProvider.translate('playback'),
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).textTheme.titleLarge?.color,
-                      ),
-                    ),
                     const SizedBox(height: 32),
                     Text(
                       langProvider.translate('playback'),
@@ -1145,8 +1134,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Text(
                 lang.translate('startup_playback'),
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                style: TextStyle(                  
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
               InkWell(
@@ -1969,7 +1959,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      backgroundColor:Theme.of(context).cardColor.withValues(alpha: 0.7),
       isScrollControlled: true,
       builder: (ctx) {
         return StatefulBuilder(
