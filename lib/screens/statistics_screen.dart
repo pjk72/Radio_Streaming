@@ -39,6 +39,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
   DateTime? _customStartDate;
   DateTime? _customEndDate;
   bool _groupByDate = true;
+  Set<String> _collapsedDays = {};
 
   final List<String> _periodOptions = [
     'today',
@@ -731,10 +732,22 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                 ),
                 Row(
                   children: [
+                    if (_groupByDate)
+                      IconButton(
+                        icon: Icon(_collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty ? Icons.unfold_more : Icons.unfold_less),
+                        tooltip: _collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty ? 'Espandi tutti' : 'Comprimi tutti',
+                        onPressed: () {
+                          setState(() {
+                            if (_collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty) {
+                              _collapsedDays.clear();
+                            } else {
+                              _collapsedDays.addAll(sortedDays);
+                            }
+                          });
+                        },
+                      ),
                     Text(
-                      langProvider.translate('group_by_date').isNotEmpty && langProvider.translate('group_by_date') != 'group_by_date'
-                          ? langProvider.translate('group_by_date')
-                          : 'Raggruppa per data',
+                      langProvider.translate('group_by_date'),
                       style: const TextStyle(fontSize: 14),
                     ),
                     Switch(
@@ -767,37 +780,62 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                   ..sort((a, b) => b.value.compareTo(a.value));
                   
                 List<Widget> widgets = [];
+                final isCollapsed = _collapsedDays.contains(day);
+                
                 widgets.add(
                   Padding(
                     padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
-                      ),
-                      child: Text(
-                        displayDate,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).primaryColor,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (isCollapsed) {
+                            _collapsedDays.remove(day);
+                          } else {
+                            _collapsedDays.add(day);
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              displayDate,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            ),
+                            Icon(
+                              isCollapsed ? Icons.expand_more : Icons.expand_less,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 );
                 
-                for (var entry in sortedSongsForDay) {
-                  final songId = entry.key;
-                  final count = entry.value;
-                  final song = metadata[songId];
-                  
-                  if (song == null) continue;
-                  
-                  widgets.add(_buildSongTile(song, count, provider, langProvider, context));
+                if (!isCollapsed) {
+                  for (var entry in sortedSongsForDay) {
+                    final songId = entry.key;
+                    final count = entry.value;
+                    final song = metadata[songId];
+                    
+                    if (song == null) continue;
+                    
+                    widgets.add(_buildSongTile(song, count, provider, langProvider, context));
+                  }
                 }
                 return widgets;
               })

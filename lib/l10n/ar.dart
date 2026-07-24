@@ -465,7 +465,6 @@ final Map<String, String> ar = {
   'discovery_mix': 'مزيج الاكتشاف',
   'latest_hits': 'ضرب في نهاية المطاف',
   'weekly_mix_owner': 'مزيجك الأسبوعي',
-  'top_songs': 'الأغاني الرئيسية',
   'most_played_playlists': 'قوائم التشغيل الأكثر تشغيلاً',
   'top_playlists': 'قوائم التشغيل الرئيسية',
   'recent_releases_playlists': 'الإصدارات الجديدة (قائمة التشغيل)',
@@ -673,4 +672,6 @@ final Map<String, String> ar = {
   'listening_trend': 'اتجاه الاستماع',
   'stat_unknown': 'مجهول',
   'top_genres': 'الأنواع المفضلة لديك',
+  'group_by_date': 'المجموعة حسب التاريخ',
+  'top_songs': 'الأغاني التي استمعت إليها',
 };

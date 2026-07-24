@@ -510,7 +510,7 @@ final Map<String, String> it = {
   'latest_hits': 'Ultime Hit',
   'weekly_mix_owner': 'Il tuo mix settimanale',
   // Missing keys
-  'top_songs': 'Brani Principali',
+  'top_songs': 'Brani Ascoltati',
   'most_played_playlists': 'Playlist Più Ascoltate',
   'top_playlists': 'Playlist Principali',
   'recent_releases_playlists': 'Nuove Uscite (Playlist)',
@@ -701,4 +701,5 @@ final Map<String, String> it = {
   'stat_top_songs': 'Brani Più Ascoltati',
   'listening_trend': 'Andamento Ascolti',
   'stat_unknown': 'Sconosciuto',
+  'group_by_date': 'Raggruppa per data',
 };

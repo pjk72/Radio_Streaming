@@ -486,7 +486,6 @@ final Map<String, String> ru = {
   'latest_hits': 'Последние хиты',
   'weekly_mix_owner': 'Твой еженедельный микс',
   // Missing keys
-  'top_songs': 'Топ песен',
   'song_removed_from_library': 'Песня удалена из библиотеки',
   'song_removed_from_playlist': 'Песня удалена из плейлиста',
   'undo': 'Отменить',
@@ -698,4 +697,6 @@ final Map<String, String> ru = {
   'listening_trend': 'Тенденция прослушивания',
   'stat_unknown': 'Неизвестный',
   'top_genres': 'Ваши любимые жанры',
+  'group_by_date': 'Группировать по дате',
+  'top_songs': 'Песни, которые слушали',
 };

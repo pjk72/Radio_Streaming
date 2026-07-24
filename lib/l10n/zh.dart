@@ -478,7 +478,6 @@ final Map<String, String> zh = {
   'latest_hits': '最新流行',
   'weekly_mix_owner': '您的每周专属推荐',
   // Missing keys
-  'top_songs': '热门歌曲',
   'song_removed_from_library': '歌曲已从库中删除',
   'song_removed_from_playlist': '歌曲已从播放列表中删除',
   'undo': '撤销',
@@ -675,4 +674,6 @@ final Map<String, String> zh = {
   'listening_trend': '聆听趋势',
   'stat_unknown': '未知',
   'top_genres': '你最喜欢的类型',
+  'group_by_date': '按日期分组',
+  'top_songs': '听过的歌曲',
 };

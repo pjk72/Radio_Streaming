@@ -492,7 +492,6 @@ final Map<String, String> fr = {
   'latest_hits': 'Derniers Hits',
   'weekly_mix_owner': 'Votre mix hebdomadaire',
   // Missing keys
-  'top_songs': 'Meilleures Chansons',
   'song_removed_from_library': 'Chanson supprimée de la bibliothèque',
   'song_removed_from_playlist': 'Chanson supprimée de la playlist',
   'undo': 'Annuler',
@@ -712,4 +711,6 @@ final Map<String, String> fr = {
   'listening_trend': 'Tendance d\'Écoute',
   'stat_unknown': 'Inconnu',
   'top_genres': 'Vos genres préférés',
+  'group_by_date': 'Regrouper par date',
+  'top_songs': 'Chansons écoutées',
 };

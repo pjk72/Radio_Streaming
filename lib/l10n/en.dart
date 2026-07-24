@@ -417,7 +417,6 @@ final Map<String, String> en = {
   'playlists_suffix': 'Playlists',
   'album_label': 'Album',
   'reset_artist_history': 'Reset Artist History',
-  'top_songs': 'Top Songs',
   'song_removed_from_library': 'Song removed from library',
   'song_removed_from_playlist': 'Song removed from playlist',
   'undo': 'Undo',
@@ -685,4 +684,6 @@ final Map<String, String> en = {
   'listening_trend': 'Listening Trend',
   'stat_unknown': 'Unknown',
   'top_genres': 'Your favorite genres',
+  'group_by_date': 'Group by date',
+  'top_songs': 'Songs Listened to',
 };
