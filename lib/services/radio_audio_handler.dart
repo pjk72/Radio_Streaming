@@ -5448,10 +5448,8 @@ class RadioAudioHandler extends BaseAudioHandler
 
   Future<void> _runHeartbeatLoop() async {
     while (_lastHeartbeatTime != null) {
-      // Increased frequency for Android Auto to 1 minute to ensure session active status
-      final delay = _isInAndroidAutoMode
-          ? const Duration(minutes: 1)
-          : const Duration(minutes: 2);
+      // Frequency set to 1 minute to ensure session active status for both AA and phone
+      final delay = const Duration(seconds: 60);
       await Future.delayed(delay);
 
       // Check if we should still be running
@@ -5477,7 +5475,7 @@ class RadioAudioHandler extends BaseAudioHandler
     _lastHeartbeatTime = null;
   }
 
-  void _sendHeartbeatEvent({int msec = 120000}) {
+  void _sendHeartbeatEvent({int msec = 60000}) {
     final currentItem = mediaItem.value;
 
     // L'evento custom originale che invia l'engagement time per le dashboard
@@ -5496,12 +5494,12 @@ class RadioAudioHandler extends BaseAudioHandler
     if (_isAudioPlaying) {
       final now = DateTime.now();
       if (_lastHeartbeatTime == null ||
-          now.difference(_lastHeartbeatTime!).inMinutes >= 2) {
+          now.difference(_lastHeartbeatTime!).inSeconds >= 60) {
         LogService().log(
           "Analytics: Sending periodic heartbeat_engagement (via Position Listener)...",
         );
         _lastHeartbeatTime = now;
-        _sendHeartbeatEvent(msec: 120000);
+        _sendHeartbeatEvent(msec: 60000);
       }
     }
 
