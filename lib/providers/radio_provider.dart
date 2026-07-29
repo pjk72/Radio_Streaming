@@ -6328,19 +6328,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // Sync Workmanager Schedule
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      if (_backupFrequency == 'daily') {
+      if (_backupFrequency == 'daily' || _backupFrequency == 'weekly') {
         Workmanager().registerPeriodicTask(
           kAutoBackupTask,
           kAutoBackupTask,
-          frequency: const Duration(hours: 24),
-          existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
-          constraints: Constraints(networkType: NetworkType.connected),
-        );
-      } else if (_backupFrequency == 'weekly') {
-        Workmanager().registerPeriodicTask(
-          kAutoBackupTask,
-          kAutoBackupTask,
-          frequency: const Duration(days: 7),
+          frequency: const Duration(hours: 1),
           existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
           constraints: Constraints(networkType: NetworkType.connected),
         );

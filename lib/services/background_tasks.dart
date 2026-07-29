@@ -26,6 +26,19 @@ Future<bool> _performBackgroundBackup() async {
       return true;
     }
 
+    final lastBackupTs = prefs.getInt('last_backup_ts') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = now - lastBackupTs;
+
+    bool due = false;
+    if (frequency == 'daily' && diff >= 86400000) due = true;
+    if (frequency == 'weekly' && diff >= 604800000) due = true;
+
+    if (!due) {
+      debugPrint("Workmanager: Backup not due yet (diff: $diff ms). Skipping.");
+      return true;
+    }
+
     final backupService = BackupService();
     // Initialize & Sign In
     try {

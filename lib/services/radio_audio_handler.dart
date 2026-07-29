@@ -5487,6 +5487,14 @@ class RadioAudioHandler extends BaseAudioHandler
       'is_background': true,
       'song_id': currentItem?.extras?['songId'] ?? currentItem?.id,
     });
+
+    // Per forzare GA4 a considerare l'utente "Attivo" durante l'ascolto da AA a schermo spento
+    if (_isInAndroidAutoMode) {
+      _logAnalyticsEvent('user_engagement', {
+        'engagement_time_msec': msec,
+        'is_android_auto': true,
+      });
+    }
   }
 
   void _handleUnifiedPosition(Duration pos) {
