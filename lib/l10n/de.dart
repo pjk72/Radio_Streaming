@@ -711,4 +711,5 @@ final Map<String, String> de = {
   'top_genres': 'Deine Lieblingsgenres',
   'group_by_date': 'Nach Datum gruppieren',
   'top_songs': 'Angehörte Lieder',
+  'release_date': 'Veröffentlichungsdatum',
 };

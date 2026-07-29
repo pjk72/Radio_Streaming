@@ -320,6 +320,7 @@ class TrendingService {
           'id': song['id']?.toString() ?? '',
           'provider': 'Apple Music',
           'url': song['url']?.toString() ?? '',
+          'releaseDate': song['releaseDate']?.toString(),
         };
       }).toList();
 
@@ -538,6 +539,7 @@ class TrendingService {
                     : 'apple_${title.hashCode}',
                 'provider': 'Apple Music',
                 'url': songUrl,
+                'releaseDate': item['attributes']?['releaseDate']?.toString() ?? '',
               };
             }).toList();
           }
@@ -599,6 +601,7 @@ class TrendingService {
                     'apple_ld_${t['name'].hashCode}',
                 'provider': 'Apple Music',
                 'url': t['url']?.toString() ?? '',
+                'releaseDate': t['datePublished']?.toString() ?? '',
               };
             }).toList();
           }
@@ -804,6 +807,7 @@ class TrendingService {
                 'image': v.thumbnails.highResUrl,
                 'id': v.id.value,
                 'provider': 'YouTube',
+                'releaseDate': v.publishDate?.toIso8601String() ?? '',
               },
             )
             .toList();
@@ -825,6 +829,7 @@ class TrendingService {
                   'image': t['artwork']?['480x480']?.toString() ?? '',
                   'id': t['id'].toString(),
                   'provider': 'Audius',
+                  'releaseDate': t['release_date']?.toString() ?? '',
                 },
               )
               .toList();
@@ -848,6 +853,7 @@ class TrendingService {
               'id': t['id'].toString(),
               'provider': 'Deezer',
               'preview': t['preview']?.toString() ?? '',
+              'releaseDate': t['release_date']?.toString() ?? '',
             };
           }).toList();
         }

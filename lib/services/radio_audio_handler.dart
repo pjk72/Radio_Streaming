@@ -1049,6 +1049,8 @@ class RadioAudioHandler extends BaseAudioHandler
         'startAt': startAt,
         'duration':
             song.duration?.inSeconds, // FIX: Pass duration for local files
+        'releaseDate': song.releaseDate,
+        'genre': song.genre,
       };
       await _playYoutubeSong(effectiveLocalPath, extras);
       return;
@@ -1073,9 +1075,10 @@ class RadioAudioHandler extends BaseAudioHandler
         'duration':
             _cachedNextSongExtras?['duration'] ?? song.duration?.inSeconds,
         'user_initiated': true,
-
         'stableId': song.youtubeUrl ?? 'song_${song.id}',
         'startAt': startAt,
+        'releaseDate': song.releaseDate,
+        'genre': song.genre,
       };
 
       // DO WE HAVE A WARM PLAYER? (Gapless Swap)
@@ -1200,6 +1203,8 @@ class RadioAudioHandler extends BaseAudioHandler
         'user_initiated': true,
         'stableId': stableId,
         'startAt': startAt,
+        'releaseDate': song.releaseDate,
+        'genre': song.genre,
       };
 
       if (_currentSessionId == sessionId) {
@@ -4354,6 +4359,7 @@ class RadioAudioHandler extends BaseAudioHandler
               dateAdded: DateTime.now(),
               genre: t['genre']?.toString(),
               duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
+              releaseDate: t['releaseDate']?.toString(),
             );
             final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
             return _songToMediaItem(
@@ -4491,6 +4497,7 @@ class RadioAudioHandler extends BaseAudioHandler
                 artUri: track['image'],
                 youtubeUrl: track['youtubeUrl'],
                 dateAdded: DateTime.now(),
+                releaseDate: track['releaseDate']?.toString(),
               );
 
               final bool queueIsReady = extras?['queue_ready'] == true;
@@ -4509,6 +4516,7 @@ class RadioAudioHandler extends BaseAudioHandler
                     dateAdded: DateTime.now(),
                     genre: t['genre']?.toString(),
                     duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
+                    releaseDate: t['releaseDate']?.toString(),
                   );
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
                   return _songToMediaItem(
@@ -4563,6 +4571,7 @@ class RadioAudioHandler extends BaseAudioHandler
                 artUri: track['image']?.toString(),
                 youtubeUrl: track['youtubeUrl'] ?? track['url'],
                 dateAdded: DateTime.now(),
+                releaseDate: track['releaseDate']?.toString(),
               );
 
               final bool queueIsReady = extras?['queue_ready'] == true;
@@ -4581,6 +4590,7 @@ class RadioAudioHandler extends BaseAudioHandler
                     dateAdded: DateTime.now(),
                     genre: t['genre']?.toString(),
                     duration: t['duration'] != null ? Duration(milliseconds: (t['duration'] as num).toInt()) : null,
+                    releaseDate: t['releaseDate']?.toString(),
                   );
                   final String pId = ps.youtubeUrl ?? 'song_${ps.id}';
                   return _songToMediaItem(
@@ -5303,6 +5313,19 @@ class RadioAudioHandler extends BaseAudioHandler
           } catch (_) {}
         }
 
+        // Read releaseDate from extras (set by _playYoutubeVideo and playlist MediaItem builder)
+        String? releaseDate = current.extras?['releaseDate'] as String?;
+
+        if (releaseDate == null || releaseDate.isEmpty) {
+          try {
+            final hintsStr = prefs.getString('releaseDate_hints');
+            if (hintsStr != null) {
+              final Map<String, dynamic> hints = jsonDecode(hintsStr);
+              releaseDate = hints[songId] as String?;
+            }
+          } catch (_) {}
+        }
+
         metadata[songId] = SavedSong(
           id: songId,
           title: current.title,
@@ -5311,6 +5334,7 @@ class RadioAudioHandler extends BaseAudioHandler
           artUri: current.artUri?.toString(),
           dateAdded: DateTime.now(),
           genre: genre,
+          releaseDate: releaseDate,
         );
       }
 

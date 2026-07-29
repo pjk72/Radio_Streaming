@@ -5434,7 +5434,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         song.artist.trim().isEmpty ||
         song.album.trim().isEmpty ||
         (song.genre == null || song.genre!.trim().isEmpty) ||
-        song.duration == null;
+        song.duration == null ||
+        (song.releaseDate == null || song.releaseDate!.trim().isEmpty);
 
     if (hasIncompleteMetadata) {
       findMissingArtworks(
@@ -7467,7 +7468,8 @@ _artistImageCache[rawKey] = null;
         song.artist.trim().isEmpty ||
         song.album.trim().isEmpty || song.album.trim() == "YouTube" ||
         (song.genre == null || song.genre!.trim().isEmpty) ||
-        song.duration == null;
+        song.duration == null ||
+        (song.releaseDate == null || song.releaseDate!.trim().isEmpty);
   }
 
   Future<void> findMissingArtworks({String? playlistId, String? songIdToSync, SavedSong? explicitSong}) async {
@@ -7586,13 +7588,15 @@ _artistImageCache[rawKey] = null;
                 
             bool hasNewDuration = match.duration != null && match.duration != Duration.zero;
 
+            bool hasNewReleaseDate = match.releaseDate != null && match.releaseDate!.isNotEmpty && match.releaseDate != song.releaseDate;
+
             String capitalizeWords(String s) => s.split(' ').map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1).toLowerCase()).join(' ');
             cleanTitle = capitalizeWords(cleanTitle);
             cleanArtist = capitalizeWords(cleanArtist);
 
             bool titleOrArtistChanged = song.title != cleanTitle || song.artist != cleanArtist || isExplicitUpdate;
 
-            if (hasBetterArt || hasNewGenre || hasNewDuration || hasNewAlbum || titleOrArtistChanged) {
+            if (hasBetterArt || hasNewGenre || hasNewDuration || hasNewAlbum || titleOrArtistChanged || hasNewReleaseDate) {
               if (hasBetterArt && match.artUri != null) {
                 try {
                   CachedNetworkImageProvider(match.artUri!).resolve(const ImageConfiguration());
@@ -7617,6 +7621,23 @@ _artistImageCache[rawKey] = null;
                   await prefs.setString('genre_hints', jsonEncode(hints));
                 } catch (_) {}
               }
+
+              if (hasNewReleaseDate && match.releaseDate != null) {
+                try {
+                  final prefs = await SharedPreferences.getInstance();
+                  final hintsStr = prefs.getString('releaseDate_hints');
+                  final Map<String, dynamic> hints = hintsStr != null
+                      ? Map<String, dynamic>.from(jsonDecode(hintsStr))
+                      : {};
+                  hints[songId] = match.releaseDate;
+                  if (hints.length > 200) {
+                    final oldest = hints.keys.take(hints.length - 200).toList();
+                    for (final k in oldest) hints.remove(k);
+                  }
+                  await prefs.setString('releaseDate_hints', jsonEncode(hints));
+                } catch (_) {}
+              }
+
               // Update metadata in history if it exists
               if (_historyMetadata.containsKey(songId)) {
                 _historyMetadata[songId] = _historyMetadata[songId]!.copyWith(
@@ -7633,6 +7654,7 @@ _artistImageCache[rawKey] = null;
                       match.appleMusicUrl,
                   genre: hasNewGenre ? match.genre : _historyMetadata[songId]!.genre,
                   duration: hasNewDuration ? match.duration : _historyMetadata[songId]!.duration,
+                  releaseDate: hasNewReleaseDate ? match.releaseDate : _historyMetadata[songId]!.releaseDate,
                 );
                 await _saveUserPlayHistory();
               }
@@ -7658,6 +7680,7 @@ _artistImageCache[rawKey] = null;
                       'songId': songId,
                       'playlistId': playlistId,
                       'genre': match.genre,
+                      'releaseDate': hasNewReleaseDate ? match.releaseDate : song.releaseDate,
                     },
                   ),
                 );
@@ -7686,6 +7709,7 @@ _artistImageCache[rawKey] = null;
                         match.appleMusicUrl,
                     genre: hasNewGenre ? match.genre : updatedSongs[songIndex].genre,
                     duration: hasNewDuration ? match.duration : updatedSongs[songIndex].duration,
+                    releaseDate: hasNewReleaseDate ? match.releaseDate : updatedSongs[songIndex].releaseDate,
                   );
                   _playlists[i] = playlist.copyWith(songs: updatedSongs);
                   songChanged = true;
@@ -7709,6 +7733,7 @@ _artistImageCache[rawKey] = null;
                         match.appleMusicUrl,
                     genre: hasNewGenre ? match.genre : _allUniqueSongs[idx].genre,
                     duration: hasNewDuration ? match.duration : _allUniqueSongs[idx].duration,
+                    releaseDate: hasNewReleaseDate ? match.releaseDate : _allUniqueSongs[idx].releaseDate,
                   );
                 }
                 // Notify immediately so UI refreshes duration and artwork in real-time

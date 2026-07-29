@@ -674,4 +674,5 @@ final Map<String, String> ar = {
   'top_genres': 'الأنواع المفضلة لديك',
   'group_by_date': 'المجموعة حسب التاريخ',
   'top_songs': 'الأغاني التي استمعت إليها',
+  'release_date': 'تاريخ النشر',
 };

@@ -698,4 +698,5 @@ final Map<String, String> pt = {
   'top_genres': 'Seus gêneros favoritos',
   'group_by_date': 'Agrupar por data',
   'top_songs': 'Músicas ouvidas',
+  'release_date': 'Data de publicação',
 };

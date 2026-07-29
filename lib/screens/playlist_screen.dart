@@ -1384,14 +1384,24 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         _buildRowItem(Icons.album_rounded, lang.translate('label_album'), song.album),
                         if (song.genre != null && song.genre!.isNotEmpty)
                           _buildRowItem(Icons.music_note_rounded, lang.translate('genre'), song.genre!),
-                        if (song.releaseDate != null && song.releaseDate!.isNotEmpty)
-                          _buildRowItem(Icons.calendar_today_rounded, lang.translate('year'), song.releaseDate!),
                         if (song.duration != null)
                           _buildRowItem(
                             Icons.timer_rounded, 
                             lang.translate('duration_label'), 
                             "${song.duration!.inMinutes}:${(song.duration!.inSeconds % 60).toString().padLeft(2, '0')}"
                           ),
+                        _buildRowItem(
+                          Icons.calendar_today_rounded, 
+                          lang.translate('release_date'), 
+                          (() {
+                            if (song.releaseDate == null || song.releaseDate!.isEmpty) return lang.translate('unknown');
+                            final dt = DateTime.tryParse(song.releaseDate!);
+                            if (dt != null) {
+                              return "${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}";
+                            }
+                            return song.releaseDate!;
+                          })()
+                        ),
                         _buildRowItem(Icons.date_range_rounded, lang.translate('label_date_added'), song.dateAdded.toString().split('.')[0]),
                       ]),
                       const SizedBox(height: 16),
@@ -4840,14 +4850,15 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         song.artist == lang.translate('syncing_yt') ||
         song.artist == "SINC_METADATA";
 
-    // A song is considered incomplete if any of these 6 metadata fields is missing
+    // A song is considered incomplete if any of these metadata fields is missing
     final bool hasIncompleteMetadata =
         (song.artUri == null || song.artUri!.isEmpty) ||
         song.title.trim().isEmpty ||
         song.artist.trim().isEmpty ||
         song.album.trim().isEmpty ||
         (song.genre == null || song.genre!.trim().isEmpty) ||
-        song.duration == null;
+        song.duration == null ||
+        (song.releaseDate == null || song.releaseDate!.trim().isEmpty);
 
     return Stack(
       clipBehavior: Clip.hardEdge,
@@ -5439,7 +5450,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         song.artist.trim().isEmpty ||
         song.album.trim().isEmpty ||
         (song.genre == null || song.genre!.trim().isEmpty) ||
-        song.duration == null;
+        song.duration == null ||
+        (song.releaseDate == null || song.releaseDate!.trim().isEmpty);
 
     if (hasIncompleteMetadata) {
       provider.findMissingArtworks(

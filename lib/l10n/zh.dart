@@ -676,4 +676,5 @@ final Map<String, String> zh = {
   'top_genres': '你最喜欢的类型',
   'group_by_date': '按日期分组',
   'top_songs': '听过的歌曲',
+  'release_date': '出版日期',
 };

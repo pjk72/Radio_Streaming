@@ -6,7 +6,7 @@ import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
 import 'song_details_screen.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -59,6 +59,29 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final period = prefs.getString('statistics_selected_period');
+      if (period != null && _periodOptions.contains(period)) {
+        setState(() {
+          _selectedPeriod = period;
+          if (period == 'custom') {
+            final start = prefs.getString('statistics_custom_start');
+            final end = prefs.getString('statistics_custom_end');
+            if (start != null && end != null) {
+              _customStartDate = DateTime.tryParse(start);
+              _customEndDate = DateTime.tryParse(end);
+            } else {
+              _selectedPeriod = 'last_7_days';
+            }
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -575,6 +598,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
           songLookup[entry.key] = {
             'artist': entry.value.artist.isNotEmpty ? entry.value.artist : null,
             'genre':  (entry.value.genre != null && entry.value.genre!.isNotEmpty) ? entry.value.genre : null,
+            'releaseDate': (entry.value.releaseDate != null && entry.value.releaseDate!.isNotEmpty) ? entry.value.releaseDate : null,
           };
         }
 
@@ -584,6 +608,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
           songLookup[s.id] = {
             'artist': (s.artist.isNotEmpty) ? s.artist : existing['artist'],
             'genre':  (s.genre != null && s.genre!.isNotEmpty) ? s.genre : existing['genre'],
+            'releaseDate': (s.releaseDate != null && s.releaseDate!.isNotEmpty) ? s.releaseDate : existing['releaseDate'],
           };
         }
 
@@ -595,11 +620,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             final id    = track['id']?.toString();
             final artist= track['artist']?.toString();
             final genre = track['genre']?.toString();
+            final releaseDate = track['releaseDate']?.toString();
             if (id == null) continue;
             final existing = songLookup[id] ?? {};
             songLookup[id] = {
               'artist': (artist != null && artist.isNotEmpty) ? artist : existing['artist'],
               'genre':  (genre  != null && genre.isNotEmpty)  ? genre  : existing['genre'],
+              'releaseDate': (releaseDate != null && releaseDate.isNotEmpty) ? releaseDate : existing['releaseDate'],
             };
           }
         }
@@ -611,6 +638,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         Map<String, int> totalSongCounts = {};
         Map<String, int> artistCounts = {};
         Map<String, int> genreCounts = {};
+        Map<String, int> yearCounts = {};
         
         for (var e in filteredLog) {
           try {
@@ -633,6 +661,17 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
               }
               final genre = info['genre'] ?? langProvider.translate('unknown');
               genreCounts[genre] = (genreCounts[genre] ?? 0) + 1;
+              
+              final resolvedDate = info['releaseDate'];
+              String yearStr = langProvider.translate('unknown');
+              if (resolvedDate != null && resolvedDate.length >= 4) {
+                final intYear = int.tryParse(resolvedDate.substring(0, 4));
+                if (intYear != null && intYear > 1000) {
+                  final decade = (intYear ~/ 10) * 10;
+                  yearStr = '${decade}s';
+                }
+              }
+              yearCounts[yearStr] = (yearCounts[yearStr] ?? 0) + 1;
             }
           } catch (_) {}
         }
@@ -663,7 +702,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                         items: _periodOptions.map((period) {
                           return DropdownMenuItem(
                             value: period,
-                            child: Text(_getPeriodLabel(period, langProvider)),
+                            child: Text(
+                              period == 'custom' && _customStartDate != null && _customEndDate != null
+                                  ? '${_getPeriodLabel(period, langProvider)} (${DateFormat('dd/MM/yy').format(_customStartDate!)} - ${DateFormat('dd/MM/yy').format(_customEndDate!)})'
+                                  : _getPeriodLabel(period, langProvider),
+                            ),
                           );
                         }).toList(),
                         onChanged: (val) async {
@@ -675,11 +718,21 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                                 _customStartDate = picked.start;
                                 _customEndDate = picked.end;
                               });
+                              try {
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.setString('statistics_selected_period', val!);
+                                await prefs.setString('statistics_custom_start', picked.start.toIso8601String());
+                                await prefs.setString('statistics_custom_end', picked.end.toIso8601String());
+                              } catch (_) {}
                             }
                           } else if (val != null) {
                             setState(() {
                               _selectedPeriod = val;
                             });
+                            try {
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.setString('statistics_selected_period', val);
+                            } catch (_) {}
                           }
                         },
                       ),
@@ -699,6 +752,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                             _customStartDate = picked.start;
                             _customEndDate = picked.end;
                           });
+                          try {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setString('statistics_custom_start', picked.start.toIso8601String());
+                            await prefs.setString('statistics_custom_end', picked.end.toIso8601String());
+                          } catch (_) {}
                         }
                       },
                     )
@@ -719,6 +777,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
 
             // Grafico generi più ascoltati
             _buildChartCard(langProvider.translate('top_genres'), _buildPieChart(genreCounts, context), context, height: null),
+            
+            const SizedBox(height: 24),
+
+            // Grafico annate più ascoltate
+            _buildChartCard(langProvider.translate('years'), _buildPieChart(yearCounts, context), context, height: null),
             
             const SizedBox(height: 24),
             

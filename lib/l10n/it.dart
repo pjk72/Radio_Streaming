@@ -420,6 +420,7 @@ final Map<String, String> it = {
   'duplicate_songs_found': 'Canzoni duplicate trovate',
   'no_duplicates_remaining': 'Nessun duplicato rimanente.',
   'duration_label': 'Durata:',
+  'release_date': 'Data di Pubblicazione',
   'data_usage_warning': 'Avviso Utilizzo Dati',
   'data_usage_desc':
       'Il download della musica consuma una quantità significativa di dati mobili. Questo potrebbe comportare costi aggiuntivi sul tuo piano tariffario.',

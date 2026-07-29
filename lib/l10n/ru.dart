@@ -699,4 +699,5 @@ final Map<String, String> ru = {
   'top_genres': 'Ваши любимые жанры',
   'group_by_date': 'Группировать по дате',
   'top_songs': 'Песни, которые слушали',
+  'release_date': 'Дата публикации',
 };
