@@ -98,10 +98,7 @@ class RadioScreen extends StatelessWidget {
                   padding: EdgeInsets.symmetric(horizontal: contentPadding),
                   sliver: SliverReorderableList(
                     itemCount: categories.length,
-                    onReorder: (oldIndex, newIndex) {
-                      if (oldIndex < newIndex) {
-                        newIndex -= 1;
-                      }
+                    onReorderItem: (oldIndex, newIndex) {
                       final item = categories[oldIndex];
                       final temp = List.of(categories)..removeAt(oldIndex);
 
@@ -387,11 +384,7 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
                                   ),
                                 );
                               },
-                              onReorder: (oldIndex, newIndex) {
-                                if (oldIndex < newIndex) {
-                                  newIndex -= 1;
-                                }
-
+                              onReorderItem: (oldIndex, newIndex) {
                                 final stationList = widget.stations;
                                 final station = stationList[oldIndex];
                                 final temp = List.of(stationList)

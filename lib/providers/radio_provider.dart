@@ -9,7 +9,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart'; // For AlertDialog, Text, etc
-import 'package:flutter/widgets.dart'; // For AppLifecycleState
 import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -306,13 +305,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     result.sort((a, b) {
       final songA = a['song'] as SavedSong;
       final songB = b['song'] as SavedSong;
-      final idxA_p = _recentSongsOrder.indexOf(songA.id);
-      final idxA_c = _aaRecentSongsOrder.indexOf(songA.id);
-      final maxA = idxA_p > idxA_c ? idxA_p : idxA_c;
+      final idxAPhone = _recentSongsOrder.indexOf(songA.id);
+      final idxACar = _aaRecentSongsOrder.indexOf(songA.id);
+      final maxA = idxAPhone > idxACar ? idxAPhone : idxACar;
 
-      final idxB_p = _recentSongsOrder.indexOf(songB.id);
-      final idxB_c = _aaRecentSongsOrder.indexOf(songB.id);
-      final maxB = idxB_p > idxB_c ? idxB_p : idxB_c;
+      final idxBPhone = _recentSongsOrder.indexOf(songB.id);
+      final idxBCar = _aaRecentSongsOrder.indexOf(songB.id);
+      final maxB = idxBPhone > idxBCar ? idxBPhone : idxBCar;
 
       return maxB.compareTo(maxA);
     });
@@ -361,8 +360,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // 2. Aggregate Phone Plays
-    _userPlayHistory.forEach((id, count) {
-      if (count > 0) {
+    _userPlayHistory.forEach((id, playCount) {
+      if (playCount > 0) {
         String? artist = _historyMetadata[id]?.artist;
         if (artist == null) {
           for (var s in _allUniqueSongs) {
@@ -372,13 +371,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             }
           }
         }
-        aggregate(artist, phoneCount: count);
+        aggregate(artist, phoneCount: playCount);
       }
     });
 
     // 3. Aggregate AA Plays
-    _aaUserPlayHistory.forEach((id, count) {
-      if (count > 0) {
+    _aaUserPlayHistory.forEach((id, playCount) {
+      if (playCount > 0) {
         String? artist = _historyMetadata[id]?.artist;
         if (artist == null) {
           for (var s in _allUniqueSongs) {
@@ -388,7 +387,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             }
           }
         }
-        aggregate(artist, aaCount: count);
+        aggregate(artist, aaCount: playCount);
       }
     });
 
@@ -1259,8 +1258,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_forYouList.isNotEmpty &&
         _lastForYouCountryCode == countryCode &&
         _lastForYouLanguageCode == langCode &&
-        _lastWeeklySeed == seed)
+        _lastWeeklySeed == seed) {
       return;
+    }
 
     if (_lastForYouCountryCode != countryCode ||
         _lastForYouLanguageCode != langCode ||
@@ -5857,7 +5857,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         
         // Re-verify after delay
         if (_currentTrack.isEmpty || 
-            "$cleanArtist|$cleanTitle" != "$_currentArtist|$_currentTrack") return;
+            "$cleanArtist|$cleanTitle" != "$_currentArtist|$_currentTrack") {
+          return;
+        }
       }
     }
 
@@ -5968,7 +5970,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<String?> addCurrentSongToGenrePlaylist() async {
     if (_currentTrack.isEmpty || _currentStation == null) return null;
 
-    final songId = "${_currentTrack}_${_currentArtist}";
+    final songId = "${_currentTrack}_$_currentArtist";
     final genre = _currentGenre ?? "Mix";
 
     // Sanitize album name: remove station name etc.
@@ -6161,7 +6163,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           _isLoading = false;
         }
 
-        final songId = "${cleanTitle}_${cleanArtist}";
+        final songId = "${cleanTitle}_$cleanArtist";
         final song = SavedSong(
           id: songId,
           title: cleanTitle,
@@ -6282,13 +6284,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         MediaItem(
           id: _currentStation!.url,
           title: _currentTrack,
-          artist: (_currentGenre != null && _currentGenre!.isNotEmpty)
-              ? "$_currentArtist"
-              : _currentArtist,
+          artist: _currentArtist,
           album: _currentAlbum.isNotEmpty
-              ? ((_currentGenre != null && _currentGenre!.isNotEmpty)
-                    ? "$_currentAlbum"
-                    : _currentAlbum)
+              ? _currentAlbum
               : _currentGenre,
           genre: _currentGenre,
           artUri: _currentAlbumArt != null
@@ -6680,18 +6678,24 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       // Restore Theme Settings
       if (data['theme_settings'] != null) {
         final theme = data['theme_settings'];
-        if (theme['theme_id'] != null)
+        if (theme['theme_id'] != null) {
           await prefs.setString('theme_id', theme['theme_id']);
-        if (theme['custom_primary'] != null)
+        }
+        if (theme['custom_primary'] != null) {
           await prefs.setInt('custom_primary', theme['custom_primary']);
-        if (theme['custom_bg'] != null)
+        }
+        if (theme['custom_bg'] != null) {
           await prefs.setInt('custom_bg', theme['custom_bg']);
-        if (theme['custom_card'] != null)
+        }
+        if (theme['custom_card'] != null) {
           await prefs.setInt('custom_card', theme['custom_card']);
-        if (theme['custom_surface'] != null)
+        }
+        if (theme['custom_surface'] != null) {
           await prefs.setInt('custom_surface', theme['custom_surface']);
-        if (theme['custom_bg_image'] != null)
+        }
+        if (theme['custom_bg_image'] != null) {
           await prefs.setString('custom_bg_image', theme['custom_bg_image']);
+        }
 
         // Reload theme if provider is available
         await _themeProvider?.loadSettings();
@@ -6828,9 +6832,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       // 2b. EMERGENCY FALLBACK: iTunes Search
       // If we don't have a specific track link, use Title + Artist to find one via iTunes
-      if (sourceUrl == null) {
-        sourceUrl = await _fetchItunesUrl("$title $artist");
-      }
+      sourceUrl ??= await _fetchItunesUrl("$title $artist");
 
       // Debug Log construction
       String debugLog = "--- SONG LINK CHECK (Manual) ---\n";
@@ -7157,8 +7159,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Strict Input Guard: Must be playing a station to recognize
     if (!_isPlaying ||
         _currentStation == null ||
-        _currentPlayingPlaylistId != null)
+        _currentPlayingPlaylistId != null) {
       return;
+    }
 
     // Guard: Don't start another recognition if one is already in progress
     if (_isRecognizing) return;
@@ -7616,7 +7619,9 @@ _artistImageCache[rawKey] = null;
                   // Keep hints map from growing unboundedly (max 200 entries)
                   if (hints.length > 200) {
                     final oldest = hints.keys.take(hints.length - 200).toList();
-                    for (final k in oldest) hints.remove(k);
+                    for (final k in oldest) {
+                      hints.remove(k);
+                    }
                   }
                   await prefs.setString('genre_hints', jsonEncode(hints));
                 } catch (_) {}
@@ -7632,7 +7637,9 @@ _artistImageCache[rawKey] = null;
                   hints[songId] = match.releaseDate;
                   if (hints.length > 200) {
                     final oldest = hints.keys.take(hints.length - 200).toList();
-                    for (final k in oldest) hints.remove(k);
+                    for (final k in oldest) {
+                      hints.remove(k);
+                    }
                   }
                   await prefs.setString('releaseDate_hints', jsonEncode(hints));
                 } catch (_) {}
@@ -7823,7 +7830,7 @@ _artistImageCache[rawKey] = null;
             );
             
             final context = globalNavigatorKey.currentContext;
-            if (context != null) {
+            if (context != null && context.mounted) {
               GlassUtils.showGlassDialog(
                 context: context,
                 builder: (ctx) => AlertDialog(
@@ -8970,7 +8977,7 @@ _artistImageCache[rawKey] = null;
   Future<void> sharePlaylistText(Playlist playlist, String deepLink) async {
     try {
       if (deepLink.isEmpty) return;
-      await Share.share(deepLink);
+      await SharePlus.instance.share(ShareParams(text: deepLink));
     } catch (e) {
       LogService().log("Error sharing playlist text: $e");
     }
@@ -9281,8 +9288,9 @@ _artistImageCache[rawKey] = null;
           .replaceAll("Playlist: ", "")
           .trim();
 
-      if (plTitle.isEmpty || plTitle.contains("Music") && plTitle.length < 10)
+      if (plTitle.isEmpty || plTitle.contains("Music") && plTitle.length < 10) {
         plTitle = _translate('imported_playlist');
+      }
       LogService().log("Scraper: Targeted Playlist Name: '$plTitle'");
 
       final Set<String> tracksToResolve = {};
@@ -9322,7 +9330,9 @@ _artistImageCache[rawKey] = null;
           LogService().log(
             "Scraper Pattern B: Found ${appMatches.length} candidates in Apple Music list.",
           );
-          for (var m in appMatches) tracksToResolve.add(m.group(1)!);
+          for (var m in appMatches) {
+            tracksToResolve.add(m.group(1)!);
+          }
         }
       }
 
@@ -9363,8 +9373,9 @@ _artistImageCache[rawKey] = null;
         final deepMatches = deepRegex.allMatches(html).take(10);
         for (var m in deepMatches) {
           final cand = "${m.group(1)} - ${m.group(2)}".trim();
-          if (cand.length > 5 && !cand.contains("{") && !cand.contains("}"))
+          if (cand.length > 5 && !cand.contains("{") && !cand.contains("}")) {
             tracksToResolve.add(cand);
+          }
         }
       }
 
@@ -9527,11 +9538,17 @@ _artistImageCache[rawKey] = null;
       for (var entry in snapshot.entries) {
         final key = entry.key;
         final value = entry.value;
-        if (value is String) await prefs.setString(key, value);
-        else if (value is int) await prefs.setInt(key, value);
-        else if (value is bool) await prefs.setBool(key, value);
-        else if (value is double) await prefs.setDouble(key, value);
-        else if (value is List) await prefs.setStringList(key, value.map((e) => e.toString()).toList());
+        if (value is String) {
+          await prefs.setString(key, value);
+        } else if (value is int) {
+          await prefs.setInt(key, value);
+        } else if (value is bool) {
+          await prefs.setBool(key, value);
+        } else if (value is double) {
+          await prefs.setDouble(key, value);
+        } else if (value is List) {
+          await prefs.setStringList(key, value.map((e) => e.toString()).toList());
+        }
       }
       LogService().log("[RadioProvider] Guest session data restored to SharedPreferences.");
     }

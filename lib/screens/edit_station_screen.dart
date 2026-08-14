@@ -290,7 +290,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
         );
         // Convert to Hex
         final hex =
-            '#${extracted.value.toRadixString(16).substring(2).toUpperCase()}';
+            '#${extracted.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
         _colorController.text = hex;
         setState(() {}); // Refresh UI
 
@@ -1207,6 +1207,10 @@ class _EditStationScreenState extends State<EditStationScreen> {
   }
 
   Future<void> _searchAndShowLogos(BuildContext context, String query) async {
+    final langProvider = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    );
     if (!_isSearching) setState(() => _isSearching = true);
 
     try {
@@ -1332,10 +1336,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                Provider.of<LanguageProvider>(
-                  context,
-                  listen: false,
-                ).translate('no_valid_logo_suggestions'),
+                langProvider.translate('no_valid_logo_suggestions'),
               ),
             ),
           );
@@ -1383,7 +1384,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
                     child: Image.network(
                       url,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Center(
+                      errorBuilder: (_, _, _) => const Center(
                         child: Icon(Icons.broken_image, color: Colors.white24),
                       ),
                       loadingBuilder: (ctx, child, loading) {
@@ -1407,12 +1408,9 @@ class _EditStationScreenState extends State<EditStationScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(ctx),
               child: Text(
-                Provider.of<LanguageProvider>(
-                  context,
-                  listen: false,
-                ).translate('cancel'),
+                langProvider.translate('cancel'),
               ),
             ),
           ],
@@ -1426,10 +1424,6 @@ class _EditStationScreenState extends State<EditStationScreen> {
       }
     } catch (e) {
       if (mounted) {
-        final langProvider = Provider.of<LanguageProvider>(
-          context,
-          listen: false,
-        );
         debugPrint("Logo search error: $e");
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1813,7 +1807,7 @@ class _CategorySelectionDialogState extends State<_CategorySelectionDialog> {
                   builder: (context) {
                     final allOptions = {
                       ...widget.existing,
-                      if (tempSelected != null) tempSelected!,
+                      ?tempSelected,
                     }.toList();
 
                     final filteredOptions = allOptions.where((c) {
@@ -2025,7 +2019,7 @@ class _StationSelectionDialog extends StatelessWidget {
                             ? Image.network(
                                 favicon,
                                 fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) => const Icon(
+                                errorBuilder: (_, _, _) => const Icon(
                                   Icons.radio,
                                   color: Colors.white24,
                                   size: 40,

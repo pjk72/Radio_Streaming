@@ -262,6 +262,7 @@ Future<void> downloadPlaylist(
       if (rewardEarned) {
         final int bonus = earnedAmount > 0 ? earnedAmount : 5;
         await provider.addEarnedDownloadCredits(bonus);
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -1071,7 +1072,7 @@ Future<void> downloadPlaylist(
                               ? "${(speedKbps / 1024).toStringAsFixed(1)} MB/s"
                               : "${speedKbps.toStringAsFixed(0)} KB/s";
 
-                          statusNotifier.value = "$speedStr";
+                          statusNotifier.value = speedStr;
 
                           lastUpdateTime = now;
                           bytesSinceLastUpdate = 0;

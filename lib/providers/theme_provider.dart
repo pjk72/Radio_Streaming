@@ -384,7 +384,7 @@ class ThemeProvider with ChangeNotifier {
 
       // Save them as defaults
       await prefs.setString('custom_bg_image', _customBackgroundImageUrl!);
-      await prefs.setInt('custom_primary', _customPrimaryColor!.value);
+      await prefs.setInt('custom_primary', _customPrimaryColor!.toARGB32());
       await prefs.setBool(_keyInitialSetup, true);
     }
 
@@ -419,28 +419,28 @@ class ThemeProvider with ChangeNotifier {
     _customPrimaryColor = color;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('custom_primary', color.value);
+    await prefs.setInt('custom_primary', color.toARGB32());
   }
 
   Future<void> setCustomBackgroundColor(Color color) async {
     _customBackgroundColor = color;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('custom_bg', color.value);
+    await prefs.setInt('custom_bg', color.toARGB32());
   }
 
   Future<void> setCustomCardColor(Color color) async {
     _customCardColor = color;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('custom_card', color.value);
+    await prefs.setInt('custom_card', color.toARGB32());
   }
 
   Future<void> setCustomSurfaceColor(Color color) async {
     _customSurfaceColor = color;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('custom_surface', color.value);
+    await prefs.setInt('custom_surface', color.toARGB32());
   }
 
   Future<void> resetCustomColors() async {
@@ -546,8 +546,6 @@ class ThemeProvider with ChangeNotifier {
         onError: Colors.white,
         surface: Colors.transparent,
         onSurface: onSurface,
-        background: Colors.transparent,
-        onBackground: onBg,
       ),
 
       textTheme: GoogleFonts.interTextTheme(

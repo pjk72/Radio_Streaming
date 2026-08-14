@@ -218,10 +218,10 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         creator: 'local',
       );
 
+      final radio = Provider.of<RadioProvider>(context, listen: false);
       await _playlistService.addPlaylist(playlist);
 
       // Enrich metadata in background
-      final radio = Provider.of<RadioProvider>(context, listen: false);
       radio.enrichPlaylistMetadata(id);
 
       if (mounted) {

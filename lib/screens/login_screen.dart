@@ -85,8 +85,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleGoogleLogin() async {
     setState(() => _isLoading = true);
     final auth = Provider.of<BackupService>(context, listen: false);
+    final radio = Provider.of<RadioProvider>(context, listen: false);
+    final theme = Provider.of<ThemeProvider>(context, listen: false);
     try {
-      final radio = Provider.of<RadioProvider>(context, listen: false);
       // Prepara lo switch: salva stato Guest e ferma musica
       await radio.snapshotGuestSession();
       try {
@@ -94,7 +95,6 @@ class _LoginScreenState extends State<LoginScreen> {
       } catch (_) {}
       
       // Pulisce tutto il vecchio stato Guest PRIMA di caricare Google
-      final theme = Provider.of<ThemeProvider>(context, listen: false);
       await radio.resetAllData(themeProvider: theme, restoreGuest: false);
 
       await auth.signIn();
@@ -209,12 +209,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     if (proceed != true) return;
+    if (!mounted) return;
 
     setState(() => _isLoading = true);
+    final auth = Provider.of<BackupService>(context, listen: false);
+    final radio = Provider.of<RadioProvider>(context, listen: false);
+    final theme = Provider.of<ThemeProvider>(context, listen: false);
     try {
-      final auth = Provider.of<BackupService>(context, listen: false);
-      final radio = Provider.of<RadioProvider>(context, listen: false);
-      final theme = Provider.of<ThemeProvider>(context, listen: false);
 
       // Reset state ONLY if we are switching from a Google account back to Guest
       // This prevents wiping current Guest data if the user is already in Guest mode.

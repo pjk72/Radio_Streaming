@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
 import 'package:path_provider/path_provider.dart'; // Added for temp dir
@@ -23,7 +24,7 @@ class EncryptionService {
     // unforeseen networking quirks can sometimes block strict 127.0.0.1 binding
     _server = await io.serve(handler, InternetAddress.anyIPv4, 0);
     _port = _server!.port;
-    print('Encryption server running on port $_port');
+    debugPrint('Encryption server running on port $_port');
   }
 
   /// Encrypts or Decrypts data using XOR
@@ -49,13 +50,13 @@ class EncryptionService {
 
     // Fix for absolute paths on Android potentially missing the leading / when coming from URI parsing
     if (!filePath.startsWith('/')) {
-      filePath = '/' + filePath;
+      filePath = '/$filePath';
     }
 
-    print('EncryptionService: Request for $filePath');
+    debugPrint('EncryptionService: Request for $filePath');
     final file = File(filePath);
     if (!await file.exists()) {
-      print('EncryptionService: File NOT found: $filePath');
+      debugPrint('EncryptionService: File NOT found: $filePath');
       return Response.notFound('File not found: $filePath');
     }
 
@@ -137,12 +138,12 @@ class EncryptionService {
 
     // Validate port
     if (_port == null) {
-      print('EncryptionService: ERROR - Port is null, server not running!');
+      debugPrint('EncryptionService: ERROR - Port is null, server not running!');
       return filePath;
     }
 
     final url = 'http://127.0.0.1:$_port$pathStr';
-    print('EncryptionService: Generated URL: $url for raw path: $filePath');
+    debugPrint('EncryptionService: Generated URL: $url for raw path: $filePath');
     return url;
   }
 

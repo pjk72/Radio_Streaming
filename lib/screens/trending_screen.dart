@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -453,7 +454,7 @@ class _TrendingScreenState extends State<TrendingScreen>
         }
 
         return ListView(
-          cacheExtent: 3000, // Pre-render more children to ensure keys are available for scrolling
+          scrollCacheExtent: const ScrollCacheExtent.pixels(3000), // Pre-render more children to ensure keys are available for scrolling
           padding: const EdgeInsets.symmetric(vertical: 16),
           children: [
             // Error Message (if any)
@@ -1789,8 +1790,8 @@ class _TrendingPlaylistCoverState extends State<_TrendingPlaylistCover> {
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
-      placeholder: (_, __) => Container(color: Colors.black12),
-      errorWidget: (_, __, ___) => Container(
+      placeholder: (_, _) => Container(color: Colors.black12),
+      errorWidget: (_, _, _) => Container(
         color: Colors.black26,
         child: const Icon(Icons.music_note, color: Colors.white10, size: 16),
       ),

@@ -560,7 +560,7 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
                         ? Image.network(
                             s.logo!,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_, _, _) => Container(
                               color: Colors.black26,
                               child: const Icon(
                                 Icons.radio,

@@ -34,7 +34,6 @@ import 'services/interstitial_ad_service.dart';
 import 'widgets/admin_debug_overlay.dart';
 import 'services/app_open_ad_manager.dart';
 import 'services/notification_service.dart';
-import 'services/user_sync_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'utils/glass_utils.dart';
 
@@ -99,7 +98,7 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   if (!kIsWeb) {
-    Workmanager().initialize(callbackDispatcher, isInDebugMode: !kReleaseMode);
+    Workmanager().initialize(callbackDispatcher);
   }
 
   audioHandler = await AudioService.init(
@@ -191,7 +190,6 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
 
   Future<void> _initApp() async {
     final entitlements = Provider.of<EntitlementService>(context, listen: false);
-    final backupService = Provider.of<BackupService>(context, listen: false);
 
     // 1. Start the minimum splash timer immediately (2.5s)
     final splashTimer = Future.delayed(const Duration(milliseconds: 2500));
@@ -214,7 +212,7 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       // 3. SECONDARY INITIALIZATIONS (Wait for these but with a safety timeout)
       // This ensures the splash stays until they are done, but doesn't hang forever
       await Future.wait([
-        _initNotifications(backupService).timeout(const Duration(seconds: 10)),
+        _initNotifications().timeout(const Duration(seconds: 10)),
         splashTimer, // Ensure we stay at least 2.5s regardless
       ]).catchError((e) {
         debugPrint("Secondary initialization timed out or failed: $e");
@@ -238,11 +236,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _initNotifications(BackupService backupService) async {
+  Future<void> _initNotifications() async {
     final notificationService = NotificationService();
     await notificationService.init();
-    final userSyncService = UserSyncService(backupService);
-    await userSyncService.syncUserInfo();
     await notificationService.triggerInAppEvent('app_opened');
   }
 

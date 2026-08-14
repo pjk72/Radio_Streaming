@@ -77,7 +77,7 @@ class TrendingService {
     String? customQuery,
   }) async {
     final String query = customQuery ?? "Top 50 - $country";
-    final cacheKey = '${countryCode ?? country}_${query}'.toLowerCase();
+    final cacheKey = '${countryCode ?? country}_$query'.toLowerCase();
 
     if (_cache.containsKey(cacheKey)) {
       return _cache[cacheKey]!;
@@ -165,18 +165,18 @@ class TrendingService {
 
   /// Chart types available from the Apple Music RSS API.
   static const appleChartTypes = [
-    _AppleChartType(
+    AppleChartType(
       type: 'most-played',
       titleEn: 'Apple Music Playlists',
       titleKey: 'most_played_playlists',
       isPlaylist: true,
     ),
-    _AppleChartType(
+    AppleChartType(
       type: 'most-played',
       titleEn: 'Most Played Songs',
       titleKey: 'top_songs',
     ),
-    _AppleChartType(
+    AppleChartType(
       type: 'top-songs',
       titleEn: 'Top Songs',
       titleKey: 'top_songs',
@@ -216,7 +216,7 @@ class TrendingService {
   Future<List<TrendingPlaylist>> fetchApplePlaylists(
     String appleCC,
     String appCountry,
-    _AppleChartType chart,
+    AppleChartType chart,
   ) async {
     const int limit = 100; // Fetch enough for 5 rows of 15 (75 total)
     final url = Uri.parse(
@@ -276,7 +276,7 @@ class TrendingService {
   Future<TrendingPlaylist?> fetchAppleMusicChart(
     String appleCC,
     String appCountry,
-    _AppleChartType chart,
+    AppleChartType chart,
   ) async {
     const int limit = 50;
     final url = Uri.parse(
@@ -866,12 +866,12 @@ class TrendingService {
 }
 
 /// Describes an Apple Music RSS chart endpoint.
-class _AppleChartType {
+class AppleChartType {
   final String type;
   final String titleEn;
   final String titleKey;
   final bool isPlaylist;
-  const _AppleChartType({
+  const AppleChartType({
     required this.type,
     required this.titleEn,
     required this.titleKey,

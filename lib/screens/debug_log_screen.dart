@@ -35,7 +35,7 @@ class LogEntry {
     String action = "";
     String attributes = "";
 
-    if (parts.length >= 1) {
+    if (parts.isNotEmpty) {
       origin = parts[0].trim();
     }
     if (parts.length >= 2) {

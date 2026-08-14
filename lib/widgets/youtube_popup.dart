@@ -481,7 +481,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
                                         child: CachedNetworkImage(
                                           imageUrl: widget.artworkUrl!,
                                           fit: BoxFit.cover,
-                                          errorWidget: (_, __, ___) =>
+                                          errorWidget: (_, _, _) =>
                                               Container(
                                                 color: Colors.grey[900],
                                               ),
@@ -517,7 +517,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
                                                 child: CachedNetworkImage(
                                                   imageUrl: widget.artworkUrl!,
                                                   fit: BoxFit.cover,
-                                                  errorWidget: (_, __, ___) =>
+                                                  errorWidget: (_, _, _) =>
                                                       Container(
                                                         color: Colors.grey[850],
                                                         child: const Icon(

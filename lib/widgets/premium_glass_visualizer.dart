@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 
 class PremiumGlassVisualizer extends StatefulWidget {
@@ -83,7 +82,7 @@ class _PremiumGlassVisualizerState extends State<PremiumGlassVisualizer>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
       height: widget.height,
       child: Stack(

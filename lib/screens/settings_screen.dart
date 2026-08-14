@@ -30,6 +30,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   Timer? _backupUnlockTimer;
   String _appVersion = '1.1.1';
+  String _buildNumber = '';
 
   @override
   void initState() {
@@ -42,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       setState(() {
         _appVersion = packageInfo.version;
+        _buildNumber = packageInfo.buildNumber;
       });
     }
   }
@@ -369,14 +371,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         );
 
                                     if (confirm == true) {
-                                      await auth.signOut();
-                                      // Clear ALL local session data for Guest mode
-                                      // (playlists, history, theme, artist follows, etc.)
+                                      if (!context.mounted) return;
                                       final themeProvider =
                                           Provider.of<ThemeProvider>(
                                             context,
                                             listen: false,
                                           );
+                                      await auth.signOut();
+                                      // Clear ALL local session data for Guest mode
+                                      // (playlists, history, theme, artist follows, etc.)
                                       await radio.resetAllData(
                                         themeProvider: themeProvider,
                                       );
@@ -390,16 +393,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         context,
                                         listen: false,
                                       );
+                                      final theme = Provider.of<ThemeProvider>(
+                                        context,
+                                        listen: false,
+                                      );
                                       await radio.snapshotGuestSession();
                                       try {
                                         await radio.audioHandler.stop();
                                       } catch (_) {}
 
                                       // Pulisce tutto il vecchio stato Guest PRIMA di caricare Google
-                                      final theme = Provider.of<ThemeProvider>(
-                                        context,
-                                        listen: false,
-                                      );
                                       await radio.resetAllData(
                                         themeProvider: theme,
                                         restoreGuest: false,
@@ -903,9 +906,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                             child: Text(
-                              langProvider
-                                  .translate('version')
-                                  .replaceAll('{0}', _appVersion)
+                              ( _buildNumber.isNotEmpty
+                                      ? "${langProvider.translate('version').replaceAll('{0}', _appVersion)} | BUILD $_buildNumber"
+                                      : langProvider.translate('version').replaceAll('{0}', _appVersion) )
                                   .toUpperCase(),
                               style: TextStyle(
                                 color: Theme.of(context)

@@ -697,7 +697,7 @@ class RadioAudioHandler extends BaseAudioHandler
             'url': lastId,
             'type': lastType,
             'isLocal': lastIsLocal,
-            if (lastStationId != null) 'stationId': lastStationId,
+            'stationId': ?lastStationId,
           },
         );
         mediaItem.add(item);
@@ -1144,7 +1144,7 @@ class RadioAudioHandler extends BaseAudioHandler
       if (effectiveVideoId.isEmpty) {
         try {
           final searchQuery = "${song.title} ${song.artist}";
-          final searchList = await yt.search.getVideos(searchQuery);
+          final searchList = await yt.search.search(searchQuery);
           if (searchList.isNotEmpty) {
             effectiveVideoId = searchList.first.id.value;
             LogService().log(
@@ -1242,14 +1242,15 @@ class RadioAudioHandler extends BaseAudioHandler
 
           // Categorize error for logging
           String category = "Unknown";
-          if (errorStr.contains("TimeoutException"))
+          if (errorStr.contains("TimeoutException")) {
             category = "Timeout";
-          else if (errorStr.contains("403"))
+          } else if (errorStr.contains("403")) {
             category = "Forbidden (403)";
-          else if (errorStr.contains("unavailable"))
+          } else if (errorStr.contains("unavailable")) {
             category = "Video Unavailable";
-          else if (errorStr.contains("not found"))
+          } else if (errorStr.contains("not found")) {
             category = "Not Found";
+          }
 
           LogService().log(
             "Playback Error Category: $category. Error: $errorStr",
@@ -2465,11 +2466,11 @@ class RadioAudioHandler extends BaseAudioHandler
             _consecutiveErrorCount++;
 
             String category = "Player Error";
-            if (errorStr.contains("403"))
+            if (errorStr.contains("403")) {
               category = "Link Expired (403)";
-            else if (errorStr.contains("-1005"))
+            } else if (errorStr.contains("-1005")) {
               category = "Network Socket Error (-1005)";
-            else if (errorStr.contains("100") ||
+            } else if (errorStr.contains("100") ||
                 errorStr.contains("SERVER_DIED") ||
                 errorStr.contains("extra:1")) {
               _handleFatalPlayerError("Internal Player Error ($errorStr)");
@@ -2495,8 +2496,9 @@ class RadioAudioHandler extends BaseAudioHandler
             );
 
             Future.delayed(const Duration(seconds: 3), () {
-              if (_currentSessionId == sessionId)
+              if (_currentSessionId == sessionId) {
                 skipToNext(reason: "Player failure: $category");
+              }
             });
           } else if (isLocal) {
             playbackState.add(
@@ -2525,8 +2527,9 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _startCrossfade() async {
     if (_isSwapping ||
         _nextPlayerSourceUrl == null ||
-        _cachedNextSongExtras == null)
+        _cachedNextSongExtras == null) {
       return;
+    }
 
     try {
       _isSwapping = true;
@@ -2966,8 +2969,9 @@ class RadioAudioHandler extends BaseAudioHandler
               mediaItem.value!.duration! > Duration.zero;
           if (hasDuration) {
             Future.delayed(const Duration(seconds: 2), () {
-              if (_currentSessionId == sessionId)
+              if (_currentSessionId == sessionId) {
                 skipToNext(reason: "Init error: $e");
+              }
             });
           } else {
             _handleConnectionError("Failed to play: $e");
@@ -3499,8 +3503,9 @@ class RadioAudioHandler extends BaseAudioHandler
         if (_lastRecognitionTime != null) {
           effectivePosition =
               _lastRecognitionOffset + now.difference(_lastRecognitionTime!);
-          if (effectivePosition < Duration.zero)
+          if (effectivePosition < Duration.zero) {
             effectivePosition = Duration.zero;
+          }
 
           // Cap at item duration if available
           final itemDur = mediaItem.value?.duration;
@@ -4809,12 +4814,14 @@ class RadioAudioHandler extends BaseAudioHandler
   String? _extractVideoId(String url) {
     if (url.isEmpty) return null;
     if (url.contains('v=')) return url.split('v=')[1].split('&')[0];
-    if (url.contains('youtu.be/'))
+    if (url.contains('youtu.be/')) {
       return url.split('youtu.be/')[1].split('?')[0];
+    }
     if (url.startsWith('youtube://')) return url.substring('youtube://'.length);
     // If it's a short 11-char ID already
-    if (url.length == 11 && !url.contains('/') && !url.contains(':'))
+    if (url.length == 11 && !url.contains('/') && !url.contains(':')) {
       return url;
+    }
     return null;
   }
   // --- RECOGNITION LOGIC ---
@@ -4838,8 +4845,9 @@ class RadioAudioHandler extends BaseAudioHandler
     // Guard: Prevent multiple concurrent attempts
     if (_isSearching) return;
 
-    if (currentItem.extras?['type'] == 'playlist_song')
+    if (currentItem.extras?['type'] == 'playlist_song') {
       return; // Don't recognize playlist songs
+    }
     if (!_isAudioPlaying) return;
 
     final streamUrl = currentItem.extras?['url'] as String? ?? currentItem.id;
@@ -5144,8 +5152,9 @@ class RadioAudioHandler extends BaseAudioHandler
         final item = mediaItem.value;
         if (item != null && item.title == title && item.artist == artist) {
           final newExtras = Map<String, dynamic>.from(item.extras ?? {});
-          if (links.containsKey('youtube'))
+          if (links.containsKey('youtube')) {
             newExtras['youtubeUrl'] = links['youtube'];
+          }
 
           mediaItem.add(
             item.copyWith(
@@ -5615,7 +5624,7 @@ class RadioAudioHandler extends BaseAudioHandler
       try {
         final yt = YoutubeExplode();
         final searchQuery = "${nextItem.title} ${nextItem.artist}";
-        final searchList = await yt.search.getVideos(searchQuery);
+        final searchList = await yt.search.search(searchQuery);
         if (searchList.isNotEmpty) {
           videoId = searchList.first.id.value;
           LogService().log("Preload: Search Fallback resolved to $videoId");

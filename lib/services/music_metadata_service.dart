@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/saved_song.dart';
 import 'dart:math';
@@ -87,16 +88,16 @@ class MusicMetadataService {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
       };
-      print('iTunes Request Headers:');
-      headers.forEach((k, v) => print('$k: $v'));
+      debugPrint('iTunes Request Headers:');
+      headers.forEach((k, v) => debugPrint('$k: $v'));
 
       final response = await http.get(
         url,
         headers: headers,
       )
       .timeout(const Duration(seconds: 10));
-      print('url:' + url.toString());
-      print('headers:' + headers.toString());
+      debugPrint('url: $url');
+      debugPrint('headers: $headers');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final results = data['results'] as List<dynamic>? ?? [];
@@ -137,18 +138,18 @@ class MusicMetadataService {
           );
         }).toList();
       } else {
-        print('Music Search Status Error: ${response.statusCode}');
+        debugPrint('Music Search Status Error: ${response.statusCode}');
         return await _searchDeezerFallback(query, limit, countryCode);
       }
     } catch (e) {
-      print('Music Search Error: $e');
+      debugPrint('Music Search Error: $e');
       return await _searchDeezerFallback(query, limit, countryCode);
     }
   }
 
   Future<List<SongSearchResult>> _searchDeezerFallback(String query, int limit, String? countryCode) async {
     try {
-      print('Falling back to Deezer API for query: $query');
+      debugPrint('Falling back to Deezer API for query: $query');
       final term = Uri.encodeQueryComponent(query);
       final urlString = 'https://api.deezer.com/search?q=$term&limit=$limit';
       final url = Uri.parse(urlString);
@@ -187,7 +188,7 @@ class MusicMetadataService {
         }).toList();
       }
     } catch (e) {
-      print('Deezer Fallback Error: $e');
+      debugPrint('Deezer Fallback Error: $e');
     }
     return [];
   }

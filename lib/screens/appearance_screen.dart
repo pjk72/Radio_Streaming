@@ -673,7 +673,7 @@ class _ImageSearchPageState extends State<_ImageSearchPage> {
                               if (loadingProgress == null) return child;
                               return const Center(child: CircularProgressIndicator());
                             },
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_, _, _) => Container(
                               color: Colors.grey.withValues(alpha: 0.1),
                               child: const Icon(Icons.error_outline),
                             ),
@@ -761,9 +761,9 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
   void _loadColorForActiveKey() {
     final color = _draftColors[_activeKey]!;
     _hsv = HSVColor.fromColor(color);
-    _alpha = color.opacity;
+    _alpha = color.a;
     _hexController = TextEditingController(
-      text: color.value
+      text: color.toARGB32()
           .toRadixString(16)
           .padLeft(8, '0')
           .substring(2)
@@ -791,7 +791,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
       final newColor = hsv.toColor().withValues(alpha: _alpha);
       _draftColors[_activeKey] = newColor;
 
-      _hexController.text = newColor.value
+      _hexController.text = newColor.toARGB32()
           .toRadixString(16)
           .padLeft(8, '0')
           .substring(2)
@@ -814,7 +814,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
       setState(() {
         final color = Color(v);
         _hsv = HSVColor.fromColor(color);
-        _alpha = color.opacity;
+        _alpha = color.a;
         _draftColors[_activeKey] = color;
       });
     } catch (_) {}
@@ -830,7 +830,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
       setState(() {
         final color = Color(v);
         _hsv = HSVColor.fromColor(color);
-        _alpha = color.opacity;
+        _alpha = color.a;
         _draftColors[_activeKey] = color;
       });
     } catch (_) {}
@@ -881,7 +881,7 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                 child: Image.network(
                   backgroundUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
               ),
             // Glass effect overlay if image exists
@@ -1346,19 +1346,19 @@ class _AdvancedColorPickerState extends State<_AdvancedColorPicker> {
                   const SizedBox(height: 12),
 
                   // 3. RGB Sliders
-                  _buildRGBSlider("R", color.red, Colors.red, (val) {
+                  _buildRGBSlider("R", (color.r * 255.0).round().clamp(0, 255), Colors.red, (val) {
                     _onColorChanged(
-                      HSVColor.fromColor(color.withRed(val.toInt())),
+                      HSVColor.fromColor(color.withValues(red: val / 255.0)),
                     );
                   }),
-                  _buildRGBSlider("G", color.green, Colors.green, (val) {
+                  _buildRGBSlider("G", (color.g * 255.0).round().clamp(0, 255), Colors.green, (val) {
                     _onColorChanged(
-                      HSVColor.fromColor(color.withGreen(val.toInt())),
+                      HSVColor.fromColor(color.withValues(green: val / 255.0)),
                     );
                   }),
-                  _buildRGBSlider("B", color.blue, Colors.blue, (val) {
+                  _buildRGBSlider("B", (color.b * 255.0).round().clamp(0, 255), Colors.blue, (val) {
                     _onColorChanged(
-                      HSVColor.fromColor(color.withBlue(val.toInt())),
+                      HSVColor.fromColor(color.withValues(blue: val / 255.0)),
                     );
                   }),
 

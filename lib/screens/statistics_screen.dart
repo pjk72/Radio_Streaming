@@ -39,7 +39,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
   DateTime? _customStartDate;
   DateTime? _customEndDate;
   bool _groupByDate = true;
-  Set<String> _collapsedDays = {};
+  final Set<String> _collapsedDays = {};
 
   final List<String> _periodOptions = [
     'today',
@@ -238,7 +238,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
           ),
           Text(
             title,
-            style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.7)),
+            style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.7)),
           ),
         ],
       ),
@@ -863,9 +863,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withOpacity(0.15),
+                          color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
+                          border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -912,7 +912,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                       final songId = entry.key;
                       final count = entry.value;
                       final song = metadata[songId];
-                      if (song == null) return const SizedBox.shrink();
+                      if (song == null) {
+                        return const SizedBox.shrink();
+                      }
                       return _buildSongTile(song, count, provider, langProvider, context);
                     }).toList(),
                   );
@@ -928,24 +930,33 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
   }
 
   Widget _buildLineChart(Map<String, int> dailyListens, BuildContext context) {
-    if (dailyListens.isEmpty) return Center(child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_time_data')));
+    if (dailyListens.isEmpty) {
+      return Center(child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_time_data')));
+    }
 
     final sortedKeys = dailyListens.keys.toList()..sort();
     
     List<FlSpot> spots = [];
     double maxX = (sortedKeys.length - 1).toDouble();
-    if (maxX < 1) maxX = 1;
+    if (maxX < 1) {
+      maxX = 1;
+    }
     
     double maxY = 0;
 
     for (int i = 0; i < sortedKeys.length; i++) {
       double y = dailyListens[sortedKeys[i]]!.toDouble();
-      if (y > maxY) maxY = y;
+      if (y > maxY) {
+        maxY = y;
+      }
       spots.add(FlSpot(i.toDouble(), y));
     }
     
-    if (maxY == 0) maxY = 10;
-    else maxY = maxY * 1.5;
+    if (maxY == 0) {
+      maxY = 10;
+    } else {
+      maxY = maxY * 1.5;
+    }
 
     return LineChart(
       LineChartData(
@@ -958,41 +969,53 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                 if (value.toInt() >= 0 && value.toInt() < sortedKeys.length) {
                   // Mostra meno label se ci sono molti giorni
                   if (sortedKeys.length > 10 && value.toInt() % (sortedKeys.length ~/ 5) != 0) {
-                    return const SizedBox();
+                    return const SizedBox.shrink();
                   }
+                  final date = sortedKeys[value.toInt()];
+                  // Formatta la data per mostrare solo giorno/mese (es. "12/04")
+                  String formattedDate = date;
+                  try {
+                    final parts = date.split('-');
+                    if (parts.length == 3) {
+                      formattedDate = "${parts[2]}/${parts[1]}";
+                    }
+                  } catch (_) {}
+                  
                   return Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text(
-                      sortedKeys[value.toInt()],
-                      style: const TextStyle(color: Colors.white54, fontSize: 10),
+                      formattedDate,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 10,
+                      ),
                     ),
                   );
                 }
-                return const SizedBox();
+                return const SizedBox.shrink();
               },
+              reservedSize: 30,
+              interval: 1,
             ),
           ),
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 28,
               getTitlesWidget: (value, meta) {
-                if (value == value.toInt().toDouble()) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: Text(
-                      value.toInt().toString(),
-                      style: const TextStyle(color: Colors.white54, fontSize: 10),
-                      textAlign: TextAlign.right,
-                    ),
-                  );
-                }
-                return const SizedBox();
+                if (value == 0 || value == maxY) return const SizedBox.shrink();
+                return Text(
+                  value.toInt().toString(),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 10,
+                  ),
+                );
               },
+              reservedSize: 28,
             ),
           ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         borderData: FlBorderData(show: false),
         minX: 0,
@@ -1009,7 +1032,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: Theme.of(context).primaryColor.withOpacity(0.2),
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
             ),
           ),
         ],

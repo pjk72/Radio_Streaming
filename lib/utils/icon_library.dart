@@ -9,7 +9,7 @@ class IconLibrary {
     'microphone': FontAwesomeIcons.microphone.data,
     'microphoneLines': FontAwesomeIcons.microphoneLines.data,
     'headphones': FontAwesomeIcons.headphones.data,
-    'headphonesSimple': FontAwesomeIcons.headphonesSimple.data,
+    'headphonesSimple': FontAwesomeIcons.headphones.data,
     'podcast': FontAwesomeIcons.podcast.data,
     'towerBroadcast': FontAwesomeIcons.towerBroadcast.data,
     'sliders': FontAwesomeIcons.sliders.data,

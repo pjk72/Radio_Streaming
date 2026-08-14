@@ -235,9 +235,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               imageUrl: bgImage,
               key: ValueKey(bgImage), // Force rebuild on image change
               fit: BoxFit.cover,
-              placeholder: (_, __) =>
+              placeholder: (_, _) =>
                   Container(color: Color(int.parse(station.color))),
-              errorWidget: (_, __, ___) =>
+              errorWidget: (_, _, _) =>
                   Container(color: Color(int.parse(station.color))),
             )
           else
@@ -1013,7 +1013,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                   boxShadow: [
                     if (provider.isPlaying)
                       BoxShadow(
-                        color: visualizerColor.withOpacity(0.5),
+                        color: visualizerColor.withValues(alpha: 0.5),
                         blurRadius: 40,
                         spreadRadius: 5,
                         offset: Offset.zero,
@@ -2403,14 +2403,14 @@ class _StardustPainter extends CustomPainter {
       canvas.drawCircle(
         offset,
         p.size * 1.8,
-        Paint()..color = color.withOpacity(alpha * 0.25),
+        Paint()..color = color.withValues(alpha: alpha * 0.25),
       );
 
       // 2. Main Particle
       canvas.drawCircle(
         offset,
         p.size,
-        Paint()..color = color.withOpacity(alpha),
+        Paint()..color = color.withValues(alpha: alpha),
       );
 
       // 3. Brighter core
@@ -2418,7 +2418,7 @@ class _StardustPainter extends CustomPainter {
         canvas.drawCircle(
           offset,
           p.size * 0.4,
-          Paint()..color = Colors.white.withOpacity(alpha * 0.8),
+          Paint()..color = Colors.white.withValues(alpha: alpha * 0.8),
         );
       }
     }
@@ -2499,7 +2499,7 @@ class _ShadowedImageState extends State<_ShadowedImage>
             boxShadow: [
               if (showShadow)
                 BoxShadow(
-                  color: widget.visualizerColor.withOpacity(0.8 * _fadeController.value),
+                  color: widget.visualizerColor.withValues(alpha: 0.8 * _fadeController.value),
                   blurRadius: widget.isCarousel
                       ? 8 * _fadeController.value
                       : 3 * _fadeController.value,
@@ -2527,8 +2527,8 @@ class _ShadowedImageState extends State<_ShadowedImage>
                       // Scale up slightly to avoid blur edge artifacts
                       width: widget.size * 1.2,
                       height: widget.size * 1.2,
-                      placeholder: (_, __) => const SizedBox.shrink(),
-                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                      placeholder: (_, _) => const SizedBox.shrink(),
+                      errorWidget: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 // Main cover image

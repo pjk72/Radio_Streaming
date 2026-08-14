@@ -512,10 +512,7 @@ class PlaylistService {
 
       if (genreIndex == -1) {
         final newPlaylist = Playlist(
-          id:
-              DateTime.now().millisecondsSinceEpoch.toString() +
-              "_" +
-              targetName,
+          id: '${DateTime.now().millisecondsSinceEpoch}_$targetName',
           name: targetName,
           songs: [],
           createdAt: DateTime.now(),

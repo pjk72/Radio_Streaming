@@ -86,8 +86,9 @@ class AIRecommendationService {
         if (weeklyTracks.length >= 50) break;
         final cleanedTitle = _cleanTitle(s.title).toLowerCase();
         if (globalSeenIds.contains(s.id) ||
-            globalSeenTitles.contains(cleanedTitle))
+            globalSeenTitles.contains(cleanedTitle)) {
           continue;
+        }
 
         weeklyTracks.add(_mapToTrack(s, true));
         globalSeenIds.add(s.id);
@@ -150,19 +151,17 @@ class AIRecommendationService {
       }
     }
 
-    if (latestHits == null) {
-      latestHits = await _createDynamicPlaylist(
-        title: 'latest_hits',
-        query: 'Latest Hits',
-        countryCode: countryCode,
-        countryName: countryName,
-        languageCode: languageCode,
-        history: [],
-        globalSeenIds: globalSeenIds,
-        globalSeenTitles: globalSeenTitles,
-        periodFilter: 'Latest',
-      );
-    }
+    latestHits ??= await _createDynamicPlaylist(
+      title: 'latest_hits',
+      query: 'Latest Hits',
+      countryCode: countryCode,
+      countryName: countryName,
+      languageCode: languageCode,
+      history: [],
+      globalSeenIds: globalSeenIds,
+      globalSeenTitles: globalSeenTitles,
+      periodFilter: 'Latest',
+    );
     if (latestHits != null) yield latestHits;
 
 
@@ -172,14 +171,14 @@ class AIRecommendationService {
   Future<TrendingPlaylist?> _createDynamicPlaylist({
     required String title,
     required String query,
+    String? genreFilter,
+    String? periodFilter,
+    String? countryCode,
+    String? countryName,
+    String? languageCode,
     required List<SavedSong> history,
     required Set<String> globalSeenIds,
     required Set<String> globalSeenTitles,
-    String? countryCode,
-    String? countryName,
-    String languageCode = 'en',
-    String? periodFilter,
-    String? genreFilter,
   }) async {
     final List<Map<String, dynamic>> tracks = [];
     final Set<String> playlistSeenIds = {};
@@ -194,8 +193,9 @@ class AIRecommendationService {
         if (tracks.length >= historyLimit) break;
         final cleanedTitle = _cleanTitle(s.title).toLowerCase();
         if (globalSeenIds.contains(s.id) ||
-            globalSeenTitles.contains(cleanedTitle))
+            globalSeenTitles.contains(cleanedTitle)) {
           continue;
+        }
 
         bool matches = false;
         if (periodFilter != null && _isSongInPeriod(s, periodFilter)) {
@@ -223,7 +223,7 @@ class AIRecommendationService {
         ? (query.split(
             '|',
           )..shuffle(random)).map((a) => "Similar to $a").toList()
-        : _generateSmartQueries(query, countryName, countryCode, languageCode);
+        : _generateSmartQueries(query, countryName, countryCode, languageCode ?? 'en');
 
     final List<Map<String, dynamic>> searchTracks = [];
     for (var q in searchQueries) {
@@ -244,14 +244,18 @@ class AIRecommendationService {
         final cleanedTitle = _cleanTitle(s.title).toLowerCase();
         if (playlistSeenIds.contains(s.id) ||
             globalSeenIds.contains(s.id) ||
-            globalSeenTitles.contains(cleanedTitle))
+            globalSeenTitles.contains(cleanedTitle)) {
           continue;
-        if (periodFilter != null && !_isSongInPeriod(s, periodFilter)) continue;
+        }
+        if (periodFilter != null && !_isSongInPeriod(s, periodFilter)) {
+          continue;
+        }
 
         final artist = s.artist.split(',').first.trim();
         if (artists.contains(artist) &&
-            (tracks.length + searchTracks.length < 15))
+            (tracks.length + searchTracks.length < 15)) {
           continue;
+        }
 
         var t = _mapToTrack(s, false);
         if (isChartBased) t['isLocal'] = isCountryQ;

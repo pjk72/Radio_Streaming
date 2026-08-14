@@ -7089,7 +7089,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     onPressed: deepLink.isEmpty
                         ? null
                         : () {
-                            Share.share(shareText);
+                            SharePlus.instance.share(
+                              ShareParams(text: shareText),
+                            );
                           },
                   ),
                 ],

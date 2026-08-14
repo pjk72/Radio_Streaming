@@ -72,7 +72,7 @@ class SleepTimerScreen extends StatelessWidget {
                           ),
                           value: radio.sleepTimerEnabled,
                           onChanged: (val) => radio.setSleepTimerEnabled(val),
-                          activeColor: Theme.of(context).primaryColor,
+                          activeThumbColor: Theme.of(context).primaryColor,
                         ),
                       ),
                       if (radio.sleepTimerEnabled) ...[

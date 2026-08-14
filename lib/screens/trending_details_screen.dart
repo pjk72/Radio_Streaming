@@ -625,7 +625,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
             CachedNetworkImage(
               imageUrl: mainImage,
               fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => Container(color: Colors.grey[900]),
+              errorWidget: (_, _, _) => Container(color: Colors.grey[900]),
             )
           else
             Container(color: Colors.grey[900]),
@@ -694,8 +694,9 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
                     // Map index back to item index
                     final itemIndex = index - 1;
-                    if (itemIndex >= _items.length)
+                    if (itemIndex >= _items.length) {
                       return const SizedBox.shrink();
+                    }
 
                     return _buildListItem(
                       context,
@@ -856,7 +857,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
                 ? CachedNetworkImage(
                     imageUrl: mainImage,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => const Center(
+                    errorWidget: (_, _, _) => const Center(
                       child: Icon(
                         Icons.music_note,
                         size: 80,

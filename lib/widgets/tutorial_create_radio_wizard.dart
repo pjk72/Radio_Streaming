@@ -363,7 +363,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
     await GlassUtils.showGlassDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogCtx) {
         bool isFav = false;
         try {
           isFav = provider.playlists.any((playlist) => 
@@ -372,61 +372,60 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         } catch (_) {}
 
         return StatefulBuilder(
-          builder: (context, setStateDialog) {
+          builder: (ctx, setStateDialog) {
             return AlertDialog(
               backgroundColor: Colors.transparent,
               elevation: 0,
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (cover.isNotEmpty) ...[
+                  if (cover.isNotEmpty)
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(16.0),
                       child: CachedNetworkImage(
                         imageUrl: cover,
-                        width: 220,
-                        height: 220,
+                        height: 200,
+                        width: 200,
                         fit: BoxFit.cover,
                       ),
                     ),
-                    const SizedBox(height: 20),
-                  ],
+                  const SizedBox(height: 16),
                   Text(
                     title,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.white,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     artist,
-                    style: const TextStyle(fontSize: 16, color: Colors.white70),
+                    style: const TextStyle(fontSize: 14, color: Colors.white70),
                     textAlign: TextAlign.center,
                   ),
-                  
                   if (album.isNotEmpty || year.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.3), 
-                        borderRadius: BorderRadius.circular(12)
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(8)
                       ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (album.isNotEmpty) Text("${lang.translate('genre') == 'Genre' ? 'Album' : lang.translate('label_album')}: $album", style: const TextStyle(fontSize: 13, color: Colors.white60), textAlign: TextAlign.center),
-                          if (year.isNotEmpty) Text("${lang.translate('year')}: $year", style: const TextStyle(fontSize: 13, color: Colors.white60), textAlign: TextAlign.center),
+                          if (album.isNotEmpty) Text("${lang.translate('album')}: $album", style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                          if (year.isNotEmpty) Text("${lang.translate('year')}: $year", style: const TextStyle(fontSize: 12, color: Colors.white60)),
                         ]
                       )
                     )
                   ],
-
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
-                        iconSize: 32,
                         icon: Icon(
                           isFav ? Icons.favorite : Icons.favorite_border, 
                           color: isFav ? Colors.redAccent : Colors.white70
@@ -444,8 +443,8 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                           );
                           await provider.bulkToggleFavoriteSongs([song], true);
                           setStateDialog(() { isFav = true; });
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
                                SnackBar(content: Text(lang.translate('added_to_favorites'))),
                             );
                           }

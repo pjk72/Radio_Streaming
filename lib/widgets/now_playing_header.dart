@@ -238,10 +238,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
 
     await GlassUtils.showGlassDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogCtx) {
         return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            final provider = Provider.of<RadioProvider>(context, listen: false);
+          builder: (ctx, setStateDialog) {
+            final provider = Provider.of<RadioProvider>(ctx, listen: false);
             
             bool isFav = false;
             try {
@@ -253,7 +253,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
             }
 
             return AlertDialog(
-              backgroundColor: Theme.of(context).cardColor.withValues(alpha: 0.15),
+              backgroundColor: Theme.of(ctx).cardColor.withValues(alpha: 0.15),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
@@ -321,7 +321,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                         tooltip: lang.translate('add_to_playlist'),
                         onPressed: () async {
                           if (isFav) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.of(ctx).showSnackBar(
                               SnackBar(content: Text(lang.translate('already_in_favorites'))),
                             );
                             return;
@@ -338,8 +338,8 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                           await provider.bulkToggleFavoriteSongs([song], true);
                           setStateDialog(() { isFav = true; });
                           
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
                                SnackBar(content: Text(lang.translate('added_to_favorites'))),
                             );
                           }
