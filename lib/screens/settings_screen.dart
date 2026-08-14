@@ -1269,31 +1269,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      lang.translate('sleep_timer'),
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
-                        fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lang.translate('sleep_timer'),
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    Text(
-                      radio.sleepTimerEnabled
-                          ? "${lang.translate('remaining_time')}: ${_formatDuration(radio.remainingSleepTime)}"
-                          : lang.translate('sleep_timer_desc'),
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                        fontSize: 12,
+                      Text(
+                        radio.sleepTimerEnabled
+                            ? "${lang.translate('remaining_time')}: ${_formatDuration(radio.remainingSleepTime)}"
+                            : lang.translate('sleep_timer_desc'),
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 16),
                 Switch(
                   value: radio.sleepTimerEnabled,
                   onChanged: (val) => radio.setSleepTimerEnabled(val),
-                  activeColor: Theme.of(context).primaryColor,
+                  activeThumbColor: Theme.of(context).primaryColor,
                   inactiveTrackColor: Theme.of(context).dividerColor.withValues(alpha: 0.1),
                 ),
               ],
