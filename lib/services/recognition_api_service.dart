@@ -7,16 +7,11 @@ import 'log_service.dart';
 
 class RecognitionApiService {
   final String _host = 'shazam-song-recognition-api.p.rapidapi.com';
-  // Backup key in case Remote Config is unavailable
-  final String _defaultApiKey =
-      '65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828';
 
   // New API constants (Soluzione 2)
   static const String _apiUrl2 =
       "https://shazam-api7.p.rapidapi.com/songs/recognize-song";
   static const String _apiHost2 = "shazam-api7.p.rapidapi.com";
-  static const String _apiKey2 =
-      "65c517cd98mshd509565706f012ep1e49f3jsne80c01e37828";
 
   static bool _isGlobalRecognizing = false;
   http.Client? _activeClient;
@@ -27,12 +22,17 @@ class RecognitionApiService {
     try {
       final remoteConfig = FirebaseRemoteConfig.instance;
       final String keysJson = remoteConfig.getString('shazam_api_keys');
-      List<String> keys2 = ['937107fc2fmsh3f14e2e149d183cp1a7b28jsn5745ab269835'];
+      List<String> keys1 = [];
+      List<String> keys2 = [];
       
       if (keysJson.isNotEmpty) {
         try {
           final dynamic decoded = jsonDecode(keysJson);
           if (decoded is Map) {
+            if (decoded.containsKey('recognition_key_1')) {
+              final List<dynamic> k1 = decoded['recognition_key_1'] as List;
+              if (k1.isNotEmpty) keys1 = k1.map((e) => e.toString()).toList();
+            }
             if (decoded.containsKey('recognition_key_2')) {
               final List<dynamic> k2 = decoded['recognition_key_2'] as List;
               if (k2.isNotEmpty) keys2 = k2.map((e) => e.toString()).toList();
@@ -81,11 +81,10 @@ class RecognitionApiService {
         }
       }
       
-      // Il radar del microfono poggia solo sulla soluzione 2. 
-      // Ignoriamo lo stato della soluzione 1 per disabilitare il bottone visivo
-      checkList(keys2, 2);
+      if (keys2.isNotEmpty) checkList(keys2, 2);
+      if (keys1.isNotEmpty) checkList(keys1, 1);
       
-      isShazamDisabled.value = !anyActive;
+      isShazamDisabled.value = (keys1.isEmpty && keys2.isEmpty) || !anyActive;
     } catch (e) {
       LogService().log("RecognitionAPI [InitCheck]: Error $e");
     }
@@ -94,9 +93,16 @@ class RecognitionApiService {
   Future<Map<String, dynamic>?> identifyFromAudioBytes(Uint8List audioData) async {
     _activeClient = http.Client();
     try {
-      LogService().log("RecognitionAPI: Identifying from microphone bytes...");
+      LogService().log("RecognitionAPI: Identifying from microphone bytes (Primary: shazam-song-recognition-api)...");
       
-      final result = await _trySolutionWithRetry(1, audioData);
+      // Prima opzione: Soluzione 1 (shazam-song-recognition-api.p.rapidapi.com)
+      Map<String, dynamic>? result = await _trySolutionWithRetry(1, audioData);
+      if (result == null || result['error'] == 'key_exhausted') {
+        LogService().log(
+          "RecognitionAPI (Microphone): Soluzione 1 keys exhausted/failed. Falling back to Soluzione 2.",
+        );
+        result = await _trySolutionWithRetry(2, audioData);
+      }
       return result;
     } catch (e) {
       LogService().log("RecognitionAPI Exception (Microphone): $e");
@@ -235,15 +241,14 @@ class RecognitionApiService {
     List<String> ignoredKeys = [];
     while (true) {
       final configKeyName = solutionIndex == 1 ? 'recognition_key_1' : 'recognition_key_2';
-      final defaultKey = solutionIndex == 1 ? _defaultApiKey : _apiKey2;
       
-      final selection = await _getBestApiKey(configKeyName, defaultKey, solutionIndex, ignoredKeys);
+      final selection = await _getBestApiKey(configKeyName, solutionIndex, ignoredKeys);
       
-      if (selection['allExhausted'] == true) {
+      if (selection['allExhausted'] == true || selection['key'] == null) {
          return null;
       }
       
-      final apiKey = selection['key'];
+      final apiKey = selection['key'] as String;
       final result = solutionIndex == 1 ? await _runSolution1(audioData, apiKey) : await _runSolution2(audioData, apiKey);
       
       if (result != null && result['error'] == 'key_exhausted') {
@@ -361,7 +366,6 @@ class RecognitionApiService {
   /// Automatically resets usage and reactivates keys if they haven't been used today.
   Future<Map<String, dynamic>> _getBestApiKey(
     String configKeyName,
-    String defaultKey,
     int solutionIndex,
     [List<String> ignoredSessionKeys = const []]
   ) async {
@@ -371,7 +375,7 @@ class RecognitionApiService {
       await remoteConfig.fetchAndActivate().timeout(const Duration(seconds: 5));
       final String keysJson = remoteConfig.getString('shazam_api_keys');
 
-      List<String> keys = [defaultKey];
+      List<String> keys = [];
       if (keysJson.isNotEmpty) {
         try {
           final dynamic decoded = jsonDecode(keysJson);
@@ -384,7 +388,12 @@ class RecognitionApiService {
         } catch (_) {}
       }
 
-      // Note: We no longer return early here to ensure we check Firestore status even for a single key
+      if (keys.isEmpty) {
+        LogService().log(
+          "RecognitionAPI [MultiKey $solutionIndex]: No keys configured in Remote Config for $configKeyName.",
+        );
+        return {'key': null, 'allExhausted': true};
+      }
 
       // Query Firestore for global usage counts
       final firestore = FirebaseFirestore.instance;
@@ -440,7 +449,7 @@ class RecognitionApiService {
           } else {
             // Key is explicitly disabled for today - Do not add to activeKeys
             LogService().log(
-              "RecognitionAPI [MultiKey $solutionIndex]: Key ${key.substring(0, 8)}... skipped (EXHAUSTED).",
+              "RecognitionAPI [MultiKey $solutionIndex]: Key ${key.length >= 8 ? key.substring(0, 8) : key}... skipped (EXHAUSTED).",
             );
           }
         } else {
@@ -450,12 +459,12 @@ class RecognitionApiService {
         }
       }
 
-      // If all keys are exhausted, fallback to default or first key as desperate attempt
+      // If all keys are exhausted
       if (activeKeys.isEmpty) {
         LogService().log(
           "RecognitionAPI [MultiKey $solutionIndex]: ALL KEYS EXHAUSTED!",
         );
-        return {'key': keys[0], 'allExhausted': true};
+        return {'key': null, 'allExhausted': true};
       }
 
       // Pick the active key with minimum usage
@@ -473,9 +482,9 @@ class RecognitionApiService {
       return {'key': bestKey, 'allExhausted': false};
     } catch (e) {
       LogService().log(
-        "RecognitionAPI [MultiKey]: Error selecting key: $e. Falling back to default.",
+        "RecognitionAPI [MultiKey]: Error selecting key: $e.",
       );
-      return {'key': _defaultApiKey, 'allExhausted': false};
+      return {'key': null, 'allExhausted': true};
     }
   }
 

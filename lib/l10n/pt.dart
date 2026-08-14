@@ -699,4 +699,9 @@ final Map<String, String> pt = {
   'group_by_date': 'Agrupar por data',
   'top_songs': 'Músicas ouvidas',
   'release_date': 'Data de publicação',
+  'tap_to_sync': 'Toque para sincronizar',
+  'tap_to_sync_active': 'Toque em uma linha para sincronizar',
+  'tap_to_sync_hint': 'Toque em qualquer linha da letra para sincronizar instantaneamente o karaokê',
+  'tap_to_sync_disabled': 'Toque para sincronizar desativado',
+  'lyrics_synced_success': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',
 };

@@ -45,6 +45,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   Orientation? _lastOrientation;
+  bool _isTapToSyncActive = false;
 
   @override
   void initState() {
@@ -96,8 +97,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     _pulseController.dispose();
     FlutterVolumeController.removeListener();
     _pageController?.dispose();
-    _syncOverlayEntry?.remove();
-    _syncOverlayEntry = null;
     super.dispose();
   }
 
@@ -301,6 +300,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     Color accentColor, {
     bool isLandscape = false,
   }) {
+    final langProvider = Provider.of<LanguageProvider>(context);
     // Calculate size to maintain same physical height as in portrait
     // Portrait: 15% of screen height
     // Landscape: (0.15 * screenWidth) / screenHeight
@@ -418,6 +418,33 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                                 lyrics: provider.currentLyrics,
                                 accentColor: accentColor,
                                 lyricsOffset: provider.lyricsOffset,
+                                isTapToSyncActive: _isTapToSyncActive,
+                                onSyncLine: (lineTime, lineText) {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      duration: const Duration(milliseconds: 1500),
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: Colors.black87,
+                                      content: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.check_circle_outline_rounded,
+                                            color: Colors.greenAccent,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              langProvider.translate('lyrics_synced_success'),
+                                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                     ],
@@ -564,17 +591,52 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                                     ),
                                   if (provider.currentLyrics.isSynced)
                                     IconButton(
-                                      icon: const Icon(
-                                        Icons.tune_rounded,
-                                        color: Colors.white54,
+                                      icon: Icon(
+                                        _isTapToSyncActive
+                                            ? Icons.touch_app_rounded
+                                            : Icons.touch_app_outlined,
+                                        color: _isTapToSyncActive
+                                            ? Theme.of(context).primaryColor
+                                            : Colors.white54,
                                         size: 20,
                                       ),
-                                      tooltip: Provider.of<LanguageProvider>(
-                                        context,
-                                        listen: false,
-                                      ).translate('sync_lyrics'),
+                                      tooltip: _isTapToSyncActive
+                                          ? langProvider.translate('tap_to_sync_active')
+                                          : langProvider.translate('tap_to_sync'),
                                       onPressed: () {
-                                        _openSyncOverlay(context, provider);
+                                        setState(() {
+                                          _isTapToSyncActive = !_isTapToSyncActive;
+                                        });
+                                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            duration: const Duration(seconds: 2),
+                                            behavior: SnackBarBehavior.floating,
+                                            backgroundColor: Colors.black87,
+                                            content: Row(
+                                              children: [
+                                                Icon(
+                                                  _isTapToSyncActive
+                                                      ? Icons.touch_app_rounded
+                                                      : Icons.touch_app_outlined,
+                                                  color: _isTapToSyncActive
+                                                      ? Theme.of(context).primaryColor
+                                                      : Colors.white70,
+                                                  size: 20,
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Text(
+                                                    _isTapToSyncActive
+                                                        ? langProvider.translate('tap_to_sync_hint')
+                                                        : langProvider.translate('tap_to_sync_disabled'),
+                                                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
                                       },
                                     ),
                                   IconButton(
@@ -2073,35 +2135,21 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return "$minutes:$seconds";
   }
-
-  OverlayEntry? _syncOverlayEntry;
-
-  void _openSyncOverlay(BuildContext context, RadioProvider provider) {
-    if (_syncOverlayEntry != null) return; // Already open
-
-    _syncOverlayEntry = OverlayEntry(
-      builder: (context) => _DraggableSyncOverlay(
-        provider: provider,
-        onClose: () {
-          _syncOverlayEntry?.remove();
-          _syncOverlayEntry = null;
-        },
-      ),
-    );
-
-    Overlay.of(context).insert(_syncOverlayEntry!);
-  }
 }
 
 class _LyricsWidget extends StatefulWidget {
   final LyricsData lyrics;
   final Color accentColor;
   final Duration lyricsOffset;
+  final bool isTapToSyncActive;
+  final void Function(Duration lineTime, String lineText)? onSyncLine;
 
   const _LyricsWidget({
     required this.lyrics,
     required this.accentColor,
     required this.lyricsOffset,
+    this.isTapToSyncActive = false,
+    this.onSyncLine,
   });
 
   @override
@@ -2183,58 +2231,89 @@ class _LyricsWidgetState extends State<_LyricsWidget> {
 
                   return Padding(
                     key: _lineKeys[i],
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    child: AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 300),
-                      style: TextStyle(
-                        color: isCurrent ? Colors.white : Colors.white54,
-                        fontSize: isSynced
-                            ? (isCurrent ? 20 : 17)
-                            : 22, // Larger font for non-synced lyrics
-                        height: 1.4,
-                        fontWeight: (isSynced && isCurrent) || !isSynced
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        shadows: [
-                          const Shadow(
-                            color: Colors.black,
-                            blurRadius: 10,
-                            offset: Offset(0, 2),
-                          ),
-                          const Shadow(
-                            color: Colors.black87,
-                            blurRadius: 4,
-                            offset: Offset(1, 1),
-                          ),
-                          if (isCurrent && isSynced)
-                            Shadow(
-                              color: widget.accentColor.withValues(alpha: 0.8),
-                              blurRadius: 16,
-                            ),
-                        ],
-                      ),
-                      child: parts.length > 1
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(parts.first, textAlign: TextAlign.center),
-                                const SizedBox(height: 6),
-                                Text(
-                                  parts.sublist(1).join('\n'),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: (widget.isTapToSyncActive && isSynced)
+                            ? () {
+                                final lineTime = line.time;
+                                final newOffset = position - lineTime;
+                                Provider.of<RadioProvider>(context, listen: false).setLyricsOffset(newOffset);
+                                widget.onSyncLine?.call(lineTime, line.text);
+                              }
+                            : null,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+                          decoration: (widget.isTapToSyncActive && isSynced)
+                              ? BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
                                     color: isCurrent
-                                        ? Colors.white.withValues(alpha: 0.8)
-                                        : Colors.white.withValues(alpha: 0.4),
-                                    fontSize: isSynced
-                                        ? (isCurrent ? 18 : 15)
-                                        : 20,
-                                    fontStyle: FontStyle.italic,
+                                        ? widget.accentColor.withValues(alpha: 0.8)
+                                        : Colors.white.withValues(alpha: 0.2),
+                                    width: isCurrent ? 1.5 : 1.0,
                                   ),
+                                  color: isCurrent
+                                      ? widget.accentColor.withValues(alpha: 0.15)
+                                      : Colors.white.withValues(alpha: 0.05),
+                                )
+                              : null,
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 300),
+                            style: TextStyle(
+                              color: isCurrent ? Colors.white : Colors.white54,
+                              fontSize: isSynced
+                                  ? (isCurrent ? 20 : 17)
+                                  : 22, // Larger font for non-synced lyrics
+                              height: 1.4,
+                              fontWeight: (isSynced && isCurrent) || !isSynced
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              shadows: [
+                                const Shadow(
+                                  color: Colors.black,
+                                  blurRadius: 10,
+                                  offset: Offset(0, 2),
                                 ),
+                                const Shadow(
+                                  color: Colors.black87,
+                                  blurRadius: 4,
+                                  offset: Offset(1, 1),
+                                ),
+                                if (isCurrent && isSynced)
+                                  Shadow(
+                                    color: widget.accentColor.withValues(alpha: 0.8),
+                                    blurRadius: 16,
+                                  ),
                               ],
-                            )
-                          : Text(line.text, textAlign: TextAlign.center),
+                            ),
+                            child: parts.length > 1
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(parts.first, textAlign: TextAlign.center),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        parts.sublist(1).join('\n'),
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: isCurrent
+                                              ? Colors.white.withValues(alpha: 0.8)
+                                              : Colors.white.withValues(alpha: 0.4),
+                                          fontSize: isSynced
+                                              ? (isCurrent ? 18 : 15)
+                                              : 20,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(line.text, textAlign: TextAlign.center),
+                          ),
+                        ),
+                      ),
                     ),
                   );
                 }, childCount: widget.lyrics.lines.length),

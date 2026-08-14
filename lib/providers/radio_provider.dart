@@ -3802,6 +3802,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     if (songToPlay != null) {
+      // Trigger background enrichment for the entire ad-hoc/trending playlist
+      findMissingArtworks(playlistId: playlist.id);
+
       // If the requested song is already playing, skip restarting the stream to avoid stutter.
       // E.g. when seamlessly transitioning into an album playlist view.
       if (songToPlay.id == _audioOnlySongId) {
@@ -3882,13 +3885,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String? overrideAlbum,
     String? overrideArtUri,
     String? overrideGenre,
+    String? overrideReleaseDate,
+    Duration? overrideDuration,
     bool isLocal = false,
     bool isResolved = false,
   }) async {
     LogService().log(
       "Playback: Starting YouTube audio: ${overrideTitle ?? 'Audio'} (https://youtube.com/watch?v=$videoId)",
     );
-    _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
     _invalidDetectionTimer?.cancel(); // CANCEL invalid detection timer
     _invalidDetectionTimer = null;
 
@@ -3905,12 +3909,18 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String? artwork = overrideArtUri;
     String? album = overrideAlbum;
     String? genre = overrideGenre;
-    String? releaseDate;
-    Duration? songDuration;
+    String? releaseDate = overrideReleaseDate;
+    Duration? songDuration = overrideDuration;
 
-    // Only search if we don't have overrides
-    if (overrideTitle == null) {
-      // Use current playlist if available for better lookup, otherwise search all
+    // Search playlists or temp playlists if metadata is missing
+    if (overrideTitle == null ||
+        genre == null ||
+        genre.isEmpty ||
+        releaseDate == null ||
+        releaseDate.isEmpty ||
+        album == null ||
+        album.isEmpty ||
+        songDuration == null) {
       List<Playlist> searchLists = [];
       if (playlistId != null) {
         if (_tempPlaylist != null && _tempPlaylist!.id == playlistId) {
@@ -3923,7 +3933,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         if (_tempPlaylist != null) searchLists.add(_tempPlaylist!);
       }
 
-      // Fallback to searching all if specific lookup fails
       if (searchLists.isEmpty) searchLists = playlists;
 
       for (var p in searchLists) {
@@ -3938,15 +3947,25 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           ),
         );
         if (match.id.isNotEmpty) {
-          title = match.title;
-          artist = match.artist;
-          artwork = match.artUri;
-          album = match.album;
-          genre = match.genre ?? genre; // preserve override genre if lookup has none
-          releaseDate = match.releaseDate;
-          songDuration = match.duration;
+          if (overrideTitle == null) title = match.title;
+          if (overrideArtist == null) artist = match.artist;
+          artwork ??= match.artUri;
+          if (album == null || album.isEmpty) album = match.album;
+          genre ??= match.genre;
+          releaseDate ??= match.releaseDate;
+          songDuration ??= match.duration;
           break;
         }
+      }
+
+      // Check _historyMetadata as fallback
+      if (_historyMetadata.containsKey(songId)) {
+        final h = _historyMetadata[songId]!;
+        artwork ??= h.artUri;
+        if (album == null || album.isEmpty) album = h.album;
+        genre ??= h.genre;
+        releaseDate ??= h.releaseDate;
+        songDuration ??= h.duration;
       }
     }
 
@@ -3980,7 +3999,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _currentArtistImage = null;
     _currentLocalPath = isLocal ? videoId : null;
     _isPlaying = true; // Show 'Pause' icon
-    // _isLoading = true; // Optional: Show loading state, but better to show song info
 
     _currentTrackStartTime = DateTime.now();
     checkIfCurrentSongIsSaved(); // Check if this song from the playlist is already saved somewhere
@@ -3994,10 +4012,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
 
     try {
-      // Race condition guard: Abort if song changed while fetching stream
-
-      // Bypass blocking resolution in Provider - Let AudioHandler handle it (and use cache)
-      // We pass the VideoId as the URI.
       Uri uri;
       if (isLocal) {
         uri = Uri.file(videoId);
@@ -4011,6 +4025,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'artUri': artwork,
         'album': album ?? (isLocal ? "Local Device" : "Playlist"),
         'genre': genre,
+        'releaseDate': releaseDate,
         'duration': (songDuration != null && songDuration.inSeconds > 0)
             ? songDuration.inSeconds
             : null,
@@ -4027,8 +4042,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       _audioOnlySongId = songId;
       _isPlaying = true;
-      // _isLoading = false; // LET AUDIO HANDLER STATE CONTROL LOADING
-      // notifyListeners();
 
       // --- Metadata Enrichment (Deep Check) ---
       // If we have incomplete data (unknown artist, generic title, missing art),
@@ -4072,7 +4085,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
       return; // Success!
     } catch (e) {
-      debugPrint("Native YouTube playback failed, falling back: $e");
+      LogService().log("Native YouTube playback failed: $e");
     }
 
     // --------------------------------------------------------------------------------
@@ -5470,6 +5483,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           'type': 'playlist_song',
           'songId': song.id,
           'playlistId': playlistId,
+          'genre': song.genre,
+          'releaseDate': song.releaseDate,
+          'duration': song.duration?.inSeconds,
         },
       ),
     );
@@ -5712,6 +5728,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           overrideAlbum: song.album,
           overrideArtUri: song.artUri,
           overrideGenre: song.genre,
+          overrideReleaseDate: song.releaseDate,
+          overrideDuration: song.duration,
         ); // Recursive metadata update
       } else {
         _isLoading = false;
@@ -7493,18 +7511,25 @@ _artistImageCache[rawKey] = null;
         } catch (_) {}
       } else if (playlistId != null) {
         _enrichingPlaylists.add(playlistId);
-        try {
-          final p = _playlists.firstWhere((p) => p.id == playlistId);
-          for (var s in p.songs) {
+        if (_tempPlaylist != null && _tempPlaylist!.id == playlistId) {
+          for (var s in _tempPlaylist!.songs) {
             if (_hasIncompleteMetadata(s)) {
               toProcess.add(s);
             }
           }
-        } catch (_) {
-          // If it's a temp playlist (artist/album view), we can't find it by ID in _playlists.
-          for (var s in _allUniqueSongs) {
-            if (_hasIncompleteMetadata(s)) {
-              toProcess.add(s);
+        } else {
+          try {
+            final p = _playlists.firstWhere((p) => p.id == playlistId);
+            for (var s in p.songs) {
+              if (_hasIncompleteMetadata(s)) {
+                toProcess.add(s);
+              }
+            }
+          } catch (_) {
+            for (var s in _allUniqueSongs) {
+              if (_hasIncompleteMetadata(s)) {
+                toProcess.add(s);
+              }
             }
           }
         }
@@ -7723,6 +7748,33 @@ _artistImageCache[rawKey] = null;
                   anyChanged = true;
                 }
               }
+
+              // Also update in temporary/trending playlist if active
+              if (_tempPlaylist != null) {
+                final tempSongIdx = _tempPlaylist!.songs.indexWhere((s) => s.id == songId);
+                if (tempSongIdx != -1) {
+                  final updatedTempSongs = List<SavedSong>.from(_tempPlaylist!.songs);
+                  updatedTempSongs[tempSongIdx] = updatedTempSongs[tempSongIdx].copyWith(
+                    title: titleOrArtistChanged ? cleanTitle : updatedTempSongs[tempSongIdx].title,
+                    artist: titleOrArtistChanged ? cleanArtist : updatedTempSongs[tempSongIdx].artist,
+                    artUri: hasBetterArt ? match.artUri : updatedTempSongs[tempSongIdx].artUri,
+                    album: (hasBetterArt
+                        ? match.album
+                        : (hasNewAlbum ? match.album : updatedTempSongs[tempSongIdx].album))
+                        .replaceAll(RegExp(r'\s*-\s*$'), '')
+                        .trim(),
+                    appleMusicUrl:
+                        updatedTempSongs[tempSongIdx].appleMusicUrl ??
+                        match.appleMusicUrl,
+                    genre: hasNewGenre ? match.genre : updatedTempSongs[tempSongIdx].genre,
+                    duration: hasNewDuration ? match.duration : updatedTempSongs[tempSongIdx].duration,
+                    releaseDate: hasNewReleaseDate ? match.releaseDate : updatedTempSongs[tempSongIdx].releaseDate,
+                  );
+                  _tempPlaylist = _tempPlaylist!.copyWith(songs: updatedTempSongs);
+                  anyChanged = true;
+                }
+              }
+
               if (songChanged) {
                 final idx = _allUniqueSongs.indexWhere((s) => s.id == songId);
                 if (idx != -1) {                  

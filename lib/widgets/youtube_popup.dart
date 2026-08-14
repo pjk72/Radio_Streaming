@@ -41,8 +41,8 @@ class _YouTubePopupState extends State<YouTubePopup> {
   // Lyrics State
   LyricsData? _lyrics;
   Duration _lyricsOffset = Duration.zero;
+  bool _isTapToSyncActive = false;
   OverlayEntry? _lyricsOverlayEntry;
-  OverlayEntry? _syncOverlayEntry;
 
   @override
   void initState() {
@@ -154,116 +154,156 @@ class _YouTubePopupState extends State<YouTubePopup> {
     if (_lyricsOverlayEntry != null) {
       _lyricsOverlayEntry!.remove();
       _lyricsOverlayEntry = null;
-      // Also close sync if lyrics close
-      _syncOverlayEntry?.remove();
-      _syncOverlayEntry = null;
     } else {
       if (_lyrics == null) return;
 
       _lyricsOverlayEntry = OverlayEntry(
-        builder: (context) => Positioned.fill(
-          child: Material(
-            color: Colors.black.withValues(alpha: 0.6),
-            child: Stack(
-              children: [
-                LyricsWidget(
-                  lyrics: _lyrics!,
-                  accentColor: Colors.redAccent,
-                  lyricsOffset: _lyricsOffset,
-                  positionStream: _positionStream,
-                ),
-                // Controls for Lyrics Overlay
-                Positioned(
-                  top: 40,
-                  right: 20,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.tune, color: Colors.white54),
-                        onPressed: () => _openSyncOverlay(context),
-                        tooltip: Provider.of<LanguageProvider>(
-                          context,
-                          listen: false,
-                        ).translate('sync_lyrics'),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.refresh, color: Colors.white54),
-                        onPressed: () => _fetchLyrics(force: true),
-                        tooltip: Provider.of<LanguageProvider>(
-                          context,
-                          listen: false,
-                        ).translate('retry_search'),
-                      ),
-                      if (_lyrics != null && _lyrics!.lines.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.copy, color: Colors.white54),
-                          onPressed: () {
-                            final text = _lyrics!.lines
-                                .map((l) => l.text)
-                                .join('\n');
-                            Clipboard.setData(ClipboardData(text: text));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  Provider.of<LanguageProvider>(
-                                    context,
-                                    listen: false,
-                                  ).translate('lyrics_copied'),
+        builder: (context) {
+          final lang = Provider.of<LanguageProvider>(context, listen: false);
+          return Positioned.fill(
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.6),
+              child: Stack(
+                children: [
+                  LyricsWidget(
+                    lyrics: _lyrics!,
+                    accentColor: Colors.redAccent,
+                    lyricsOffset: _lyricsOffset,
+                    positionStream: _positionStream,
+                    isTapToSyncActive: _isTapToSyncActive,
+                    onSyncLine: (lineTime, lineText) {
+                      final currentPos = _videoController.value.position;
+                      final newOffset = currentPos - lineTime;
+                      setState(() {
+                        _lyricsOffset = newOffset;
+                      });
+                      _lyricsOverlayEntry?.markNeedsBuild();
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          duration: const Duration(milliseconds: 1500),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: Colors.black87,
+                          content: Row(
+                            children: [
+                              const Icon(
+                                Icons.check_circle_outline_rounded,
+                                color: Colors.greenAccent,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  lang.translate('lyrics_synced_success'),
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
                                 ),
                               ),
-                            );
-                          },
-                          tooltip: Provider.of<LanguageProvider>(
-                            context,
-                            listen: false,
-                          ).translate('copy_lyrics'),
+                            ],
+                          ),
                         ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white54),
-                        onPressed: () => _toggleLyrics(context),
-                        tooltip: Provider.of<LanguageProvider>(
-                          context,
-                          listen: false,
-                        ).translate('close_lyrics'),
-                      ),
-                    ],
+                      );
+                    },
                   ),
-                ),
-              ],
+                  // Controls for Lyrics Overlay
+                  Positioned(
+                    top: 40,
+                    right: 20,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_lyrics!.isSynced)
+                          IconButton(
+                            icon: Icon(
+                              _isTapToSyncActive
+                                  ? Icons.touch_app_rounded
+                                  : Icons.touch_app_outlined,
+                              color: _isTapToSyncActive ? Colors.redAccent : Colors.white54,
+                              size: 22,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isTapToSyncActive = !_isTapToSyncActive;
+                              });
+                              _lyricsOverlayEntry?.markNeedsBuild();
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  duration: const Duration(seconds: 2),
+                                  behavior: SnackBarBehavior.floating,
+                                  backgroundColor: Colors.black87,
+                                  content: Row(
+                                    children: [
+                                      Icon(
+                                        _isTapToSyncActive
+                                            ? Icons.touch_app_rounded
+                                            : Icons.touch_app_outlined,
+                                        color: _isTapToSyncActive
+                                            ? Colors.redAccent
+                                            : Colors.white70,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          _isTapToSyncActive
+                                              ? lang.translate('tap_to_sync_hint')
+                                              : lang.translate('tap_to_sync_disabled'),
+                                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                            tooltip: _isTapToSyncActive
+                                ? lang.translate('tap_to_sync_active')
+                                : lang.translate('tap_to_sync'),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh, color: Colors.white54),
+                          onPressed: () => _fetchLyrics(force: true),
+                          tooltip: lang.translate('retry_search'),
+                        ),
+                        if (_lyrics != null && _lyrics!.lines.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.copy, color: Colors.white54),
+                            onPressed: () {
+                              final text = _lyrics!.lines
+                                  .map((l) => l.text)
+                                  .join('\n');
+                              Clipboard.setData(ClipboardData(text: text));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    lang.translate('lyrics_copied'),
+                                  ),
+                                ),
+                              );
+                            },
+                            tooltip: lang.translate('copy_lyrics'),
+                          ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54),
+                          onPressed: () => _toggleLyrics(context),
+                          tooltip: lang.translate('close_lyrics'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       );
       Overlay.of(context).insert(_lyricsOverlayEntry!);
     }
     setState(() {});
   }
 
-  void _openSyncOverlay(BuildContext context) {
-    if (_syncOverlayEntry != null) return;
 
-    _syncOverlayEntry = OverlayEntry(
-      builder: (context) => DraggableSyncOverlay(
-        currentOffset: _lyricsOffset,
-        onOffsetChanged: (newOffset) {
-          setState(() {
-            _lyricsOffset = newOffset;
-          });
-          _lyricsOverlayEntry?.markNeedsBuild();
-          _syncOverlayEntry?.markNeedsBuild();
-        },
-        onClose: () {
-          _syncOverlayEntry?.remove();
-          _syncOverlayEntry = null;
-          setState(() {});
-        },
-      ),
-    );
-    Overlay.of(context).insert(_syncOverlayEntry!);
-    setState(() {});
-  }
 
   void _toggleMode() {
     setState(() {
@@ -274,7 +314,6 @@ class _YouTubePopupState extends State<YouTubePopup> {
   @override
   void dispose() {
     _lyricsOverlayEntry?.remove();
-    _syncOverlayEntry?.remove();
     _videoController.dispose();
     super.dispose();
   }
@@ -336,11 +375,6 @@ class _YouTubePopupState extends State<YouTubePopup> {
                     : Colors.white,
               ),
               onPressed: () => _toggleLyrics(context),
-            ),
-          if (_lyricsOverlayEntry != null)
-            IconButton(
-              icon: const Icon(Icons.tune, color: Colors.white),
-              onPressed: () => _openSyncOverlay(context),
             ),
           IconButton(
             icon: Icon(

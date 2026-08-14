@@ -710,4 +710,9 @@ final Map<String, String> es = {
   'group_by_date': 'Agrupar por fecha',
   'top_songs': 'Canciones escuchadas',
   'release_date': 'Fecha de publicación',
+  'tap_to_sync': 'Toca para sincronizar',
+  'tap_to_sync_active': 'Toca una línea para sincronizar',
+  'tap_to_sync_hint': 'Toca cualquier línea de letra para sincronizar instantáneamente el karaoke',
+  'tap_to_sync_disabled': 'Tocar para sincronizar inhabilitado',
+  'lyrics_synced_success': 'Karaoke sincronizado con esta línea!',
 };

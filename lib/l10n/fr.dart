@@ -714,4 +714,9 @@ final Map<String, String> fr = {
   'group_by_date': 'Regrouper par date',
   'top_songs': 'Chansons écoutées',
   'release_date': 'Date de publication',
+  'tap_to_sync': 'Appuyez pour synchroniser',
+  'tap_to_sync_active': 'Appuyez sur une ligne pour synchroniser',
+  'tap_to_sync_hint': 'Appuyez sur n\'importe quelle ligne de paroles pour synchroniser instantanément le karaoké',
+  'tap_to_sync_disabled': 'Toucher pour synchroniser désactivé',
+  'lyrics_synced_success': 'Karaoké synchronisé avec cette ligne !',
 };

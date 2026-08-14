@@ -1112,6 +1112,8 @@ class RadioAudioHandler extends BaseAudioHandler
         'videoId': videoId,
         'stableId': stableId,
         'duration': song.duration?.inSeconds,
+        'genre': song.genre,
+        'releaseDate': song.releaseDate,
       },
     );
     mediaItem.add(placeholderItem);
@@ -5331,6 +5333,44 @@ class RadioAudioHandler extends BaseAudioHandler
             if (hintsStr != null) {
               final Map<String, dynamic> hints = jsonDecode(hintsStr);
               releaseDate = hints[songId] as String?;
+            }
+          } catch (_) {}
+        }
+
+        // If metadata map already has existing entry with genre/releaseDate, preserve it
+        if (metadata.containsKey(songId)) {
+          final existing = metadata[songId]!;
+          if ((genre == null || genre.isEmpty) && existing.genre != null && existing.genre!.isNotEmpty) {
+            genre = existing.genre;
+          }
+          if ((releaseDate == null || releaseDate.isEmpty) && existing.releaseDate != null && existing.releaseDate!.isNotEmpty) {
+            releaseDate = existing.releaseDate;
+          }
+        }
+
+        // Deep fallback: direct iTunes search if genre or releaseDate is still missing
+        if ((genre == null || genre.isEmpty) || (releaseDate == null || releaseDate.isEmpty)) {
+          try {
+            final qTitle = current.title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '').trim();
+            final qArtist = (current.artist ?? '').replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '').trim();
+            final query = "$qTitle $qArtist".trim();
+            if (query.isNotEmpty) {
+              final encoded = Uri.encodeComponent(query);
+              final itunesRes = await http.get(
+                Uri.parse('https://itunes.apple.com/search?term=$encoded&limit=1&media=music'),
+              ).timeout(const Duration(seconds: 3));
+              if (itunesRes.statusCode == 200) {
+                final data = jsonDecode(itunesRes.body);
+                if (data['resultCount'] > 0) {
+                  final res = data['results'][0];
+                  if (genre == null || genre.isEmpty) {
+                    genre = res['primaryGenreName'] as String?;
+                  }
+                  if (releaseDate == null || releaseDate.isEmpty) {
+                    releaseDate = res['releaseDate'] as String?;
+                  }
+                }
+              }
             }
           } catch (_) {}
         }

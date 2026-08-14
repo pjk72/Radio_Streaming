@@ -675,4 +675,9 @@ final Map<String, String> ar = {
   'group_by_date': 'المجموعة حسب التاريخ',
   'top_songs': 'الأغاني التي استمعت إليها',
   'release_date': 'تاريخ النشر',
+  'tap_to_sync': 'انقر للمزامنة',
+  'tap_to_sync_active': 'اضغط على خط للمزامنة',
+  'tap_to_sync_hint': 'اضغط على أي سطر غنائي لمزامنة الكاريوكي على الفور',
+  'tap_to_sync_disabled': 'تم تعطيل النقر للمزامنة',
+  'lyrics_synced_success': 'الكاريوكي متزامنة مع هذا الخط!',
 };

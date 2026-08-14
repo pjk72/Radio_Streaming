@@ -6,6 +6,8 @@ class LyricsWidget extends StatefulWidget {
   final Color accentColor;
   final Duration lyricsOffset;
   final Stream<Duration> positionStream;
+  final bool isTapToSyncActive;
+  final void Function(Duration lineTime, String lineText)? onSyncLine;
 
   const LyricsWidget({
     super.key,
@@ -13,6 +15,8 @@ class LyricsWidget extends StatefulWidget {
     required this.accentColor,
     required this.lyricsOffset,
     required this.positionStream,
+    this.isTapToSyncActive = false,
+    this.onSyncLine,
   });
 
   @override
@@ -129,76 +133,104 @@ class _LyricsWidgetState extends State<LyricsWidget> {
 
                         return Padding(
                           key: _lineKeys[i],
-                          padding: const EdgeInsets.symmetric(vertical: 12.0),
-                          child: AnimatedDefaultTextStyle(
-                            duration: const Duration(milliseconds: 300),
-                            style: TextStyle(
-                              color: isCurrent ? Colors.white : Colors.white54,
-                              fontSize: isSynced
-                                  ? (isCurrent ? 24 : 18)
-                                  : 20, // Larger font for readability
-                              height: 1.4,
-                              fontWeight: (isSynced && isCurrent) || !isSynced
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              shadows: [
-                                const Shadow(
-                                  color: Colors.black,
-                                  blurRadius: 10,
-                                  offset: Offset(0, 2),
-                                ),
-                                const Shadow(
-                                  color: Colors.black87,
-                                  blurRadius: 4,
-                                  offset: Offset(1, 1),
-                                ),
-                                if (isCurrent && isSynced)
-                                  Shadow(
-                                    color: widget.accentColor.withValues(
-                                      alpha: 0.8,
-                                    ),
-                                    blurRadius: 16,
-                                  ),
-                              ],
-                            ),
-                            textAlign: TextAlign.center,
-                            child: Builder(
-                              builder: (context) {
-                                final style = DefaultTextStyle.of(
-                                  context,
-                                ).style;
-                                if (!line.text.contains('\n')) {
-                                  return Text(line.text);
-                                }
-                                final parts = line.text.split('\n');
-                                final original = parts[0];
-                                final translation = parts.sublist(1).join('\n');
-                                return RichText(
-                                  textAlign: TextAlign.center,
-                                  text: TextSpan(
-                                    style: style,
-                                    children: [
-                                      TextSpan(text: '$original\n'),
-                                      TextSpan(
-                                        text: translation,
-                                        style: TextStyle(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: (widget.isTapToSyncActive && isSynced)
+                                  ? () {
+                                      widget.onSyncLine?.call(line.time, line.text);
+                                    }
+                                  : null,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+                                decoration: (widget.isTapToSyncActive && isSynced)
+                                    ? BoxDecoration(
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
                                           color: isCurrent
-                                              ? Colors.white.withValues(
-                                                  alpha: 0.8,
-                                                )
-                                              : Colors.white.withValues(
-                                                  alpha: 0.4,
-                                                ),
-                                          fontSize: style.fontSize != null
-                                              ? style.fontSize! * 0.85
-                                              : null,
-                                          fontStyle: FontStyle.italic,
+                                              ? widget.accentColor.withValues(alpha: 0.8)
+                                              : Colors.white.withValues(alpha: 0.2),
+                                          width: isCurrent ? 1.5 : 1.0,
                                         ),
+                                        color: isCurrent
+                                            ? widget.accentColor.withValues(alpha: 0.15)
+                                            : Colors.white.withValues(alpha: 0.05),
+                                      )
+                                    : null,
+                                child: AnimatedDefaultTextStyle(
+                                  duration: const Duration(milliseconds: 300),
+                                  style: TextStyle(
+                                    color: isCurrent ? Colors.white : Colors.white54,
+                                    fontSize: isSynced
+                                        ? (isCurrent ? 24 : 18)
+                                        : 20, // Larger font for readability
+                                    height: 1.4,
+                                    fontWeight: (isSynced && isCurrent) || !isSynced
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                    shadows: [
+                                      const Shadow(
+                                        color: Colors.black,
+                                        blurRadius: 10,
+                                        offset: Offset(0, 2),
                                       ),
+                                      const Shadow(
+                                        color: Colors.black87,
+                                        blurRadius: 4,
+                                        offset: Offset(1, 1),
+                                      ),
+                                      if (isCurrent && isSynced)
+                                        Shadow(
+                                          color: widget.accentColor.withValues(
+                                            alpha: 0.8,
+                                          ),
+                                          blurRadius: 16,
+                                        ),
                                     ],
                                   ),
-                                );
-                              },
+                                  textAlign: TextAlign.center,
+                                  child: Builder(
+                                    builder: (context) {
+                                      final style = DefaultTextStyle.of(
+                                        context,
+                                      ).style;
+                                      if (!line.text.contains('\n')) {
+                                        return Text(line.text);
+                                      }
+                                      final parts = line.text.split('\n');
+                                      final original = parts[0];
+                                      final translation = parts.sublist(1).join('\n');
+                                      return RichText(
+                                        textAlign: TextAlign.center,
+                                        text: TextSpan(
+                                          style: style,
+                                          children: [
+                                            TextSpan(text: '$original\n'),
+                                            TextSpan(
+                                              text: translation,
+                                              style: TextStyle(
+                                                color: isCurrent
+                                                    ? Colors.white.withValues(
+                                                        alpha: 0.8,
+                                                      )
+                                                    : Colors.white.withValues(
+                                                        alpha: 0.4,
+                                                      ),
+                                                fontSize: style.fontSize != null
+                                                    ? style.fontSize! * 0.85
+                                                    : null,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         );

@@ -700,4 +700,9 @@ final Map<String, String> ru = {
   'group_by_date': 'Группировать по дате',
   'top_songs': 'Песни, которые слушали',
   'release_date': 'Дата публикации',
+  'tap_to_sync': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',
+  'tap_to_sync_active': 'Коснитесь линии для синхронизации',
+  'tap_to_sync_hint': 'Коснитесь любой строки текста, чтобы мгновенно синхронизировать караоке.',
+  'tap_to_sync_disabled': 'Синхронизация по касанию отключена',
+  'lyrics_synced_success': 'Караоке синхронизировано с этой линией!',
 };

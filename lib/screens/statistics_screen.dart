@@ -635,7 +635,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         // Calcola andamento giornaliero per il grafico
         Map<String, int> dailyListens = {};
         Map<String, Map<String, int>> dailySongCounts = {};
+        Map<String, Map<String, DateTime>> dailyLatestSongPlayTime = {};
         Map<String, int> totalSongCounts = {};
+        Map<String, DateTime> latestSongPlayTime = {};
         Map<String, int> artistCounts = {};
         Map<String, int> genreCounts = {};
         Map<String, int> yearCounts = {};
@@ -651,7 +653,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             
             dailySongCounts.putIfAbsent(fullDateKey, () => {});
             dailySongCounts[fullDateKey]![id] = (dailySongCounts[fullDateKey]![id] ?? 0) + 1;
+            
+            dailyLatestSongPlayTime.putIfAbsent(fullDateKey, () => {});
+            if (!dailyLatestSongPlayTime[fullDateKey]!.containsKey(id) ||
+                ts.isAfter(dailyLatestSongPlayTime[fullDateKey]![id]!)) {
+              dailyLatestSongPlayTime[fullDateKey]![id] = ts;
+            }
+
             totalSongCounts[id] = (totalSongCounts[id] ?? 0) + 1;
+            if (!latestSongPlayTime.containsKey(id) ||
+                ts.isAfter(latestSongPlayTime[id]!)) {
+              latestSongPlayTime[id] = ts;
+            }
 
             final info = songLookup[id];
             if (info != null) {
@@ -840,7 +853,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                 final parsedDate = DateTime.parse(day);
                 final displayDate = DateFormat('dd/MM/yyyy').format(parsedDate);
                 final sortedSongsForDay = dailySongCounts[day]!.entries.toList()
-                  ..sort((a, b) => b.value.compareTo(a.value));
+                  ..sort((a, b) {
+                    final cmp = b.value.compareTo(a.value); // 1. Per numero di ascolti (più alto a più basso)
+                    if (cmp != 0) return cmp;
+                    // 2. Cronologico: ultimo ascolto in alto (più recente)
+                    final timeA = dailyLatestSongPlayTime[day]?[a.key] ?? DateTime.fromMillisecondsSinceEpoch(0);
+                    final timeB = dailyLatestSongPlayTime[day]?[b.key] ?? DateTime.fromMillisecondsSinceEpoch(0);
+                    return timeB.compareTo(timeA);
+                  });
                   
                 List<Widget> widgets = [];
                 final isCollapsed = _collapsedDays.contains(day);
@@ -897,7 +917,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                     
                     if (song == null) continue;
                     
-                    widgets.add(_buildSongTile(song, count, provider, langProvider, context));
+                    widgets.add(_buildSongTile(song, count, provider, langProvider, songLookup, context));
                   }
                 }
                 return widgets;
@@ -906,7 +926,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
               Builder(
                 builder: (context) {
                   final sortedAllSongs = totalSongCounts.entries.toList()
-                    ..sort((a, b) => b.value.compareTo(a.value));
+                    ..sort((a, b) {
+                      final cmp = b.value.compareTo(a.value); // 1. Per numero di ascolti (più alto a più basso)
+                      if (cmp != 0) return cmp;
+                      // 2. Cronologico: ultimo ascolto in alto (più recente)
+                      final timeA = latestSongPlayTime[a.key] ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      final timeB = latestSongPlayTime[b.key] ?? DateTime.fromMillisecondsSinceEpoch(0);
+                      return timeB.compareTo(timeA);
+                    });
                   return Column(
                     children: sortedAllSongs.map((entry) {
                       final songId = entry.key;
@@ -915,7 +942,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                       if (song == null) {
                         return const SizedBox.shrink();
                       }
-                      return _buildSongTile(song, count, provider, langProvider, context);
+                      return _buildSongTile(song, count, provider, langProvider, songLookup, context);
                     }).toList(),
                   );
                 }
@@ -1040,7 +1067,41 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildSongTile(dynamic song, int count, RadioProvider provider, LanguageProvider langProvider, BuildContext context) {
+  Widget _buildSongTile(
+    dynamic song,
+    int count,
+    RadioProvider provider,
+    LanguageProvider langProvider,
+    Map<String, Map<String, String?>> songLookup,
+    BuildContext context,
+  ) {
+    final info = songLookup[song.id];
+    final resolvedGenre = (song.genre != null && song.genre!.isNotEmpty)
+        ? song.genre
+        : info?['genre'];
+    final resolvedReleaseDate = (song.releaseDate != null && song.releaseDate!.isNotEmpty)
+        ? song.releaseDate
+        : info?['releaseDate'];
+
+    String? year;
+    if (resolvedReleaseDate != null && resolvedReleaseDate.length >= 4) {
+      final intYear = int.tryParse(resolvedReleaseDate.substring(0, 4));
+      if (intYear != null && intYear > 1000) {
+        year = intYear.toString();
+      }
+    }
+
+    final genre = (resolvedGenre != null &&
+            resolvedGenre.isNotEmpty &&
+            resolvedGenre != langProvider.translate('unknown'))
+        ? resolvedGenre
+        : null;
+
+    final List<String> metaParts = [];
+    if (year != null) metaParts.add(year);
+    if (genre != null) metaParts.add(genre);
+    final String extraInfo = metaParts.join(' • ');
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       leading: ClipRRect(
@@ -1050,7 +1111,31 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             : Container(width: 50, height: 50, color: Colors.white10, child: const Icon(Icons.music_note)),
       ),
       title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            song.artist,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white54),
+          ),
+          if (extraInfo.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              extraInfo,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.85),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
       trailing: Text(langProvider.translate('listens_count').replaceAll('{0}', count.toString()), style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
       onTap: () {
         // Mostra un bottom sheet di anteprima, lasciando all'utente la scelta
@@ -1093,6 +1178,19 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                             Text(song.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
                             const SizedBox(height: 4),
                             Text(song.artist, style: const TextStyle(color: Colors.white54, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            if (extraInfo.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                extraInfo,
+                                style: TextStyle(
+                                  color: Theme.of(context).primaryColor.withValues(alpha: 0.9),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                             const SizedBox(height: 8),
                             Row(
                               children: [

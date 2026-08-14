@@ -677,4 +677,9 @@ final Map<String, String> zh = {
   'group_by_date': '按日期分组',
   'top_songs': '听过的歌曲',
   'release_date': '出版日期',
+  'tap_to_sync': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',
+  'tap_to_sync_active': '点击一行进行同步',
+  'tap_to_sync_hint': '点击任意歌词即可立即同步卡拉OK',
+  'tap_to_sync_disabled': '已禁用点击同步',
+  'lyrics_synced_success': '卡拉OK与此线路同步！',
 };
