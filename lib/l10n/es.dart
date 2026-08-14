@@ -715,4 +715,5 @@ final Map<String, String> es = {
   'tap_to_sync_hint': 'Toca cualquier línea de letra para sincronizar instantáneamente el karaoke',
   'tap_to_sync_disabled': 'Tocar para sincronizar inhabilitado',
   'lyrics_synced_success': 'Karaoke sincronizado con esta línea!',
+  'scroll_to_top': 'Volver arriba',
 };

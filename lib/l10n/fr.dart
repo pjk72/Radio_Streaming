@@ -719,4 +719,5 @@ final Map<String, String> fr = {
   'tap_to_sync_hint': 'Appuyez sur n\'importe quelle ligne de paroles pour synchroniser instantanément le karaoké',
   'tap_to_sync_disabled': 'Toucher pour synchroniser désactivé',
   'lyrics_synced_success': 'Karaoké synchronisé avec cette ligne !',
+  'scroll_to_top': 'Retour en haut',
 };

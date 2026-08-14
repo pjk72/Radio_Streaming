@@ -704,4 +704,5 @@ final Map<String, String> pt = {
   'tap_to_sync_hint': 'Toque em qualquer linha da letra para sincronizar instantaneamente o karaokê',
   'tap_to_sync_disabled': 'Toque para sincronizar desativado',
   'lyrics_synced_success': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',
+  'scroll_to_top': 'Voltar ao topo',
 };

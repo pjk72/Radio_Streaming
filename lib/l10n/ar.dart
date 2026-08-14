@@ -680,4 +680,5 @@ final Map<String, String> ar = {
   'tap_to_sync_hint': 'اضغط على أي سطر غنائي لمزامنة الكاريوكي على الفور',
   'tap_to_sync_disabled': 'تم تعطيل النقر للمزامنة',
   'lyrics_synced_success': 'الكاريوكي متزامنة مع هذا الخط!',
+  'scroll_to_top': 'العودة إلى الأعلى',
 };

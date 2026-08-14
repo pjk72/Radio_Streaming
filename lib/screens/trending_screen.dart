@@ -282,17 +282,21 @@ class _TrendingScreenState extends State<TrendingScreen>
             width: 150, // Reduced width as requested
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
+              color: const Color(0xFF1E1E2C).withValues(alpha: 0.95),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
+              border: Border.all(color: Colors.white24),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _selectedCountryCode,
                 isExpanded: true,
-                dropdownColor: Theme.of(context).cardColor,
-                style: TextStyle(
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                dropdownColor: const Color(0xFF181824),
+                borderRadius: BorderRadius.circular(12),
+                icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
                 ),
                 items: sortedCountries.map((e) {
                   return DropdownMenuItem(
@@ -301,6 +305,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                       e.value,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
                     ),
                   );
                 }).toList(),

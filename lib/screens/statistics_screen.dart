@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
@@ -55,11 +56,64 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     'custom'
   ];
 
+  final ScrollController _dynamicScrollController = ScrollController();
+  final GlobalKey _topSongsSectionKey = GlobalKey();
+  bool _showScrollToTop = false;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _dynamicScrollController.addListener(_onScroll);
     _loadPreferences();
+  }
+
+  double _topSongsOffset = 0.0;
+
+  void _measureTopSongsOffset() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _topSongsSectionKey.currentContext;
+      if (ctx != null && _dynamicScrollController.hasClients) {
+        try {
+          final renderBox = ctx.findRenderObject() as RenderBox?;
+          final scrollableBox = _dynamicScrollController.position.context.notificationContext?.findRenderObject() as RenderBox?;
+          if (renderBox != null && renderBox.hasSize && scrollableBox != null) {
+            final targetInScrollable = renderBox.localToGlobal(Offset.zero, ancestor: scrollableBox);
+            final calculatedOffset = _dynamicScrollController.offset + targetInScrollable.dy - 12.0;
+            if (calculatedOffset > 100) {
+              _topSongsOffset = calculatedOffset;
+            }
+          }
+        } catch (_) {}
+      }
+    });
+  }
+
+  void _onScroll() {
+    if (_dynamicScrollController.hasClients) {
+      final threshold = _topSongsOffset > 0 ? _topSongsOffset : 900.0;
+      final shouldShow = _dynamicScrollController.offset > (threshold + 60.0);
+      if (shouldShow != _showScrollToTop) {
+        setState(() {
+          _showScrollToTop = shouldShow;
+        });
+      }
+    }
+  }
+
+  void _scrollToSongsListStart() {
+    if (_dynamicScrollController.hasClients) {
+      final target = _topSongsOffset > 0 ? _topSongsOffset : 900.0;
+      _dynamicScrollController.animateTo(
+        target.clamp(0.0, _dynamicScrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   Future<void> _loadPreferences() async {
@@ -86,6 +140,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
 
   @override
   void dispose() {
+    _dynamicScrollController.removeListener(_onScroll);
+    _dynamicScrollController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -97,6 +153,17 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      floatingActionButton: (_showScrollToTop && _tabController.index == 0)
+          ? FloatingActionButton.small(
+              heroTag: 'stats_scroll_to_top',
+              onPressed: _scrollToSongsListStart,
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              tooltip: langProvider.translate('scroll_to_top'),
+              child: const Icon(Icons.arrow_upward_rounded),
+            )
+          : null,
       appBar: AppBar(
         title: Text(langProvider.translate('statistics')),
         backgroundColor: Colors.transparent,
@@ -693,7 +760,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         // Top canzoni
         final sortedDays = dailySongCounts.keys.toList()..sort((a, b) => b.compareTo(a));
 
+        _measureTopSongsOffset();
+
         return ListView(
+          controller: _dynamicScrollController,
           padding: const EdgeInsets.all(16),
           children: [
             // Dropdown filtro
@@ -799,46 +869,95 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             const SizedBox(height: 24),
             
             // Lista top canzoni (Trending style)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  langProvider.translate('top_songs'),
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                Row(
-                  children: [
-                    if (_groupByDate)
-                      IconButton(
-                        icon: Icon(_collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty ? Icons.unfold_more : Icons.unfold_less),
-                        tooltip: _collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty ? 'Espandi tutti' : 'Comprimi tutti',
-                        onPressed: () {
-                          setState(() {
-                            if (_collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty) {
-                              _collapsedDays.clear();
-                            } else {
-                              _collapsedDays.addAll(sortedDays);
-                            }
-                          });
-                        },
+            Container(
+              key: _topSongsSectionKey,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      langProvider.translate('top_songs'),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                if (_groupByDate) ...[
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      _collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty
+                          ? Icons.unfold_more
+                          : Icons.unfold_less,
+                      size: 20,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    tooltip: _collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty
+                        ? 'Espandi tutti'
+                        : 'Comprimi tutti',
+                    onPressed: () {
+                      setState(() {
+                        if (_collapsedDays.length == sortedDays.length && sortedDays.isNotEmpty) {
+                          _collapsedDays.clear();
+                        } else {
+                          _collapsedDays.addAll(sortedDays);
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                // Toggle pill badge per raggruppamento date
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _groupByDate = !_groupByDate;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _groupByDate
+                            ? Theme.of(context).primaryColor
+                            : Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _groupByDate
+                              ? Theme.of(context).primaryColor
+                              : Colors.white24,
+                        ),
                       ),
-                    Text(
-                      langProvider.translate('group_by_date'),
-                      style: const TextStyle(fontSize: 14),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 13,
+                            color: _groupByDate ? Colors.white : Colors.white70,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            langProvider.translate('group_by_date'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: _groupByDate ? FontWeight.bold : FontWeight.w500,
+                              color: _groupByDate ? Colors.white : Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    Switch(
-                      value: _groupByDate,
-                      onChanged: (val) {
-                        setState(() {
-                          _groupByDate = val;
-                        });
-                      },
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+          ),
+          const SizedBox(height: 12),
             
             if (sortedDays.isEmpty)
               Center(
@@ -868,41 +987,44 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                 widgets.add(
                   Padding(
                     padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          if (isCollapsed) {
-                            _collapsedDays.remove(day);
-                          } else {
-                            _collapsedDays.add(day);
-                          }
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              displayDate,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            if (isCollapsed) {
+                              _collapsedDays.remove(day);
+                            } else {
+                              _collapsedDays.add(day);
+                            }
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                displayDate,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                              ),
+                              Icon(
+                                isCollapsed ? Icons.expand_more : Icons.expand_less,
                                 color: Theme.of(context).primaryColor,
                               ),
-                            ),
-                            Icon(
-                              isCollapsed ? Icons.expand_more : Icons.expand_less,
-                              color: Theme.of(context).primaryColor,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -1102,15 +1224,36 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     if (genre != null) metaParts.add(genre);
     final String extraInfo = metaParts.join(' • ');
 
+    final String displayTitle = _cleanDisplayTitle(song.title);
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: song.artUri != null && song.artUri!.isNotEmpty
-            ? Image.network(song.artUri!, width: 50, height: 50, fit: BoxFit.cover)
+            ? CachedNetworkImage(
+                imageUrl: song.artUri!,
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover,
+                memCacheWidth: 150,
+                memCacheHeight: 150,
+                placeholder: (context, url) => Container(
+                  width: 50,
+                  height: 50,
+                  color: Colors.white10,
+                  child: const Icon(Icons.music_note, size: 20, color: Colors.white38),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  width: 50,
+                  height: 50,
+                  color: Colors.white10,
+                  child: const Icon(Icons.music_note, size: 20, color: Colors.white38),
+                ),
+              )
             : Container(width: 50, height: 50, color: Colors.white10, child: const Icon(Icons.music_note)),
       ),
-      title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(displayTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1167,7 +1310,26 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: song.artUri != null && song.artUri!.isNotEmpty
-                            ? Image.network(song.artUri!, width: 80, height: 80, fit: BoxFit.cover)
+                            ? CachedNetworkImage(
+                                imageUrl: song.artUri!,
+                                width: 80,
+                                height: 80,
+                                fit: BoxFit.cover,
+                                memCacheWidth: 240,
+                                memCacheHeight: 240,
+                                placeholder: (context, url) => Container(
+                                  width: 80,
+                                  height: 80,
+                                  color: Colors.white10,
+                                  child: const Icon(Icons.music_note, size: 36, color: Colors.white38),
+                                ),
+                                errorWidget: (context, url, error) => Container(
+                                  width: 80,
+                                  height: 80,
+                                  color: Colors.white10,
+                                  child: const Icon(Icons.music_note, size: 36, color: Colors.white38),
+                                ),
+                              )
                             : Container(width: 80, height: 80, color: Colors.white10, child: const Icon(Icons.music_note, size: 36)),
                       ),
                       const SizedBox(width: 16),
@@ -1175,7 +1337,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(song.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
+                            Text(displayTitle, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
                             const SizedBox(height: 4),
                             Text(song.artist, style: const TextStyle(color: Colors.white54, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
                             if (extraInfo.isNotEmpty) ...[
@@ -1267,5 +1429,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         );
       },
     );
+  }
+
+  String _cleanDisplayTitle(String title) {
+    String clean = title;
+    // Rimuove prefissi come 📱, ⬇️, 📁, 🎵, 🎶, 🎧, ecc.
+    clean = clean.replaceAll(RegExp(r'^(⬇️|📱|📁|🎵|🎶|🎧|▶️|💿|📀|[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{27BF}])\s*', unicode: true), '');
+    clean = clean.replaceAll(RegExp(r'^(⬇️|📱|📁)\s*'), '');
+    return clean.trim().isNotEmpty ? clean.trim() : title;
   }
 }

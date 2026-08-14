@@ -692,4 +692,5 @@ final Map<String, String> en = {
   'group_by_date': 'Group by date',
   'top_songs': 'Songs Listened to',
   'release_date': 'Publication Date',
+  'scroll_to_top': 'Back to top',
 };

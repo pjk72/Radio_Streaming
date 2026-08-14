@@ -708,4 +708,5 @@ final Map<String, String> it = {
   'listening_trend': 'Andamento Ascolti',
   'stat_unknown': 'Sconosciuto',
   'group_by_date': 'Raggruppa per data',
+  'scroll_to_top': 'Torna all\'inizio',
 };

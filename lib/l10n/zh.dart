@@ -682,4 +682,5 @@ final Map<String, String> zh = {
   'tap_to_sync_hint': '点击任意歌词即可立即同步卡拉OK',
   'tap_to_sync_disabled': '已禁用点击同步',
   'lyrics_synced_success': '卡拉OK与此线路同步！',
+  'scroll_to_top': '返回顶部',
 };
