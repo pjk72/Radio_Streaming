@@ -742,4 +742,5 @@ final Map<String, String> fr = {
   'export_mp3_close': 'Fermer',
   'export_mp3_permission_denied': 'L\'autorisation de stockage est requise pour enregistrer les fichiers.',
   'export_mp3_hide_dialog': 'Continuer en arrière-plan',
+  'tap_to_play_hint': 'Appuyez pour écouter',
 };

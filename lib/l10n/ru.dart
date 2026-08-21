@@ -728,4 +728,5 @@ final Map<String, String> ru = {
   'export_mp3_close': 'Закрыть',
   'export_mp3_permission_denied': 'Для сохранения файлов требуется разрешение на доступ к хранилищу.',
   'export_mp3_hide_dialog': 'Продолжить в фоновом режиме',
+  'tap_to_play_hint': 'Нажмите для воспроизведения',
 };

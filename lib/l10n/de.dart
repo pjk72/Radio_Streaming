@@ -739,4 +739,5 @@ final Map<String, String> de = {
   'export_mp3_close': 'Schließen',
   'export_mp3_permission_denied': 'Zum Speichern der Dateien ist eine Speichererlaubnis erforderlich.',
   'export_mp3_hide_dialog': 'Weiter im Hintergrund',
+  'tap_to_play_hint': 'Tippen zum Anhören',
 };

@@ -6,6 +6,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
+import '../models/playlist.dart';
+import '../models/saved_song.dart';
 import 'song_details_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -197,16 +199,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     return Consumer<RadioProvider>(
       builder: (context, provider, child) {
         final songs = provider.allUniqueSongs;
-        
+
         // Calcoli Statici
         final int totalSongs = songs.length;
         final int totalPlaylists = provider.playlists.length;
-        
+
         final Set<String> artists = {};
         final Set<String> albums = {};
         final Map<String, int> genreCounts = {};
         final Map<String, int> yearCounts = {};
-        
+
         // Build a lookup map for fast access by song ID from all playlist songs
         final Map<String, dynamic> playlistSongById = {};
         for (final playlist in provider.playlists) {
@@ -218,7 +220,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         for (var song in songs) {
           if (song.artist.isNotEmpty) artists.add(song.artist);
           if (song.album.isNotEmpty) albums.add(song.album);
-          
+
           // --- Point 1: fill missing metadata from playlist sources before aggregating ---
           String? resolvedGenre = song.genre;
           String? resolvedDate = song.releaseDate;
@@ -245,7 +247,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
               ? resolvedGenre
               : langProvider.translate('unknown');
           genreCounts[genre] = (genreCounts[genre] ?? 0) + 1;
-          
+
           String yearStr = langProvider.translate('unknown');
           if (resolvedDate != null && resolvedDate.length >= 4) {
             final intYear = int.tryParse(resolvedDate.substring(0, 4));
@@ -268,16 +270,133 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
               children: [
-                _buildStatCard(langProvider.translate('songs'), totalSongs.toString(), Icons.music_note, context),
-                _buildStatCard(langProvider.translate('playlists'), totalPlaylists.toString(), Icons.queue_music, context),
-                _buildStatCard(langProvider.translate('artists'), artists.length.toString(), Icons.person, context),
-                _buildStatCard(langProvider.translate('albums'), albums.length.toString(), Icons.album, context),
+                _buildStatCard(
+                  langProvider.translate('songs'),
+                  totalSongs.toString(),
+                  Icons.music_note,
+                  context,
+                  onTap: () {
+                    _showTemporaryPlaylistSheet(
+                      context: context,
+                      title: '${langProvider.translate('songs')} (${langProvider.translate('library')})',
+                      subtitle: '$totalSongs ${langProvider.translate('songs').toLowerCase()}',
+                      songs: songs,
+                      provider: provider,
+                      langProvider: langProvider,
+                    );
+                  },
+                ),
+                _buildStatCard(
+                  langProvider.translate('playlists'),
+                  totalPlaylists.toString(),
+                  Icons.queue_music,
+                  context,
+                ),
+                _buildStatCard(
+                  langProvider.translate('artists'),
+                  artists.length.toString(),
+                  Icons.person,
+                  context,
+                  onTap: () {
+                    final sortedByArtist = List<SavedSong>.from(songs)
+                      ..sort((a, b) => a.artist.toLowerCase().compareTo(b.artist.toLowerCase()));
+                    _showTemporaryPlaylistSheet(
+                      context: context,
+                      title: langProvider.translate('artists'),
+                      subtitle: '${artists.length} ${langProvider.translate('artists').toLowerCase()} • $totalSongs ${langProvider.translate('songs').toLowerCase()}',
+                      songs: sortedByArtist,
+                      provider: provider,
+                      langProvider: langProvider,
+                    );
+                  },
+                ),
+                _buildStatCard(
+                  langProvider.translate('albums'),
+                  albums.length.toString(),
+                  Icons.album,
+                  context,
+                  onTap: () {
+                    final sortedByAlbum = List<SavedSong>.from(songs)
+                      ..sort((a, b) => a.album.toLowerCase().compareTo(b.album.toLowerCase()));
+                    _showTemporaryPlaylistSheet(
+                      context: context,
+                      title: langProvider.translate('albums'),
+                      subtitle: '${albums.length} ${langProvider.translate('albums').toLowerCase()} • $totalSongs ${langProvider.translate('songs').toLowerCase()}',
+                      songs: sortedByAlbum,
+                      provider: provider,
+                      langProvider: langProvider,
+                    );
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 24),
-            _buildChartCard(langProvider.translate('genres'), _buildGenreBarChart(genreCounts, context), context, height: null),
+            _buildChartCard(
+              langProvider.translate('genres'),
+              _buildGenreBarChart(
+                genreCounts,
+                context,
+                onSectionTap: (genreKey) {
+                  final matchingSongs = songs.where((s) {
+                    String? resolvedGenre = s.genre;
+                    if (resolvedGenre == null || resolvedGenre.isEmpty) {
+                      resolvedGenre = playlistSongById[s.id]?.genre;
+                    }
+                    final genre = (resolvedGenre != null && resolvedGenre.isNotEmpty)
+                        ? resolvedGenre
+                        : langProvider.translate('unknown');
+                    return genre.toLowerCase() == genreKey.toLowerCase();
+                  }).toList();
+
+                  _showTemporaryPlaylistSheet(
+                    context: context,
+                    title: genreKey,
+                    subtitle: '${matchingSongs.length} ${langProvider.translate('songs').toLowerCase()} • ${langProvider.translate('genres')}',
+                    songs: matchingSongs,
+                    provider: provider,
+                    langProvider: langProvider,
+                  );
+                },
+              ),
+              context,
+              height: null,
+            ),
             const SizedBox(height: 24),
-            _buildChartCard(langProvider.translate('years'), _buildYearBarChart(yearCounts, context), context, height: null),
+            _buildChartCard(
+              langProvider.translate('years'),
+              _buildYearBarChart(
+                yearCounts,
+                context,
+                onSectionTap: (decadeKey) {
+                  final matchingSongs = songs.where((s) {
+                    String? resolvedDate = s.releaseDate;
+                    if (resolvedDate == null || resolvedDate.isEmpty) {
+                      resolvedDate = playlistSongById[s.id]?.releaseDate;
+                    }
+                    String yearStr = langProvider.translate('unknown');
+                    if (resolvedDate != null && resolvedDate.length >= 4) {
+                      final intYear = int.tryParse(resolvedDate.substring(0, 4));
+                      if (intYear != null && intYear > 1000) {
+                        final decade = (intYear ~/ 10) * 10;
+                        yearStr = decade.toString();
+                      }
+                    }
+                    return yearStr == decadeKey;
+                  }).toList();
+
+                  _showTemporaryPlaylistSheet(
+                    context: context,
+                    title: '${decadeKey}s',
+                    subtitle: '${matchingSongs.length} ${langProvider.translate('songs').toLowerCase()} • ${langProvider.translate('years')}',
+                    songs: matchingSongs,
+                    provider: provider,
+                    langProvider: langProvider,
+                  );
+                },
+              ),
+              context,
+              height: null,
+            ),
             const SizedBox(height: 90),
           ],
         );
@@ -285,34 +404,63 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    BuildContext context, {
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Theme.of(context).primaryColor, size: 28),
-          const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white10),
           ),
-          Text(
-            title,
-            style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.7)),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(icon, color: Theme.of(context).primaryColor, size: 28),
+                  if (onTap != null)
+                    Icon(
+                      Icons.play_circle_outline_rounded,
+                      size: 18,
+                      color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                    ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                value,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                title,
+                style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.7)),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildChartCard(String title, Widget chart, BuildContext context, {double? height = 200}) {
+  Widget _buildChartCard(
+    String title,
+    Widget chart,
+    BuildContext context, {
+    double? height = 200,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
@@ -323,9 +471,37 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.touch_app_rounded,
+                    size: 14,
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    Provider.of<LanguageProvider>(context, listen: false).translate('tap_to_play_hint'),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           height != null ? SizedBox(height: height, child: chart) : chart,
@@ -334,32 +510,63 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildPieChart(Map<String, int> data, BuildContext context) {
-    if (data.isEmpty) return Center(child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_data')));
-    
+  Widget _buildPieChart(
+    Map<String, int> data,
+    BuildContext context, {
+    void Function(String key)? onSectionTap,
+  }) {
+    if (data.isEmpty) {
+      return Center(
+        child: Text(
+          Provider.of<LanguageProvider>(context, listen: false).translate('no_data'),
+        ),
+      );
+    }
+
     // Mostra solo i top 15 generi/artisti
-    final sortedEntries = data.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final sortedEntries = data.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     final topEntries = sortedEntries.take(15).toList();
-    
+
     // Calcola il totale per calcolare le percentuali
     final double total = topEntries.fold(0.0, (sum, entry) => sum + entry.value);
-    
+
     return Column(
       children: [
         SizedBox(
           height: 220,
           child: PieChart(
             PieChartData(
+              pieTouchData: PieTouchData(
+                touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                  if (event is FlTapUpEvent &&
+                      pieTouchResponse != null &&
+                      pieTouchResponse.touchedSection != null) {
+                    final touchedIndex =
+                        pieTouchResponse.touchedSection!.touchedSectionIndex;
+                    if (touchedIndex >= 0 && touchedIndex < topEntries.length) {
+                      final key = topEntries[touchedIndex].key;
+                      onSectionTap?.call(key);
+                    }
+                  }
+                },
+              ),
               sections: topEntries.asMap().entries.map((entry) {
                 int idx = entry.key;
                 var e = entry.value;
-                final percentage = total > 0 ? (e.value / total * 100).toStringAsFixed(1) : '0.0';
+                final percentage = total > 0
+                    ? (e.value / total * 100).toStringAsFixed(1)
+                    : '0.0';
                 return PieChartSectionData(
                   color: _sharedChartColors[idx % _sharedChartColors.length],
                   value: e.value.toDouble(),
                   title: '$percentage%',
                   radius: 65,
-                  titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                  titleStyle: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 );
               }).toList(),
               sectionsSpace: 2,
@@ -371,30 +578,60 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4.0),
           child: Wrap(
-            spacing: 12,
+            spacing: 8,
             runSpacing: 8,
             children: topEntries.asMap().entries.map((entry) {
               int idx = entry.key;
               var e = entry.value;
-              final percentage = total > 0 ? (e.value / total * 100).toStringAsFixed(1) : '0.0';
-              final label = e.key.length > 15 ? '${e.key.substring(0, 15)}…' : e.key;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
+              final percentage = total > 0
+                  ? (e.value / total * 100).toStringAsFixed(1)
+                  : '0.0';
+              final label =
+                  e.key.length > 15 ? '${e.key.substring(0, 15)}…' : e.key;
+              final sectionColor =
+                  _sharedChartColors[idx % _sharedChartColors.length];
+
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: onSectionTap != null ? () => onSectionTap(e.key) : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _sharedChartColors[idx % _sharedChartColors.length],
-                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: sectionColor.withValues(alpha: 0.4),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: sectionColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '$label ($percentage%)',
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.play_circle_outline_rounded,
+                          size: 13,
+                          color: sectionColor,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '$label ($percentage%)',
-                    style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
-                ],
+                ),
               );
             }).toList(),
           ),
@@ -403,11 +640,22 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildGenreBarChart(Map<String, int> data, BuildContext context) {
-    if (data.isEmpty) return Center(child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_data')));
+  Widget _buildGenreBarChart(
+    Map<String, int> data,
+    BuildContext context, {
+    void Function(String key)? onSectionTap,
+  }) {
+    if (data.isEmpty) {
+      return Center(
+        child: Text(
+          Provider.of<LanguageProvider>(context, listen: false).translate('no_data'),
+        ),
+      );
+    }
 
     // Sort by count descending, take top 15
-    final sorted = data.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final sorted = data.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     final top = sorted.take(15).toList();
     final maxVal = top.first.value.toDouble();
 
@@ -419,57 +667,84 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         final fraction = maxVal > 0 ? e.value / maxVal : 0.0;
         final color = _sharedChartColors[idx % _sharedChartColors.length];
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5.0),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 50,
-                child: Text(
-                  label,
-                  style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Stack(
-                  children: [
-                    Container(
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onSectionTap != null ? () => onSectionTap(e.key) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5.0, horizontal: 4.0),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 65,
+                    child: Text(
+                      label,
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
                     ),
-                    FractionallySizedBox(
-                      widthFactor: fraction.clamp(0.0, 1.0),
-                      child: Container(
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(4),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Container(
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.white10,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
-                      ),
+                        FractionallySizedBox(
+                          widthFactor: fraction.clamp(0.0, 1.0),
+                          child: Container(
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: color,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${e.value}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.play_circle_outline_rounded,
+                    size: 14,
+                    color: color.withValues(alpha: 0.8),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${e.value}',
-                style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold),
-              ),
-            ],
+            ),
           ),
         );
       }).toList(),
     );
   }
 
-  Widget _buildYearBarChart(Map<String, int> data, BuildContext context) {
-    if (data.isEmpty) return Center(child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_data')));
+  Widget _buildYearBarChart(
+    Map<String, int> data,
+    BuildContext context, {
+    void Function(String key)? onSectionTap,
+  }) {
+    if (data.isEmpty) {
+      return Center(
+        child: Text(
+          Provider.of<LanguageProvider>(context, listen: false).translate('no_data'),
+        ),
+      );
+    }
 
     // Sort valid decades chronologically
     final validEntries = data.entries
@@ -477,9 +752,19 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         .toList()
       ..sort((a, b) => int.parse(a.key).compareTo(int.parse(b.key)));
 
-    if (validEntries.isEmpty) return Center(child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_valid_year')));
+    if (validEntries.isEmpty) {
+      return Center(
+        child: Text(
+          Provider.of<LanguageProvider>(context, listen: false)
+              .translate('no_valid_year'),
+        ),
+      );
+    }
 
-    final maxVal = validEntries.map((e) => e.value).reduce((a, b) => a > b ? a : b).toDouble();
+    final maxVal = validEntries
+        .map((e) => e.value)
+        .reduce((a, b) => a > b ? a : b)
+        .toDouble();
 
     return Column(
       children: validEntries.asMap().entries.map((entry) {
@@ -488,51 +773,359 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         final fraction = maxVal > 0 ? e.value / maxVal : 0.0;
         final color = _sharedChartColors[idx % _sharedChartColors.length];
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5.0),
-          child: Row(
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onSectionTap != null ? () => onSectionTap(e.key) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5.0, horizontal: 4.0),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 50,
+                    child: Text(
+                      '${e.key}s',
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Container(
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.white10,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        FractionallySizedBox(
+                          widthFactor: fraction.clamp(0.0, 1.0),
+                          child: Container(
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: color,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${e.value}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.play_circle_outline_rounded,
+                    size: 14,
+                    color: color.withValues(alpha: 0.8),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  void _showTemporaryPlaylistSheet({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required List<SavedSong> songs,
+    required RadioProvider provider,
+    required LanguageProvider langProvider,
+  }) {
+    if (songs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(langProvider.translate('no_data')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+    final isDark = themeProvider.isDarkMode;
+    final primaryColor = themeProvider.activePrimaryColor;
+    final surfaceColor = themeProvider.activeSurfaceColor;
+
+    final tempPlaylist = Playlist(
+      id: 'temp_stats_${DateTime.now().millisecondsSinceEpoch}',
+      name: title,
+      songs: songs,
+      createdAt: DateTime.now(),
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          decoration: BoxDecoration(
+            color: isDark ? surfaceColor : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 20,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: 50,
-                child: Text(
-                  '${e.key}s',
-                  style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  textAlign: TextAlign.right,
+              // Handle bar
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 12),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white24 : Colors.black26,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Stack(
+
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Row(
                   children: [
                     Container(
-                      height: 18,
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(4),
+                        color: primaryColor.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.playlist_play_rounded,
+                        color: primaryColor,
+                        size: 26,
                       ),
                     ),
-                    FractionallySizedBox(
-                      widthFactor: fraction.clamp(0.0, 1.0),
-                      child: Container(
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(4),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: isDark ? Colors.white60 : Colors.black54,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(sheetCtx),
+                      color: isDark ? Colors.white60 : Colors.black54,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Action button bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.play_circle_fill_rounded, size: 20),
+                        label: Text(
+                          langProvider.translate('play_all'),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                         ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(sheetCtx);
+                          await provider.playAdHocPlaylist(tempPlaylist, null);
+                          if (context.mounted) {
+                            Navigator.of(context).push(
+                              PageRouteBuilder(
+                                pageBuilder: (context, animation, secondaryAnimation) =>
+                                    const SongDetailsScreen(),
+                                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                  const begin = Offset(0.0, 1.0);
+                                  const end = Offset.zero;
+                                  const curve = Curves.easeOutQuart;
+                                  return SlideTransition(
+                                    position: animation.drive(
+                                      Tween(begin: begin, end: end).chain(CurveTween(curve: curve)),
+                                    ),
+                                    child: child,
+                                  );
+                                },
+                              ),
+                            );
+                          }
+                        },
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${e.value}',
-                style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold),
+
+              const Divider(height: 16),
+
+              // Songs List
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: songs.length,
+                  itemBuilder: (context, index) {
+                    final song = songs[index];
+                    final displayTitle = _cleanDisplayTitle(song.title);
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6.0),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () async {
+                            Navigator.pop(sheetCtx);
+                            await provider.playAdHocPlaylist(tempPlaylist, song.id);
+                            if (context.mounted) {
+                              Navigator.of(context).push(
+                                PageRouteBuilder(
+                                  pageBuilder: (context, animation, secondaryAnimation) =>
+                                      const SongDetailsScreen(),
+                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                    const begin = Offset(0.0, 1.0);
+                                    const end = Offset.zero;
+                                    const curve = Curves.easeOutQuart;
+                                    return SlideTransition(
+                                      position: animation.drive(
+                                        Tween(begin: begin, end: end).chain(CurveTween(curve: curve)),
+                                      ),
+                                      child: child,
+                                    );
+                                  },
+                                ),
+                              );
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: song.artUri != null && song.artUri!.isNotEmpty
+                                      ? CachedNetworkImage(
+                                          imageUrl: song.artUri!,
+                                          width: 44,
+                                          height: 44,
+                                          fit: BoxFit.cover,
+                                          memCacheWidth: 130,
+                                          memCacheHeight: 130,
+                                          placeholder: (c, u) => Container(
+                                            width: 44,
+                                            height: 44,
+                                            color: Colors.white10,
+                                            child: const Icon(Icons.music_note, size: 18, color: Colors.white38),
+                                          ),
+                                          errorWidget: (c, u, e) => Container(
+                                            width: 44,
+                                            height: 44,
+                                            color: Colors.white10,
+                                            child: const Icon(Icons.music_note, size: 18, color: Colors.white38),
+                                          ),
+                                        )
+                                      : Container(
+                                          width: 44,
+                                          height: 44,
+                                          color: Colors.white10,
+                                          child: const Icon(Icons.music_note, size: 18, color: Colors.white38),
+                                        ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        displayTitle,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark ? Colors.white : Colors.black87,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        song.artist,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: isDark ? Colors.white60 : Colors.black54,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.play_circle_outline_rounded,
+                                  color: primaryColor,
+                                  size: 24,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
         );
-      }).toList(),
+      },
     );
   }
 
@@ -755,7 +1348,43 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             }
           } catch (_) {}
         }
-
+        // Helper to extract unique matching SavedSong objects from filteredLog
+        List<SavedSong> getMatchingHistorySongs(
+          bool Function(String id, Map<String, String?> info, dynamic logEntry) filter,
+        ) {
+          final Map<String, SavedSong> matched = {};
+          for (var e in filteredLog) {
+            try {
+              final id = e['id'] as String;
+              final info = songLookup[id] ?? {};
+              if (filter(id, info, e)) {
+                if (!matched.containsKey(id)) {
+                  SavedSong? song;
+                  final inLib = provider.allUniqueSongs.where((s) => s.id == id);
+                  if (inLib.isNotEmpty) {
+                    song = inLib.first;
+                  } else if (metadata.containsKey(id)) {
+                    song = metadata[id];
+                  } else {
+                    song = SavedSong(
+                      id: id,
+                      title: e['title']?.toString() ?? 'Track',
+                      artist: info['artist'] ?? '',
+                      album: '',
+                      genre: info['genre'],
+                      releaseDate: info['releaseDate'],
+                      dateAdded: DateTime.now(),
+                    );
+                  }
+                  if (song != null) {
+                    matched[id] = song;
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+          return matched.values.toList();
+        }
 
         // Top canzoni
         final sortedDays = dailySongCounts.keys.toList()..sort((a, b) => b.compareTo(a));
@@ -849,22 +1478,121 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             const SizedBox(height: 24),
             
             // Grafico Lineare degli ascolti
-            _buildChartCard('${langProvider.translate('listening_trend')} (${filteredLog.length})', _buildLineChart(dailyListens, context), context),
+            _buildChartCard(
+              '${langProvider.translate('listening_trend')} (${filteredLog.length})',
+              _buildLineChart(
+                dailyListens,
+                context,
+                onDayTap: (dayKey) {
+                  final matchingSongs = getMatchingHistorySongs((id, info, e) {
+                    try {
+                      final ts = DateTime.parse(e['ts']);
+                      return DateFormat('MM-dd').format(ts) == dayKey;
+                    } catch (_) {
+                      return false;
+                    }
+                  });
+                  _showTemporaryPlaylistSheet(
+                    context: context,
+                    title: '${langProvider.translate('listening_trend')}: $dayKey',
+                    subtitle: '${matchingSongs.length} ${langProvider.translate('songs').toLowerCase()}',
+                    songs: matchingSongs,
+                    provider: provider,
+                    langProvider: langProvider,
+                  );
+                },
+              ),
+              context,
+            ),
             
             const SizedBox(height: 24),
 
             // Grafico artisti più ascoltati
-            _buildChartCard(langProvider.translate('top_artists'), _buildPieChart(artistCounts, context), context, height: null),
+            _buildChartCard(
+              langProvider.translate('top_artists'),
+              _buildPieChart(
+                artistCounts,
+                context,
+                onSectionTap: (artistKey) {
+                  final matchingSongs = getMatchingHistorySongs((id, info, e) {
+                    final artist = info['artist'] ?? '';
+                    return artist.toLowerCase() == artistKey.toLowerCase();
+                  });
+                  _showTemporaryPlaylistSheet(
+                    context: context,
+                    title: artistKey,
+                    subtitle: '${matchingSongs.length} ${langProvider.translate('songs').toLowerCase()} • ${langProvider.translate('top_artists')}',
+                    songs: matchingSongs,
+                    provider: provider,
+                    langProvider: langProvider,
+                  );
+                },
+              ),
+              context,
+              height: null,
+            ),
             
             const SizedBox(height: 24),
 
             // Grafico generi più ascoltati
-            _buildChartCard(langProvider.translate('top_genres'), _buildPieChart(genreCounts, context), context, height: null),
+            _buildChartCard(
+              langProvider.translate('top_genres'),
+              _buildPieChart(
+                genreCounts,
+                context,
+                onSectionTap: (genreKey) {
+                  final matchingSongs = getMatchingHistorySongs((id, info, e) {
+                    final genre = info['genre'] ?? langProvider.translate('unknown');
+                    return genre.toLowerCase() == genreKey.toLowerCase();
+                  });
+                  _showTemporaryPlaylistSheet(
+                    context: context,
+                    title: genreKey,
+                    subtitle: '${matchingSongs.length} ${langProvider.translate('songs').toLowerCase()} • ${langProvider.translate('top_genres')}',
+                    songs: matchingSongs,
+                    provider: provider,
+                    langProvider: langProvider,
+                  );
+                },
+              ),
+              context,
+              height: null,
+            ),
             
             const SizedBox(height: 24),
 
             // Grafico annate più ascoltate
-            _buildChartCard(langProvider.translate('years'), _buildPieChart(yearCounts, context), context, height: null),
+            _buildChartCard(
+              langProvider.translate('years'),
+              _buildPieChart(
+                yearCounts,
+                context,
+                onSectionTap: (yearKey) {
+                  final matchingSongs = getMatchingHistorySongs((id, info, e) {
+                    final resolvedDate = info['releaseDate'];
+                    String yearStr = langProvider.translate('unknown');
+                    if (resolvedDate != null && resolvedDate.length >= 4) {
+                      final intYear = int.tryParse(resolvedDate.substring(0, 4));
+                      if (intYear != null && intYear > 1000) {
+                        final decade = (intYear ~/ 10) * 10;
+                        yearStr = '${decade}s';
+                      }
+                    }
+                    return yearStr == yearKey;
+                  });
+                  _showTemporaryPlaylistSheet(
+                    context: context,
+                    title: yearKey,
+                    subtitle: '${matchingSongs.length} ${langProvider.translate('songs').toLowerCase()} • ${langProvider.translate('years')}',
+                    songs: matchingSongs,
+                    provider: provider,
+                    langProvider: langProvider,
+                  );
+                },
+              ),
+              context,
+              height: null,
+            ),
             
             const SizedBox(height: 24),
             
@@ -1078,19 +1806,28 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildLineChart(Map<String, int> dailyListens, BuildContext context) {
+  Widget _buildLineChart(
+    Map<String, int> dailyListens,
+    BuildContext context, {
+    void Function(String dayKey)? onDayTap,
+  }) {
     if (dailyListens.isEmpty) {
-      return Center(child: Text(Provider.of<LanguageProvider>(context, listen: false).translate('no_time_data')));
+      return Center(
+        child: Text(
+          Provider.of<LanguageProvider>(context, listen: false)
+              .translate('no_time_data'),
+        ),
+      );
     }
 
     final sortedKeys = dailyListens.keys.toList()..sort();
-    
+
     List<FlSpot> spots = [];
     double maxX = (sortedKeys.length - 1).toDouble();
     if (maxX < 1) {
       maxX = 1;
     }
-    
+
     double maxY = 0;
 
     for (int i = 0; i < sortedKeys.length; i++) {
@@ -1100,7 +1837,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
       }
       spots.add(FlSpot(i.toDouble(), y));
     }
-    
+
     if (maxY == 0) {
       maxY = 10;
     } else {
@@ -1109,6 +1846,37 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
 
     return LineChart(
       LineChartData(
+        lineTouchData: LineTouchData(
+          enabled: true,
+          touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+            if (event is FlTapUpEvent &&
+                touchResponse != null &&
+                touchResponse.lineBarSpots != null &&
+                touchResponse.lineBarSpots!.isNotEmpty) {
+              final spotIndex = touchResponse.lineBarSpots!.first.spotIndex;
+              if (spotIndex >= 0 && spotIndex < sortedKeys.length) {
+                final dayKey = sortedKeys[spotIndex];
+                onDayTap?.call(dayKey);
+              }
+            }
+          },
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (touchedSpots) {
+              return touchedSpots.map((spot) {
+                final idx = spot.spotIndex;
+                final date = idx >= 0 && idx < sortedKeys.length ? sortedKeys[idx] : '';
+                return LineTooltipItem(
+                  '$date\n${spot.y.toInt()} ascolti\n▶ Tocca per ascoltare',
+                  const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+              }).toList();
+            },
+          ),
+        ),
         gridData: const FlGridData(show: false),
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(
@@ -1129,7 +1897,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                       formattedDate = "${parts[2]}/${parts[1]}";
                     }
                   } catch (_) {}
-                  
+
                   return Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text(
@@ -1178,7 +1946,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             color: Theme.of(context).primaryColor,
             barWidth: 3,
             isStrokeCapRound: true,
-            dotData: const FlDotData(show: false),
+            dotData: const FlDotData(show: true),
             belowBarData: BarAreaData(
               show: true,
               color: Theme.of(context).primaryColor.withValues(alpha: 0.2),

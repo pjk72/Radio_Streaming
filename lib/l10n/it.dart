@@ -731,4 +731,5 @@ final Map<String, String> it = {
   'export_mp3_close': 'Chiudi',
   'export_mp3_permission_denied': 'Permesso di accesso alla memoria necessario per salvare i file.',
   'export_mp3_hide_dialog': 'Continua in background',
+  'tap_to_play_hint': 'Tocca per ascoltare',
 };

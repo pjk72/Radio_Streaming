@@ -705,4 +705,5 @@ final Map<String, String> zh = {
   'export_mp3_close': '关闭',
   'export_mp3_permission_denied': '保存文件需要存储权限。',
   'export_mp3_hide_dialog': '在后台继续',
+  'tap_to_play_hint': '点击播放',
 };

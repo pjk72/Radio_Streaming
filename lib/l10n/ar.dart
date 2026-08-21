@@ -702,4 +702,5 @@ final Map<String, String> ar = {
   'export_mp3_close': 'يغلق',
   'export_mp3_permission_denied': 'مطلوب إذن التخزين لحفظ الملفات.',
   'export_mp3_hide_dialog': 'الاستمرار في الخلفية',
+  'tap_to_play_hint': 'انقر للاستماع',
 };
