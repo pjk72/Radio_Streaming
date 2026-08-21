@@ -12,6 +12,7 @@ import 'api_debug_screen.dart';
 import 'debug_log_screen.dart';
 import 'local_library_screen.dart';
 import 'statistics_screen.dart';
+import 'export_mp3_screen.dart';
 import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
@@ -199,6 +200,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const StatisticsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+
+                    if (entitlements.isFeatureEnabled('export_mp3'))
+                      _buildSettingsTile(
+                        context,
+                        icon: Icons.audio_file_rounded,
+                        title: langProvider.translate('export_mp3_title'),
+                        subtitle: langProvider.translate('export_mp3_desc'),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ExportMp3Screen(),
                             ),
                           );
                         },

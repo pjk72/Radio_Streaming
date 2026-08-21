@@ -9,11 +9,16 @@ const String kAutoBackupTask = 'auto_backup_task';
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    if (task == kAutoBackupTask) {
-      debugPrint("Workmanager: Starting Auto Backup Task");
-      return await _performBackgroundBackup();
+    try {
+      if (task == kAutoBackupTask) {
+        debugPrint("Workmanager: Starting Auto Backup Task");
+        return await _performBackgroundBackup();
+      }
+      return true;
+    } catch (e) {
+      debugPrint("Workmanager: Unhandled error in task '$task': $e");
+      return false;
     }
-    return Future.value(true);
   });
 }
 

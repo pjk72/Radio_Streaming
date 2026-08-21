@@ -155,12 +155,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setState) {
+            final lang = Provider.of<LanguageProvider>(context, listen: false);
             final proposals = provider.upgradeProposals;
             return AlertDialog(
               surfaceTintColor: Colors.transparent,
-              title: const Text(
-                "Local Files Found",
-                style: TextStyle(color: Colors.white),
+              title: Text(
+                lang.translate('local_files_found'),
+                style: const TextStyle(color: Colors.white),
               ),
               content: Container(
                 constraints: const BoxConstraints(maxHeight: 400),
@@ -170,7 +171,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      Provider.of<LanguageProvider>(context, listen: false)
+                      lang
                           .translate('local_files_desc')
                           .replaceAll('{0}', proposals.length.toString()),
                       style: const TextStyle(color: Colors.white70),
@@ -181,10 +182,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       children: [
                         Builder(
                           builder: (context) {
-                            final lang = Provider.of<LanguageProvider>(
-                              context,
-                              listen: false,
-                            );
                             final bool isAllSelected =
                                 selectedProposalIds.length == proposals.length;
                             return TextButton(
@@ -249,18 +246,54 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
+                                  fontWeight: FontWeight.w600,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              subtitle: Text(
-                                p.songArtist,
-                                style: const TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (p.songArtist.isNotEmpty)
+                                    Text(
+                                      p.songArtist,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  const SizedBox(height: 3),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.queue_music_rounded,
+                                        size: 13,
+                                        color: Theme.of(context).primaryColor,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          p.playlistName.isNotEmpty
+                                              ? p.playlistName
+                                              : 'Playlist',
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .primaryColor
+                                                .withValues(alpha: 0.9),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                               secondary: const Icon(
                                 Icons.smartphone_rounded,

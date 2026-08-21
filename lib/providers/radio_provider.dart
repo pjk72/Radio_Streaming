@@ -2109,6 +2109,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                 newProposals.add(
                   UpgradeProposal(
                     playlistId: playlist.id,
+                    playlistName: playlist.name,
                     songId: song.id,
                     songTitle: song.title,
                     songArtist: song.artist,

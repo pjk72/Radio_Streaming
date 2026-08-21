@@ -1,5 +1,6 @@
 class UpgradeProposal {
   final String playlistId;
+  final String playlistName;
   final String songId;
   final String songTitle;
   final String songArtist;
@@ -9,6 +10,7 @@ class UpgradeProposal {
 
   UpgradeProposal({
     required this.playlistId,
+    this.playlistName = '',
     required this.songId,
     required this.songTitle,
     required this.songArtist,

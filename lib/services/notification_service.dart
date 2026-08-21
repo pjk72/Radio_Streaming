@@ -166,6 +166,48 @@ class NotificationService {
     );
   }
 
+  /// Shows or updates an export progress notification.
+  Future<void> showExportProgress({
+    required int id,
+    required String title,
+    required int progress,
+    required int maxProgress,
+    String? subTitle,
+  }) async {
+    if (!_isInitialized) await init();
+
+    final AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'export_channel',
+          'MP3 Export',
+          channelDescription: 'Notifications for MP3 file exports',
+          importance: Importance.low,
+          priority: Priority.low,
+          showProgress: true,
+          maxProgress: maxProgress,
+          progress: progress,
+          onlyAlertOnce: true,
+          ongoing: true,
+          autoCancel: false,
+          actions: <AndroidNotificationAction>[
+            const AndroidNotificationAction(
+              'cancel_download',
+              'Stop',
+              showsUserInterface: true,
+              cancelNotification: true,
+            ),
+          ],
+        );
+
+    await _notificationsPlugin.show(
+      id: id,
+      title: 'Exporting MP3s',
+      body: subTitle != null ? '$title - $subTitle' : title,
+      notificationDetails: NotificationDetails(android: androidDetails),
+      payload: id.toString(),
+    );
+  }
+
   void cancelDownload(int id) {
     _cancelDownloadController.add(id);
     clearNotification(id);

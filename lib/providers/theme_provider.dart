@@ -321,6 +321,8 @@ class ThemeProvider with ChangeNotifier {
   List<ThemePreset> get lightPresets =>
       _presets.where((p) => p.brightness == Brightness.light).toList();
 
+  bool get isDarkMode => themeData.brightness == Brightness.dark;
+
   // Getters for current active colors (either custom or preset)
   Color get activePrimaryColor =>
       _customPrimaryColor ?? _currentPreset.primaryColor;
