@@ -104,7 +104,7 @@ class EncryptionService {
   }
 
   String _getContentType(String path) {
-    if (path.endsWith('.m4a')) return 'audio/mp4';
+    if (path.endsWith('.mp3')) return 'audio/mp4';
     if (path.endsWith('.webm')) return 'audio/webm';
     if (path.endsWith('.mp3')) return 'audio/mpeg';
     return 'audio/mpeg'; // Default
@@ -158,8 +158,8 @@ class EncryptionService {
     final decryptedBytes = encryptData(bytes); // XOR works both ways
 
     final tempDir = await getTemporaryDirectory();
-    final String extension = filePath.endsWith('.m4a')
-        ? '.m4a'
+    final String extension = filePath.endsWith('.mp3')
+        ? '.mp3'
         : filePath.endsWith('.mp3')
         ? '.mp3'
         : '.tmp';

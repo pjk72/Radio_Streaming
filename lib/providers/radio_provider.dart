@@ -2035,11 +2035,62 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   List<UpgradeProposal> _upgradeProposals = [];
   List<UpgradeProposal> get upgradeProposals => _upgradeProposals;
 
+  static const String _keyIgnoredUpgradeProposals = 'ignored_upgrade_proposal_keys';
+  Set<String> _ignoredUpgradeKeys = {};
+
+  Future<void> _loadIgnoredUpgradeKeys() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_keyIgnoredUpgradeProposals) ?? [];
+      _ignoredUpgradeKeys = list.toSet();
+    } catch (e) {
+      LogService().log("Error loading ignored upgrade keys: $e");
+    }
+  }
+
+  Future<void> _saveIgnoredUpgradeKeys() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _keyIgnoredUpgradeProposals,
+        _ignoredUpgradeKeys.toList(),
+      );
+    } catch (e) {
+      LogService().log("Error saving ignored upgrade keys: $e");
+    }
+  }
+
+  Future<void> ignoreUpgradeProposals(List<UpgradeProposal> proposalsToIgnore) async {
+    if (proposalsToIgnore.isEmpty) return;
+    for (var p in proposalsToIgnore) {
+      _ignoredUpgradeKeys.add("${p.playlistId}_${p.songId}");
+      _ignoredUpgradeKeys.add(p.songId);
+    }
+    await _saveIgnoredUpgradeKeys();
+  }
+
+  Future<void> clearIgnoredUpgradeKeys() async {
+    _ignoredUpgradeKeys.clear();
+    await _saveIgnoredUpgradeKeys();
+  }
+
   final OnAudioQuery _audioQuery = OnAudioQuery();
 
-  Future<void> _scanForLocalUpgrades() async {
-    LogService().log("Starting Scan for Local Upgrades...");
-    if (kIsWeb) return;
+  Future<List<UpgradeProposal>> scanForLocalUpgradesForPlaylist(
+    String playlistId,
+  ) async {
+    return await _scanForLocalUpgrades(targetPlaylistId: playlistId);
+  }
+
+  Future<List<UpgradeProposal>> _scanForLocalUpgrades({
+    String? targetPlaylistId,
+  }) async {
+    LogService().log(
+      "Starting Scan for Local Upgrades (target: $targetPlaylistId)...",
+    );
+    if (kIsWeb) return [];
+
+    await _loadIgnoredUpgradeKeys();
 
     // Check permissions silently first
     if (Platform.isAndroid) {
@@ -2048,12 +2099,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         // Permission granted, proceed
       } else {
         // Just return, don't nag user on startup if they haven't granted yet.
-        // Or strictly, we could try to request if we want to be aggressive,
-        // but "background check" implies non-intrusive.
-        // However, if the user *wants* this, they probably gave permission.
-        // Let's check status.
         final status = await Permission.audio.status;
-        if (!status.isGranted) return;
+        if (!status.isGranted) return [];
       }
     }
 
@@ -2065,7 +2112,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         ignoreCase: true,
       );
 
-      if (localSongs.isEmpty) return;
+      if (localSongs.isEmpty) return [];
 
       // Normalize helper
       String normalize(String s) {
@@ -2076,35 +2123,40 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       final uniqueProposalIds =
           <String>{}; // prevent duplicates in proposal list
 
-      for (var playlist in _playlists) {
+      final playlistsToScan = targetPlaylistId != null
+          ? _playlists.where((p) => p.id == targetPlaylistId).toList()
+          : _playlists;
+
+      for (var playlist in playlistsToScan) {
         for (var song in playlist.songs) {
           // Skip if already local
           if (song.localPath != null || song.id.startsWith('local_')) continue;
 
+          // Skip if previously rejected/ignored per song
+          final proposalKey = "${playlist.id}_${song.id}";
+          if (_ignoredUpgradeKeys.contains(proposalKey) ||
+              _ignoredUpgradeKeys.contains(song.id)) {
+            continue;
+          }
+
           // Simple match
           final sTitle = normalize(song.title);
-          final sArtist = normalize(song.artist);
 
           if (sTitle.isEmpty) continue;
 
           for (var local in localSongs) {
+            // Match only on title: the song title must appear in the
+            // local file title OR in the local file path/name.
+            // The user reviews each proposal and decides whether to accept it.
             final lTitle = normalize(local.title);
-            final lArtist = normalize(local.artist ?? '');
+            final lFileName = normalize(
+              local.data.split('/').last.split('\\').last,
+            );
 
-            // Heuristic: Exact match of simplified strings
-            // Check title match AND (artist match OR artist is unknown/empty in one side)
-            // Stricter: Require artist match if artist exists
-            bool artistMatch = false;
-            if (sArtist.isNotEmpty && lArtist.isNotEmpty) {
-              artistMatch =
-                  sArtist.contains(lArtist) || lArtist.contains(sArtist);
-            } else {
-              // Permissive matching: If one side is missing artist info,
-              // we allow a match based on title alone if it's an exact match.
-              artistMatch = true;
-            }
+            final titleInLocalTitle = lTitle.contains(sTitle);
+            final titleInFileName = lFileName.contains(sTitle);
 
-            if (artistMatch && (lTitle == sTitle || lTitle.contains(sTitle))) {
+            if (titleInLocalTitle || titleInFileName) {
               if (uniqueProposalIds.add("${playlist.id}_${song.id}")) {
                 newProposals.add(
                   UpgradeProposal(
@@ -2125,20 +2177,43 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         }
       }
 
+      _upgradeProposals = newProposals;
       if (newProposals.isNotEmpty) {
-        _upgradeProposals = newProposals;
         notifyListeners();
         LogService().log(
           "Found ${newProposals.length} local upgrades available.",
         );
       }
+      return newProposals;
     } catch (e) {
       LogService().log("Error scanning for local upgrades: $e");
+      return [];
     }
   }
 
-  Future<void> applyUpgrades(List<UpgradeProposal> toApply) async {
-    if (toApply.isEmpty) return;
+  Future<void> applyUpgrades(
+    List<UpgradeProposal> toApply, {
+    List<UpgradeProposal>? ignored,
+  }) async {
+    // Automatically save unselected proposals to ignored list so they are never proposed again
+    final toIgnore = ignored ??
+        _upgradeProposals
+            .where(
+              (p) => !toApply.any(
+                (a) => a.playlistId == p.playlistId && a.songId == p.songId,
+              ),
+            )
+            .toList();
+
+    if (toIgnore.isNotEmpty) {
+      await ignoreUpgradeProposals(toIgnore);
+    }
+
+    if (toApply.isEmpty) {
+      _upgradeProposals.clear();
+      notifyListeners();
+      return;
+    }
 
     for (var proposal in toApply) {
       // Get playlist
@@ -2154,12 +2229,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       final original = _playlists[index].songs[songIndex];
       final updated = original.copyWith(
         localPath: proposal.localPath,
-        // We keep the original metadata (Title/Artist) as source of truth if user liked it,
-        // OR we could update it to match file.
-        // User said "sostituendo la canzone online con quello offline".
-        // keeping metadata is usually safer for UI consistency, but valid local path enables offline play.
-        // We definitely set localPath.
-        // We might want to set isValid=true if it was invalid.
         isValid: true,
       );
 
@@ -2422,7 +2491,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String playlistId,
     List<SavedSong> songs,
   ) async {
-    if (playlistId.startsWith('local_')) return;
     await _playlistService.updateSongsInPlaylist(playlistId, songs);
     await _loadPlaylists();
   }
@@ -2482,7 +2550,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     res = res.replaceAll(RegExp(r'[\:\|\\\/]'), ' ');
 
     // 4. Clean up file extensions
-    res = res.replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$'), '');
+    res = res.replaceAll(RegExp(r'\.(mp3|mp3|wav|flac|ogg)$'), '');
 
     // 5. Final normalization
     res = res.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -3453,7 +3521,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       try {
         // Clean query: remove file extensions or path info if present
         String cleanTitle = song.title
-            .replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$'), '')
+            .replaceAll(RegExp(r'\.(mp3|mp3|wav|flac|ogg)$'), '')
             .trim();
         final results = await searchMusic("$cleanTitle ${song.artist}");
 
@@ -4050,7 +4118,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       final lowerTitle = title.toLowerCase();
       final hasExtension =
           lowerTitle.endsWith('.mp3') ||
-          lowerTitle.endsWith('.m4a') ||
+          lowerTitle.endsWith('.mp3') ||
           lowerTitle.endsWith('.wav') ||
           lowerTitle.endsWith('.flac') ||
           lowerTitle.endsWith('.ogg');
@@ -8092,7 +8160,7 @@ _artistImageCache[rawKey] = null;
     // Check if it's an audio file by extension
     final lowerPath = path.toLowerCase();
     if (lowerPath.endsWith('.mp3') ||
-        lowerPath.endsWith('.m4a') ||
+        lowerPath.endsWith('.mp3') ||
         lowerPath.endsWith('.wav') ||
         lowerPath.endsWith('.flac') ||
         lowerPath.endsWith('.ogg')) {
@@ -8627,7 +8695,7 @@ _artistImageCache[rawKey] = null;
     // 1. Clean Title for searching
     String cleanTitle = currentTitle;
     if (isLocal) {
-      // Remove extension (e.g. .mp3, .m4a)
+      // Remove extension (e.g. .mp3, .mp3)
       final lastDot = cleanTitle.lastIndexOf('.');
       if (lastDot != -1 && (cleanTitle.length - lastDot) < 6) {
         cleanTitle = cleanTitle.substring(0, lastDot).trim();
@@ -8669,7 +8737,7 @@ _artistImageCache[rawKey] = null;
               _currentArtist == "YouTube" ||
               _currentArtist == "Local File" ||
               _currentTrack.toLowerCase().endsWith('.mp3') ||
-              _currentTrack.toLowerCase().endsWith('.m4a');
+              _currentTrack.toLowerCase().endsWith('.mp3');
 
           if (isCurrentlyGeneric) {
             _currentTrack = newTitle;

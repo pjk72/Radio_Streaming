@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:io';
+import 'package:flutter/cupertino.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart'
     as ye
@@ -37,6 +38,7 @@ import 'add_song_screen.dart';
 import '../services/entitlement_service.dart';
 import '../utils/glass_utils.dart';
 import '../services/download_service.dart';
+import '../services/id3_tag_service.dart';
 
 enum MetadataViewMode { playlists, artists, albums }
 
@@ -143,12 +145,30 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
   }
 
+  /// Per-playlist scan: called when a playlist is opened.
+  /// Looks for offline files on the device that match online-only songs
+  /// in this specific playlist. Shows the upgrade dialog only if new matches
+  /// are found that the user hasn't already dismissed.
+  Future<void> _scanAndShowLocalMatchesForPlaylist(String playlistId) async {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final proposals = await provider.scanForLocalUpgradesForPlaylist(playlistId);
+    if (!mounted) return;
+    if (proposals.isNotEmpty) {
+      // Small delay so the UI settles after switching playlist
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      _showUpgradeDialog(context, provider);
+    }
+  }
+
   void _showUpgradeDialog(BuildContext context, RadioProvider provider) {
     // Creating a local set to track selected proposals.
+
     // We initiate it with all proposals selected by default.
     final Set<String> selectedProposalIds = provider.upgradeProposals
         .map((p) => "${p.playlistId}_${p.songId}")
         .toSet();
+    final Set<String> neverShowAgainIds = {};
 
     GlassUtils.showGlassDialog(
       context: context,
@@ -164,7 +184,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 style: const TextStyle(color: Colors.white),
               ),
               content: Container(
-                constraints: const BoxConstraints(maxHeight: 400),
+                constraints: const BoxConstraints(maxHeight: 440),
                 width: double.maxFinite,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -174,27 +194,70 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       lang
                           .translate('local_files_desc')
                           .replaceAll('{0}', proposals.length.toString()),
-                      style: const TextStyle(color: Colors.white70),
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
+                    Text(
+                      lang.translate('never_ask_again_song_desc'),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        if (neverShowAgainIds.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.redAccent.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: Text(
+                              '${neverShowAgainIds.length} ${lang.translate('never_ask_badge')}',
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox.shrink(),
                         Builder(
                           builder: (context) {
+                            final availableProposals = proposals.where(
+                              (p) => !neverShowAgainIds.contains(
+                                "${p.playlistId}_${p.songId}",
+                              ),
+                            );
                             final bool isAllSelected =
-                                selectedProposalIds.length == proposals.length;
+                                availableProposals.isNotEmpty &&
+                                availableProposals.every(
+                                  (p) => selectedProposalIds.contains(
+                                    "${p.playlistId}_${p.songId}",
+                                  ),
+                                );
                             return TextButton(
                               onPressed: () {
                                 setState(() {
                                   if (isAllSelected) {
                                     selectedProposalIds.clear();
                                   } else {
-                                    selectedProposalIds.addAll(
-                                      proposals.map(
-                                        (p) => "${p.playlistId}_${p.songId}",
-                                      ),
-                                    );
+                                    for (var p in availableProposals) {
+                                      selectedProposalIds.add(
+                                        "${p.playlistId}_${p.songId}",
+                                      );
+                                    }
                                   }
                                 });
                               },
@@ -217,87 +280,206 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         shrinkWrap: true,
                         itemCount: proposals.length,
                         separatorBuilder: (_, __) =>
-                            const Divider(color: Colors.white12, height: 1),
+                            const SizedBox(height: 6),
                         itemBuilder: (context, index) {
                           final p = proposals[index];
                           final uniqueId = "${p.playlistId}_${p.songId}";
+                          final isNeverShowAgain = neverShowAgainIds.contains(
+                            uniqueId,
+                          );
                           final isSelected = selectedProposalIds.contains(
                             uniqueId,
                           );
 
-                          return Material(
-                            color: Colors.black.withValues(alpha: 0.001),
-                            child: CheckboxListTile(
-                              value: isSelected,
-                              activeColor: Theme.of(context).primaryColor,
-                              checkColor: Colors.white,
-                              contentPadding: EdgeInsets.zero,
-                              onChanged: (val) {
-                                setState(() {
-                                  if (val == true) {
-                                    selectedProposalIds.add(uniqueId);
-                                  } else {
-                                    selectedProposalIds.remove(uniqueId);
-                                  }
-                                });
-                              },
-                              title: Text(
-                                p.songTitle,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isNeverShowAgain
+                                  ? Colors.redAccent.withValues(alpha: 0.1)
+                                  : (isSelected
+                                      ? Theme.of(context)
+                                          .primaryColor
+                                          .withValues(alpha: 0.18)
+                                      : Colors.white.withValues(alpha: 0.04)),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isNeverShowAgain
+                                    ? Colors.redAccent.withValues(alpha: 0.45)
+                                    : (isSelected
+                                        ? Theme.of(context)
+                                            .primaryColor
+                                            .withValues(alpha: 0.5)
+                                        : Colors.white.withValues(alpha: 0.08)),
                               ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 6,
+                              ),
+                              child: Row(
                                 children: [
-                                  if (p.songArtist.isNotEmpty)
-                                    Text(
-                                      p.songArtist,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 12,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  const SizedBox(height: 3),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.queue_music_rounded,
-                                        size: 13,
-                                        color: Theme.of(context).primaryColor,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Flexible(
-                                        child: Text(
-                                          p.playlistName.isNotEmpty
-                                              ? p.playlistName
-                                              : 'Playlist',
-                                          style: TextStyle(
-                                            color: Theme.of(context)
-                                                .primaryColor
-                                                .withValues(alpha: 0.9),
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w500,
+                                  // Checkbox to select for upgrade
+                                  Checkbox(
+                                    value: isSelected && !isNeverShowAgain,
+                                    activeColor: Theme.of(context).primaryColor,
+                                    checkColor: Colors.white,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: isNeverShowAgain
+                                        ? null
+                                        : (val) {
+                                            setState(() {
+                                              if (val == true) {
+                                                selectedProposalIds.add(
+                                                  uniqueId,
+                                                );
+                                              } else {
+                                                selectedProposalIds.remove(
+                                                  uniqueId,
+                                                );
+                                              }
+                                            });
+                                          },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Song details
+                                  Expanded(
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: isNeverShowAgain
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                if (isSelected) {
+                                                  selectedProposalIds.remove(
+                                                    uniqueId,
+                                                  );
+                                                } else {
+                                                  selectedProposalIds.add(
+                                                    uniqueId,
+                                                  );
+                                                }
+                                              });
+                                            },
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            p.songTitle,
+                                            style: TextStyle(
+                                              color: isNeverShowAgain
+                                                  ? Colors.white38
+                                                  : Colors.white,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              decoration: isNeverShowAgain
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                          if (p.songArtist.isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              p.songArtist,
+                                              style: TextStyle(
+                                                color: isNeverShowAgain
+                                                    ? Colors.white24
+                                                    : Colors.white70,
+                                                fontSize: 11,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                          const SizedBox(height: 3),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.queue_music_rounded,
+                                                size: 12,
+                                                color: isNeverShowAgain
+                                                    ? Colors.white24
+                                                    : Theme.of(context)
+                                                        .primaryColor,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  p.playlistName.isNotEmpty
+                                                      ? p.playlistName
+                                                      : 'Playlist',
+                                                  style: TextStyle(
+                                                    color: isNeverShowAgain
+                                                        ? Colors.white24
+                                                        : Theme.of(context)
+                                                            .primaryColor
+                                                            .withValues(
+                                                              alpha: 0.9,
+                                                            ),
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              if (isNeverShowAgain) ...[
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  '(${lang.translate('never_ask_badge')})',
+                                                  style: const TextStyle(
+                                                    color: Colors.redAccent,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Button to toggle "Do not show this comparison again"
+                                  IconButton(
+                                    tooltip: isNeverShowAgain
+                                        ? lang.translate('cancel')
+                                        : lang.translate('never_ask_again_song'),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 36,
+                                      minHeight: 36,
+                                    ),
+                                    icon: Icon(
+                                      isNeverShowAgain
+                                          ? Icons.visibility_off_rounded
+                                          : Icons.visibility_off_outlined,
+                                      color: isNeverShowAgain
+                                          ? Colors.redAccent
+                                          : Colors.white38,
+                                      size: 20,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        if (isNeverShowAgain) {
+                                          neverShowAgainIds.remove(uniqueId);
+                                          selectedProposalIds.add(uniqueId);
+                                        } else {
+                                          neverShowAgainIds.add(uniqueId);
+                                          selectedProposalIds.remove(uniqueId);
+                                        }
+                                      });
+                                    },
                                   ),
                                 ],
-                              ),
-                              secondary: const Icon(
-                                Icons.smartphone_rounded,
-                                color: Colors.greenAccent,
                               ),
                             ),
                           );
@@ -310,8 +492,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(ctx);
+                    final unselected = proposals.where((p) {
+                      final uId = "${p.playlistId}_${p.songId}";
+                      return neverShowAgainIds.contains(uId) ||
+                          !selectedProposalIds.contains(uId);
+                    }).toList();
+                    if (unselected.isNotEmpty) {
+                      provider.ignoreUpgradeProposals(unselected);
+                    }
                     provider.upgradeProposals.clear();
+                    Navigator.pop(ctx);
                   },
                   child: Text(
                     Provider.of<LanguageProvider>(
@@ -325,12 +515,18 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       ? null
                       : () {
                           final toApply = proposals.where((p) {
-                            return selectedProposalIds.contains(
-                              "${p.playlistId}_${p.songId}",
-                            );
+                            final uId = "${p.playlistId}_${p.songId}";
+                            return selectedProposalIds.contains(uId) &&
+                                !neverShowAgainIds.contains(uId);
                           }).toList();
 
-                          provider.applyUpgrades(toApply);
+                          final toIgnore = proposals.where((p) {
+                            final uId = "${p.playlistId}_${p.songId}";
+                            return neverShowAgainIds.contains(uId) ||
+                                !selectedProposalIds.contains(uId);
+                          }).toList();
+
+                          provider.applyUpgrades(toApply, ignored: toIgnore);
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -1530,6 +1726,19 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                         title: newTitle,
                                         artist: newArtist,
                                       );
+                                      if (updated.localPath != null && updated.localPath!.isNotEmpty) {
+                                        try {
+                                          final file = File(updated.localPath!);
+                                          if (file.existsSync()) {
+                                            final bytes = await file.readAsBytes();
+                                            final tagged = Id3TagService().injectMetadata(
+                                              audioBytes: bytes,
+                                              song: updated,
+                                            );
+                                            await file.writeAsBytes(tagged, flush: true);
+                                          }
+                                        } catch (_) {}
+                                      }
                                       await provider.updateSongInPlaylist(playlistId, updated);
                                       song = updated;
                                       if (ctx.mounted) {
@@ -2016,7 +2225,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                             left: 4,
                                           ),
                                           child: Icon(
-                                            Icons.smartphone_rounded,
+                                            Icons.folder_rounded,
                                             color: _showOnlyLocal
                                                 ? Theme.of(context).primaryColor
                                                 : headerContrastColor
@@ -2610,7 +2819,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   provider,
                   lang.translate('local_music'),
                   lang.translate('add_folders_device'),
-                  Icons.smartphone_rounded,
+                  Icons.folder_rounded,
                   Colors.orangeAccent,
                   () => Navigator.push(
                     context,
@@ -2652,7 +2861,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 provider,
                 lang.translate('local_music'),
                 lang.translate('add_folders_device'),
-                Icons.smartphone_rounded,
+                Icons.folder_rounded,
                 Colors.orangeAccent,
                 () => Navigator.push(
                   context,
@@ -2732,8 +2941,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         // Check and repair local song links in background
         provider.validateLocalSongsInPlaylist(playlist.id);
 
+        final isNewSelection = _selectedPlaylistId != playlist.id;
+
         setState(() {
-          if (_selectedPlaylistId != playlist.id) {
+          if (isNewSelection) {
             _selectedPlaylistId = playlist.id;
             _showOnlyInvalid = false;
             _showOnlyLocal = false;
@@ -2754,6 +2965,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           _searchController.clear();
           _lastScrolledSongId = null;
         });
+
+        // Scan for local offline files that can be linked to online songs
+        // Only when switching to a new playlist
+        if (isNewSelection) {
+          _scanAndShowLocalMatchesForPlaylist(playlist.id);
+        }
       },
       borderRadius: BorderRadius.circular(16),
       child: Container(
@@ -2834,9 +3051,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     color: Colors.black.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.smartphone_rounded,
-                    color: Colors.orangeAccent,
+                  child: Icon(
+                    Icons.folder_rounded,
+                    color: Theme.of(context).primaryColor,
                     size: 12,
                   ),
                 ),
@@ -3231,7 +3448,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                             ),
                             onTap: () {
                               Navigator.pop(dialogCtx);
-                              _showCreatePlaylistDialog(context, provider);
+                              _showCreatePlaylistDialog(
+                                context,
+                                provider,
+                                initialSongs: sourcePlaylist.songs,
+                              );
                             },
                           ),
                         );
@@ -3463,7 +3684,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     );
   }
 
-  void _showCreatePlaylistDialog(BuildContext context, RadioProvider provider) {
+  void _showCreatePlaylistDialog(
+    BuildContext context,
+    RadioProvider provider, {
+    List<SavedSong>? initialSongs,
+  }) {
     final TextEditingController nameController = TextEditingController();
     final lang = Provider.of<LanguageProvider>(context, listen: false);
     GlassUtils.showGlassDialog(
@@ -3506,10 +3731,33 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              if (nameController.text.isNotEmpty) {
-                provider.createPlaylist(nameController.text);
+            onPressed: () async {
+              final playlistName = nameController.text.trim();
+              if (playlistName.isNotEmpty) {
                 Navigator.pop(ctx);
+                final newPlaylist = await provider.createPlaylist(
+                  playlistName,
+                  songs: initialSongs != null
+                      ? List<SavedSong>.from(initialSongs)
+                      : null,
+                );
+                if (initialSongs != null && initialSongs.isNotEmpty) {
+                  provider.resolvePlaylistLinksInBackground(
+                    newPlaylist.id,
+                    initialSongs,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          lang
+                              .translate('copied_songs_to')
+                              .replaceAll('{0}', playlistName),
+                        ),
+                      ),
+                    );
+                  }
+                }
               }
             },
             style: ElevatedButton.styleFrom(
@@ -4216,7 +4464,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       if (hasLocalSongs || _showOnlyLocal)
                         buildHeaderMenuItem(
                           id: 'toggle_local',
-                          icon: Icons.smartphone_rounded,
+                          icon: Icons.folder_rounded,
                           label: lang.translate('filter_local_device'),
                           color: _showOnlyLocal ? primaryColor : Colors.white70,
                         ),
@@ -4792,15 +5040,19 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             }
 
             if (context.mounted) {
+              ScaffoldMessenger.of(context).clearSnackBars();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
                     Provider.of<LanguageProvider>(context, listen: false)
                         .translate('removed_album')
                         .replaceAll('{0}', groupSongs.first.album),
+                    style: const TextStyle(color: Colors.white),
                   ),
                   action: SnackBarAction(
-                    label: "Undo",
+                    label: Provider.of<LanguageProvider>(context, listen: false)
+                        .translate('undo'),
+                    textColor: Theme.of(context).primaryColorLight,
                     onPressed: () {
                       provider.restoreSongsToPlaylist(
                         playlist.id,
@@ -4809,6 +5061,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       );
                     },
                   ),
+                  duration: const Duration(seconds: 5),
                 ),
               );
             }
@@ -5097,8 +5350,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       if (song.localPath != null &&
                                           song.localPath!.isNotEmpty)
                                         Positioned(
-                                          bottom: 2,
-                                          right: 2,
+                                          bottom: 1,
+                                          right: 5,
                                           child: Container(
                                             padding: const EdgeInsets.all(2),
                                             decoration: BoxDecoration(
@@ -5111,11 +5364,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                               song.isDownloaded
                                                   ? Icons
                                                         .file_download_done_rounded
-                                                  : Icons.smartphone_rounded,
+                                                  : Icons.folder_rounded,
                                               size: 12,
                                               color: song.isDownloaded
                                                   ? Colors.greenAccent
-                                                  : Colors.blueAccent,
+                                                  : Theme.of(context).primaryColor
                                             ),
                                           ),
                                         ),
@@ -5550,7 +5803,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   Widget _buildDialogIcon(BuildContext context, Playlist p) {
     if (p.creator == 'local') {
       return Icon(
-        Icons.smartphone_rounded,
+        Icons.folder_rounded,
         color: Theme.of(context).primaryColor,
         size: 20,
       );
@@ -7647,7 +7900,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                 child: Icon(
                                   widget.groupSongs.first.isDownloaded
                                       ? Icons.file_download_done_rounded
-                                      : Icons.smartphone_rounded,
+                                      : Icons.folder_rounded,
                                   size: 10,
                                   color: widget.groupSongs.first.isDownloaded
                                       ? Colors.greenAccent
@@ -8537,7 +8790,7 @@ class _DoubleTapSpinnerWrapperState extends State<_DoubleTapSpinnerWrapper> {
                       height: 24,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.blueAccent,
+                        color: Colors.blueAccent
                       ),
                     ),
                   ),

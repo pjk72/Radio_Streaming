@@ -280,7 +280,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     setState(() => _isListening = true);
 
     final Directory tempDir = await getTemporaryDirectory();
-    final String tempPath = '${tempDir.path}/shazam_wizard_temp.m4a';
+    final String tempPath = '${tempDir.path}/shazam_wizard_temp.mp3';
 
     try {
       await _record.start(

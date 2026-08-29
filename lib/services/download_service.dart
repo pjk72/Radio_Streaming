@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as ye hide Playlist;
 
+import 'dart:typed_data';
 import '../providers/radio_provider.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
@@ -16,6 +17,8 @@ import '../services/entitlement_service.dart';
 import '../services/rewarded_ad_service.dart';
 import '../services/notification_service.dart';
 import '../services/encryption_service.dart';
+import '../services/id3_tag_service.dart';
+import 'package:http/http.dart' as http;
 import '../utils/glass_utils.dart';
 
 Future<void> downloadPlaylist(
@@ -887,13 +890,13 @@ Future<void> downloadPlaylist(
 
         // Legacy check for old extension/unhashed
         final safeId = song.id.replaceAll(RegExp(r'[^\w\d_]'), '');
-        final m4aFile = File('${saveDir.path}/${safeId}_secure.m4a');
+        final mp3File = File('${saveDir.path}/${safeId}_secure.mp3');
         final webmFile = File('${saveDir.path}/${safeId}_secure.webm');
 
         if (mstFile.existsSync() && mstFile.lengthSync() > 1024 * 50) {
           confirmedCache = mstFile;
-        } else if (m4aFile.existsSync() && m4aFile.lengthSync() > 1024 * 50) {
-          confirmedCache = m4aFile;
+        } else if (mp3File.existsSync() && mp3File.lengthSync() > 1024 * 50) {
+          confirmedCache = mp3File;
         } else if (webmFile.existsSync() &&
             webmFile.lengthSync() > 1024 * 50) {
           confirmedCache = webmFile;
@@ -996,12 +999,12 @@ Future<void> downloadPlaylist(
 
                     ye.StreamInfo? audioStreamInfo;
 
-                    final m4aStreams = manifest.audioOnly.where(
-                      (s) => s.container.name == 'm4a',
+                    final mp3Streams = manifest.audioOnly.where(
+                      (s) => s.container.name == 'mp3',
                     );
 
-                    if (m4aStreams.isNotEmpty) {
-                      audioStreamInfo = m4aStreams.withHighestBitrate();
+                    if (mp3Streams.isNotEmpty) {
+                      audioStreamInfo = mp3Streams.withHighestBitrate();
                     } else {
                       final muxedStreams = manifest.muxed.where(
                         (s) => s.container.name == 'mp4',
@@ -1112,6 +1115,49 @@ Future<void> downloadPlaylist(
                     final finalLength = await file.length();
                     if (finalLength < 100 * 1024) {
                       throw Exception("File is incomplete.");
+                    }
+
+                    // Embed complete metadata, cover image, and cover URL into the downloaded file
+                    try {
+                      Uint8List? coverArtBytes;
+                      if (song.artUri != null && song.artUri!.trim().isNotEmpty) {
+                        final uriStr = song.artUri!.trim();
+                        if (uriStr.startsWith('http://') || uriStr.startsWith('https://')) {
+                          try {
+                            final imgRes = await http.get(
+                              Uri.parse(uriStr),
+                              headers: {
+                                'User-Agent':
+                                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                              },
+                            ).timeout(const Duration(seconds: 5));
+                            if (imgRes.statusCode == 200 && imgRes.bodyBytes.isNotEmpty) {
+                              coverArtBytes = imgRes.bodyBytes;
+                            }
+                          } catch (_) {}
+                        } else if (uriStr.startsWith('/') || uriStr.startsWith('file://')) {
+                          try {
+                            final localImg = File(uriStr.replaceFirst('file://', ''));
+                            if (await localImg.exists()) {
+                              coverArtBytes = await localImg.readAsBytes();
+                            }
+                          } catch (_) {}
+                        }
+                      }
+
+                      final rawEncryptedBytes = await file.readAsBytes();
+                      final rawDecryptedBytes = EncryptionService().encryptData(rawEncryptedBytes);
+
+                      final taggedBytes = Id3TagService().injectMetadata(
+                        audioBytes: rawDecryptedBytes,
+                        song: song,
+                        coverArtBytes: coverArtBytes,
+                      );
+
+                      final reEncryptedBytes = EncryptionService().encryptData(taggedBytes);
+                      await file.writeAsBytes(reEncryptedBytes, flush: true);
+                    } catch (tagErr) {
+                      debugPrint('Error tagging downloaded file: $tagErr');
                     }
 
                     // If we resolved the URL dynamically, save it too

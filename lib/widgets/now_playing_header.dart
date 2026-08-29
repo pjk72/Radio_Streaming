@@ -143,7 +143,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
       setState(() => _isListening = true);
 
       final Directory tempDir = await getTemporaryDirectory();
-      final String tempPath = '${tempDir.path}/shazam_temp.m4a';
+      final String tempPath = '${tempDir.path}/shazam_temp.mp3';
 
       try {
         await _record.start(

@@ -76,6 +76,7 @@ class LocalPlaylistService {
       title: s.title,
       artist: s.artist ?? 'Unknown Artist',
       album: s.album ?? 'Unknown Album',
+      genre: s.genre,
       duration: Duration(milliseconds: s.duration ?? 0),
       dateAdded: DateTime.now(),
       localPath: s.data, // Using data path for local playback
