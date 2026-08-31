@@ -10,6 +10,8 @@ import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/mp3_export_service.dart';
+import '../services/entitlement_service.dart';
+import '../services/rewarded_ad_service.dart';
 import '../utils/glass_utils.dart';
 
 class ExportMp3Screen extends StatefulWidget {
@@ -165,6 +167,18 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  int _availableCredits() {
+    final entitlements = Provider.of<EntitlementService>(context, listen: false);
+    final radio = Provider.of<RadioProvider>(context, listen: false);
+    final int downloadLimit = entitlements.getFeatureLimit('download_songs');
+    if (downloadLimit == 0) return 0;
+    final int effectiveLimit = (downloadLimit == -99) ? 0 : downloadLimit;
+    if (effectiveLimit == -1) return -1; // unlimited
+    return effectiveLimit +
+        radio.earnedDownloadCredits -
+        radio.lifetimeDownloadCount;
+  }
+
   Future<MP3ExportGroupingMode?> _showGroupingOptionDialog(BuildContext context) async {
     final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
     final lang = Provider.of<LanguageProvider>(context, listen: false);
@@ -172,7 +186,8 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
     final primaryColor = themeProvider.activePrimaryColor;
     final surfaceColor = themeProvider.activeSurfaceColor;
 
-    MP3ExportGroupingMode selectedMode = MP3ExportGroupingMode.artist;
+    MP3ExportGroupingMode selectedMode = MP3ExportGroupingMode.playlist;
+    int currentCredits = _availableCredits();
 
     return await GlassUtils.showGlassDialog<MP3ExportGroupingMode>(
       context: context,
@@ -180,6 +195,8 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
+            // Ensure the displayed credit count stays fresh.
+            currentCredits = _availableCredits();
             return AlertDialog(
               backgroundColor: Colors.transparent,
               surfaceTintColor: Colors.transparent,
@@ -250,82 +267,162 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Option 1: Artist / Band
-                    InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        setStateDialog(() {
-                          selectedMode = MP3ExportGroupingMode.artist;
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: selectedMode == MP3ExportGroupingMode.artist
-                              ? primaryColor.withValues(alpha: 0.2)
-                              : (isDark
-                                  ? Colors.white.withValues(alpha: 0.05)
-                                  : Colors.black.withValues(alpha: 0.04)),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: selectedMode == MP3ExportGroupingMode.artist
-                                ? primaryColor
-                                : (isDark
-                                    ? Colors.white.withValues(alpha: 0.12)
-                                    : Colors.black.withValues(alpha: 0.08)),
-                            width: selectedMode == MP3ExportGroupingMode.artist ? 1.8 : 1.0,
-                          ),
+                    // Available credits + bonus (watch ad) row
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: primaryColor.withValues(alpha: 0.4),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              selectedMode == MP3ExportGroupingMode.artist
-                                  ? Icons.radio_button_checked_rounded
-                                  : Icons.radio_button_unchecked_rounded,
-                              color: selectedMode == MP3ExportGroupingMode.artist
-                                  ? primaryColor
-                                  : (isDark ? Colors.white38 : Colors.grey.shade400),
-                              size: 22,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    lang.translate('export_mp3_group_artist'),
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.stars_rounded,
+                                size: 20,
+                                color: Colors.amber,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  lang
+                                      .translate('remaining_downloads')
+                                      .replaceAll(
+                                        '{0}',
+                                        currentCredits == -1
+                                            ? '∞'
+                                            : currentCredits.toString(),
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: currentCredits == -1 || currentCredits > 0
+                                        ? (isDark ? Colors.white : Colors.black87)
+                                        : Colors.redAccent,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (currentCredits != -1) ...[
+                            const SizedBox(height: 8),
+                            Center(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () async {
+                                  final radio = Provider.of<RadioProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                                  int earnedAmount = 0;
+                                  final bool earned = await RewardedAdService()
+                                      .showAdIfAvailable(
+                                        onUserEarnedReward: (ad, reward) {
+                                          earnedAmount = reward.amount.toInt();
+                                        },
+                                        onAdNotAvailable: () {
+                                          if (ctx.mounted) {
+                                            ScaffoldMessenger.of(ctx)
+                                                .clearSnackBars();
+                                            ScaffoldMessenger.of(ctx)
+                                                .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      lang.translate(
+                                                        'ad_not_available',
+                                                      ),
+                                                    ),
+                                                    backgroundColor: Colors.redAccent,
+                                                  ),
+                                                );
+                                          }
+                                        },
+                                      );
+                                  if (earned) {
+                                    final int bonus = earnedAmount > 0
+                                        ? earnedAmount
+                                        : 1;
+                                    await radio.addEarnedDownloadCredits(bonus);
+                                    if (ctx.mounted) {
+                                      ScaffoldMessenger.of(ctx)
+                                          .clearSnackBars();
+                                      ScaffoldMessenger.of(ctx)
+                                          .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                lang
+                                                    .translate(
+                                                      'credits_earned_msg',
+                                                    )
+                                                    .replaceAll(
+                                                      '{0}',
+                                                      bonus.toString(),
+                                                    ),
+                                              ),
+                                              backgroundColor: Colors.green,
+                                            ),
+                                          );
+                                    }
+                                    setStateDialog(() {});
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Colors.amber.withValues(alpha: 0.1),
+                                        Colors.amber.withValues(alpha: 0.2),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.amber.withValues(alpha: 0.4),
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    lang.translate('export_mp3_group_artist_path'),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: isDark ? Colors.white54 : Colors.grey.shade600,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.stars_rounded,
+                                        color: Colors.amber,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        "${lang.translate('bonus')} - ${lang.translate('watch_ad')}",
+                                        style: const TextStyle(
+                                          color: Colors.amber,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
-                            Icon(
-                              Icons.person_rounded,
-                              color: selectedMode == MP3ExportGroupingMode.artist
-                                  ? primaryColor
-                                  : (isDark ? Colors.white38 : Colors.grey.shade400),
-                              size: 22,
-                            ),
                           ],
-                        ),
+                        ],
                       ),
                     ),
 
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
 
-                    // Option 2: Playlist
+                    // Option 1: Playlist (default)
                     InkWell(
                       borderRadius: BorderRadius.circular(16),
                       onTap: () {
@@ -398,6 +495,81 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                       ),
                     ),
 
+                    const SizedBox(height: 10),
+
+                    // Option 2: Artist / Band
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        setStateDialog(() {
+                          selectedMode = MP3ExportGroupingMode.artist;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: selectedMode == MP3ExportGroupingMode.artist
+                              ? primaryColor.withValues(alpha: 0.2)
+                              : (isDark
+                                  ? Colors.white.withValues(alpha: 0.05)
+                                  : Colors.black.withValues(alpha: 0.04)),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: selectedMode == MP3ExportGroupingMode.artist
+                                ? primaryColor
+                                : (isDark
+                                    ? Colors.white.withValues(alpha: 0.12)
+                                    : Colors.black.withValues(alpha: 0.08)),
+                            width: selectedMode == MP3ExportGroupingMode.artist ? 1.8 : 1.0,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              selectedMode == MP3ExportGroupingMode.artist
+                                  ? Icons.radio_button_checked_rounded
+                                  : Icons.radio_button_unchecked_rounded,
+                              color: selectedMode == MP3ExportGroupingMode.artist
+                                  ? primaryColor
+                                  : (isDark ? Colors.white38 : Colors.grey.shade400),
+                              size: 22,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    lang.translate('export_mp3_group_artist'),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    lang.translate('export_mp3_group_artist_path'),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark ? Colors.white54 : Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.person_rounded,
+                              color: selectedMode == MP3ExportGroupingMode.artist
+                                  ? primaryColor
+                                  : (isDark ? Colors.white38 : Colors.grey.shade400),
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
                     const SizedBox(height: 22),
 
                     // Actions
@@ -425,12 +597,17 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: primaryColor,
                               foregroundColor: Colors.white,
+                              disabledBackgroundColor: isDark
+                                  ? Colors.white12
+                                  : Colors.grey.shade300,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            onPressed: () => Navigator.of(ctx).pop(selectedMode),
+                            onPressed: currentCredits == 0
+                                ? null
+                                : () => Navigator.of(ctx).pop(selectedMode),
                             child: Text(
                               lang.translate('export_mp3_group_confirm'),
                               style: const TextStyle(fontWeight: FontWeight.bold),
@@ -503,6 +680,13 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
         .where((s) => _selectedSongIds.contains(s.id))
         .toList();
 
+    // Bonus / ad-gating: each exported track consumes 1 download credit.
+    final bool creditsOk = await _ensureExportCredits(
+      context,
+      selectedSongs.length,
+    );
+    if (!creditsOk || !mounted) return;
+
     final exportService = MP3ExportService();
 
     // Show persistent progress modal or initiate export
@@ -512,6 +696,237 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
       selectedSongs,
       groupingMode,
     );
+  }
+
+  /// Reuse the same rewarded-ad logic used for song downloads.
+  /// Returns true when enough credits are available to export [needed] tracks.
+  Future<bool> _ensureExportCredits(
+    BuildContext ctx,
+    int needed,
+  ) async {
+    if (needed <= 0) return true;
+
+    final entitlements = Provider.of<EntitlementService>(ctx, listen: false);
+    final radio = Provider.of<RadioProvider>(ctx, listen: false);
+    final lang = Provider.of<LanguageProvider>(ctx, listen: false);
+
+    final int downloadLimit = entitlements.getFeatureLimit('download_songs');
+
+    // Feature disabled: no export allowed via the bonus economy.
+    if (downloadLimit == 0) return true;
+
+    final int effectiveLimit = (downloadLimit == -99) ? 0 : downloadLimit;
+    final int availableCredits = (effectiveLimit == -1)
+        ? -1 // unlimited
+        : (effectiveLimit + radio.earnedDownloadCredits - radio.lifetimeDownloadCount);
+
+    if (availableCredits == -1 || availableCredits >= needed) return true;
+
+    // Not enough credits: offer the rewarded ad (same dialog as downloads).
+    final bool? proceed = await GlassUtils.showGlassDialog<bool>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        contentPadding: EdgeInsets.zero,
+        content: Container(
+          width: double.maxFinite,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Theme.of(dialogCtx).primaryColor.withValues(alpha: 0.1),
+                const Color(0xFF1a1a2e).withValues(alpha: 0.8),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Theme.of(dialogCtx).primaryColor.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogCtx).primaryColor.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.stars_rounded,
+                  color: Colors.amberAccent,
+                  size: 48,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                lang.translate('ad_offer_title'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  lang.translate('ad_offer_desc'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        color: Colors.white.withValues(alpha: 0.6),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          lang.translate('ad_offer_note'),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx, false),
+                        child: Text(
+                          lang.translate('cancel'),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(dialogCtx, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(dialogCtx).primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          lang.translate('watch_ad'),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (proceed != true) return false;
+
+    // Show loading indicator while waiting for the rewarded ad.
+    if (ctx.mounted) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Text(lang.translate('loading_ad')),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+
+    int earnedAmount = 0;
+    final bool rewardEarned = await RewardedAdService().showAdIfAvailable(
+      onUserEarnedReward: (ad, reward) {
+        earnedAmount = reward.amount.toInt();
+      },
+      onAdNotAvailable: () {
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).clearSnackBars();
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(
+              content: Text(lang.translate('ad_not_available')),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      },
+    );
+
+    if (!rewardEarned || !mounted) return false;
+
+    final int bonus = earnedAmount > 0 ? earnedAmount : 5;
+    await radio.addEarnedDownloadCredits(bonus);
+    if (!mounted) return false;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          lang.translate('credits_earned_msg').replaceAll('{0}', bonus.toString()),
+        ),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    // Re-evaluate the credits after the ad reward.
+    return _ensureExportCredits(context, needed);
   }
 
   void _showExportingDialog(
@@ -554,6 +969,12 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
               );
             }
           }
+
+          // Consume 1 download credit for each track actually exported to MP3.
+          for (int i = 0; i < result.successCount; i++) {
+            await radio.incrementLifetimeDownloadCount();
+          }
+
           if (mounted) {
             setState(() {
               _selectedSongIds.removeWhere(

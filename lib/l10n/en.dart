@@ -738,4 +738,6 @@ final Map<String, String> en = {
   'musicstream_folders': 'MusicStream Folders',
   'other_device_folders': 'Other Device Folders',
   'musicstream_badge': 'MusicStream',
+  'preparing_songs': 'Preparing the songs',
+  'export_mp3_group_confirm': 'Start export',
 };

@@ -754,4 +754,6 @@ final Map<String, String> it = {
   'musicstream_folders': 'Cartelle MusicStream',
   'other_device_folders': 'Altre Cartelle del Dispositivo',
   'musicstream_badge': 'MusicStream',
+  'preparing_songs': 'Preparazione delle canzoni',
+  'export_mp3_group_confirm': 'Avvia l\'esportazione',
 };
