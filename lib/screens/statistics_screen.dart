@@ -9,6 +9,7 @@ import '../providers/theme_provider.dart';
 import '../models/playlist.dart';
 import '../models/saved_song.dart';
 import 'song_details_screen.dart';
+import '../utils/glass_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StatisticsScreen extends StatefulWidget {
@@ -838,6 +839,220 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     );
   }
 
+  void _showSaveToPlaylistDialog({
+    required BuildContext context,
+    required List<SavedSong> songs,
+    required RadioProvider provider,
+    required String sourceName,
+  }) {
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (dialogCtx) {
+        final lang = Provider.of<LanguageProvider>(context, listen: false);
+        final playlists = provider.playlists.toList();
+
+        return AlertDialog(
+          surfaceTintColor: Colors.transparent,
+          title: Text(
+            lang.translate('add_to_playlist'),
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleLarge?.color,
+            ),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    "${lang.translate('copy_songs_to')} $sourceName (${songs.length} ${lang.translate('songs').toLowerCase()})",
+                    style: TextStyle(
+                      color: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.color
+                          ?.withValues(alpha: 0.7),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: playlists.length + 1,
+                    itemBuilder: (ctx, index) {
+                      if (index == 0) {
+                        return Material(
+                          color: Colors.black.withValues(alpha: 0.001),
+                          child: ListTile(
+                            leading: const Icon(
+                              Icons.add,
+                              color: Colors.blueAccent,
+                            ),
+                            title: Text(
+                              lang.translate('create_new_playlist'),
+                              style: const TextStyle(color: Colors.blueAccent),
+                            ),
+                            onTap: () async {
+                              Navigator.pop(dialogCtx);
+                              _showCreatePlaylistFromStats(
+                                context: context,
+                                provider: provider,
+                                songs: songs,
+                                sourceName: sourceName,
+                              );
+                            },
+                          ),
+                        );
+                      }
+                      final p = playlists[index - 1];
+                      return Material(
+                        color: Colors.black.withValues(alpha: 0.001),
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.queue_music_rounded,
+                            color: Theme.of(context).primaryColor,
+                            size: 20,
+                          ),
+                          title: Text(
+                            p.name,
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.color,
+                            ),
+                          ),
+                          onTap: () async {
+                            Navigator.pop(dialogCtx);
+                            await provider.addSongsToPlaylist(p.id, songs);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    lang
+                                        .translate('copied_songs_to')
+                                        .replaceAll('{0}', p.name),
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: Text(lang.translate('cancel')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showCreatePlaylistFromStats({
+    required BuildContext context,
+    required RadioProvider provider,
+    required List<SavedSong> songs,
+    required String sourceName,
+  }) {
+    final TextEditingController nameController = TextEditingController();
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (ctx) {
+        final lang = Provider.of<LanguageProvider>(context, listen: false);
+        return AlertDialog(
+          surfaceTintColor: Colors.transparent,
+          title: Text(
+            lang.translate('new_playlist'),
+            style: TextStyle(
+              color: Theme.of(context).textTheme.titleLarge?.color,
+            ),
+          ),
+          content: TextField(
+            controller: nameController,
+            autofocus: true,
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodyLarge?.color,
+            ),
+            decoration: InputDecoration(
+              labelText: lang.translate('playlist_name'),
+              labelStyle: TextStyle(
+                color: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.color
+                    ?.withValues(alpha: 0.7),
+              ),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: Theme.of(context).dividerColor,
+                ),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: Theme.of(context).primaryColor,
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(lang.translate('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final playlistName = nameController.text.trim();
+                if (playlistName.isNotEmpty) {
+                  Navigator.pop(ctx);
+                  final newPlaylist = await provider.createPlaylist(
+                    playlistName,
+                    songs: List<SavedSong>.from(songs),
+                  );
+                  provider.resolvePlaylistLinksInBackground(
+                    newPlaylist.id,
+                    songs,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          lang
+                              .translate('copied_songs_to')
+                              .replaceAll('{0}', playlistName),
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: Text(
+                lang.translate('create'),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showTemporaryPlaylistSheet({
     required BuildContext context,
     required String title,
@@ -861,10 +1076,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     final primaryColor = themeProvider.activePrimaryColor;
     final surfaceColor = themeProvider.activeSurfaceColor;
 
+    final cleanedSongs = songs
+        .map((s) => s.copyWith(title: _cleanDisplayTitle(s.title)))
+        .toList();
+
     final tempPlaylist = Playlist(
       id: 'temp_stats_${DateTime.now().millisecondsSinceEpoch}',
       name: title,
-      songs: songs,
+      songs: cleanedSongs,
       createdAt: DateTime.now(),
     );
 
@@ -1001,6 +1220,26 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                         },
                       ),
                     ),
+                    const SizedBox(width: 10),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: IconButton(
+                        icon: Icon(Icons.playlist_add_rounded, color: primaryColor, size: 24),
+                        tooltip: langProvider.translate('add_to_playlist'),
+                        onPressed: () {
+                          Navigator.pop(sheetCtx);
+                          _showSaveToPlaylistDialog(
+                            context: context,
+                            songs: cleanedSongs,
+                            provider: provider,
+                            sourceName: title,
+                          );
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1045,7 +1284,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                               );
                             }
                           },
-                          child: Padding(
+                            child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                             child: Row(
                               children: [
@@ -1077,7 +1316,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                                           height: 44,
                                           color: Colors.white10,
                                           child: const Icon(Icons.music_note, size: 18, color: Colors.white38),
-                                        ),
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

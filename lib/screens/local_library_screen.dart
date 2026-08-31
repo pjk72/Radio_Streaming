@@ -399,7 +399,6 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         name: playlistName.trim(),
         songs: combinedSongs,
         createdAt: DateTime.now(),
-        creator: 'local',
       );
 
       await _playlistService.addPlaylist(newPlaylist);
