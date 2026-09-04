@@ -715,6 +715,7 @@ final Map<String, String> zh = {
   'export_mp3_group_artist_path': 'MusicStream/Artista/<艺术家姓名>/',
   'export_mp3_group_playlist': '按播放列表名称',
   'export_mp3_group_playlist_path': 'MusicStream/播放列表/<播放列表名称>/',
+  'export_mp3_other_group': '其他',
   'export_mp3_group_confirm': '开始导出',
   'merge_folders': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',
   'merge_into_playlist': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',

@@ -921,6 +921,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _keyFavorites,
       _favorites.map((e) => e.toString()).toList(),
     );
+    _updateAudioHandler(); // Refresh the AA radio list/queue with new favorites
   }
 
   Future<void> addStation(Station s) async {
@@ -2550,7 +2551,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     res = res.replaceAll(RegExp(r'[\:\|\\\/]'), ' ');
 
     // 4. Clean up file extensions
-    res = res.replaceAll(RegExp(r'\.(mp3|mp3|wav|flac|ogg)$'), '');
+    res = res.replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$'), '');
 
     // 5. Final normalization
     res = res.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -3521,7 +3522,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       try {
         // Clean query: remove file extensions or path info if present
         String cleanTitle = song.title
-            .replaceAll(RegExp(r'\.(mp3|mp3|wav|flac|ogg)$'), '')
+            .replaceAll(RegExp(r'\.(mp3|m4a|wav|flac|ogg)$'), '')
             .trim();
         final results = await searchMusic("$cleanTitle ${song.artist}");
 
@@ -4118,7 +4119,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       final lowerTitle = title.toLowerCase();
       final hasExtension =
           lowerTitle.endsWith('.mp3') ||
-          lowerTitle.endsWith('.mp3') ||
+          lowerTitle.endsWith('.m4a') ||
           lowerTitle.endsWith('.wav') ||
           lowerTitle.endsWith('.flac') ||
           lowerTitle.endsWith('.ogg');
@@ -6050,6 +6051,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       _keyFavorites,
       _favorites.map((e) => e.toString()).toList(),
     );
+    _updateAudioHandler(); // Refresh the AA radio list/queue with new favorites
   }
 
   // --- External Links (SongLink) ---
@@ -8160,7 +8162,7 @@ _artistImageCache[rawKey] = null;
     // Check if it's an audio file by extension
     final lowerPath = path.toLowerCase();
     if (lowerPath.endsWith('.mp3') ||
-        lowerPath.endsWith('.mp3') ||
+        lowerPath.endsWith('.m4a') ||
         lowerPath.endsWith('.wav') ||
         lowerPath.endsWith('.flac') ||
         lowerPath.endsWith('.ogg')) {
@@ -8695,7 +8697,7 @@ _artistImageCache[rawKey] = null;
     // 1. Clean Title for searching
     String cleanTitle = currentTitle;
     if (isLocal) {
-      // Remove extension (e.g. .mp3, .mp3)
+      // Remove extension (e.g. .mp3, .m4a)
       final lastDot = cleanTitle.lastIndexOf('.');
       if (lastDot != -1 && (cleanTitle.length - lastDot) < 6) {
         cleanTitle = cleanTitle.substring(0, lastDot).trim();
@@ -8737,7 +8739,7 @@ _artistImageCache[rawKey] = null;
               _currentArtist == "YouTube" ||
               _currentArtist == "Local File" ||
               _currentTrack.toLowerCase().endsWith('.mp3') ||
-              _currentTrack.toLowerCase().endsWith('.mp3');
+              _currentTrack.toLowerCase().endsWith('.m4a');
 
           if (isCurrentlyGeneric) {
             _currentTrack = newTitle;
@@ -8805,7 +8807,8 @@ _artistImageCache[rawKey] = null;
                       s.artist == "Unknown" ||
                       s.artist == "YouTube" ||
                       s.artist == "Local File" ||
-                      s.title.toLowerCase().endsWith('.mp3');
+                      s.title.toLowerCase().endsWith('.m4a') ||
+                      s.title.toLowerCase().endsWith('.m4a');
 
                   final bool songHasArt =
                       s.artUri != null && s.artUri!.isNotEmpty;

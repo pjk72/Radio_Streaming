@@ -752,6 +752,7 @@ final Map<String, String> fr = {
   'export_mp3_group_artist_path': 'MusicStream/Artista/<Nom de l\'artiste>/',
   'export_mp3_group_playlist': 'Par nom de liste de lecture',
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Nom de la liste de lecture>/',
+  'export_mp3_other_group': 'Autres',
   'export_mp3_group_confirm': 'Démarrer l\'exportation',
   'merge_folders': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',
   'merge_into_playlist': 'Error 500 (Server Error)!!1500.That’s an error.There was an error. Please try again later.That’s all we know.',

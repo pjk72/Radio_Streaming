@@ -78,6 +78,7 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _internalRetry = false;
   bool _expectingStop = false;
   bool _isInitialBuffering = false;
+  bool _stopRequested = false; // User explicitly stopped: block auto-restart/recovery
   bool _isCurrentSongInFavorites = false; // Flag for Android Auto heart icon
   Duration? _handoffDuration; // Bridge duration during crossfade
 
@@ -481,7 +482,10 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       // 2. Initial Buffering Recovery
-      if (_isInitialBuffering && (pos > Duration.zero || !_expectingStop)) {
+      // During a skip transition, _expectingStop is true and the OLD player may
+      // still emit positions > 0. Don't clear _isInitialBuffering here — the
+      // transition code (_playYoutubeSong) will clear it once the NEW player starts.
+      if (_isInitialBuffering && !_expectingStop) {
         _isInitialBuffering = false;
         _broadcastState(_player.state);
         _startStuckMonitor();
@@ -851,17 +855,23 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   Future<void> _loadQueue() async {
+    // Always read the latest favorites from prefs so the AA radio queue stays
+    // in sync with the stations starred in Manage Stations.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favStr = prefs.getStringList('favorites') ?? [];
+      _favoriteStationIds = favStr
+          .map((e) => int.tryParse(e) ?? -1)
+          .where((e) => e != -1)
+          .toSet();
+    } catch (_) {}
+
     // START: Filter logic for Android Auto (Matches Home Screen Favorites)
-    var targetStations = _stations;
-    if (_favoriteStationIds.isNotEmpty) {
-      targetStations = _stations
-          .where((s) => _favoriteStationIds.contains(s.id))
-          .toList();
-    }
-    // Fallback if filtering resulted in empty list (paranoid check)
-    if (targetStations.isEmpty) {
-      targetStations = _stations;
-    }
+    // Only favorite stations appear in the AA radio queue. If none are
+    // selected, the queue is empty (no fallback to all stations).
+    final List<Station> targetStations = _favoriteStationIds.isNotEmpty
+        ? _stations.where((s) => _favoriteStationIds.contains(s.id)).toList()
+        : [];
     // END: Filter logic
     final queueItems = targetStations
         .map(
@@ -952,7 +962,8 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   void _handleConnectionError(String message) {
-    if (_expectingStop) return;
+    // Do not auto-retry if the user explicitly stopped.
+    if (_expectingStop || _stopRequested) return;
 
     playbackState.add(
       playbackState.value.copyWith(
@@ -979,7 +990,7 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     Future.delayed(const Duration(seconds: 3), () {
-      if (_isRetryPending) {
+      if (_isRetryPending && !_stopRequested) {
         _retryPlayback();
       }
     });
@@ -1297,6 +1308,9 @@ class RadioAudioHandler extends BaseAudioHandler
   }
 
   Future<void> _retryPlayback() async {
+    // Never auto-restart after an explicit stop.
+    if (_stopRequested) return;
+
     final currentUrl = mediaItem.value?.id;
     if (currentUrl == null) {
       return;
@@ -1369,17 +1383,18 @@ class RadioAudioHandler extends BaseAudioHandler
       "AudioHandler: Stop requested (Expecting: $_expectingStop, Swapping: $_isSwapping)",
     );
 
+    // Explicit user stop: block all auto-restart/recovery (retry, watchdog,
+    // connectivity restore, AA auto-start) so the music stays stopped.
+    _stopRequested = true;
+    _isRetryPending = false;
     _stopRecognition();
     _isInitialBuffering = false;
 
-    // If we are in the middle of a swap or expecting a transition,
-    // don't reset _expectingStop yet, and don't broadcast 'stopped' if the new player is already ready.
-    if (_expectingStop || _isSwapping) {
-      LogService().log("AudioHandler: stop() ignored during transition/swap");
-      return;
-    }
-
+    // Force-clear any in-progress transition so a pending swap/crossfade
+    // cannot re-launch the stream a few seconds later.
     _expectingStop = false;
+    _isSwapping = false;
+    _stuckSecondsCount = 0;
     try {
       await _player.stop();
       await _nextPlayer.stop(); // Ensure both are stopped on explicit stop
@@ -1395,6 +1410,7 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _playInternal(bool logEvent) async {
     await _initializationComplete;
     _startupLock = false; // User Action unlocks
+    _stopRequested = false; // User pressed play: cancel any explicit stop
     
     final currentItem = mediaItem.value;
     final isRadio = currentItem?.extras?['type'] == 'station';
@@ -1462,18 +1478,25 @@ class RadioAudioHandler extends BaseAudioHandler
     }
     _lastSkipRequestTime = now;
 
+    // Auto-skips (triggered from error recovery/retry) must not restart
+    // playback after the user explicitly stopped.
+    if (_stopRequested && reason != null) {
+      LogService().log("SkipToNext suppressed after explicit stop (reason: $reason)");
+      return;
+    }
+
     LogService().log(
       "SkipToNext: ${reason ?? 'User initiated or manual skip'}. Current: ${mediaItem.value?.title ?? 'None'}",
     );
 
     _startupLock = false;
+    _stopRequested = false; // A real skip means the user resumed playback
 
-    // Optimistic: Signal buffering/loading immediately
-    playbackState.add(
-      playbackState.value.copyWith(
-        processingState: AudioProcessingState.buffering,
-      ),
-    );
+    // Optimistic: Signal buffering/loading immediately with correct controls for AA
+    _isInitialBuffering = true;
+    _expectingStop = true;
+    _currentPosition = Duration.zero;
+    _broadcastState(PlayerState.stopped);
 
     // 0. Safety Check: If current item is a STATION, force clear queue to ensure we use Radio Logic
     if (mediaItem.value?.extras?['type'] == 'station') {
@@ -1715,10 +1738,24 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> skipToPrevious({String? reason}) async {
+    // Auto-skips (triggered from error recovery/retry) must not restart
+    // playback after the user explicitly stopped.
+    if (_stopRequested && reason != null) {
+      LogService().log("SkipToPrevious suppressed after explicit stop (reason: $reason)");
+      return;
+    }
+
     LogService().log(
       "SkipToPrevious: ${reason ?? 'User initiated'}. Current: ${mediaItem.value?.title ?? 'None'}",
     );
     _startupLock = false;
+    _stopRequested = false; // A real skip means the user resumed playback
+
+    // Optimistic: Signal buffering/loading immediately with correct controls for AA
+    _isInitialBuffering = true;
+    _expectingStop = true;
+    _currentPosition = Duration.zero;
+    _broadcastState(PlayerState.stopped);
 
     // 0. Safety Check: If current item is a STATION, force clear queue to ensure we use Radio Logic
     if (mediaItem.value?.extras?['type'] == 'station') {
@@ -1924,6 +1961,10 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     }
 
+    // In a gapless swap, the NEXT player was already preloaded and is now
+    // resuming — actual playback starts immediately, so the buffering UI can
+    // be cleared right away.
+    _isInitialBuffering = false;
     _broadcastState(PlayerState.playing);
 
     // EXPLICIT DURATION FETCH:
@@ -2435,12 +2476,17 @@ class RadioAudioHandler extends BaseAudioHandler
         LogService().log("LOCAL PLAYBACK: Resuming player...");
         await _activateAudioSession();
         await _player.resume();
-        _isInitialBuffering = false;
 
         if (_currentSessionId == sessionId) {
           _expectingStop = false;
           _currentPosition = extras['startAt'] as Duration? ?? Duration.zero;
           _consecutiveErrorCount = 0;
+
+          // Do NOT clear _isInitialBuffering here (right after resume()).
+          // resume() only signals the start of buffering, not actual playback.
+          // The position listener will clear it once the position starts
+          // moving, i.e. once the stream is truly playing. This keeps the
+          // buffering UI visible on Android Auto until playback actually starts.
 
           _broadcastState(
             PlayerState.playing,
@@ -2693,6 +2739,9 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Unlock on valid play attempt
     _startupLock = false;
+
+    // A legitimate (re)start of playback clears any previous explicit stop.
+    _stopRequested = false;
 
     // Dispatcher
     if (extras != null && extras['type'] == 'playlist_song') {
@@ -3287,9 +3336,12 @@ class RadioAudioHandler extends BaseAudioHandler
     // Monitor Stuck Playback
     if (state == PlayerState.playing) {
       _startStuckMonitor();
-      // Keep _isInitialBuffering true until real playback is detected
-      _expectingStop =
-          false; // Safety: If we are playing, we are not expecting a stop anymore
+      // Don't clear _expectingStop while _isInitialBuffering is true:
+      // the old player may still report "playing" during a skip transition,
+      // and clearing _expectingStop here causes AA to lose the buffering/pause UI.
+      if (!_isInitialBuffering) {
+        _expectingStop = false;
+      }
       _startAnalyticsHeartbeat();
 
       // Reset error counter on successful playback (not buffering)
@@ -3314,8 +3366,8 @@ class RadioAudioHandler extends BaseAudioHandler
     final isPlaylistSong = mediaItem.value?.extras?['type'] == 'playlist_song';
 
     // Watchdog: If we stay in expectingStop for more than 10s, something is stuck.
-    // Force clear it.
-    if (_expectingStop && state != PlayerState.playing) {
+    // Force clear it. (Skipped entirely when the user explicitly stopped.)
+    if (_expectingStop && state != PlayerState.playing && !_stopRequested) {
       _stuckSecondsCount++;
       if (_stuckSecondsCount > 10) {
         LogService().log("Watchdog: Clearing stuck expectingStop state.");
@@ -3609,6 +3661,7 @@ class RadioAudioHandler extends BaseAudioHandler
       // Auto-start logic for Android Auto (First Run only)
       if (!_hasTriggeredEarlyStart &&
           !playbackState.value.playing &&
+          !_stopRequested &&
           (_stations.isNotEmpty || mediaItem.value != null)) {
         _hasTriggeredEarlyStart = true; // Re-using flag or create new if needed
         // Defer play to avoid blocking getChildren
@@ -3684,10 +3737,22 @@ class RadioAudioHandler extends BaseAudioHandler
       ];
     }
 
-    // 2. Radio Section (All Stations)
+    // 2. Radio Section — show ONLY the favorite stations selected in
+    // Manage Stations (manage_stations_screen). If none are selected, the
+    // list is empty (no fallback to all stations).
     if (parentMediaId == 'all_stations') {
       await _loadStationsFromPrefs();
-      return _stations.map((s) => _stationToMediaItem(s)).toList();
+      final prefs = await SharedPreferences.getInstance();
+      final favStr = prefs.getStringList('favorites') ?? [];
+      final favIds = favStr
+          .map((e) => int.tryParse(e) ?? -1)
+          .where((e) => e != -1)
+          .toSet();
+      _favoriteStationIds = favIds;
+      return _stations.where((s) => favIds.contains(s.id)).map((s) {
+        final item = _stationToMediaItem(s);
+        return item.copyWith(extras: {...?item.extras, 'origin': 'favorites'});
+      }).toList();
     }
 
     // 2. Favorites Radio List

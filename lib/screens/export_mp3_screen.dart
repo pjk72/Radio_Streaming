@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -14,6 +15,17 @@ import '../services/entitlement_service.dart';
 import '../services/rewarded_ad_service.dart';
 import '../utils/glass_utils.dart';
 
+class _PlaylistGroup {
+  final String id;
+  final String title;
+  final List<SavedSong> songs;
+  const _PlaylistGroup({
+    required this.id,
+    required this.title,
+    required this.songs,
+  });
+}
+
 class ExportMp3Screen extends StatefulWidget {
   const ExportMp3Screen({super.key});
 
@@ -24,6 +36,7 @@ class ExportMp3Screen extends StatefulWidget {
 class _ExportMp3ScreenState extends State<ExportMp3Screen> {
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _selectedSongIds = {};
+  final Set<String> _collapsedGroupIds = {};
   String? _selectedFolderPath;
   String _searchQuery = '';
   bool _isLoadingFolder = true;
@@ -143,6 +156,357 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
         _selectedSongIds.add(id);
       }
     });
+  }
+
+  List<_PlaylistGroup> _buildGroups(
+    RadioProvider radio,
+    List<SavedSong> filteredSongs,
+    String Function(String) translate,
+  ) {
+    if (filteredSongs.isEmpty) return [];
+
+    final List<_PlaylistGroup> groups = [];
+    final Set<String> groupedSongIds = {};
+
+    // Group songs by each playlist they belong to (a song may appear in several).
+    for (final playlist in radio.playlists) {
+      final groupSongs = filteredSongs
+          .where((s) => playlist.songs.any((ps) => ps.id == s.id))
+          .toList();
+      if (groupSongs.isEmpty) continue;
+      groups.add(
+        _PlaylistGroup(
+          id: playlist.id,
+          title: playlist.getDisplayName(translate),
+          songs: groupSongs,
+        ),
+      );
+      for (final s in groupSongs) {
+        groupedSongIds.add(s.id);
+      }
+    }
+
+    // Songs that belong to no playlist -> dedicated "Other" group.
+    final otherSongs = filteredSongs
+        .where((s) => !groupedSongIds.contains(s.id))
+        .toList();
+    if (otherSongs.isNotEmpty) {
+      groups.add(
+        _PlaylistGroup(
+          id: '__other__',
+          title: translate('export_mp3_other_group'),
+          songs: otherSongs,
+        ),
+      );
+    }
+
+    return groups;
+  }
+
+  int _countSelectedInGroup(_PlaylistGroup group) {
+    return group.songs.where((s) => _selectedSongIds.contains(s.id)).length;
+  }
+
+  bool _isGroupAllSelected(_PlaylistGroup group) {
+    return group.songs.isNotEmpty &&
+        group.songs.every((s) => _selectedSongIds.contains(s.id));
+  }
+
+  bool _isGroupCollapsed(String id) => _collapsedGroupIds.contains(id);
+
+  void _toggleGroupCollapsed(String id) {
+    setState(() {
+      if (!_collapsedGroupIds.add(id)) {
+        _collapsedGroupIds.remove(id);
+      }
+    });
+  }
+
+  void _toggleGroupSelection(_PlaylistGroup group) {
+    setState(() {
+      final selectAll = !_isGroupAllSelected(group);
+      for (final song in group.songs) {
+        if (selectAll) {
+          _selectedSongIds.add(song.id);
+        } else {
+          _selectedSongIds.remove(song.id);
+        }
+      }
+    });
+  }
+
+  Widget _buildGroupCard(
+    BuildContext context,
+    _PlaylistGroup group,
+    ThemeProvider themeProvider,
+    Color primaryColor,
+    bool isDark,
+    bool isExporting,
+  ) {
+    final int selectedInGroup = _countSelectedInGroup(group);
+    final bool allSelectedInGroup = _isGroupAllSelected(group);
+    final bool collapsed = _isGroupCollapsed(group.id);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: themeProvider.customBackgroundImageUrl != null
+            ? (isDark
+                ? themeProvider.currentPreset.surfaceColor.withValues(alpha: 0.20)
+                : Colors.white.withValues(alpha: 0.32))
+            : (isDark
+                ? themeProvider.currentPreset.surfaceColor.withValues(alpha: 0.5)
+                : Colors.white.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: allSelectedInGroup
+              ? primaryColor.withValues(alpha: 0.6)
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.14)
+                  : Colors.black.withValues(alpha: 0.1)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: allSelectedInGroup
+                ? primaryColor.withValues(alpha: 0.18)
+                : (isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : Colors.black.withValues(alpha: 0.03)),
+            child: InkWell(
+              onTap: isExporting ? null : () => _toggleGroupCollapsed(group.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      group.id == '__other__'
+                          ? Icons.folder_special_rounded
+                          : Icons.queue_music_rounded,
+                      size: 20,
+                      color: primaryColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            group.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$selectedInGroup / ${group.songs.length}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white54 : Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: '',
+                      onPressed: isExporting
+                          ? null
+                          : () => _toggleGroupSelection(group),
+                      icon: Icon(
+                        allSelectedInGroup
+                            ? Icons.check_box_rounded
+                            : Icons.check_box_outline_blank_rounded,
+                        size: 22,
+                        color: allSelectedInGroup
+                            ? primaryColor
+                            : (isDark ? Colors.white54 : Colors.grey.shade500),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: collapsed ? 0.5 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: isDark ? Colors.white54 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (!collapsed)
+            ...group.songs.map(
+              (song) => _buildSongRow(
+                context,
+                song,
+                themeProvider,
+                primaryColor,
+                isDark,
+                isExporting,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSongRow(
+    BuildContext context,
+    SavedSong song,
+    ThemeProvider themeProvider,
+    Color primaryColor,
+    bool isDark,
+    bool isExporting,
+  ) {
+    final isSelected = _selectedSongIds.contains(song.id);
+    final fileSize = _formatFileSize(song.localPath);
+    final durationStr = _formatDuration(song.duration);
+
+    return InkWell(
+      onTap: isExporting ? null : () => _toggleSongSelection(song.id),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor.withValues(alpha: 0.16) : Colors.transparent,
+          border: Border(
+            top: BorderSide(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.black.withValues(alpha: 0.05),
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Checkbox / Selection Icon
+            Icon(
+              isSelected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: isSelected
+                  ? primaryColor
+                  : (isDark ? Colors.white38 : Colors.grey.shade400),
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+
+            // Artwork
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: song.artUri != null && song.artUri!.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: song.artUri!,
+                        fit: BoxFit.cover,
+                        errorWidget: (c, u, e) => Container(
+                          color: Colors.black26,
+                          child: const Icon(
+                            Icons.music_note_rounded,
+                            color: Colors.white54,
+                          ),
+                        ),
+                      )
+                    : Container(
+                        color: Colors.black26,
+                        child: const Icon(
+                          Icons.music_note_rounded,
+                          color: Colors.white54,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            // Song Details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    song.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    song.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white60 : Colors.grey.shade700,
+                    ),
+                  ),
+                  if (fileSize.isNotEmpty || durationStr.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (durationStr.isNotEmpty) ...[
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 11,
+                            color: isDark ? Colors.white38 : Colors.grey.shade500,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            durationStr,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white38 : Colors.grey.shade500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        if (fileSize.isNotEmpty) ...[
+                          Icon(
+                            Icons.save_rounded,
+                            size: 11,
+                            color: isDark ? Colors.white38 : Colors.grey.shade500,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            fileSize,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white38 : Colors.grey.shade500,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _formatFileSize(String? filePath) {
@@ -1380,6 +1744,9 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
     final allDownloadedSongs = _getDownloadedSongs(radio);
     final filteredSongs = _filterSongs(allDownloadedSongs);
 
+    final List<_PlaylistGroup> groups =
+        _buildGroups(radio, filteredSongs, lang.translate);
+
     final int selectedCount = _selectedSongIds.length;
     final int totalCount = allDownloadedSongs.length;
     final bool allSelected =
@@ -1387,8 +1754,12 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
         filteredSongs.every((s) => _selectedSongIds.contains(s.id));
 
     final primaryColor = themeProvider.activePrimaryColor;
-    final surfaceColor = themeProvider.activeSurfaceColor;
     final exportService = MP3ExportService();
+
+    final cardColor = Theme.of(context).cardColor;
+    final contrastColor = cardColor.computeLuminance() > 0.5
+        ? Colors.black
+        : Colors.white;
 
     return AnimatedBuilder(
       animation: exportService,
@@ -1444,10 +1815,10 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                     decoration: BoxDecoration(
                       color: themeProvider.customBackgroundImageUrl != null
                           ? (isDark
-                              ? themeProvider.currentPreset.surfaceColor.withValues(alpha: 0.65)
+                              ? themeProvider.currentPreset.surfaceColor.withValues(alpha: 0.35)
                               : Colors.white.withValues(alpha: 0.50))
                           : (isDark
-                              ? themeProvider.currentPreset.cardColor.withValues(alpha: 0.85)
+                              ? themeProvider.currentPreset.cardColor.withValues(alpha: 0.55)
                               : Colors.white.withValues(alpha: 0.95)),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
@@ -1686,175 +2057,15 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                                     16,
                                     150 + MediaQuery.of(context).padding.bottom,
                                   ),
-                                  itemCount: filteredSongs.length,
+                                  itemCount: groups.length,
                                   itemBuilder: (context, index) {
-                                    final song = filteredSongs[index];
-                                    final isSelected = _selectedSongIds.contains(song.id);
-                                    final fileSize = _formatFileSize(song.localPath);
-                                    final durationStr = _formatDuration(song.duration);
-
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: Material(
-                                        color: Colors.transparent,
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(16),
-                                          onTap: isExporting
-                                              ? null
-                                              : () => _toggleSongSelection(song.id),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: isSelected
-                                                  ? primaryColor.withValues(alpha: 0.28)
-                                                  : (themeProvider.customBackgroundImageUrl != null
-                                                      ? (isDark
-                                                          ? themeProvider.currentPreset.surfaceColor.withValues(alpha: 0.20)
-                                                          : Colors.white.withValues(alpha: 0.88))
-                                                      : (isDark
-                                                          ? themeProvider.currentPreset.cardColor.withValues(alpha: 0.85)
-                                                          : Colors.white.withValues(alpha: 0.95))),
-                                              borderRadius: BorderRadius.circular(16),
-                                              border: Border.all(
-                                                color: isSelected
-                                                    ? primaryColor.withValues(alpha: 0.8)
-                                                    : (isDark
-                                                        ? Colors.white.withValues(alpha: 0.12)
-                                                        : Colors.black.withValues(alpha: 0.08)),
-                                              ),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                // Checkbox / Selection Icon
-                                                Icon(
-                                                  isSelected
-                                                      ? Icons.check_circle_rounded
-                                                      : Icons.radio_button_unchecked_rounded,
-                                                  color: isSelected
-                                                      ? primaryColor
-                                                      : (isDark
-                                                          ? Colors.white38
-                                                          : Colors.grey.shade400),
-                                                  size: 22,
-                                                ),
-                                                const SizedBox(width: 12),
-
-                                                // Artwork
-                                                ClipRRect(
-                                                  borderRadius: BorderRadius.circular(10),
-                                                  child: SizedBox(
-                                                    width: 48,
-                                                    height: 48,
-                                                    child: song.artUri != null &&
-                                                            song.artUri!.isNotEmpty
-                                                        ? CachedNetworkImage(
-                                                            imageUrl: song.artUri!,
-                                                            fit: BoxFit.cover,
-                                                            errorWidget: (c, u, e) =>
-                                                                Container(
-                                                              color: Colors.black26,
-                                                              child: const Icon(
-                                                                Icons.music_note_rounded,
-                                                                color: Colors.white54,
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : Container(
-                                                            color: Colors.black26,
-                                                            child: const Icon(
-                                                              Icons.music_note_rounded,
-                                                              color: Colors.white54,
-                                                            ),
-                                                          ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 12),
-
-                                                // Song Details
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment.start,
-                                                    children: [
-                                                      Text(
-                                                        song.title,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: isDark
-                                                              ? Colors.white
-                                                              : Colors.black87,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        song.artist,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: isDark
-                                                              ? Colors.white60
-                                                              : Colors.grey.shade700,
-                                                        ),
-                                                      ),
-                                                      if (fileSize.isNotEmpty ||
-                                                          durationStr.isNotEmpty) ...[
-                                                        const SizedBox(height: 4),
-                                                        Row(
-                                                          children: [
-                                                            if (durationStr.isNotEmpty) ...[
-                                                              Icon(
-                                                                Icons.schedule_rounded,
-                                                                size: 11,
-                                                                color: isDark
-                                                                    ? Colors.white38
-                                                                    : Colors.grey.shade500,
-                                                              ),
-                                                              const SizedBox(width: 3),
-                                                              Text(
-                                                                durationStr,
-                                                                style: TextStyle(
-                                                                  fontSize: 11,
-                                                                  color: isDark
-                                                                      ? Colors.white38
-                                                                      : Colors.grey.shade500,
-                                                                ),
-                                                              ),
-                                                              const SizedBox(width: 8),
-                                                            ],
-                                                            if (fileSize.isNotEmpty) ...[
-                                                              Icon(
-                                                                Icons.save_rounded,
-                                                                size: 11,
-                                                                color: isDark
-                                                                    ? Colors.white38
-                                                                    : Colors.grey.shade500,
-                                                              ),
-                                                              const SizedBox(width: 3),
-                                                              Text(
-                                                                fileSize,
-                                                                style: TextStyle(
-                                                                  fontSize: 11,
-                                                                  color: isDark
-                                                                      ? Colors.white38
-                                                                      : Colors.grey.shade500,
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ],
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
+                                    return _buildGroupCard(
+                                      context,
+                                      groups[index],
+                                      themeProvider,
+                                      primaryColor,
+                                      isDark,
+                                      isExporting,
                                     );
                                   },
                                 ),
@@ -1868,27 +2079,32 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
           // Bottom Control Panel: Folder selection + Start button
           bottomSheet: allDownloadedSongs.isEmpty
               ? null
-              : Container(
+              : ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                  child: Container(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                  decoration: BoxDecoration(
-                    color: themeProvider.customBackgroundImageUrl != null
-                        ? surfaceColor
-                        : (isDark
-                            ? surfaceColor.withValues(alpha: 0.95)
-                            : Colors.white.withValues(alpha: 0.95)),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  decoration: BoxDecoration(                  
+                    gradient: LinearGradient(                      
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        cardColor.withValues(alpha: 0.4),
+                        cardColor.withValues(alpha: 0.6),
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
                     border: Border(
                       top: BorderSide(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.1)
-                            : Colors.black.withValues(alpha: 0.08),
+                        color: contrastColor.withValues(alpha: 0.1),
+                        width: 0.5,
                       ),
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.15),
-                        blurRadius: 15,
-                        offset: const Offset(0, -4),
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, -5),
                       ),
                     ],
                   ),
@@ -2029,6 +2245,8 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                     ),
                   ),
                 ),
+              ),
+              ),
         );
       },
     );

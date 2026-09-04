@@ -724,6 +724,7 @@ final Map<String, String> en = {
   'export_mp3_group_artist_path': 'MusicStream/Artista/<Artist Name>/',
   'export_mp3_group_playlist': 'By Playlist Name',
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Playlist Name>/',
+  'export_mp3_other_group': 'Other',
   'tap_to_play_hint': 'Tap to play',
   'merge_folders': 'Merge Folders',
   'merge_into_playlist': 'Merge into Playlist',
