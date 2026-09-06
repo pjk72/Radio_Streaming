@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/saved_song.dart';
 import '../providers/radio_provider.dart';
@@ -41,11 +42,15 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
   String _searchQuery = '';
   bool _isLoadingFolder = true;
   bool _isProgressDialogShowing = false;
+  static const String _emptyInfoDismissedKey = 'export_mp3_empty_info_shown_v2';
 
   @override
   void initState() {
     super.initState();
     _loadInitialFolder();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeShowEmptyInfoDialog();
+    });
     _searchController.addListener(() {
       setState(() {
         _searchQuery = _searchController.text.trim().toLowerCase();
@@ -94,6 +99,170 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
         _isLoadingFolder = false;
       });
     }
+  }
+
+  Future<void> _maybeShowEmptyInfoDialog() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('export_mp3_empty_info_shown');
+      final alreadyShown = prefs.getBool(_emptyInfoDismissedKey) ?? false;
+      if (alreadyShown || !mounted) return;
+
+      final radio = Provider.of<RadioProvider>(context, listen: false);
+      final hasDownloads = _getDownloadedSongs(radio).isNotEmpty;
+      if (hasDownloads || !mounted) return;
+
+      _showEmptyInfoDialog(context);
+    } catch (_) {}
+  }
+
+  void _showEmptyInfoDialog(BuildContext ctx) {
+    final themeProvider = Provider.of<ThemeProvider>(ctx, listen: false);
+    final lang = Provider.of<LanguageProvider>(ctx, listen: false);
+    final isDark = themeProvider.isDarkMode;
+    final primaryColor = themeProvider.activePrimaryColor;
+    final surfaceColor = themeProvider.activeSurfaceColor;
+
+    bool dontShowAgain = false;
+
+    GlassUtils.showGlassDialog(
+      context: ctx,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            return AlertDialog(
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              contentPadding: EdgeInsets.zero,
+              content: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      primaryColor.withValues(alpha: 0.25),
+                      surfaceColor.withValues(alpha: 0.95),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: primaryColor.withValues(alpha: 0.4),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primaryColor.withValues(alpha: 0.2),
+                          ),
+                          child: Icon(
+                            Icons.download_rounded,
+                            size: 28,
+                            color: primaryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            lang.translate('export_mp3_empty_title'),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      lang.translate('export_mp3_empty_desc'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () {
+                        dialogSetState(() {
+                          dontShowAgain = !dontShowAgain;
+                        });
+                        SharedPreferences.getInstance().then((prefs) {
+                          prefs.setBool(_emptyInfoDismissedKey, dontShowAgain);
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              dontShowAgain
+                                  ? Icons.check_box_rounded
+                                  : Icons.check_box_outline_blank_rounded,
+                              size: 22,
+                              color: dontShowAgain
+                                  ? primaryColor
+                                  : (isDark ? Colors.white54 : Colors.grey.shade500),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                lang.translate('export_mp3_empty_dont_show_again'),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: isDark ? Colors.white70 : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () => Navigator.of(dialogCtx).pop(),
+                        child: Text(
+                          lang.translate('export_mp3_close'),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   List<SavedSong> _getDownloadedSongs(RadioProvider radio) {
@@ -2021,7 +2190,7 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(
-                                    Icons.download_for_offline_outlined,
+                                    Icons.download_rounded,
                                     size: 64,
                                     color: isDark ? Colors.white24 : Colors.grey.shade400,
                                   ),

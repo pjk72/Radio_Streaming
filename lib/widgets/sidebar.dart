@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
+import '../providers/theme_provider.dart';
+import '../services/backup_service.dart';
+import '../services/sign_in_flow.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -90,7 +93,9 @@ class Sidebar extends StatelessWidget {
                                   : null,
                               child: user?.photoUrl == null
                                   ? Icon(
-                                      Icons.person,
+                                      user == null
+                                          ? Icons.person_off_outlined
+                                          : Icons.person,
                                       size: 16,
                                       color: Theme.of(
                                         context,
@@ -132,6 +137,51 @@ class Sidebar extends StatelessWidget {
                               ],
                             ),
                           ),
+                          // Persistent "not signed in" indicator (Guest mode)
+                          if (user == null)
+                            Tooltip(
+                              message: langProvider.translate('sign_in'),
+                              child: InkWell(
+                                onTap: () async {
+                                  final radio = Provider.of<RadioProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                                  final auth = Provider.of<BackupService>(
+                                    context,
+                                    listen: false,
+                                  );
+                                  final theme = Provider.of<ThemeProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                                  await runGoogleSignInFlow(
+                                    context,
+                                    radio,
+                                    auth,
+                                    theme,
+                                  );
+                                },
+                                customBorder: const CircleBorder(),
+                                child: Container(
+                                  width: 26,
+                                  height: 26,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.error,
+                                  ),
+                                  child: Icon(
+                                    Icons.person_off_outlined,
+                                    size: 14,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onError,
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),

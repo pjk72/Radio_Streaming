@@ -39,7 +39,7 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _hasLoggedAndroidAutoStart = false;
   bool _isSwapping = false; // Flag for seamless transition state
   bool _isInAndroidAutoMode = false;
-  int _crossfadeSeconds = 7;
+  int _crossfadeSeconds = 15;
 
   static final AudioContext _appFocusContext = AudioContext(
     android: AudioContextAndroid(
@@ -621,7 +621,7 @@ class RadioAudioHandler extends BaseAudioHandler
     try {
       final prefs = await SharedPreferences.getInstance();
       _isACRCloudEnabled = prefs.getBool('acr_cloud_enabled') ?? true;
-      _crossfadeSeconds = prefs.getInt('crossfade_duration_v2') ?? 7;
+      _crossfadeSeconds = prefs.getInt('crossfade_duration_v2') ?? 15;
       LogService().log(
         "RadioAudioHandler: State Load - ACRCloud: $_isACRCloudEnabled, Crossfade: $_crossfadeSeconds",
       );

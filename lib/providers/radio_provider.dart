@@ -32,6 +32,7 @@ import '../services/background_tasks.dart';
 import '../services/backup_service.dart';
 import '../services/recognition_api_service.dart';
 import '../utils/genre_mapper.dart';
+import '../utils/artist_merge_utils.dart';
 import '../services/song_link_service.dart';
 
 import '../services/music_metadata_service.dart';
@@ -2614,6 +2615,296 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
+  /// Updates metadata (title, artist, album, artUri, genre, duration, releaseDate)
+  /// for a song identified by [originalSongId] across ALL playlists and unique songs.
+  /// Does NOT change localPath or rawStreamUrl (audio source preserved).
+  /// If [youtubeUrl] is provided, it is also applied (only when no audio source exists).
+  Future<void> updateSongMetadataGlobally({
+    required String originalSongId,
+    required String title,
+    required String artist,
+    String? album,
+    String? artUri,
+    String? genre,
+    Duration? duration,
+    String? releaseDate,
+    String? youtubeUrl,
+  }) async {
+    bool changed = false;
+
+    final targetTitle = _normalizeForMatching(title);
+    final targetArtist = _normalizeForMatching(artist);
+
+    for (int i = 0; i < _playlists.length; i++) {
+      final playlist = _playlists[i];
+      if (playlist.creator == 'local') continue;
+
+      final updatedSongsInPlaylist = List<SavedSong>.from(playlist.songs);
+      bool playlistChanged = false;
+
+      for (int j = 0; j < updatedSongsInPlaylist.length; j++) {
+        final song = updatedSongsInPlaylist[j];
+
+        bool isMatch = song.id == originalSongId;
+        if (!isMatch) {
+          isMatch =
+              _normalizeForMatching(song.title) == targetTitle &&
+              _normalizeForMatching(song.artist) == targetArtist;
+        }
+
+        if (isMatch) {
+          final bool hasNoAudioSource =
+              (song.localPath == null || song.localPath!.isEmpty) &&
+              (song.rawStreamUrl == null || song.rawStreamUrl!.isEmpty);
+
+          updatedSongsInPlaylist[j] = song.copyWith(
+            title: title,
+            artist: artist,
+            album: album ?? song.album,
+            artUri: artUri ?? song.artUri,
+            genre: genre ?? song.genre,
+            duration: duration ?? song.duration,
+            releaseDate: releaseDate ?? song.releaseDate,
+            youtubeUrl:
+                (hasNoAudioSource && youtubeUrl != null && youtubeUrl.isNotEmpty)
+                    ? youtubeUrl
+                    : song.youtubeUrl,
+          );
+          playlistChanged = true;
+        }
+      }
+
+      if (playlistChanged) {
+        _playlists[i] = playlist.copyWith(songs: updatedSongsInPlaylist);
+        changed = true;
+      }
+    }
+
+    // Also update in temporary/trending playlist if active
+    if (_tempPlaylist != null) {
+      final updatedTempSongs = List<SavedSong>.from(_tempPlaylist!.songs);
+      bool tempChanged = false;
+      for (int j = 0; j < updatedTempSongs.length; j++) {
+        final song = updatedTempSongs[j];
+        bool isMatch = song.id == originalSongId;
+        if (!isMatch) {
+          isMatch =
+              _normalizeForMatching(song.title) == targetTitle &&
+              _normalizeForMatching(song.artist) == targetArtist;
+        }
+        if (isMatch) {
+          final bool hasNoAudioSource =
+              (song.localPath == null || song.localPath!.isEmpty) &&
+              (song.rawStreamUrl == null || song.rawStreamUrl!.isEmpty);
+
+          updatedTempSongs[j] = song.copyWith(
+            title: title,
+            artist: artist,
+            album: album ?? song.album,
+            artUri: artUri ?? song.artUri,
+            genre: genre ?? song.genre,
+            duration: duration ?? song.duration,
+            releaseDate: releaseDate ?? song.releaseDate,
+            youtubeUrl:
+                (hasNoAudioSource && youtubeUrl != null && youtubeUrl.isNotEmpty)
+                    ? youtubeUrl
+                    : song.youtubeUrl,
+          );
+          tempChanged = true;
+        }
+      }
+      if (tempChanged) {
+        _tempPlaylist = _tempPlaylist!.copyWith(songs: updatedTempSongs);
+        changed = true;
+      }
+    }
+
+    // Update _allUniqueSongs
+    for (int i = 0; i < _allUniqueSongs.length; i++) {
+      final song = _allUniqueSongs[i];
+      bool isMatch = song.id == originalSongId;
+      if (!isMatch) {
+        isMatch =
+            _normalizeForMatching(song.title) == targetTitle &&
+            _normalizeForMatching(song.artist) == targetArtist;
+      }
+      if (isMatch) {
+        final bool hasNoAudioSource =
+            (song.localPath == null || song.localPath!.isEmpty) &&
+            (song.rawStreamUrl == null || song.rawStreamUrl!.isEmpty);
+
+        _allUniqueSongs[i] = song.copyWith(
+          title: title,
+          artist: artist,
+          album: album ?? song.album,
+          artUri: artUri ?? song.artUri,
+          genre: genre ?? song.genre,
+          duration: duration ?? song.duration,
+          releaseDate: releaseDate ?? song.releaseDate,
+          youtubeUrl:
+              (hasNoAudioSource && youtubeUrl != null && youtubeUrl.isNotEmpty)
+                  ? youtubeUrl
+                  : song.youtubeUrl,
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      // Update current playing state if the song matches
+      if (_audioOnlySongId == originalSongId ||
+          _normalizeForMatching(_currentTrack) == targetTitle) {
+        _currentTrack = title;
+        _currentArtist = artist;
+        if (album != null) _currentAlbum = album;
+        if (artUri != null) _currentAlbumArt = artUri;
+        if (genre != null) _currentGenre = genre;
+        if (releaseDate != null) _currentReleaseDate = releaseDate;
+      }
+
+      await _playlistService.saveAll(_playlists);
+      notifyListeners();
+    }
+  }
+
+  /// Renames the canonical artist of every song whose normalized artist key
+  /// matches [sourceArtist] to [targetArtist], across ALL playlists (including
+  /// local ones), the unique songs list and the current playing state.
+  /// Returns the number of songs updated.
+  Future<int> mergeArtist(String sourceArtist, String targetArtist) async {
+    if (sourceArtist.trim().isEmpty ||
+        targetArtist.trim().isEmpty ||
+        sourceArtist.trim() == targetArtist.trim()) {
+      return 0;
+    }
+    final sourceKey = MergeUtils.artistGroupingKey(sourceArtist);
+    if (sourceKey.isEmpty) return 0;
+
+    int changedCount = 0;
+
+    for (int i = 0; i < _playlists.length; i++) {
+      final playlist = _playlists[i];
+      final updatedSongs = List<SavedSong>.from(playlist.songs);
+      bool playlistChanged = false;
+      for (int j = 0; j < updatedSongs.length; j++) {
+        final song = updatedSongs[j];
+        if (MergeUtils.artistGroupingKey(song.artist) == sourceKey &&
+            song.artist != targetArtist) {
+          updatedSongs[j] = song.copyWith(artist: targetArtist);
+          playlistChanged = true;
+          changedCount++;
+        }
+      }
+      if (playlistChanged) {
+        _playlists[i] = playlist.copyWith(songs: updatedSongs);
+      }
+    }
+
+    for (int i = 0; i < _allUniqueSongs.length; i++) {
+      final song = _allUniqueSongs[i];
+      if (MergeUtils.artistGroupingKey(song.artist) == sourceKey &&
+          song.artist != targetArtist) {
+        _allUniqueSongs[i] = song.copyWith(artist: targetArtist);
+      }
+    }
+
+    if (_tempPlaylist != null) {
+      final updatedTempSongs = List<SavedSong>.from(_tempPlaylist!.songs);
+      bool tempChanged = false;
+      for (int j = 0; j < updatedTempSongs.length; j++) {
+        final song = updatedTempSongs[j];
+        if (MergeUtils.artistGroupingKey(song.artist) == sourceKey &&
+            song.artist != targetArtist) {
+          updatedTempSongs[j] = song.copyWith(artist: targetArtist);
+          tempChanged = true;
+        }
+      }
+      if (tempChanged) {
+        _tempPlaylist = _tempPlaylist!.copyWith(songs: updatedTempSongs);
+      }
+    }
+
+    if (MergeUtils.artistGroupingKey(_currentArtist) == sourceKey &&
+        _currentArtist != targetArtist) {
+      _currentArtist = targetArtist;
+    }
+
+    if (changedCount > 0) {
+      await _playlistService.saveAll(_playlists);
+      notifyListeners();
+    }
+    return changedCount;
+  }
+
+  /// Renames the canonical album of every song whose normalized album key
+  /// matches [sourceAlbum] to [targetAlbum], across ALL playlists (including
+  /// local ones), the unique songs list and the current playing state.
+  /// Returns the number of songs updated.
+  Future<int> mergeAlbum(String sourceAlbum, String targetAlbum) async {
+    if (sourceAlbum.trim().isEmpty ||
+        targetAlbum.trim().isEmpty ||
+        sourceAlbum.trim() == targetAlbum.trim()) {
+      return 0;
+    }
+    final sourceKey = MergeUtils.albumGroupingKey(sourceAlbum);
+    if (sourceKey.isEmpty) return 0;
+
+    int changedCount = 0;
+
+    for (int i = 0; i < _playlists.length; i++) {
+      final playlist = _playlists[i];
+      final updatedSongs = List<SavedSong>.from(playlist.songs);
+      bool playlistChanged = false;
+      for (int j = 0; j < updatedSongs.length; j++) {
+        final song = updatedSongs[j];
+        if (MergeUtils.albumGroupingKey(song.album) == sourceKey &&
+            song.album != targetAlbum) {
+          updatedSongs[j] = song.copyWith(album: targetAlbum);
+          playlistChanged = true;
+          changedCount++;
+        }
+      }
+      if (playlistChanged) {
+        _playlists[i] = playlist.copyWith(songs: updatedSongs);
+      }
+    }
+
+    for (int i = 0; i < _allUniqueSongs.length; i++) {
+      final song = _allUniqueSongs[i];
+      if (MergeUtils.albumGroupingKey(song.album) == sourceKey &&
+          song.album != targetAlbum) {
+        _allUniqueSongs[i] = song.copyWith(album: targetAlbum);
+      }
+    }
+
+    if (_tempPlaylist != null) {
+      final updatedTempSongs = List<SavedSong>.from(_tempPlaylist!.songs);
+      bool tempChanged = false;
+      for (int j = 0; j < updatedTempSongs.length; j++) {
+        final song = updatedTempSongs[j];
+        if (MergeUtils.albumGroupingKey(song.album) == sourceKey &&
+            song.album != targetAlbum) {
+          updatedTempSongs[j] = song.copyWith(album: targetAlbum);
+          tempChanged = true;
+        }
+      }
+      if (tempChanged) {
+        _tempPlaylist = _tempPlaylist!.copyWith(songs: updatedTempSongs);
+      }
+    }
+
+    if (MergeUtils.albumGroupingKey(_currentAlbum) == sourceKey &&
+        _currentAlbum != targetAlbum) {
+      _currentAlbum = targetAlbum;
+    }
+
+    if (changedCount > 0) {
+      await _playlistService.saveAll(_playlists);
+      notifyListeners();
+    }
+    return changedCount;
+  }
+
   /// Scans the entire library and ensures all occurrences of the same song
   /// share the same localPath if at least one of them is downloaded.
   Future<void> syncAllDownloadStatuses() async {
@@ -4994,7 +5285,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _startupStationId = prefs.getInt(_keyStartupStationId);
     // _isACRCloudEnabled is now dynamically derived.
     _isCompactView = prefs.getBool(_keyCompactView) ?? false;
-    _crossfadeDuration = prefs.getInt(_keyCrossfadeDuration) ?? 7;
+    _crossfadeDuration = prefs.getInt(_keyCrossfadeDuration) ?? 15;
     if (_audioHandler is RadioAudioHandler) {
       _audioHandler.setCrossfadeDuration(
         _crossfadeDuration,
@@ -6484,6 +6775,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             .toList(),
         'theme_settings': {
           'theme_id': prefs.getString('theme_id'),
+          'primary_color': _themeProvider?.activePrimaryColor.toARGB32(),
           'custom_primary': prefs.getInt('custom_primary'),
           'custom_bg': prefs.getInt('custom_bg'),
           'custom_card': prefs.getInt('custom_card'),
@@ -6772,6 +7064,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         }
         if (theme['custom_primary'] != null) {
           await prefs.setInt('custom_primary', theme['custom_primary']);
+        } else if (theme['primary_color'] != null) {
+          // Preset-based theme: restore the exact primary color that was applied
+          await prefs.setInt('custom_primary', theme['primary_color']);
         }
         if (theme['custom_bg'] != null) {
           await prefs.setInt('custom_bg', theme['custom_bg']);

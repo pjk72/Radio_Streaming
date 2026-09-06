@@ -12,7 +12,11 @@ import '../providers/language_provider.dart';
 import '../providers/theme_provider.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.autoCheck = true});
+
+  // When pushed on top of an existing HomeScreen (e.g. from the guest
+  // indicator), skip the auto-login redirect so the screen stays open.
+  final bool autoCheck;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -33,7 +37,9 @@ class _LoginScreenState extends State<LoginScreen> {
         ).setShowGlobalBanner(false);
       }
     });
-    _checkAutoLogin();
+    if (widget.autoCheck) {
+      _checkAutoLogin();
+    }
   }
 
   Future<void> _checkAutoLogin() async {
@@ -76,10 +82,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _goToHome() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-    );
+    // If LoginScreen was pushed on top of an existing HomeScreen (e.g. from the
+    // guest indicator), just pop back to it, since backup restore already
+    // refreshed the provider state. Otherwise boot a fresh HomeScreen.
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    }
   }
 
   Future<void> _handleGoogleLogin() async {

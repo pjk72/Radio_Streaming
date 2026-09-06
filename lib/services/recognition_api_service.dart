@@ -130,10 +130,27 @@ class RecognitionApiService {
       if (_activeClient == null) return null;
       LogService().log("RecognitionAPI: Resolved URL: $resolvedUrl");
 
-      // 2. Download ~3 seconds of the stream (roughly 80KB of mp3)
+      // 2. Download a sample of the stream (~80KB). For finite MP3/direct
+      // audio the sample is taken from the middle of the track (the beginning
+      // often has silence / an intro that prevents recognition). Container
+      // streams (WebM/MP4) are kept from the start because a random mid-file
+      // byte range would not be decodable.
+      final int? totalLength = await _probeStreamLength(resolvedUrl);
+      int startOffset = 0;
+      if (totalLength != null && totalLength > 2 * (80 * 1024)) {
+        if (_isContainerStream(resolvedUrl)) {
+          startOffset = 0;
+        } else {
+          // Take the chunk around the middle of the track to improve
+          // recognition reliability (avoids silence / intros).
+          startOffset = (totalLength ~/ 2) - (40 * 1024);
+          if (startOffset < 0) startOffset = 0;
+        }
+      }
       final Uint8List? audioData = await _downloadStreamChunk(
         resolvedUrl,
         80 * 1024,
+        startOffset: startOffset,
       );
 
       if (_activeClient == null) return null;
@@ -539,17 +556,29 @@ class RecognitionApiService {
     _activeClient = null;
   }
 
-  Future<Uint8List?> _downloadStreamChunk(String url, int maxSize) async {
+  Future<Uint8List?> _downloadStreamChunk(String url, int maxSize,
+      {int startOffset = 0}) async {
     if (_activeClient == null) return null;
     try {
       final request = http.Request('GET', Uri.parse(url));
       request.headers['User-Agent'] = 'VLC/3.0.18 LibVLC/3.0.18';
+      // Fetch a single byte range. googlevideo / HLS / direct streams answer
+      // with 206 Partial Content; accepting both 200 and 206 avoids dropping
+      // valid audio just because it is served as a byte range.
+      final int end = startOffset + maxSize - 1;
+      request.headers['Range'] = 'bytes=$startOffset-$end';
+      request.headers['Accept'] = '*/*';
 
       final response = await _activeClient!
           .send(request)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200 && response.statusCode != 206) {
+        LogService().log(
+          "RecognitionAPI: Download failed, HTTP ${response.statusCode}",
+        );
+        return null;
+      }
 
       final List<int> buffer = [];
       await for (var chunk in response.stream) {
@@ -558,9 +587,54 @@ class RecognitionApiService {
         if (buffer.length >= maxSize) break;
       }
       return Uint8List.fromList(buffer);
+    } catch (e) {
+      LogService().log("RecognitionAPI: Download error: $e");
+      return null;
+    }
+  }
+
+  /// Returns the total byte length of the resource, when the server reports it
+  /// via a ranged request (Content-Range). Returns null when the stream is live
+  /// / unknown length.
+  Future<int?> _probeStreamLength(String url) async {
+    if (_activeClient == null) return null;
+    try {
+      final request = http.Request('GET', Uri.parse(url));
+      request.headers['User-Agent'] = 'VLC/3.0.18 LibVLC/3.0.18';
+      request.headers['Range'] = 'bytes=0-0';
+      request.headers['Accept'] = '*/*';
+
+      final response = await _activeClient!
+          .send(request)
+          .timeout(const Duration(seconds: 15));
+
+      final contentRange = response.headers['content-range'];
+      if (contentRange != null) {
+        // Format: "bytes 0-0/<total>" possibly with "*" as total for live.
+        final match = RegExp(r'bytes\s+\d+-\d+/(\d+)').firstMatch(contentRange);
+        if (match != null) {
+          return int.tryParse(match.group(1)!);
+        }
+      }
+      return null;
     } catch (_) {
       return null;
     }
+  }
+
+  /// True when the URL points to a containerized stream (WebM/MP4/M4A) where a
+  /// random mid-file byte range would not be decodable.
+  bool _isContainerStream(String url) {
+    if (url.toLowerCase().contains('itag=')) return true;
+    final lower = url.toLowerCase();
+    return lower.contains('audio/webm') ||
+        lower.contains('video/webm') ||
+        lower.contains('video/mp4') ||
+        lower.contains('audio/mp4') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.m4a') ||
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.m4p');
   }
 
   Future<String> _resolveStreamUrl(String initialUrl) async {

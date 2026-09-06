@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
+import '../providers/theme_provider.dart';
+import '../services/backup_service.dart';
+import '../services/sign_in_flow.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/sidebar.dart';
 
@@ -125,6 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildTopHeader(BuildContext context) {
     // Only for Mobile/Tablet (!isDesktop)
     final langProvider = Provider.of<LanguageProvider>(context);
+    final isGuest = !Provider.of<RadioProvider>(context).backupService.isSignedIn;
 
     return Container(
       padding: EdgeInsets.only(
@@ -145,36 +149,81 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Navigation Menu (Underline Style)
-          SizedBox(
-            height: 40,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: [
-                  _buildTopNavItem(
-                    Icons.whatshot,
-                    langProvider.translate('tab_trending'),
-                    0,
+          Row(
+            children: [
+              // Persistent "not signed in" indicator (Guest mode) - left side
+              if (isGuest)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, right: 8),
+                  child: Tooltip(
+                    message: langProvider.translate('sign_in'),
+                    child: InkWell(
+                      onTap: () async {
+                        final radio = Provider.of<RadioProvider>(
+                          context,
+                          listen: false,
+                        );
+                        final auth = Provider.of<BackupService>(
+                          context,
+                          listen: false,
+                        );
+                        final theme = Provider.of<ThemeProvider>(
+                          context,
+                          listen: false,
+                        );
+                        await runGoogleSignInFlow(context, radio, auth, theme);
+                      },
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        child: Icon(
+                          Icons.person_off_outlined,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onError,
+                        ),
+                      ),
+                    ),
                   ),
-                  _buildTopNavItem(
-                    Icons.playlist_play_rounded,
-                    langProvider.translate('tab_library'),
-                    1,
+                ),
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: [
+                        _buildTopNavItem(
+                          Icons.whatshot,
+                          langProvider.translate('tab_trending'),
+                          0,
+                        ),
+                        _buildTopNavItem(
+                          Icons.playlist_play_rounded,
+                          langProvider.translate('tab_library'),
+                          1,
+                        ),
+                        _buildTopNavItem(
+                          Icons.radio,
+                          langProvider.translate('tab_radio'),
+                          2,
+                        ),
+                        _buildTopNavItem(
+                          Icons.settings,
+                          langProvider.translate('settings'),
+                          3,
+                        ),
+                      ],
+                    ),
                   ),
-                  _buildTopNavItem(
-                    Icons.radio,
-                    langProvider.translate('tab_radio'),
-                    2,
-                  ),
-                  _buildTopNavItem(
-                    Icons.settings,
-                    langProvider.translate('settings'),
-                    3,
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),

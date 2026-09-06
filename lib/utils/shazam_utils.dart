@@ -9,8 +9,14 @@ class ShazamUtils {
 
   static Future<void> checkAndShowShazamInfoDialog(
     BuildContext context,
-    VoidCallback onContinue,
-  ) async {
+    VoidCallback onContinue, {
+    bool showInfo = true,
+  }) async {
+    if (!showInfo) {
+      onContinue();
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final bool isDismissed = prefs.getBool(_dismissedKey) ?? false;
 
