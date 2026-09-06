@@ -79,8 +79,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   bool _showPlaylistSearch = false;
   StreamSubscription? _enrichmentSub;
   bool _isShowingSyncDialog = false;
-  List<MergeSuggestion>? _cachedMergeSuggestions;
-  String _mergeCacheKey = '';
+  List<MergeSuggestion>? _cachedArtistMergeSuggestions;
+  String _artistMergeCacheKey = '';
+  bool _isCalculatingArtistMerges = false;
+
+  List<MergeSuggestion>? _cachedAlbumMergeSuggestions;
+  String _albumMergeCacheKey = '';
+  bool _isCalculatingAlbumMerges = false;
   static const String _dismissedArtistMergesKey = 'dismissed_artist_merges';
   static const String _dismissedAlbumMergesKey = 'dismissed_album_merges';
   final Set<String> _dismissedMergePairs = {};
@@ -1473,11 +1478,17 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     Widget buildModeBtn(String title, MetadataViewMode mode) {
       final bool selected = _viewMode == mode;
       return GestureDetector(
-        onTap: () {
-          if (_viewMode == mode) return;
-          _modeSwitchPending = true;
+        onTap: () async {
+          if (_viewMode == mode || _modeSwitchPending) return;
+          setState(() {
+            _modeSwitchPending = true;
+          });
+          // Yield to event loop so CircularProgressIndicator mounts and spins fluidly
+          await Future.delayed(const Duration(milliseconds: 120));
+          if (!mounted) return;
           setState(() {
             _viewMode = mode;
+            _modeSwitchPending = false;
             _searchController.clear();
             _lastScrolledSongId = null;
             _lastScrolledCategoryItem = null;
@@ -1485,12 +1496,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           if (mode == MetadataViewMode.artists) {
             provider.enrichAllArtists();
           }
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            setState(() {
-              _modeSwitchPending = false;
-            });
-          });
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -6173,26 +6178,70 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     final key =
         '${isAlbum ? 'album:' : 'artist:'}${distinct.join('\u0001')}'
         '|${artistDistinct.join('\u0001')}|$dismissedKey';
-    if (key == _mergeCacheKey && _cachedMergeSuggestions != null) {
-      return _cachedMergeSuggestions!;
+
+    if (isAlbum) {
+      if (key == _albumMergeCacheKey && _cachedAlbumMergeSuggestions != null) {
+        return _cachedAlbumMergeSuggestions!;
+      }
+      if (!_isCalculatingAlbumMerges) {
+        _isCalculatingAlbumMerges = true;
+        Future.microtask(() {
+          final suggestions = MergeUtils.findMergeSuggestions(
+            songs.map((s) => s.album),
+            groupingKey: grouping,
+            companions: songs.map((s) => s.artist),
+            companionWeight: 0.35,
+          )
+              .where((s) {
+            final pairKey = _dismissPairKey(
+              grouping(s.source),
+              grouping(s.target),
+            );
+            return !dismissedSet.contains(pairKey);
+          })
+              .toList();
+          if (mounted) {
+            setState(() {
+              _cachedAlbumMergeSuggestions = suggestions;
+              _albumMergeCacheKey = key;
+              _isCalculatingAlbumMerges = false;
+            });
+          }
+        });
+      }
+      return _cachedAlbumMergeSuggestions ?? const <MergeSuggestion>[];
+    } else {
+      if (key == _artistMergeCacheKey && _cachedArtistMergeSuggestions != null) {
+        return _cachedArtistMergeSuggestions!;
+      }
+      if (!_isCalculatingArtistMerges) {
+        _isCalculatingArtistMerges = true;
+        Future.microtask(() {
+          final suggestions = MergeUtils.findMergeSuggestions(
+            songs.map((s) => s.artist),
+            groupingKey: grouping,
+            companions: null,
+            companionWeight: 0.0,
+          )
+              .where((s) {
+            final pairKey = _dismissPairKey(
+              grouping(s.source),
+              grouping(s.target),
+            );
+            return !dismissedSet.contains(pairKey);
+          })
+              .toList();
+          if (mounted) {
+            setState(() {
+              _cachedArtistMergeSuggestions = suggestions;
+              _artistMergeCacheKey = key;
+              _isCalculatingArtistMerges = false;
+            });
+          }
+        });
+      }
+      return _cachedArtistMergeSuggestions ?? const <MergeSuggestion>[];
     }
-    final suggestions = MergeUtils.findMergeSuggestions(
-      songs.map((s) => isAlbum ? s.album : s.artist),
-      groupingKey: grouping,
-      companions: isAlbum ? songs.map((s) => s.artist) : null,
-      companionWeight: isAlbum ? 0.35 : 0.0,
-    )
-        .where((s) {
-      final pairKey = _dismissPairKey(
-        grouping(s.source),
-        grouping(s.target),
-      );
-      return !dismissedSet.contains(pairKey);
-    })
-        .toList();
-    _cachedMergeSuggestions = suggestions;
-    _mergeCacheKey = key;
-    return suggestions;
   }
 
   Widget _buildMergeBanner(
