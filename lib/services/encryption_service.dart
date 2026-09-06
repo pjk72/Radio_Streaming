@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
@@ -148,7 +147,7 @@ class EncryptionService {
   }
 
   /// Decrypts the given file to a temporary file and returns it.
-  Future<File> decryptToTempFile(String filePath) async {
+  Future<File> decryptToTempFile(String filePath, {String? targetExtension}) async {
     final file = File(filePath);
     if (!await file.exists()) {
       throw Exception('File not found: $filePath');
@@ -158,14 +157,22 @@ class EncryptionService {
     final decryptedBytes = encryptData(bytes); // XOR works both ways
 
     final tempDir = await getTemporaryDirectory();
-    final String extension = filePath.endsWith('.mp3')
-        ? '.mp3'
-        : filePath.endsWith('.mp3')
-        ? '.mp3'
-        : '.tmp';
+    String extension = targetExtension ?? '';
+    if (extension.isEmpty) {
+      if (filePath.endsWith('.mp3')) {
+        extension = '.mp3';
+      } else if (filePath.endsWith('.mp4')) {
+        extension = '.mp4';
+      } else if (filePath.endsWith('.m4a')) {
+        extension = '.m4a';
+      } else if (filePath.endsWith('.webm')) {
+        extension = '.webm';
+      } else {
+        // For .mst and encrypted files, default to .mp4 which is compatible with both ExoPlayer video and audio
+        extension = '.mp4';
+      }
+    }
 
-    // Use a unique name based on hash or timestamp to avoid collisions but allow caching if needed
-    // For now, unique every time to be safe.
     final tempFile = File(
       '${tempDir.path}/temp_decrypted_${DateTime.now().millisecondsSinceEpoch}$extension',
     );

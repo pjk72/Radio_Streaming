@@ -25,6 +25,10 @@ import '../services/backup_service.dart';
 import 'trending_details_screen.dart';
 import 'artist_details_screen.dart';
 import '../widgets/youtube_popup.dart';
+import '../widgets/local_video_popup.dart';
+import '../services/encryption_service.dart';
+import '../services/log_service.dart';
+import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'local_library_screen.dart';
 import 'song_metadata_details_screen.dart';
@@ -4077,28 +4081,147 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       ),
     );
 
+    // 1. PRIORITY: Check for local downloaded or exported video
+    if (song.localPath != null && song.localPath!.trim().isNotEmpty) {
+      final localFilePath = song.localPath!.trim();
+      File localFile = File(localFilePath);
+
+      // Handle URL-encoded paths if needed
+      if (!localFile.existsSync() && localFilePath.contains('%')) {
+        try {
+          final decoded = Uri.decodeFull(localFilePath);
+          final decodedFile = File(decoded);
+          if (decodedFile.existsSync()) {
+            localFile = decodedFile;
+          }
+        } catch (_) {}
+      }
+
+      if (localFile.existsSync()) {
+        final lowerPath = localFile.path.toLowerCase();
+        // Check if the file is known to be pure audio (mp3, aac, flac, wav, ogg, etc.)
+        final bool isPureAudioFormat = lowerPath.endsWith('.mp3') ||
+            lowerPath.endsWith('.aac') ||
+            lowerPath.endsWith('.flac') ||
+            lowerPath.endsWith('.wav') ||
+            lowerPath.endsWith('.ogg') ||
+            lowerPath.endsWith('.opus');
+
+        if (!isPureAudioFormat) {
+          File? videoFileToPlay;
+          File? tempFileToDelete;
+          VideoPlayerController? localController;
+
+          try {
+            final bool isEncrypted = lowerPath.contains('_secure') ||
+                lowerPath.endsWith('.mst') ||
+                lowerPath.contains('offline_music');
+
+            if (isEncrypted) {
+              final decrypted = await EncryptionService()
+                  .decryptToTempFile(localFile.path, targetExtension: '.mp4')
+                  .timeout(const Duration(seconds: 4));
+              if (decrypted.existsSync() && decrypted.lengthSync() > 0) {
+                videoFileToPlay = decrypted;
+                tempFileToDelete = decrypted;
+              }
+            } else {
+              videoFileToPlay = localFile;
+            }
+
+            if (videoFileToPlay != null) {
+              localController = VideoPlayerController.file(videoFileToPlay);
+              await localController.initialize().timeout(const Duration(seconds: 3));
+
+              // Verify that the media actually contains a video stream
+              if (localController.value.isInitialized &&
+                  localController.value.size.width > 0 &&
+                  localController.value.size.height > 0) {
+                if (!mounted) {
+                  localController.dispose();
+                  tempFileToDelete?.delete().catchError((_) => tempFileToDelete!);
+                  return;
+                }
+
+                // Dismiss loading spinner dialog
+                Navigator.of(context, rootNavigator: true).pop();
+
+                // Pause background radio audio playback
+                provider.pause();
+
+                if (!mounted) return;
+                GlassUtils.showGlassDialog(
+                  context: context,
+                  builder: (_) => LocalVideoPopup(
+                    controller: localController!,
+                    tempFileToDeleteOnDispose: tempFileToDelete,
+                    songName: song.title,
+                    artistName: song.artist,
+                    albumName: song.album,
+                    artworkUrl: song.artUri,
+                  ),
+                );
+                return;
+              } else {
+                LogService().log(
+                  "Local file for '${song.title}' has no video stream. Falling back to YouTube.",
+                );
+                await localController.dispose();
+                localController = null;
+                tempFileToDelete?.delete().catchError((_) => tempFileToDelete!);
+              }
+            }
+          } catch (localErr) {
+            LogService().log(
+              "Local video playback attempt failed for '${song.title}': $localErr. Falling back to YouTube.",
+            );
+            if (localController != null) {
+              try {
+                await localController.dispose();
+              } catch (_) {}
+            }
+            if (tempFileToDelete != null) {
+              try {
+                if (tempFileToDelete.existsSync()) {
+                  tempFileToDelete.delete().catchError((_) => tempFileToDelete!);
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    }
+
+    // 2. FALLBACK: Fast direct YouTube resolution for local and streaming songs
     try {
-      final links = await provider
-          .resolveLinks(
-            title: song.title,
-            artist: song.artist,
-            youtubeUrl: song.youtubeUrl,
-            appleMusicUrl: song.appleMusicUrl,
-          )
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => throw TimeoutException("Connection timed out"),
-          );
+      String? url = song.youtubeUrl;
+
+      // If no direct YouTube URL, search YouTube directly
+      if (url == null || url.isEmpty) {
+        url = await provider
+            .searchYoutubeVideo(song.title, song.artist)
+            .timeout(const Duration(seconds: 6));
+      }
+
+      // If still not found, try resolveLinks as deep fallback
+      if (url == null || url.isEmpty) {
+        try {
+          final links = await provider
+              .resolveLinks(
+                title: song.title,
+                artist: song.artist,
+                youtubeUrl: song.youtubeUrl,
+                appleMusicUrl: song.appleMusicUrl,
+              )
+              .timeout(const Duration(seconds: 4));
+          url = links['youtube'];
+        } catch (_) {}
+      }
 
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
 
-      var url = links['youtube'] ?? song.youtubeUrl;
-      if (url == null || url.isEmpty) {
-        url = await provider.searchYoutubeVideo(song.title, song.artist);
-      }
-
-      if (url != null) {
+      if (url != null && url.isNotEmpty) {
         final videoId = YoutubePlayer.convertUrlToId(url);
         if (videoId != null) {
           provider.pause();
@@ -4117,6 +4240,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
         }
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(lang.translate('youtube_link_not_found'))),
         );
