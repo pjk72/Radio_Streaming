@@ -171,6 +171,100 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Map<String, SavedSong> get historyMetadata => _historyMetadata;
   List<dynamic> get weeklyPlayLog => List.unmodifiable(_weeklyPlayLog);
 
+  /// Records a song play event into statistics from a video player popup
+  /// (YouTubePopup or LocalVideoPopup). Mirrors the logic of
+  /// RadioAudioHandler._recordSongInHistory so that video plays are counted
+  /// in the same stats as normal audio plays.
+  Future<void> recordVideoSongPlay({
+    required String songId,
+    required String title,
+    required String artist,
+    String? album,
+    String? artUri,
+    String? genre,
+    String? releaseDate,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // --- Update phone play count ---
+      final pStr = prefs.getString(_keyUserPlayHistory);
+      final Map<String, int> phoneHistory =
+          pStr != null ? Map<String, int>.from(jsonDecode(pStr)) : {};
+      phoneHistory[songId] = (phoneHistory[songId] ?? 0) + 1;
+      await prefs.setString(_keyUserPlayHistory, jsonEncode(phoneHistory));
+
+      // --- Update recent songs order ---
+      final order = prefs.getStringList(_keyRecentSongsOrder) ?? [];
+      order.remove(songId);
+      order.add(songId);
+      if (order.length > 50) order.removeAt(0);
+      await prefs.setStringList(_keyRecentSongsOrder, order);
+
+      // --- Update history metadata ---
+      final mStr = prefs.getString(_keyHistoryMetadata);
+      final Map<String, SavedSong> metadata = mStr != null
+          ? Map<String, dynamic>.from(jsonDecode(mStr))
+                .map((k, v) => MapEntry(k, SavedSong.fromJson(v)))
+          : {};
+
+      // Preserve existing genre/releaseDate if not provided
+      final existing = metadata[songId];
+      final resolvedGenre =
+          (genre != null && genre.isNotEmpty) ? genre : existing?.genre;
+      final resolvedReleaseDate = (releaseDate != null && releaseDate.isNotEmpty)
+          ? releaseDate
+          : existing?.releaseDate;
+
+      metadata[songId] = SavedSong(
+        id: songId,
+        title: title,
+        artist: artist,
+        album: album ?? 'Unknown Album',
+        artUri: artUri,
+        dateAdded: existing?.dateAdded ?? DateTime.now(),
+        genre: resolvedGenre,
+        releaseDate: resolvedReleaseDate,
+      );
+      await prefs.setString(
+        _keyHistoryMetadata,
+        jsonEncode(metadata.map((k, v) => MapEntry(k, v.toJson()))),
+      );
+
+      // --- Update weekly play log ---
+      final wStr = prefs.getString(_keyWeeklyPlayLog);
+      List<dynamic> weeklyLog =
+          wStr != null ? List<dynamic>.from(jsonDecode(wStr)) : [];
+
+      final now = DateTime.now();
+      final ninetyDaysAgo = now.subtract(const Duration(days: 90));
+      weeklyLog.add({
+        'id': songId,
+        'ts': now.toIso8601String(),
+        'source': 'video',
+      });
+      weeklyLog.removeWhere((event) {
+        try {
+          return DateTime.parse(event['ts']).isBefore(ninetyDaysAgo);
+        } catch (_) {
+          return true;
+        }
+      });
+      await prefs.setString(_keyWeeklyPlayLog, jsonEncode(weeklyLog));
+
+      // --- Update in-memory state so Stats screen refreshes immediately ---
+      _userPlayHistory[songId] = (phoneHistory[songId] ?? 1);
+      _historyMetadata[songId] = metadata[songId]!;
+      _recentSongsOrder = order;
+      _weeklyPlayLog = weeklyLog;
+      notifyListeners();
+
+      LogService().log('Video Song Play Recorded: $songId ($title)');
+    } catch (e) {
+      LogService().log('Error recording video song play: $e');
+    }
+  }
+
   // --- Background Enrichment Tracking ---
   final Set<String> _enrichingPlaylists = {};
   Set<String> get enrichingPlaylists => _enrichingPlaylists;

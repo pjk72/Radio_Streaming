@@ -4155,10 +4155,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   builder: (_) => LocalVideoPopup(
                     controller: localController!,
                     tempFileToDeleteOnDispose: tempFileToDelete,
+                    songId: song.id,
                     songName: song.title,
                     artistName: song.artist,
                     albumName: song.album,
                     artworkUrl: song.artUri,
+                    genre: song.genre,
+                    releaseDate: song.releaseDate,
                   ),
                 );
                 return;
@@ -4230,10 +4233,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             context: context,
             builder: (_) => YouTubePopup(
               videoId: videoId,
+              songId: song.id,
               songName: song.title,
               artistName: song.artist,
               albumName: song.album,
               artworkUrl: song.artUri,
+              genre: song.genre,
+              releaseDate: song.releaseDate,
             ),
           );
         } else {

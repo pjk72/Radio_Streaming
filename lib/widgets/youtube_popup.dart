@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -7,24 +8,31 @@ import '../widgets/lyrics_components.dart';
 import 'package:flutter/services.dart';
 import '../services/entitlement_service.dart';
 import '../providers/language_provider.dart';
+import '../providers/radio_provider.dart';
 import 'package:provider/provider.dart';
 
 class YouTubePopup extends StatefulWidget {
   final String videoId;
   final bool initialAudioOnly;
+  final String? songId;
   final String? songName;
   final String? artistName;
   final String? albumName;
   final String? artworkUrl;
+  final String? genre;
+  final String? releaseDate;
 
   const YouTubePopup({
     super.key,
     required this.videoId,
     this.initialAudioOnly = false,
+    this.songId,
     this.songName,
     this.artistName,
     this.albumName,
     this.artworkUrl,
+    this.genre,
+    this.releaseDate,
   });
 
   @override
@@ -37,6 +45,11 @@ class _YouTubePopupState extends State<YouTubePopup> {
   bool _isFullScreen = false;
   bool _isInPipMode = false;
   bool _isHD = false;
+
+  // Statistics tracking
+  Timer? _statsTimer;
+  int _playbackSecondsAccumulated = 0;
+  bool _statsRecorded = false;
 
   // Lyrics State
   LyricsData? _lyrics;
@@ -68,6 +81,39 @@ class _YouTubePopupState extends State<YouTubePopup> {
         }
       }
     });
+
+    // Start statistics tracking timer (records after 30s of real playback)
+    _startStatsTimer();
+  }
+
+  void _startStatsTimer() {
+    _statsTimer?.cancel();
+    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_videoController.value.isPlaying) {
+        _playbackSecondsAccumulated++;
+      }
+      if (_playbackSecondsAccumulated >= 30 && !_statsRecorded) {
+        _statsRecorded = true;
+        _statsTimer?.cancel();
+        _recordStats();
+      }
+    });
+  }
+
+  void _recordStats() {
+    final id = widget.songId ?? widget.videoId;
+    final title = widget.songName ?? id;
+    final artist = widget.artistName ?? '';
+    if (!mounted) return;
+    Provider.of<RadioProvider>(context, listen: false).recordVideoSongPlay(
+      songId: id,
+      title: title,
+      artist: artist,
+      album: widget.albumName,
+      artUri: widget.artworkUrl,
+      genre: widget.genre,
+      releaseDate: widget.releaseDate,
+    );
   }
 
   void _initializeVideoPlayer({bool forceHD = false}) {
@@ -313,6 +359,7 @@ class _YouTubePopupState extends State<YouTubePopup> {
 
   @override
   void dispose() {
+    _statsTimer?.cancel();
     _lyricsOverlayEntry?.remove();
     _videoController.dispose();
     super.dispose();

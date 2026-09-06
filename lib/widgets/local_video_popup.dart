@@ -9,24 +9,31 @@ import 'package:provider/provider.dart';
 import '../services/entitlement_service.dart';
 import '../services/lyrics_service.dart';
 import '../providers/language_provider.dart';
+import '../providers/radio_provider.dart';
 import '../widgets/lyrics_components.dart';
 
 class LocalVideoPopup extends StatefulWidget {
   final VideoPlayerController controller;
   final File? tempFileToDeleteOnDispose;
+  final String? songId;
   final String? songName;
   final String? artistName;
   final String? albumName;
   final String? artworkUrl;
+  final String? genre;
+  final String? releaseDate;
 
   const LocalVideoPopup({
     super.key,
     required this.controller,
     this.tempFileToDeleteOnDispose,
+    this.songId,
     this.songName,
     this.artistName,
     this.albumName,
     this.artworkUrl,
+    this.genre,
+    this.releaseDate,
   });
 
   @override
@@ -40,6 +47,11 @@ class _LocalVideoPopupState extends State<LocalVideoPopup> {
   bool _isInPipMode = false;
   bool _showControls = true;
   Timer? _controlsTimer;
+
+  // Statistics tracking
+  Timer? _statsTimer;
+  int _playbackSecondsAccumulated = 0;
+  bool _statsRecorded = false;
 
   // Seeking state
   bool _isDraggingSlider = false;
@@ -67,6 +79,9 @@ class _LocalVideoPopupState extends State<LocalVideoPopup> {
     // Setup auto-hide controls
     _startControlsTimer();
 
+    // Start statistics tracking timer (records after 30s of real playback)
+    _startStatsTimer();
+
     // Fetch lyrics if entitled
     final entitlements = Provider.of<EntitlementService>(
       context,
@@ -85,6 +100,36 @@ class _LocalVideoPopupState extends State<LocalVideoPopup> {
         }
       }
     });
+  }
+
+  void _startStatsTimer() {
+    _statsTimer?.cancel();
+    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_controller.value.isPlaying) {
+        _playbackSecondsAccumulated++;
+      }
+      if (_playbackSecondsAccumulated >= 30 && !_statsRecorded) {
+        _statsRecorded = true;
+        _statsTimer?.cancel();
+        _recordStats();
+      }
+    });
+  }
+
+  void _recordStats() {
+    final id = widget.songId ?? widget.songName ?? 'unknown_video';
+    final title = widget.songName ?? id;
+    final artist = widget.artistName ?? '';
+    if (!mounted) return;
+    Provider.of<RadioProvider>(context, listen: false).recordVideoSongPlay(
+      songId: id,
+      title: title,
+      artist: artist,
+      album: widget.albumName,
+      artUri: widget.artworkUrl,
+      genre: widget.genre,
+      releaseDate: widget.releaseDate,
+    );
   }
 
   void _videoListener() {
@@ -305,6 +350,7 @@ class _LocalVideoPopupState extends State<LocalVideoPopup> {
 
   @override
   void dispose() {
+    _statsTimer?.cancel();
     _controlsTimer?.cancel();
     _lyricsOverlayEntry?.remove();
     _controller.removeListener(_videoListener);
