@@ -40,7 +40,6 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
   final Set<String> _collapsedGroupIds = {};
   String? _selectedFolderPath;
   String _searchQuery = '';
-  bool _isLoadingFolder = true;
   bool _isProgressDialogShowing = false;
   static const String _emptyInfoDismissedKey = 'export_mp3_empty_info_shown_v2';
 
@@ -93,10 +92,10 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
   }
 
   Future<void> _loadInitialFolder() async {
-    _selectedFolderPath = await _getFixedDestinationFolder();
+    final folder = await _getFixedDestinationFolder();
     if (mounted) {
       setState(() {
-        _isLoadingFolder = false;
+        _selectedFolderPath = folder;
       });
     }
   }
@@ -1113,7 +1112,7 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: isDark ? Colors.white70 : Colors.black87,
                               side: BorderSide(
-                                color: isDark ? Colors.white24 : Colors.black12,
+                                color: isDark ? Colors.transparent : Colors.transparent,
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
@@ -2282,98 +2281,6 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Destination Folder Bar (Fixed to Music/MusicStream)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.05)
-                                : Colors.black.withValues(alpha: 0.04),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.1)
-                                  : Colors.black.withValues(alpha: 0.08),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.folder_rounded,
-                                size: 22,
-                                color: primaryColor,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      lang.translate('export_mp3_destination'),
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark
-                                            ? Colors.white54
-                                            : Colors.grey.shade600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _isLoadingFolder
-                                          ? 'Loading...'
-                                          : (_selectedFolderPath ?? 'Music/MusicStream'),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: primaryColor.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.download_rounded,
-                                      size: 13,
-                                      color: primaryColor,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Download',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: primaryColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
                         // Start Export Button
                         SizedBox(
                           width: double.infinity,

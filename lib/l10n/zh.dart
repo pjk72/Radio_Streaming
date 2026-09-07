@@ -718,7 +718,7 @@ final Map<String, String> zh = {
   'export_mp3_group_playlist': '按播放列表名称',
   'export_mp3_group_playlist_path': 'MusicStream/播放列表/<播放列表名称>/',
   'export_mp3_other_group': '其他',
-  'export_mp3_group_confirm': '开始导出',
+  'export_mp3_group_confirm': '开始',
   'create_merged_playlist': '创建合并的播放列表',
   'enter_playlist_name': '新播放列表名称',
   'reload': '手动识别',

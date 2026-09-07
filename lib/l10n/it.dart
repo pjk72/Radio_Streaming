@@ -781,7 +781,7 @@ final Map<String, String> it = {
   'other_device_folders': 'Altre Cartelle del Dispositivo',
   'musicstream_badge': 'MusicStream',
   'preparing_songs': 'Preparazione delle canzoni',
-  'export_mp3_group_confirm': 'Avvia l\'esportazione',
+  'export_mp3_group_confirm': 'Avvia',
   'export_mp3_empty_desc': 'TODO: Before exporting, download each song using the download button in the playlists. Only songs downloaded through the app can be exported.',
 };
 

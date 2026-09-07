@@ -756,7 +756,7 @@ final Map<String, String> fr = {
   'export_mp3_group_playlist': 'Par nom de liste de lecture',
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Nom de la liste de lecture>/',
   'export_mp3_other_group': 'Autres',
-  'export_mp3_group_confirm': 'Démarrer l\'exportation',
+  'export_mp3_group_confirm': 'Démarrer',
   'create_merged_playlist': 'Créer une liste de lecture fusionnée',
   'reload': 'Reconnaissance manuelle',
   'artist_merge_banner': '{0} artistes similaires à fusionner',

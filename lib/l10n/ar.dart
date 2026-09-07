@@ -713,7 +713,7 @@ final Map<String, String> ar = {
   'export_mp3_group_playlist': 'حسب اسم قائمة التشغيل',
   'export_mp3_group_playlist_path': 'MusicStream/قائمة التشغيل/<اسم قائمة التشغيل>/',
   'export_mp3_other_group': 'آخر',
-  'export_mp3_group_confirm': 'ابدأ التصدير',
+  'export_mp3_group_confirm': 'ابدأ',
   'musicstream_folders': 'مجلدات MusicStream',
   'other_device_folders': 'مجلدات الأجهزة الأخرى',
   'musicstream_badge': 'ميوزيك ستريم',

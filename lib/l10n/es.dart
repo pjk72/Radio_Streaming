@@ -752,7 +752,7 @@ final Map<String, String> es = {
   'export_mp3_group_playlist': 'Por nombre de lista de reproducción',
   'export_mp3_group_playlist_path': 'MusicStream/Lista de reproducción/<Nombre de la lista de reproducción>/',
   'export_mp3_other_group': 'Otros',
-  'export_mp3_group_confirm': 'Iniciar exportación',
+  'export_mp3_group_confirm': 'Iniciar',
   'merge_folders': 'Fusionar carpetas',
   'merge_into_playlist': 'Fusionarse en la lista de reproducción',
   'create_merged_playlist': 'Crear lista de reproducción fusionada',

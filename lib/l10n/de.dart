@@ -752,7 +752,7 @@ final Map<String, String> de = {
   'export_mp3_group_playlist': 'Nach Playlist-Name',
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Playlist-Name>/',
   'export_mp3_other_group': 'Andere',
-  'export_mp3_group_confirm': 'Starten Sie den Export',
+  'export_mp3_group_confirm': 'Starten',
   'merged_playlist_created': 'Playlist „{0}“ mit {1}-Songs erstellt!',
   'select_folders_to_merge': 'Wählen Sie mindestens 2 Ordner zum Zusammenführen aus.',
   'folders_selected': 'ausgewählt',

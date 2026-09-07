@@ -867,7 +867,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     } catch (_) {}
 
     final bool isLocalSong =
-        song.localPath != null || song.id.startsWith('local_');
+        (song.localPath != null &&
+            song.localPath!.isNotEmpty &&
+            File(song.localPath!).existsSync()) ||
+        song.id.startsWith('local_');
     final bool hideOnline = isLocalPlaylist || isLocalSong;
 
     GlassUtils.showGlassBottomSheet(
@@ -3643,7 +3646,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              if (song.isDownloaded)
+              if (song.isFilePresent)
                 _buildMenuItem(
                   context,
                   icon: Icons.check_circle_rounded,
@@ -5025,7 +5028,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                               ),
                                             ),
                                       if (song.localPath != null &&
-                                          song.localPath!.isNotEmpty)
+                                          song.localPath!.isNotEmpty &&
+                                          File(song.localPath!).existsSync())
                                         Positioned(
                                           bottom: 1,
                                           right: 5,
@@ -8181,7 +8185,8 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                   ),
                           ),
                           if (widget.groupSongs.first.localPath != null &&
-                              widget.groupSongs.first.localPath!.isNotEmpty)
+                              widget.groupSongs.first.localPath!.isNotEmpty &&
+                              File(widget.groupSongs.first.localPath!).existsSync())
                             Positioned(
                               bottom: 2,
                               right: 2,

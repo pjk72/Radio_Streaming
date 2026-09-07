@@ -1,3 +1,5 @@
+import 'dart:io';
+
 class SavedSong {
   final String id;
   final String title;
@@ -125,6 +127,15 @@ class SavedSong {
         path.endsWith('.mst') ||
         path.contains('offline_music') ||
         path.contains('com.fazio.musicstream/download');
+  }
+
+  /// Returns true only if the song has a local file path that also physically
+  /// exists on disk. Use this instead of [isDownloaded] for UI decisions about
+  /// whether a song is "local" — [isDownloaded] only checks the path string
+  /// pattern and will return true even when the file has been deleted.
+  bool get isFilePresent {
+    if (!isDownloaded) return false;
+    return File(localPath!).existsSync();
   }
 
   bool get isYoutubeArt {

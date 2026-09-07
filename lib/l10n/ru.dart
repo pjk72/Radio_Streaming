@@ -741,7 +741,7 @@ final Map<String, String> ru = {
   'export_mp3_group_playlist': 'По названию плейлиста',
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Имя списка воспроизведения>/',
   'export_mp3_other_group': 'Другое',
-  'export_mp3_group_confirm': 'Начать экспорт',
+  'export_mp3_group_confirm': 'Начать',
   'merge_folders': 'Объединить папки',
   'reload': 'Ручное распознавание',
   'artist_merge_title': 'Объединить похожих исполнителей',

@@ -1026,7 +1026,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       (s) => s?.id == trackId || "${_normalize(s?.title ?? '')}|${_normalize(s?.artist ?? '')}" == trackKey,
       orElse: () => null,
     );
-    final isDownloaded = savedSongInstance?.isDownloaded ?? false;
+    final isDownloaded = savedSongInstance?.isFilePresent ?? false;
 
     return Container(
       decoration: BoxDecoration(

@@ -211,9 +211,7 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
     }
 
     if ((result == null || result['track'] == null) &&
-        _song.isDownloaded &&
-        _song.localPath != null &&
-        _song.localPath!.isNotEmpty) {
+        _song.isFilePresent) {
       final Uint8List? bytes = await _readLocalSongBytes(_song.localPath!);
       if (bytes != null && bytes.isNotEmpty) {
         try {

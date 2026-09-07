@@ -740,7 +740,7 @@ final Map<String, String> pt = {
   'export_mp3_group_playlist': 'Por nome da lista de reprodução',
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Nome da lista de reprodução>/',
   'export_mp3_other_group': 'Outros',
-  'export_mp3_group_confirm': 'Iniciar exportação',
+  'export_mp3_group_confirm': 'Iniciar',
   'reload': 'Reconhecimento manual',
   'artist_merge_banner': '{0} artistas semelhantes para fundir',
   'artist_merge_banner_desc': 'Verifique e unifique nomes de artistas duplicados',
