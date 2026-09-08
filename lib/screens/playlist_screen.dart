@@ -179,6 +179,41 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     }
   }
 
+  static String _formatProposalDuration(Duration? d) {
+    if (d == null || d.inSeconds <= 0) return '';
+    final minutes = d.inMinutes;
+    final seconds = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  static String _formatProposalSize(int? bytes) {
+    if (bytes == null || bytes <= 0) return '';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  static String _getProposalExtension(String path) {
+    final dotIndex = path.lastIndexOf('.');
+    if (dotIndex != -1 && dotIndex < path.length - 1) {
+      final ext = path.substring(dotIndex + 1);
+      if (ext.length <= 5 && !ext.contains('/') && !ext.contains('\\')) {
+        return ext.toUpperCase();
+      }
+    }
+    return '';
+  }
+
+  static String _getProposalParentFolder(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final segments = normalized.split('/').where((s) => s.isNotEmpty).toList();
+    if (segments.length >= 2) {
+      return segments[segments.length - 2];
+    }
+    return '';
+  }
+
   void _showUpgradeDialog(BuildContext context, RadioProvider provider) {
     // Creating a local set to track selected proposals.
 
@@ -197,13 +232,17 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             final proposals = provider.upgradeProposals;
             return AlertDialog(
               surfaceTintColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 24),
               title: Text(
                 lang.translate('local_files_found'),
                 style: const TextStyle(color: Colors.white),
               ),
               content: Container(
-                constraints: const BoxConstraints(maxHeight: 440),
-                width: double.maxFinite,
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
+                  maxWidth: MediaQuery.of(context).size.width,
+                ),
+                width: MediaQuery.of(context).size.width,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,8 +336,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: proposals.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 6),
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(height: 8),
                         itemBuilder: (context, index) {
                           final p = proposals[index];
                           final uniqueId = "${p.playlistId}_${p.songId}";
@@ -312,59 +351,61 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           return Container(
                             decoration: BoxDecoration(
                               color: isNeverShowAgain
-                                  ? Colors.redAccent.withValues(alpha: 0.1)
+                                  ? Colors.redAccent.withValues(alpha: 0.08)
                                   : (isSelected
                                       ? Theme.of(context)
                                           .primaryColor
-                                          .withValues(alpha: 0.18)
+                                          .withValues(alpha: 0.16)
                                       : Colors.white.withValues(alpha: 0.04)),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: isNeverShowAgain
-                                    ? Colors.redAccent.withValues(alpha: 0.45)
+                                    ? Colors.redAccent.withValues(alpha: 0.4)
                                     : (isSelected
                                         ? Theme.of(context)
                                             .primaryColor
                                             .withValues(alpha: 0.5)
-                                        : Colors.white.withValues(alpha: 0.08)),
+                                        : Colors.white.withValues(alpha: 0.09)),
+                                width: isSelected ? 1.4 : 1.0,
                               ),
                             ),
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 6,
-                              ),
+                              padding: const EdgeInsets.all(10),
                               child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Checkbox to select for upgrade
-                                  Checkbox(
-                                    value: isSelected && !isNeverShowAgain,
-                                    activeColor: Theme.of(context).primaryColor,
-                                    checkColor: Colors.white,
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    visualDensity: VisualDensity.compact,
-                                    onChanged: isNeverShowAgain
-                                        ? null
-                                        : (val) {
-                                            setState(() {
-                                              if (val == true) {
-                                                selectedProposalIds.add(
-                                                  uniqueId,
-                                                );
-                                              } else {
-                                                selectedProposalIds.remove(
-                                                  uniqueId,
-                                                );
-                                              }
-                                            });
-                                          },
+                                  // Checkbox aligned to top
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Checkbox(
+                                      value: isSelected && !isNeverShowAgain,
+                                      activeColor: Theme.of(context).primaryColor,
+                                      checkColor: Colors.white,
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      onChanged: isNeverShowAgain
+                                          ? null
+                                          : (val) {
+                                              setState(() {
+                                                if (val == true) {
+                                                  selectedProposalIds.add(
+                                                    uniqueId,
+                                                  );
+                                                } else {
+                                                  selectedProposalIds.remove(
+                                                    uniqueId,
+                                                  );
+                                                }
+                                              });
+                                            },
+                                    ),
                                   ),
-                                  const SizedBox(width: 4),
-                                  // Song details
+                                  const SizedBox(width: 6),
+                                  // Song & Offline Details
                                   Expanded(
                                     child: InkWell(
-                                      borderRadius: BorderRadius.circular(8),
+                                      borderRadius: BorderRadius.circular(10),
                                       onTap: isNeverShowAgain
                                           ? null
                                           : () {
@@ -385,47 +426,60 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                             CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Text(
-                                            p.songTitle,
-                                            style: TextStyle(
-                                              color: isNeverShowAgain
-                                                  ? Colors.white38
-                                                  : Colors.white,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                              decoration: isNeverShowAgain
-                                                  ? TextDecoration.lineThrough
-                                                  : null,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          if (p.songArtist.isNotEmpty) ...[
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              p.songArtist,
-                                              style: TextStyle(
-                                                color: isNeverShowAgain
-                                                    ? Colors.white24
-                                                    : Colors.white70,
-                                                fontSize: 11,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                          const SizedBox(height: 3),
+                                          // 1. ONLINE SONG SECTION
                                           Row(
                                             children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 5,
+                                                  vertical: 1.5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blueAccent
+                                                      .withValues(alpha: 0.18),
+                                                  borderRadius:
+                                                      BorderRadius.circular(5),
+                                                  border: Border.all(
+                                                    color: Colors.blueAccent
+                                                        .withValues(alpha: 0.35),
+                                                    width: 0.8,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.cloud_outlined,
+                                                      size: 10,
+                                                      color: Colors.blueAccent,
+                                                    ),
+                                                    const SizedBox(width: 3),
+                                                    Text(
+                                                      lang.translate(
+                                                        'online_track',
+                                                      ),
+                                                      style: const TextStyle(
+                                                        color:
+                                                            Colors.blueAccent,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
                                               Icon(
                                                 Icons.queue_music_rounded,
-                                                size: 12,
+                                                size: 11,
                                                 color: isNeverShowAgain
                                                     ? Colors.white24
                                                     : Theme.of(context)
                                                         .primaryColor,
                                               ),
-                                              const SizedBox(width: 4),
+                                              const SizedBox(width: 3),
                                               Flexible(
                                                 child: Text(
                                                   p.playlistName.isNotEmpty
@@ -448,17 +502,516 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                                 ),
                                               ),
                                               if (isNeverShowAgain) ...[
-                                                const SizedBox(width: 6),
+                                                const SizedBox(width: 4),
                                                 Text(
                                                   '(${lang.translate('never_ask_badge')})',
                                                   style: const TextStyle(
                                                     color: Colors.redAccent,
-                                                    fontSize: 10,
+                                                    fontSize: 9,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
                                               ],
                                             ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            p.songTitle,
+                                            style: TextStyle(
+                                              color: isNeverShowAgain
+                                                  ? Colors.white38
+                                                  : Colors.white,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              decoration: isNeverShowAgain
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (p.songArtist.isNotEmpty) ...[
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              p.songArtist,
+                                              style: TextStyle(
+                                                color: isNeverShowAgain
+                                                    ? Colors.white24
+                                                    : Colors.white70,
+                                                fontSize: 11,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+
+                                          // 2. REPLACEMENT CONNECTOR
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 6,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Divider(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.1),
+                                                    height: 1,
+                                                    thickness: 0.8,
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.arrow_downward_rounded,
+                                                    size: 12,
+                                                    color: isNeverShowAgain
+                                                        ? Colors.white24
+                                                        : Theme.of(context)
+                                                            .primaryColor,
+                                                  ),
+                                                ),
+                                                Expanded(
+                                                  child: Divider(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.1),
+                                                    height: 1,
+                                                    thickness: 0.8,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          // 3. OFFLINE FILE DETAILS (Card)
+                                          Builder(
+                                            builder: (context) {
+                                              final fileName =
+                                                  p.localDisplayName ??
+                                                      p.localPath
+                                                          .split('/')
+                                                          .last
+                                                          .split('\\')
+                                                          .last;
+                                              final ext =
+                                                  _getProposalExtension(
+                                                p.localPath,
+                                              );
+                                              final parentFolder =
+                                                  _getProposalParentFolder(
+                                                p.localPath,
+                                              );
+                                              final durStr =
+                                                  _formatProposalDuration(
+                                                p.localDuration,
+                                              );
+                                              final sizeStr =
+                                                  _formatProposalSize(
+                                                p.localSize,
+                                              );
+                                              final hasLocalTags =
+                                                  (p.localTitle != null &&
+                                                          p.localTitle!
+                                                              .isNotEmpty) ||
+                                                      (p.localArtist != null &&
+                                                          p.localArtist!
+                                                              .isNotEmpty &&
+                                                          p.localArtist !=
+                                                              '<unknown>');
+
+                                              return Container(
+                                                padding: const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black.withValues(
+                                                    alpha: 0.28,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: isNeverShowAgain
+                                                        ? Colors.white
+                                                            .withValues(
+                                                              alpha: 0.05,
+                                                            )
+                                                        : Colors.tealAccent
+                                                            .withValues(
+                                                              alpha: 0.2,
+                                                            ),
+                                                    width: 0.8,
+                                                  ),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    // Header: Offline match indicator + format badge
+                                                    Row(
+                                                      children: [
+                                                        Icon(
+                                                          Icons
+                                                              .download_done_rounded,
+                                                          size: 12,
+                                                          color: isNeverShowAgain
+                                                              ? Colors.white30
+                                                              : Colors
+                                                                  .tealAccent,
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                        Text(
+                                                          lang.translate(
+                                                            'offline_match',
+                                                          ),
+                                                          style: TextStyle(
+                                                            color: isNeverShowAgain
+                                                                ? Colors.white30
+                                                                : Colors
+                                                                    .tealAccent,
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                        const Spacer(),
+                                                        if (ext.isNotEmpty)
+                                                          Container(
+                                                            padding:
+                                                                const EdgeInsets
+                                                                    .symmetric(
+                                                              horizontal: 4,
+                                                              vertical: 1,
+                                                            ),
+                                                            decoration:
+                                                                BoxDecoration(
+                                                              color: Colors.white
+                                                                  .withValues(
+                                                                alpha: 0.09,
+                                                              ),
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                4,
+                                                              ),
+                                                            ),
+                                                            child: Text(
+                                                              ext,
+                                                              style:
+                                                                  const TextStyle(
+                                                                color: Colors
+                                                                    .white70,
+                                                                fontSize: 9,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                letterSpacing:
+                                                                    0.5,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 5),
+
+                                                    // File name
+                                                    Row(
+                                                      children: [
+                                                        Icon(
+                                                          Icons
+                                                              .audio_file_outlined,
+                                                          size: 12,
+                                                          color: isNeverShowAgain
+                                                              ? Colors.white24
+                                                              : Colors.white60,
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                        Expanded(
+                                                          child: Text(
+                                                            fileName,
+                                                            style: TextStyle(
+                                                              color:
+                                                                  isNeverShowAgain
+                                                                      ? Colors
+                                                                          .white38
+                                                                      : Colors
+                                                                          .white,
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w500,
+                                                            ),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+
+                                                    // ID3 Tag info (Title / Artist if available)
+                                                    if (hasLocalTags) ...[
+                                                      const SizedBox(height: 3),
+                                                      Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.tag_rounded,
+                                                            size: 11,
+                                                            color: isNeverShowAgain
+                                                                ? Colors.white24
+                                                                : Colors
+                                                                    .tealAccent
+                                                                    .withValues(
+                                                                  alpha: 0.7,
+                                                                ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
+                                                          Expanded(
+                                                            child: Text(
+                                                              "${p.localTitle ?? ''}${p.localArtist != null && p.localArtist!.isNotEmpty && p.localArtist != '<unknown>' ? ' • ${p.localArtist}' : ''}",
+                                                              style: TextStyle(
+                                                                color: isNeverShowAgain
+                                                                    ? Colors
+                                                                        .white24
+                                                                    : Colors
+                                                                        .white
+                                                                        .withValues(
+                                                                      alpha:
+                                                                          0.75,
+                                                                    ),
+                                                                fontSize: 10.5,
+                                                              ),
+                                                              maxLines: 1,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+
+                                                    // Parent Folder / Path info
+                                                    if (parentFolder
+                                                        .isNotEmpty) ...[
+                                                      const SizedBox(height: 3),
+                                                      Tooltip(
+                                                        message: p.localPath,
+                                                        child: Row(
+                                                          children: [
+                                                            const Icon(
+                                                              Icons
+                                                                  .folder_open_rounded,
+                                                              size: 11,
+                                                              color: Colors
+                                                                  .white38,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 4,
+                                                            ),
+                                                            Expanded(
+                                                              child: Text(
+                                                                "../$parentFolder/$fileName",
+                                                                style:
+                                                                    const TextStyle(
+                                                                  color: Colors
+                                                                      .white38,
+                                                                  fontSize: 9.5,
+                                                                ),
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ],
+
+                                                    // Metadata badges (Duration, File Size, Album)
+                                                    if (durStr.isNotEmpty ||
+                                                        sizeStr.isNotEmpty ||
+                                                        (p.localAlbum != null &&
+                                                            p.localAlbum!
+                                                                .isNotEmpty &&
+                                                            p.localAlbum !=
+                                                                '<unknown>')) ...[
+                                                      const SizedBox(height: 6),
+                                                      Wrap(
+                                                        spacing: 6,
+                                                        runSpacing: 4,
+                                                        children: [
+                                                          if (durStr.isNotEmpty)
+                                                            Container(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .symmetric(
+                                                                horizontal: 5,
+                                                                vertical: 2,
+                                                              ),
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: Colors
+                                                                    .white
+                                                                    .withValues(
+                                                                  alpha: 0.07,
+                                                                ),
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(
+                                                                  4,
+                                                                ),
+                                                              ),
+                                                              child: Row(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
+                                                                children: [
+                                                                  const Icon(
+                                                                    Icons
+                                                                        .access_time_rounded,
+                                                                    size: 9,
+                                                                    color: Colors
+                                                                        .white60,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 3,
+                                                                  ),
+                                                                  Text(
+                                                                    durStr,
+                                                                    style:
+                                                                        const TextStyle(
+                                                                      color: Colors
+                                                                          .white70,
+                                                                      fontSize:
+                                                                          9.5,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          if (sizeStr
+                                                              .isNotEmpty)
+                                                            Container(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .symmetric(
+                                                                horizontal: 5,
+                                                                vertical: 2,
+                                                              ),
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: Colors
+                                                                    .white
+                                                                    .withValues(
+                                                                  alpha: 0.07,
+                                                                ),
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(
+                                                                  4,
+                                                                ),
+                                                              ),
+                                                              child: Row(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
+                                                                children: [
+                                                                  const Icon(
+                                                                    Icons
+                                                                        .sd_storage_outlined,
+                                                                    size: 9,
+                                                                    color: Colors
+                                                                        .white60,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 3,
+                                                                  ),
+                                                                  Text(
+                                                                    sizeStr,
+                                                                    style:
+                                                                        const TextStyle(
+                                                                      color: Colors
+                                                                          .white70,
+                                                                      fontSize:
+                                                                          9.5,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          if (p.localAlbum !=
+                                                                  null &&
+                                                              p.localAlbum!
+                                                                  .isNotEmpty &&
+                                                              p.localAlbum !=
+                                                                  '<unknown>')
+                                                            Container(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .symmetric(
+                                                                horizontal: 5,
+                                                                vertical: 2,
+                                                              ),
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: Colors
+                                                                    .white
+                                                                    .withValues(
+                                                                  alpha: 0.07,
+                                                                ),
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(
+                                                                  4,
+                                                                ),
+                                                              ),
+                                                              child: Row(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
+                                                                children: [
+                                                                  const Icon(
+                                                                    Icons
+                                                                        .album_outlined,
+                                                                    size: 9,
+                                                                    color: Colors
+                                                                        .white60,
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 3,
+                                                                  ),
+                                                                  Flexible(
+                                                                    child: Text(
+                                                                      p.localAlbum!,
+                                                                      style:
+                                                                          const TextStyle(
+                                                                        color: Colors
+                                                                            .white70,
+                                                                        fontSize:
+                                                                            9.5,
+                                                                      ),
+                                                                      maxLines:
+                                                                          1,
+                                                                      overflow:
+                                                                          TextOverflow
+                                                                              .ellipsis,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                             ),
+                                                            ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              );
+                                            },
                                           ),
                                         ],
                                       ),
@@ -466,36 +1019,41 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   ),
                                   const SizedBox(width: 4),
                                   // Button to toggle "Do not show this comparison again"
-                                  IconButton(
-                                    tooltip: isNeverShowAgain
-                                        ? lang.translate('cancel')
-                                        : lang.translate('never_ask_again_song'),
-                                    visualDensity: VisualDensity.compact,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(
-                                      minWidth: 36,
-                                      minHeight: 36,
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: IconButton(
+                                      tooltip: isNeverShowAgain
+                                          ? lang.translate('cancel')
+                                          : lang.translate(
+                                              'never_ask_again_song',
+                                            ),
+                                      visualDensity: VisualDensity.compact,
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 34,
+                                        minHeight: 34,
+                                      ),
+                                      icon: Icon(
+                                        isNeverShowAgain
+                                            ? Icons.visibility_off_rounded
+                                            : Icons.visibility_off_outlined,
+                                        color: isNeverShowAgain
+                                            ? Colors.redAccent
+                                            : Colors.white38,
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          if (isNeverShowAgain) {
+                                            neverShowAgainIds.remove(uniqueId);
+                                            selectedProposalIds.add(uniqueId);
+                                          } else {
+                                            neverShowAgainIds.add(uniqueId);
+                                            selectedProposalIds.remove(uniqueId);
+                                          }
+                                        });
+                                      },
                                     ),
-                                    icon: Icon(
-                                      isNeverShowAgain
-                                          ? Icons.visibility_off_rounded
-                                          : Icons.visibility_off_outlined,
-                                      color: isNeverShowAgain
-                                          ? Colors.redAccent
-                                          : Colors.white38,
-                                      size: 20,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        if (isNeverShowAgain) {
-                                          neverShowAgainIds.remove(uniqueId);
-                                          selectedProposalIds.add(uniqueId);
-                                        } else {
-                                          neverShowAgainIds.add(uniqueId);
-                                          selectedProposalIds.remove(uniqueId);
-                                        }
-                                      });
-                                    },
                                   ),
                                 ],
                               ),
@@ -507,18 +1065,111 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   ],
                 ),
               ),
+
+              actionsAlignment: (neverShowAgainIds.isNotEmpty || selectedProposalIds.isNotEmpty)
+                  ? MainAxisAlignment.spaceBetween
+                  : MainAxisAlignment.end,
               actions: [
+                if (neverShowAgainIds.isNotEmpty)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                    ),
+                    icon: const Icon(Icons.visibility_off_rounded, size: 16),
+                    label: Text(
+                      Provider.of<LanguageProvider>(
+                        context,
+                        listen: false,
+                      ).translate('confirm'),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onPressed: () async {
+                      final toIgnore = proposals.where((p) {
+                        final uId = "${p.playlistId}_${p.songId}";
+                        return neverShowAgainIds.contains(uId);
+                      }).toList();
+                      if (toIgnore.isNotEmpty) {
+                        await provider.ignoreUpgradeProposals(toIgnore);
+                      }
+                      provider.upgradeProposals.clear();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              Provider.of<LanguageProvider>(
+                                context,
+                                listen: false,
+                              ).translate('never_ask_saved').replaceAll(
+                                '{0}',
+                                toIgnore.length.toString(),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  )
+                else if (selectedProposalIds.isNotEmpty)
+                  ElevatedButton(
+                    onPressed: () {
+                      final toApply = proposals.where((p) {
+                        final uId = "${p.playlistId}_${p.songId}";
+                        return selectedProposalIds.contains(uId) &&
+                            !neverShowAgainIds.contains(uId);
+                      }).toList();
+
+                      final toIgnore = proposals.where((p) {
+                        final uId = "${p.playlistId}_${p.songId}";
+                        return neverShowAgainIds.contains(uId) ||
+                            !selectedProposalIds.contains(uId);
+                      }).toList();
+
+                      provider.applyUpgrades(toApply, ignored: toIgnore);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            Provider.of<LanguageProvider>(
+                                  context,
+                                  listen: false,
+                                )
+                                .translate('updated_local_files')
+                                .replaceAll(
+                                  '{0}',
+                                  toApply.length.toString(),
+                                ),
+                          ),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                    ),
+                    child: Text(
+                      Provider.of<LanguageProvider>(context, listen: false)
+                          .translate('update'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 TextButton(
                   onPressed: () {
-                    final unselected = proposals.where((p) {
-                      final uId = "${p.playlistId}_${p.songId}";
-                      return neverShowAgainIds.contains(uId) ||
-                          !selectedProposalIds.contains(uId);
-                    }).toList();
-                    if (unselected.isNotEmpty) {
-                      provider.ignoreUpgradeProposals(unselected);
-                    }
-                    provider.upgradeProposals.clear();
                     Navigator.pop(ctx);
                   },
                   child: Text(
@@ -526,54 +1177,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       context,
                       listen: false,
                     ).translate('cancel'),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: selectedProposalIds.isEmpty
-                      ? null
-                      : () {
-                          final toApply = proposals.where((p) {
-                            final uId = "${p.playlistId}_${p.songId}";
-                            return selectedProposalIds.contains(uId) &&
-                                !neverShowAgainIds.contains(uId);
-                          }).toList();
-
-                          final toIgnore = proposals.where((p) {
-                            final uId = "${p.playlistId}_${p.songId}";
-                            return neverShowAgainIds.contains(uId) ||
-                                !selectedProposalIds.contains(uId);
-                          }).toList();
-
-                          provider.applyUpgrades(toApply, ignored: toIgnore);
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                Provider.of<LanguageProvider>(
-                                      context,
-                                      listen: false,
-                                    )
-                                    .translate('updated_local_files')
-                                    .replaceAll(
-                                      '{0}',
-                                      toApply.length.toString(),
-                                    ),
-                              ),
-                            ),
-                          );
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    disabledBackgroundColor: Colors.grey.withValues(alpha: 0.5),
-                  ),
-                  child: Text(
-                    Provider.of<LanguageProvider>(context, listen: false)
-                        .translate('update_selected_count')
-                        .replaceAll(
-                          '{0}',
-                          selectedProposalIds.length.toString(),
-                        ),
-                    style: const TextStyle(color: Colors.white),
                   ),
                 ),
               ],
@@ -6131,23 +6734,25 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   }
 
   Future<void> _persistDismissedMerge(String source, String target) async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getStringList(_dismissedArtistMergesKey) ?? const [];
     final key = _dismissPairKey(
       MergeUtils.artistGroupingKey(source),
       MergeUtils.artistGroupingKey(target),
     );
+    _dismissedMergePairs.add(key);
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_dismissedArtistMergesKey) ?? const [];
     final updated = {...saved, key}.toList();
     await prefs.setStringList(_dismissedArtistMergesKey, updated);
   }
 
   Future<void> _persistDismissedAlbumMerge(String source, String target) async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getStringList(_dismissedAlbumMergesKey) ?? const [];
     final key = _dismissPairKey(
       MergeUtils.albumGroupingKey(source),
       MergeUtils.albumGroupingKey(target),
     );
+    _dismissedAlbumMergePairs.add(key);
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_dismissedAlbumMergesKey) ?? const [];
     final updated = {...saved, key}.toList();
     await prefs.setStringList(_dismissedAlbumMergesKey, updated);
   }
@@ -6328,51 +6933,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     );
   }
 
-  Widget _buildMergeDirectionTile({
-    required bool selected,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: selected
-          ? Theme.of(context).primaryColor.withValues(alpha: 0.18)
-          : Colors.white.withValues(alpha: 0.04),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            children: [
-              Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                color: selected
-                    ? Theme.of(context).primaryColor
-                    : Colors.white38,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showMergeDialog(
     BuildContext context,
     RadioProvider provider,
@@ -6391,25 +6951,71 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       }
       return name;
     }
+
+    // Pre-calculate sample tracks for quick context
+    final Map<String, List<String>> sampleTracksBySource = {};
+    final Map<String, List<String>> sampleTracksByTarget = {};
+    for (var s in suggestions) {
+      if (isAlbum) {
+        sampleTracksBySource[s.source] = _allSongs
+            .where((song) =>
+                song.album.trim().toLowerCase() ==
+                s.source.trim().toLowerCase())
+            .map((song) => song.title)
+            .where((t) => t.isNotEmpty)
+            .toSet()
+            .take(2)
+            .toList();
+        sampleTracksByTarget[s.target] = _allSongs
+            .where((song) =>
+                song.album.trim().toLowerCase() ==
+                s.target.trim().toLowerCase())
+            .map((song) => song.title)
+            .where((t) => t.isNotEmpty)
+            .toSet()
+            .take(2)
+            .toList();
+      } else {
+        sampleTracksBySource[s.source] = _allSongs
+            .where((song) =>
+                song.artist.trim().toLowerCase() ==
+                s.source.trim().toLowerCase())
+            .map((song) => song.title)
+            .where((t) => t.isNotEmpty)
+            .toSet()
+            .take(2)
+            .toList();
+        sampleTracksByTarget[s.target] = _allSongs
+            .where((song) =>
+                song.artist.trim().toLowerCase() ==
+                s.target.trim().toLowerCase())
+            .map((song) => song.title)
+            .where((t) => t.isNotEmpty)
+            .toSet()
+            .take(2)
+            .toList();
+      }
+    }
+
     final Map<MergeSuggestion, int> directionByIndex = {};
-    final Set<MergeSuggestion> selected = {};
-    final List<MergeSuggestion> visible = List.of(suggestions);
+    final Set<MergeSuggestion> selected = Set.of(suggestions);
+    final Set<String> neverShowAgainPairKeys = {};
 
     GlassUtils.showGlassDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, dialogSetState) {
-            final confirmedCount = selected.length;
             return AlertDialog(
               surfaceTintColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 24),
               title: Row(
                 children: [
-Icon(
-                Icons.merge_type_rounded,
-                color: Theme.of(context).primaryColor,
-                size: 22,
-              ),
+                  Icon(
+                    isAlbum ? Icons.album_rounded : Icons.person_rounded,
+                    color: Theme.of(context).primaryColor,
+                    size: 22,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -6423,223 +7029,793 @@ Icon(
                 ],
               ),
               content: Container(
-                constraints: const BoxConstraints(maxHeight: 480),
-                width: double.maxFinite,
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
+                  maxWidth: MediaQuery.of(context).size.width,
+                ),
+                width: MediaQuery.of(context).size.width,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
                       tr('desc'),
-                      style: const TextStyle(color: Colors.white60, fontSize: 13),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 13),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
+                    Text(
+                      lang.translate('never_ask_again_song_desc'),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (neverShowAgainPairKeys.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color:
+                                    Colors.redAccent.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: Text(
+                              '${neverShowAgainPairKeys.length} ${lang.translate('never_ask_badge')}',
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox.shrink(),
+                        Builder(
+                          builder: (context) {
+                            final availableSuggestions = suggestions.where(
+                              (s) => !neverShowAgainPairKeys.contains(
+                                _dismissPairKey(
+                                  grouping(s.source),
+                                  grouping(s.target),
+                                ),
+                              ),
+                            );
+                            final bool isAllSelected =
+                                availableSuggestions.isNotEmpty &&
+                                availableSuggestions
+                                    .every((s) => selected.contains(s));
+                            return TextButton(
+                              onPressed: () {
+                                dialogSetState(() {
+                                  if (isAllSelected) {
+                                    selected.clear();
+                                  } else {
+                                    for (var s in availableSuggestions) {
+                                      selected.add(s);
+                                    }
+                                  }
+                                });
+                              },
+                              child: Text(
+                                isAllSelected
+                                    ? lang.translate('deselect_all')
+                                    : lang.translate('select_all'),
+                                style: const TextStyle(
+                                  color: Colors.blueAccent,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white12),
                     Expanded(
                       child: ListView.separated(
                         shrinkWrap: true,
-                        itemCount: visible.length,
-                        separatorBuilder: (_, __) =>
+                        itemCount: suggestions.length,
+                        separatorBuilder: (_, _) =>
                             const SizedBox(height: 8),
                         itemBuilder: (context, index) {
-                          final s = visible[index];
-                          final isSelected = selected.contains(s);
+                          final s = suggestions[index];
+                          final pairKey = _dismissPairKey(
+                            grouping(s.source),
+                            grouping(s.target),
+                          );
+                          final isNeverShowAgain =
+                              neverShowAgainPairKeys.contains(pairKey);
+                          final isSelected =
+                              selected.contains(s) && !isNeverShowAgain;
                           final int direction = directionByIndex[s] ?? 0;
+                          final sampleSourceTracks =
+                              sampleTracksBySource[s.source] ?? const [];
+                          final sampleTargetTracks =
+                              sampleTracksByTarget[s.target] ?? const [];
 
                           return Container(
                             decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Theme.of(context)
-                                      .primaryColor
-                                      .withValues(alpha: 0.12)
-                                  : Colors.white.withValues(alpha: 0.04),
-                              borderRadius: BorderRadius.circular(12),
+                              color: isNeverShowAgain
+                                  ? Colors.redAccent.withValues(alpha: 0.08)
+                                  : (isSelected
+                                      ? Theme.of(context)
+                                          .primaryColor
+                                          .withValues(alpha: 0.16)
+                                      : Colors.white.withValues(alpha: 0.04)),
+                              borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: isSelected
-                                    ? Theme.of(context)
-                                        .primaryColor
-                                        .withValues(alpha: 0.5)
-                                    : Colors.white.withValues(alpha: 0.1),
+                                color: isNeverShowAgain
+                                    ? Colors.redAccent.withValues(alpha: 0.4)
+                                    : (isSelected
+                                        ? Theme.of(context)
+                                            .primaryColor
+                                            .withValues(alpha: 0.5)
+                                        : Colors.white.withValues(alpha: 0.09)),
+                                width: isSelected ? 1.4 : 1.0,
                               ),
                             ),
-                            child: Column(
-                              children: [
-                                ListTile(
-                                  dense: true,
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 4,
-                                      ),
-                                  leading: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .primaryColor
-                                          .withValues(alpha: 0.18),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      '${s.similarity.round()}%',
-                                      style: TextStyle(
-                                        color:
-                                            Theme.of(context).primaryColor,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    '${withArtist(s.source, s.sourceArtist)} (${s.sourceCount})',
-                                    style: TextStyle(
-                                      color: isSelected
-                                          ? Colors.white
-                                          : Colors.white70,
-                                      fontSize: 14,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(
-                                    '${withArtist(s.target, s.targetArtist)} (${s.targetCount})',
-                                    style: TextStyle(
-                                      color: isSelected
-                                          ? Colors.white70
-                                          : Colors.white38,
-                                      fontSize: 13,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        tooltip: tr(
-                                          isSelected
-                                              ? 'unselect'
-                                              : 'select',
-                                        ),
-                                        icon: Icon(
-                                          isSelected
-                                              ? Icons.check_box_rounded
-                                              : Icons
-                                                  .check_box_outline_blank_rounded,
-                                          color: isSelected
-                                              ? Theme.of(context).primaryColor
-                                              : Colors.white38,
-                                          size: 20,
-                                        ),
-                                        onPressed: () {
-                                          dialogSetState(() {
-                                            if (isSelected) {
-                                              selected.remove(s);
-                                            } else {
-                                              selected.add(s);
-                                            }
-                                          });
-                                        },
-                                      ),
-                                      IconButton(
-                                        tooltip: tr('ignore'),
-                                        icon: const Icon(
-                                          Icons.visibility_off_rounded,
-                                          color: Colors.white38,
-                                          size: 20,
-                                        ),
-                                        onPressed: () async {
-                                          if (isAlbum) {
-                                            await _persistDismissedAlbumMerge(
-                                              s.source,
-                                              s.target,
-                                            );
-                                          } else {
-                                            await _persistDismissedMerge(
-                                              s.source,
-                                              s.target,
-                                            );
-                                          }
-                                          if (!ctx.mounted) return;
-                                          final pairKey = _dismissPairKey(
-                                            grouping(s.source),
-                                            grouping(s.target),
-                                          );
-                                          dialogSetState(() {
-                                            selected.remove(s);
-                                            (isAlbum
-                                                    ? _dismissedAlbumMergePairs
-                                                    : _dismissedMergePairs)
-                                                .add(pairKey);
-                                            visible.remove(s);
-                                          });
-                                          setState(() {});
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (isSelected) ...[
-                                  const Divider(
-                                    height: 1,
-                                    color: Colors.white12,
-                                  ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Leading Checkbox (aligned to top)
                                   Padding(
-                                    padding: const EdgeInsets.all(8),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        _buildMergeDirectionTile(
-                                          selected: direction == 0,
-                                          label: tr('into')
-                                              .replaceAll(
-                                                  '{0}',
-                                                  withArtist(s.source,
-                                                      s.sourceArtist))
-                                              .replaceAll(
-                                                  '{1}',
-                                                  s.sourceCount.toString())
-                                              .replaceAll(
-                                                  '{2}',
-                                                  withArtist(s.target,
-                                                      s.targetArtist))
-                                              .replaceAll(
-                                                  '{3}',
-                                                  s.targetCount.toString()),
-                                          onTap: () {
-                                            dialogSetState(() {
-                                              directionByIndex[s] = 0;
-                                            });
-                                          },
-                                        ),
-                                        const SizedBox(height: 6),
-                                        _buildMergeDirectionTile(
-                                          selected: direction == 1,
-                                          label: tr('into')
-                                              .replaceAll(
-                                                  '{0}',
-                                                  withArtist(s.target,
-                                                      s.targetArtist))
-                                              .replaceAll(
-                                                  '{1}',
-                                                  s.targetCount.toString())
-                                              .replaceAll(
-                                                  '{2}',
-                                                  withArtist(s.source,
-                                                      s.sourceArtist))
-                                              .replaceAll(
-                                                  '{3}',
-                                                  s.sourceCount.toString()),
-                                          onTap: () {
-                                            dialogSetState(() {
-                                              directionByIndex[s] = 1;
-                                            });
-                                          },
-                                        ),
-                                      ],
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Checkbox(
+                                      value: isSelected,
+                                      activeColor:
+                                          Theme.of(context).primaryColor,
+                                      checkColor: Colors.white,
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      onChanged: isNeverShowAgain
+                                          ? null
+                                          : (val) {
+                                              dialogSetState(() {
+                                                if (val == true) {
+                                                  selected.add(s);
+                                                } else {
+                                                  selected.remove(s);
+                                                }
+                                              });
+                                            },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // Central Expanded Content
+                                  Expanded(
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(10),
+                                      onTap: isNeverShowAgain
+                                          ? null
+                                          : () {
+                                              dialogSetState(() {
+                                                if (isSelected) {
+                                                  selected.remove(s);
+                                                } else {
+                                                  selected.add(s);
+                                                }
+                                              });
+                                            },
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // 1. SOURCE VARIANT (Variante 1)
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 5,
+                                                  vertical: 1.5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blueAccent
+                                                      .withValues(alpha: 0.18),
+                                                  borderRadius:
+                                                      BorderRadius.circular(5),
+                                                  border: Border.all(
+                                                    color: Colors.blueAccent
+                                                        .withValues(
+                                                      alpha: 0.35,
+                                                    ),
+                                                    width: 0.8,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      isAlbum
+                                                          ? Icons.album_outlined
+                                                          : Icons.person_outline,
+                                                      size: 10,
+                                                      color: Colors.blueAccent,
+                                                    ),
+                                                    const SizedBox(width: 3),
+                                                    Text(
+                                                      isAlbum
+                                                          ? 'Album (A)'
+                                                          : 'Artista (A)',
+                                                      style: const TextStyle(
+                                                        color: Colors.blueAccent,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              // Track count badge
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 5,
+                                                  vertical: 1.5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.08),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.music_note_rounded,
+                                                      size: 9,
+                                                      color: Colors.white70,
+                                                    ),
+                                                    const SizedBox(width: 2),
+                                                    Text(
+                                                      '${s.sourceCount} ${lang.translate('song_singular')}${s.sourceCount > 1 ? 'i' : ''}',
+                                                      style: const TextStyle(
+                                                        color: Colors.white70,
+                                                        fontSize: 9.5,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (isNeverShowAgain) ...[
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  '(${lang.translate('never_ask_badge')})',
+                                                  style: const TextStyle(
+                                                    color: Colors.redAccent,
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          // Source Name
+                                          Text(
+                                            withArtist(
+                                              s.source,
+                                              s.sourceArtist,
+                                            ),
+                                            style: TextStyle(
+                                              color: isNeverShowAgain
+                                                  ? Colors.white38
+                                                  : Colors.white,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              decoration: isNeverShowAgain
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          // Sample tracks from source
+                                          if (sampleSourceTracks
+                                              .isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '${lang.translate('sample_tracks_label')} "${sampleSourceTracks.join('", "')}"',
+                                              style: TextStyle(
+                                                color: isNeverShowAgain
+                                                    ? Colors.white24
+                                                    : Colors.white60,
+                                                fontSize: 10.5,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+
+                                          // 2. CONNECTOR ROW (Divider + Similarity Badge + Arrow)
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 6,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Divider(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.1),
+                                                    height: 1,
+                                                    thickness: 0.8,
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                  ),
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Theme.of(context)
+                                                          .primaryColor
+                                                          .withValues(
+                                                            alpha: 0.2,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        10,
+                                                      ),
+                                                      border: Border.all(
+                                                        color: Theme.of(context)
+                                                            .primaryColor
+                                                            .withValues(
+                                                              alpha: 0.4,
+                                                            ),
+                                                        width: 0.8,
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Icon(
+                                                          Icons.merge_type_rounded,
+                                                          size: 10,
+                                                          color: Theme.of(context)
+                                                              .primaryColor,
+                                                        ),
+                                                        const SizedBox(width: 3),
+                                                        Text(
+                                                          '${s.similarity.round()}% similarità',
+                                                          style: TextStyle(
+                                                            color:
+                                                                Theme.of(context)
+                                                                    .primaryColor,
+                                                            fontSize: 9.5,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                                Expanded(
+                                                  child: Divider(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.1),
+                                                    height: 1,
+                                                    thickness: 0.8,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          // 3. TARGET VARIANT (Variante 2 - Card scura)
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.28,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: isNeverShowAgain
+                                                    ? Colors.white.withValues(
+                                                        alpha: 0.05,
+                                                      )
+                                                    : Colors.tealAccent
+                                                        .withValues(alpha: 0.2),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                // Header: Icon + Type + Song count
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      isAlbum
+                                                          ? Icons.album_rounded
+                                                          : Icons.person_rounded,
+                                                      size: 12,
+                                                      color: isNeverShowAgain
+                                                          ? Colors.white30
+                                                          : Colors.tealAccent,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      isAlbum
+                                                          ? 'Album (B)'
+                                                          : 'Artista (B)',
+                                                      style: TextStyle(
+                                                        color: isNeverShowAgain
+                                                            ? Colors.white30
+                                                            : Colors.tealAccent,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                    const Spacer(),
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets
+                                                              .symmetric(
+                                                        horizontal: 5,
+                                                        vertical: 1.5,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white
+                                                            .withValues(
+                                                          alpha: 0.08,
+                                                        ),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(4),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          const Icon(
+                                                            Icons
+                                                                .music_note_rounded,
+                                                            size: 9,
+                                                            color:
+                                                                Colors.white70,
+                                                          ),
+                                                          const SizedBox(width: 2),
+                                                          Text(
+                                                            '${s.targetCount} ${lang.translate('song_singular')}${s.targetCount > 1 ? 'i' : ''}',
+                                                            style:
+                                                                const TextStyle(
+                                                              color:
+                                                                  Colors.white70,
+                                                              fontSize: 9.5,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  withArtist(
+                                                    s.target,
+                                                    s.targetArtist,
+                                                  ),
+                                                  style: TextStyle(
+                                                    color: isNeverShowAgain
+                                                        ? Colors.white38
+                                                        : Colors.white,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                if (sampleTargetTracks
+                                                    .isNotEmpty) ...[
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    '${lang.translate('sample_tracks_label')} "${sampleTargetTracks.join('", "')}"',
+                                                    style: TextStyle(
+                                                      color: isNeverShowAgain
+                                                          ? Colors.white24
+                                                          : Colors.white60,
+                                                      fontSize: 10.5,
+                                                      fontStyle: FontStyle.italic,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+
+                                          // 4. INTERACTIVE VISUAL DIRECTION SELECTOR (Sistema visuale compatto a icone)
+                                          if (isSelected) ...[
+                                            const SizedBox(height: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 10,
+                                                vertical: 7,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(alpha: 0.35),
+                                                borderRadius: BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: Colors.white.withValues(alpha: 0.12),
+                                                  width: 0.8,
+                                                ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.drive_file_rename_outline_rounded,
+                                                        size: 13,
+                                                        color: Colors.white60,
+                                                      ),
+                                                      const SizedBox(width: 5),
+                                                      Expanded(
+                                                        child: Text(
+                                                          lang.translate('keep_final_name'),
+                                                          style: const TextStyle(
+                                                            color: Colors.white70,
+                                                            fontSize: 10.5,
+                                                            fontWeight: FontWeight.w600,
+                                                            letterSpacing: 0.2,
+                                                          ),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 7),
+                                                  Row(
+                                                    children: [
+                                                      // Opzione A (Variante A - Blu)
+                                                      Expanded(
+                                                        child: InkWell(
+                                                          borderRadius: BorderRadius.circular(8),
+                                                          onTap: () {
+                                                            dialogSetState(() {
+                                                              directionByIndex[s] = 1;
+                                                            });
+                                                          },
+                                                          child: AnimatedContainer(
+                                                            duration: const Duration(milliseconds: 150),
+                                                            padding: const EdgeInsets.symmetric(
+                                                              vertical: 7,
+                                                              horizontal: 8,
+                                                            ),
+                                                            decoration: BoxDecoration(
+                                                              color: direction == 1
+                                                                  ? Colors.blueAccent.withValues(alpha: 0.22)
+                                                                  : Colors.white.withValues(alpha: 0.04),
+                                                              borderRadius: BorderRadius.circular(8),
+                                                              border: Border.all(
+                                                                  color: direction == 1
+                                                                      ? Colors.blueAccent
+                                                                      : Colors.white.withValues(alpha: 0.12),
+                                                                width: direction == 1 ? 1.5 : 1.0,
+                                                              ),
+                                                            ),
+                                                            child: Row(
+                                                              mainAxisAlignment: MainAxisAlignment.center,
+                                                              children: [
+                                                                Icon(
+                                                                  direction == 1
+                                                                      ? Icons.check_circle_rounded
+                                                                      : Icons.radio_button_unchecked,
+                                                                  size: 14,
+                                                                  color: direction == 1
+                                                                      ? Colors.blueAccent
+                                                                      : Colors.white38,
+                                                                ),
+                                                                const SizedBox(width: 5),
+                                                                Flexible(
+                                                                  child: Text(
+                                                                    isAlbum ? 'Album (A)' : 'Artista (A)',
+                                                                    style: TextStyle(
+                                                                      color: direction == 1
+                                                                          ? Colors.blueAccent
+                                                                          : Colors.white60,
+                                                                      fontSize: 11,
+                                                                      fontWeight: direction == 1
+                                                                          ? FontWeight.bold
+                                                                          : FontWeight.w500,
+                                                                    ),
+                                                                    maxLines: 1,
+                                                                    overflow: TextOverflow.ellipsis,
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      // Freccia di direzione interattiva / indicatore visivo di merge
+                                                      Padding(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                                                        child: InkWell(
+                                                          borderRadius: BorderRadius.circular(16),
+                                                          onTap: () {
+                                                            dialogSetState(() {
+                                                              directionByIndex[s] = direction == 0 ? 1 : 0;
+                                                            });
+                                                          },
+                                                          child: Container(
+                                                            padding: const EdgeInsets.all(6),
+                                                            decoration: BoxDecoration(
+                                                              color: direction == 0
+                                                                  ? Colors.tealAccent.withValues(alpha: 0.15)
+                                                                  : Colors.blueAccent.withValues(alpha: 0.15),
+                                                              shape: BoxShape.circle,
+                                                              border: Border.all(
+                                                                color: direction == 0
+                                                                    ? Colors.tealAccent.withValues(alpha: 0.5)
+                                                                    : Colors.blueAccent.withValues(alpha: 0.5),
+                                                                width: 0.8,
+                                                              ),
+                                                            ),
+                                                            child: Icon(
+                                                              direction == 0
+                                                                  ? Icons.arrow_forward_rounded
+                                                                  : Icons.arrow_back_rounded,
+                                                              size: 14,
+                                                              color: direction == 0
+                                                                  ? Colors.tealAccent
+                                                                  : Colors.blueAccent,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      // Opzione B (Variante B - Teal)
+                                                      Expanded(
+                                                        child: InkWell(
+                                                          borderRadius: BorderRadius.circular(8),
+                                                          onTap: () {
+                                                            dialogSetState(() {
+                                                              directionByIndex[s] = 0;
+                                                            });
+                                                          },
+                                                          child: AnimatedContainer(
+                                                            duration: const Duration(milliseconds: 150),
+                                                            padding: const EdgeInsets.symmetric(
+                                                              vertical: 7,
+                                                              horizontal: 8,
+                                                            ),
+                                                            decoration: BoxDecoration(
+                                                              color: direction == 0
+                                                                  ? Colors.tealAccent.withValues(alpha: 0.22)
+                                                                  : Colors.white.withValues(alpha: 0.04),
+                                                              borderRadius: BorderRadius.circular(8),
+                                                              border: Border.all(
+                                                                color: direction == 0
+                                                                    ? Colors.tealAccent
+                                                                    : Colors.white.withValues(alpha: 0.12),
+                                                                width: direction == 0 ? 1.5 : 1.0,
+                                                              ),
+                                                            ),
+                                                            child: Row(
+                                                              mainAxisAlignment: MainAxisAlignment.center,
+                                                              children: [
+                                                                Icon(
+                                                                  direction == 0
+                                                                      ? Icons.check_circle_rounded
+                                                                      : Icons.radio_button_unchecked,
+                                                                  size: 14,
+                                                                  color: direction == 0
+                                                                      ? Colors.tealAccent
+                                                                      : Colors.white38,
+                                                                ),
+                                                                const SizedBox(width: 5),
+                                                                Flexible(
+                                                                  child: Text(
+                                                                    isAlbum ? 'Album (B)' : 'Artista (B)',
+                                                                    style: TextStyle(
+                                                                      color: direction == 0
+                                                                          ? Colors.tealAccent
+                                                                          : Colors.white60,
+                                                                      fontSize: 11,
+                                                                      fontWeight: direction == 0
+                                                                          ? FontWeight.bold
+                                                                          : FontWeight.w500,
+                                                                    ),
+                                                                    maxLines: 1,
+                                                                    overflow: TextOverflow.ellipsis,
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Trailing visibility_off button
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: IconButton(
+                                      tooltip: isNeverShowAgain
+                                          ? lang.translate('cancel')
+                                          : lang.translate(
+                                              'never_ask_again_song',
+                                            ),
+                                      visualDensity: VisualDensity.compact,
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 34,
+                                        minHeight: 34,
+                                      ),
+                                      icon: Icon(
+                                        isNeverShowAgain
+                                            ? Icons.visibility_off_rounded
+                                            : Icons.visibility_off_outlined,
+                                        color: isNeverShowAgain
+                                            ? Colors.redAccent
+                                            : Colors.white38,
+                                        size: 20,
+                                      ),
+                                      onPressed: () {
+                                        dialogSetState(() {
+                                          if (isNeverShowAgain) {
+                                            neverShowAgainPairKeys
+                                                .remove(pairKey);
+                                            selected.add(s);
+                                          } else {
+                                            neverShowAgainPairKeys
+                                                .add(pairKey);
+                                            selected.remove(s);
+                                          }
+                                        });
+                                      },
                                     ),
                                   ),
                                 ],
-                              ],
+                              ),
                             ),
                           );
                         },
@@ -6648,45 +7824,131 @@ Icon(
                   ],
                 ),
               ),
+              actionsAlignment: (neverShowAgainPairKeys.isNotEmpty || selected.isNotEmpty)
+                  ? MainAxisAlignment.spaceBetween
+                  : MainAxisAlignment.end,
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(lang.translate('cancel')),
-                ),
-                ElevatedButton(
-                  onPressed: confirmedCount == 0
-                      ? null
-                      : () async {
-                          var total = 0;
-                          for (final s in visible) {
-                            if (!selected.contains(s)) continue;
-                            final dir = directionByIndex[s] ?? 0;
-                            final source = dir == 0 ? s.source : s.target;
-                            final target = dir == 0 ? s.target : s.source;
-                            total += isAlbum
-                                ? await provider.mergeAlbum(source, target)
-                                : await provider.mergeArtist(source, target);
-                          }
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          if (mounted) {
-                            _showSnack(
-                              tr('done').replaceAll(
-                                  '{0}', total.toString()),
-                              Colors.green,
+                if (neverShowAgainPairKeys.isNotEmpty)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                    ),
+                    icon: const Icon(Icons.visibility_off_rounded, size: 16),
+                    label: Text(
+                      lang.translate('confirm'),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onPressed: () async {
+                      for (final s in suggestions) {
+                        final pairKey = _dismissPairKey(
+                          grouping(s.source),
+                          grouping(s.target),
+                        );
+                        if (neverShowAgainPairKeys.contains(pairKey)) {
+                          if (isAlbum) {
+                            _dismissedAlbumMergePairs.add(pairKey);
+                            await _persistDismissedAlbumMerge(
+                              s.source,
+                              s.target,
                             );
+                          } else {
+                            _dismissedMergePairs.add(pairKey);
+                            await _persistDismissedMerge(s.source, s.target);
                           }
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                  ),
-                  child: Text(
-                    tr('apply').replaceAll(
-                        '{0}', confirmedCount.toString()),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                        }
+                      }
+                      if (isAlbum) {
+                        _cachedAlbumMergeSuggestions = _cachedAlbumMergeSuggestions
+                            ?.where((s) {
+                          final pairKey = _dismissPairKey(
+                            grouping(s.source),
+                            grouping(s.target),
+                          );
+                          return !neverShowAgainPairKeys.contains(pairKey);
+                        }).toList();
+                        _albumMergeCacheKey = '';
+                      } else {
+                        _cachedArtistMergeSuggestions = _cachedArtistMergeSuggestions
+                            ?.where((s) {
+                          final pairKey = _dismissPairKey(
+                            grouping(s.source),
+                            grouping(s.target),
+                          );
+                          return !neverShowAgainPairKeys.contains(pairKey);
+                        }).toList();
+                        _artistMergeCacheKey = '';
+                      }
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) {
+                        setState(() {});
+                        _showSnack(
+                          lang.translate('never_ask_saved').replaceAll(
+                            '{0}',
+                            neverShowAgainPairKeys.length.toString(),
+                          ),
+                          Colors.orangeAccent,
+                        );
+                      }
+                    },
+                  )
+                else if (selected.isNotEmpty)
+                  ElevatedButton(
+                    onPressed: () async {
+                      var total = 0;
+                      for (final s in suggestions) {
+                        if (!selected.contains(s)) continue;
+                        final dir = directionByIndex[s] ?? 0;
+                        final source = dir == 0 ? s.source : s.target;
+                        final target = dir == 0 ? s.target : s.source;
+                        total += isAlbum
+                            ? await provider.mergeAlbum(source, target)
+                            : await provider.mergeArtist(source, target);
+                      }
+                      if (isAlbum) {
+                        _cachedAlbumMergeSuggestions = null;
+                        _albumMergeCacheKey = '';
+                      } else {
+                        _cachedArtistMergeSuggestions = null;
+                        _artistMergeCacheKey = '';
+                      }
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (mounted) {
+                        setState(() {});
+                        _showSnack(
+                          tr('done').replaceAll('{0}', total.toString()),
+                          Colors.green,
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                    ),
+                    child: Text(
+                      lang.translate('merge_action'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(lang.translate('cancel')),
                 ),
               ],
             );

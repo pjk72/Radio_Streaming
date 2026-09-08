@@ -790,6 +790,18 @@ final Map<String, String> de = {
   'album_merge_apply': 'Zusammenführen ({0})',
   'album_merge_done': '{0}-Albumnamen zusammengeführt',
   'export_mp3_empty_desc': 'TODO: Before exporting, download each song using the download button in the playlists. Only songs downloaded through the app can be exported.',
+  'keep_final_name': 'Als endgültigen Namen behalten:',
+  'sample_tracks_label': 'Titel:',
+  'similarity_label': '{0}% Ähnlichkeit',
+  'confirm_never_ask': 'Bestätigen, nicht erneut fragen ({0})',
+  'never_ask_saved': 'Präferenz gespeichert:{0} wird nicht erneut vorgeschlagen.',
+  'online_track': 'Online-Track',
+  'offline_match': 'Passende Offlinedatei',
+  'file_label': 'Datei',
+  'path_label': 'Weg',
+  'size_label': 'Größe',
+  'update': 'Aktualisieren',
+  'merge_action': 'Verschmelzen',
 };
 
 

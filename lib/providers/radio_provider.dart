@@ -2158,11 +2158,20 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   Future<void> ignoreUpgradeProposals(List<UpgradeProposal> proposalsToIgnore) async {
     if (proposalsToIgnore.isEmpty) return;
+    await _loadIgnoredUpgradeKeys();
     for (var p in proposalsToIgnore) {
       _ignoredUpgradeKeys.add("${p.playlistId}_${p.songId}");
       _ignoredUpgradeKeys.add(p.songId);
+      if (p.localPath.isNotEmpty) {
+        _ignoredUpgradeKeys.add("${p.playlistId}_${p.localPath}");
+        _ignoredUpgradeKeys.add(p.localPath);
+      }
     }
     await _saveIgnoredUpgradeKeys();
+    _upgradeProposals.removeWhere((p) => proposalsToIgnore.any(
+      (ti) => ti.playlistId == p.playlistId && ti.songId == p.songId,
+    ));
+    notifyListeners();
   }
 
   Future<void> clearIgnoredUpgradeKeys() async {
@@ -2215,6 +2224,28 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         return s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '').trim();
       }
 
+      // Check if artist string has real information (not empty or generic/unknown)
+      bool isMeaningfulArtist(String? artist) {
+        if (artist == null) return false;
+        final n = normalize(artist);
+        if (n.isEmpty) return false;
+        const generic = {
+          'unknown',
+          'unknownartist',
+          'various',
+          'variousartists',
+          'va',
+          'sconosciuto',
+          'artistasconosciuto',
+          'artist',
+          'artista',
+          'na',
+          'none',
+          'null',
+        };
+        return !generic.contains(n);
+      }
+
       final List<UpgradeProposal> newProposals = [];
       final uniqueProposalIds =
           <String>{}; // prevent duplicates in proposal list
@@ -2235,40 +2266,127 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             continue;
           }
 
-          // Simple match
-          final sTitle = normalize(song.title);
+          // Extract candidate artist & title if online title contains ' - ' and artist is empty/generic
+          String sArtistRaw = song.artist.trim();
+          String sTitleRaw = song.title.trim();
 
-          if (sTitle.isEmpty) continue;
+          if (!isMeaningfulArtist(sArtistRaw) && sTitleRaw.contains(' - ')) {
+            final parts = sTitleRaw.split(' - ');
+            if (parts.length >= 2 &&
+                parts[0].trim().isNotEmpty &&
+                parts[1].trim().isNotEmpty) {
+              sArtistRaw = parts[0].trim();
+              sTitleRaw = parts.sublist(1).join(' - ').trim();
+            }
+          }
+
+          final sTitleNorm = normalize(sTitleRaw);
+          final sFullTitleNorm = normalize(song.title);
+          final bool hasArtist = isMeaningfulArtist(sArtistRaw);
+          final sArtistNorm = hasArtist ? normalize(sArtistRaw) : '';
+
+          if (sTitleNorm.isEmpty && sFullTitleNorm.isEmpty) continue;
+
+          SongModel? bestMatch;
+          int bestMatchScore = 0; // 3: exact tag artist + title, 2: filename/path artist + title, 1: title only
 
           for (var local in localSongs) {
-            // Match only on title: the song title must appear in the
-            // local file title OR in the local file path/name.
-            // The user reviews each proposal and decides whether to accept it.
-            final lTitle = normalize(local.title);
-            final lFileName = normalize(
-              local.data.split('/').last.split('\\').last,
-            );
+            final lTitleNorm = normalize(local.title);
+            final lFileName = local.data.split('/').last.split('\\').last;
+            final lFileNameNorm = normalize(lFileName);
+            final lPathNorm = normalize(local.data);
 
-            final titleInLocalTitle = lTitle.contains(sTitle);
-            final titleInFileName = lFileName.contains(sTitle);
+            // 1. Title matching check
+            final bool titleMatches = (sTitleNorm.isNotEmpty &&
+                    lTitleNorm.isNotEmpty &&
+                    (lTitleNorm.contains(sTitleNorm) ||
+                        sTitleNorm.contains(lTitleNorm))) ||
+                (sTitleNorm.isNotEmpty &&
+                    lFileNameNorm.contains(sTitleNorm)) ||
+                (sFullTitleNorm.isNotEmpty &&
+                    (lTitleNorm.contains(sFullTitleNorm) ||
+                        lFileNameNorm.contains(sFullTitleNorm)));
 
-            if (titleInLocalTitle || titleInFileName) {
-              if (uniqueProposalIds.add("${playlist.id}_${song.id}")) {
-                newProposals.add(
-                  UpgradeProposal(
-                    playlistId: playlist.id,
-                    playlistName: playlist.name,
-                    songId: song.id,
-                    songTitle: song.title,
-                    songArtist: song.artist,
-                    songAlbum: song.album,
-                    localPath: local.data,
-                    localId: local.id,
-                  ),
-                );
+            if (!titleMatches) continue;
+
+            // 2. Artist matching check
+            int matchScore = 0;
+            if (hasArtist) {
+              final bool localHasArtist = isMeaningfulArtist(local.artist);
+              final lArtistNorm =
+                  localHasArtist ? normalize(local.artist!) : '';
+
+              if (localHasArtist) {
+                final bool tagMatches = lArtistNorm.contains(sArtistNorm) ||
+                    sArtistNorm.contains(lArtistNorm);
+                if (tagMatches) {
+                  matchScore = 3;
+                } else {
+                  // Local file explicitly has a DIFFERENT artist tag.
+                  // Check if filename or path still explicitly includes the online artist:
+                  if (lFileNameNorm.contains(sArtistNorm) ||
+                      lPathNorm.contains(sArtistNorm)) {
+                    matchScore = 2;
+                  } else {
+                    // Conflicting artist tag (e.g. Adele vs Lionel Richie for song 'Hello')
+                    // Skip to avoid false positive proposal
+                    continue;
+                  }
+                }
+              } else {
+                // Local file doesn't have an artist in ID3 tag.
+                // Verify if artist is in filename, filepath or local title.
+                if (lFileNameNorm.contains(sArtistNorm) ||
+                    lPathNorm.contains(sArtistNorm) ||
+                    lTitleNorm.contains(sArtistNorm)) {
+                  matchScore = 2;
+                } else {
+                  // No artist match found anywhere for a song that has a known artist
+                  continue;
+                }
               }
-              break; // Found a match for this song, move to next song
+            } else {
+              // Online song had no known artist; title match is sufficient
+              matchScore = 1;
             }
+
+            if (matchScore > bestMatchScore) {
+              bestMatchScore = matchScore;
+              bestMatch = local;
+              if (matchScore == 3) {
+                // Highest possible confidence match found
+                break;
+              }
+            }
+          }
+
+          if (bestMatch != null &&
+              uniqueProposalIds.add("${playlist.id}_${song.id}")) {
+            final fileName =
+                bestMatch.data.split('/').last.split('\\').last;
+            newProposals.add(
+              UpgradeProposal(
+                playlistId: playlist.id,
+                playlistName: playlist.name,
+                songId: song.id,
+                songTitle: song.title,
+                songArtist: song.artist,
+                songAlbum: song.album,
+                localPath: bestMatch.data,
+                localId: bestMatch.id,
+                localTitle: bestMatch.title,
+                localArtist: bestMatch.artist,
+                localAlbum: bestMatch.album,
+                localDuration: bestMatch.duration != null &&
+                        bestMatch.duration! > 0
+                    ? Duration(milliseconds: bestMatch.duration!)
+                    : null,
+                localSize: bestMatch.size,
+                localDisplayName: bestMatch.displayName.isNotEmpty
+                    ? bestMatch.displayName
+                    : fileName,
+              ),
+            );
           }
         }
       }

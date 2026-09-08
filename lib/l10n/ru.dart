@@ -779,5 +779,17 @@ final Map<String, String> ru = {
   'album_merge_unselect': 'Отменить выбор',
   'album_merge_apply': 'Объединить ({0})',
   'album_merge_done': 'Названия альбомов {0} объединены',
+  'keep_final_name': 'Сохранить как окончательное имя:',
+  'sample_tracks_label': 'Треки:',
+  'similarity_label': '{0}% сходства',
+  'confirm_never_ask': 'Подтвердить, больше не спрашивать ({0})',
+  'never_ask_saved': 'Предпочтение сохранено:{0} больше не будет предлагаться.',
+  'online_track': 'Онлайн трек',
+  'offline_match': 'Соответствующий автономный файл',
+  'file_label': 'Файл',
+  'path_label': 'Путь',
+  'size_label': 'Размер',
+  'update': 'Обновлять',
+  'merge_action': 'Объединить',
 };
 

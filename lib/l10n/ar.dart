@@ -753,6 +753,18 @@ final Map<String, String> ar = {
   'export_mp3_title': 'تصدير الأغاني',
   'export_mp3_desc': 'فك تشفير وتصدير الأغاني التي تم تنزيلها كملفات محلية غير محمية',
   'export_mp3_empty_desc': 'TODO: Before exporting, download each song using the download button in the playlists. Only songs downloaded through the app can be exported.',
+  'keep_final_name': 'احتفظ كاسم نهائي:',
+  'sample_tracks_label': 'المسارات:',
+  'similarity_label': '{0} ٪ التشابه',
+  'confirm_never_ask': 'تأكيد عدم السؤال مرة أخرى ({0})',
+  'never_ask_saved': 'تم حفظ التفضيل: لن يتم اقتراح {0} مرة أخرى.',
+  'online_track': 'المسار على الانترنت',
+  'offline_match': 'الملف المطابق بلا اتصال',
+  'file_label': 'ملف',
+  'path_label': 'طريق',
+  'size_label': 'مقاس',
+  'update': 'تحديث',
+  'merge_action': 'دمج',
 };
 
 

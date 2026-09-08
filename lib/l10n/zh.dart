@@ -756,5 +756,17 @@ final Map<String, String> zh = {
   'album_merge_unselect': '取消选择',
   'album_merge_apply': '合并（{0}）',
   'album_merge_done': '{0}专辑名称合并',
+  'keep_final_name': '保留最终名称：',
+  'sample_tracks_label': '曲目：',
+  'similarity_label': '{0}相似度百分比',
+  'confirm_never_ask': '确认不再询问 ({0})',
+  'never_ask_saved': '已保存偏好：{0}将不再被建议。',
+  'online_track': '线上赛道',
+  'offline_match': '匹配的离线文件',
+  'file_label': '文件',
+  'path_label': '小路',
+  'size_label': '尺寸',
+  'update': '更新',
+  'merge_action': '合并',
 };
 

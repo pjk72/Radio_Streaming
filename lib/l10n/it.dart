@@ -339,6 +339,9 @@ final Map<String, String> it = {
   'album_merge_unselect': 'Deseleziona',
   'album_merge_apply': 'Unisci ({0})',
   'album_merge_done': '{0} nomi album uniti',
+  'keep_final_name': 'Mantieni come nome definitivo:',
+  'sample_tracks_label': 'Brani:',
+  'similarity_label': '{0}% similarità',
   // Filter Playlists popup
   'filter_playlists': 'Filtra Playlist',
   'user_created': 'Create dall\'Utente',
@@ -594,6 +597,13 @@ final Map<String, String> it = {
   'never_ask_again_song': 'Non mostrare più questo confronto',
   'never_ask_again_song_desc': 'Tocca l\'icona dell\'occhio sbarrato per non mostrare più il confronto per un brano.',
   'never_ask_badge': 'Non proporre più',
+  'confirm_never_ask': 'Conferma non mostrare più ({0})',
+  'never_ask_saved': 'Preferenza salvata: {0} non verranno più riproposti.',
+  'online_track': 'Brano online',
+  'offline_match': 'File locale trovato',
+  'file_label': 'File',
+  'path_label': 'Percorso',
+  'size_label': 'Dimensione',
   'track_problematic': 'Brano Problematico',
   'force_unlock': 'Sblocca Forzatamente',
   'view_song_details': 'Dettagli Brano',
@@ -783,6 +793,8 @@ final Map<String, String> it = {
   'preparing_songs': 'Preparazione delle canzoni',
   'export_mp3_group_confirm': 'Avvia',
   'export_mp3_empty_desc': 'TODO: Before exporting, download each song using the download button in the playlists. Only songs downloaded through the app can be exported.',
+  'update': 'Aggiorna',
+  'merge_action': 'Unisci',
 };
 
 

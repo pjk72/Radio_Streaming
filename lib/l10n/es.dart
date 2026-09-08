@@ -789,6 +789,18 @@ final Map<String, String> es = {
   'album_merge_unselect': 'Deseleccionar',
   'album_merge_apply': 'Fusionar ({0})',
   'album_merge_done': '{0} nombres de álbumes fusionados',
+  'keep_final_name': 'Mantener como nombre final:',
+  'sample_tracks_label': 'Pistas:',
+  'similarity_label': '{0}% de similitud',
+  'confirm_never_ask': 'Confirmar no volver a preguntar ({0})',
+  'never_ask_saved': 'Preferencia guardada:{0} no se volverá a proponer.',
+  'online_track': 'Pista en línea',
+  'offline_match': 'Archivo sin conexión coincidente',
+  'file_label': 'Archivo',
+  'path_label': 'Camino',
+  'size_label': 'Tamaño',
+  'update': 'Actualizar',
+  'merge_action': 'Unir',
 };
 
 

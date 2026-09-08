@@ -338,6 +338,9 @@ final Map<String, String> en = {
   'album_merge_unselect': 'Deselect',
   'album_merge_apply': 'Merge ({0})',
   'album_merge_done': '{0} album names merged',
+  'keep_final_name': 'Keep as final name:',
+  'sample_tracks_label': 'Tracks:',
+  'similarity_label': '{0}% similarity',
   // Filter Playlists popup
   'filter_playlists': 'Filter Playlists',
   'user_created': 'User Created',
@@ -570,6 +573,13 @@ final Map<String, String> en = {
   'never_ask_again_song': 'Do not show this comparison again',
   'never_ask_again_song_desc': 'Tap the crossed eye icon to exclude a song from future comparisons.',
   'never_ask_badge': 'Do not ask again',
+  'confirm_never_ask': 'Confirm do not ask again ({0})',
+  'never_ask_saved': 'Preference saved: {0} will not be proposed again.',
+  'online_track': 'Online track',
+  'offline_match': 'Matched offline file',
+  'file_label': 'File',
+  'path_label': 'Path',
+  'size_label': 'Size',
   'track_problematic': 'Track Problematic',
   'force_unlock': 'Force Unlock',
   'view_song_details': 'View Song Details',
@@ -766,7 +776,9 @@ final Map<String, String> en = {
   'preparing_songs': 'Preparing the songs',
   'export_mp3_group_confirm': 'Start',
   'reload': 'Manual recognition',
-  'confirm': 'He confirms',
+  'confirm': 'Confirm',
+  'update': 'Update',
+  'merge_action': 'Merge',
 };
 
 
