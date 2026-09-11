@@ -19,6 +19,7 @@ import '../widgets/mini_visualizer.dart';
 import '../services/log_service.dart';
 import '../providers/language_provider.dart';
 import '../utils/glass_utils.dart';
+import 'artist_details_screen.dart';
 
 class _AdItem {
   const _AdItem();
@@ -231,6 +232,18 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       }
     }
 
+    // Fallback: iTunes had no reliable match -> build the track list from
+    // Last.fm so the album still shows its songs.
+    if (_songs.isEmpty &&
+        (widget.albumName?.isNotEmpty ?? false) &&
+        (widget.artistName?.isNotEmpty ?? false)) {
+      final lastFmTracks = await _fetchLastFmAlbumTracks(
+        widget.artistName!,
+        widget.albumName!,
+      );
+      _songs = lastFmTracks.map((t) => _trackToSavedSong(t)).toList();
+    }
+
     if (mounted) {
       setState(() {
         _isLoading = false;
@@ -282,7 +295,15 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
         final response = await http.get(uri);
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          if (data['resultCount'] > 0) return data['results'][0];
+          if (data['resultCount'] > 0) {
+            final result = data['results'][0];
+            if (_isAlbumMatch(result, cleanArtist, cleanAlbum)) {
+              return result;
+            }
+            developer.log(
+              "Discarding mismatched album '${result['collectionName']}' for '$cleanAlbum' by '$cleanArtist'",
+            );
+          }
         }
       }
 
@@ -308,6 +329,27 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     final regex = RegExp(r'/id(\d+)');
     final match = regex.firstMatch(url);
     return match?.group(1);
+  }
+
+  // Reject fuzzy iTunes matches that point to a different album/artist than
+  // the one the user actually opened.
+  bool _isAlbumMatch(
+    Map<String, dynamic> result,
+    String artist,
+    String album,
+  ) {
+    final nArtist = _normalize(artist);
+    final nAlbum = _normalize(album);
+    if (nArtist.isEmpty || nAlbum.isEmpty) return true;
+
+    final rArtist = _normalize(result['artistName']?.toString() ?? '');
+    final rAlbum = _normalize(result['collectionName']?.toString() ?? '');
+    if (rArtist.isEmpty || rAlbum.isEmpty) return false;
+
+    final artistOk = rArtist.contains(nArtist) || nArtist.contains(rArtist);
+    final albumOk =
+        rAlbum == nAlbum || rAlbum.contains(nAlbum) || nAlbum.contains(rAlbum);
+    return artistOk && albumOk;
   }
 
   String _normalize(String s) {
@@ -413,6 +455,65 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
       }
     } catch (e) {
       developer.log("Error fetching tracks: $e");
+    }
+    return [];
+  }
+
+  // Builds the album track list from Last.fm (album.getInfo) when iTunes
+  // has no reliable match. Playback resolves via YouTube search (title+artist).
+  Future<List<Map<String, dynamic>>> _fetchLastFmAlbumTracks(
+    String artist,
+    String album,
+  ) async {
+    try {
+      final uri = Uri.parse(
+        "https://ws.audioscrobbler.com/2.0/"
+        "?method=album.getinfo"
+        "&artist=${Uri.encodeComponent(artist)}"
+        "&album=${Uri.encodeComponent(album)}"
+        "&api_key=${RadioProvider.lastFmApiKey}"
+        "&format=json&autocorrect=1",
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return [];
+
+      final data = jsonDecode(response.body);
+      if (data['error'] != null) return [];
+      final albumInfo = data['album'];
+      if (albumInfo == null) return [];
+
+      final tracksRaw = albumInfo['tracks']?['track'];
+      final List list;
+      if (tracksRaw is List) {
+        list = tracksRaw;
+      } else if (tracksRaw is Map) {
+        list = [tracksRaw];
+      } else {
+        return [];
+      }
+
+      final results = <Map<String, dynamic>>[];
+      var index = 0;
+      for (final entry in list) {
+        final map = entry as Map?;
+        if (map == null) continue;
+        final name = (map['name'] as String? ?? '').trim();
+        if (name.isEmpty) continue;
+        final durationSec = int.tryParse(map['duration']?.toString() ?? '');
+        index++;
+        results.add({
+          'trackName': name,
+          'artistName': artist,
+          'collectionName': album,
+          'trackNumber': index,
+          'trackId': 'lastfm_${_normalize(artist)}_${_normalize(name)}_$index',
+          if (durationSec != null && durationSec > 0)
+            'trackTimeMillis': durationSec * 1000,
+        });
+      }
+      return results;
+    } catch (e) {
+      developer.log("Error fetching Last.fm album tracks: $e");
     }
     return [];
   }
@@ -574,8 +675,8 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           widget.artworkUrl ??
           _albumData?['artworkUrl100']?.replaceAll('100x100bb', '600x600bb') ??
           "";
-      title = _albumData?['collectionName'] ?? widget.albumName ?? "";
-      subtitle = _albumData?['artistName'] ?? widget.artistName ?? "";
+      title = widget.albumName ?? _albumData?['collectionName'] ?? "";
+      subtitle = widget.artistName ?? _albumData?['artistName'] ?? "";
     }
 
     // Determine Item Count
@@ -712,20 +813,30 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
 
           // 4. Back Button
           Positioned(
-            top: 0,
-            left: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: CircleAvatar(
-                  backgroundColor: Colors.black.withValues(alpha: 0.5),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
-                    tooltip: langProvider.translate('back'),
-                  ),
-                ),
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 8,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded),
+              color: Colors.white,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withValues(alpha: 0.2),
               ),
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: langProvider.translate('back'),
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 8,
+            child: IconButton(
+              icon: const Icon(Icons.close_rounded),
+              color: Colors.white,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withValues(alpha: 0.2),
+              ),
+              onPressed: () =>
+                  Navigator.of(context).popUntil((route) => route.isFirst),
+              tooltip: langProvider.translate('close'),
             ),
           ),
         ],
@@ -885,10 +996,36 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           ),
           if (subtitle.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 18),
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ArtistDetailsScreen(
+                        artistName: subtitle,
+                        artistImage:
+                            Provider.of<RadioProvider>(context,
+                                listen: false,
+                              ).getArtistImageFor(subtitle),
+                        genre: _albumData?['primaryGenreName'] as String?,
+                      ),
+                    ),
+                  );
+                },
+                child: Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Theme.of(context).primaryColor,
+                    fontSize: 18,
+                    decoration: TextDecoration.underline,
+                    decorationColor: Theme.of(context).primaryColor,
+                    decorationThickness: 1,
+                  ),
+                ),
+              ),
             ),
           ],
 

@@ -680,6 +680,19 @@ class RadioAudioHandler extends BaseAudioHandler
     }
   }
 
+  String _cleanStationUrl(String rawUrl) {
+    if (rawUrl.isEmpty) return rawUrl;
+    // Strip timestamp suffix like _1741634892000 from ACRCloud uniqueId
+    final idx = rawUrl.lastIndexOf('_');
+    if (idx != -1 && idx > rawUrl.indexOf('://')) {
+      final suffix = rawUrl.substring(idx + 1);
+      if (int.tryParse(suffix) != null && suffix.length >= 10) {
+        return rawUrl.substring(0, idx);
+      }
+    }
+    return rawUrl;
+  }
+
   Future<void> _quickRestore() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -689,19 +702,20 @@ class RadioAudioHandler extends BaseAudioHandler
       final lastType = prefs.getString('last_media_type') ?? 'station';
 
       if (lastId != null && lastTitle != null && mediaItem.value == null) {
+        final cleanId = (lastType == 'station') ? _cleanStationUrl(lastId) : lastId;
         final lastStationId = prefs.getInt('last_station_id');
         final lastIsLocal = prefs.getBool('last_media_is_local') ?? false;
         final item = MediaItem(
-          id: lastId,
+          id: cleanId,
           title: lastTitle,
           artUri: (lastArt != null && lastArt.isNotEmpty)
               ? Uri.tryParse(lastArt)
               : null,
           extras: {
-            'url': lastId,
+            'url': cleanId,
             'type': lastType,
             'isLocal': lastIsLocal,
-            'stationId': ?lastStationId,
+            'stationId': lastStationId,
           },
         );
         mediaItem.add(item);
@@ -899,8 +913,12 @@ class RadioAudioHandler extends BaseAudioHandler
         if (lastId != null) {
           if (lastType == 'station' || lastType == null) {
             // Restore Station
+            final cleanId = _cleanStationUrl(lastId);
             startupItem = queueItems.firstWhere(
-              (item) => item.id == lastId,
+              (item) =>
+                  item.id == lastId ||
+                  item.id == cleanId ||
+                  item.extras?['url'] == cleanId,
               orElse: () => queueItems.first,
             );
           } else if (lastType == 'playlist_song') {
@@ -1152,6 +1170,21 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       String effectiveVideoId = videoId;
+      if (song.youtubeUrl != null && song.youtubeUrl!.isNotEmpty) {
+        effectiveVideoId = _extractVideoId(song.youtubeUrl!) ?? song.youtubeUrl!;
+      } else if (effectiveVideoId.startsWith('ctx_')) {
+        final lastUnderscore = effectiveVideoId.lastIndexOf('_');
+        if (lastUnderscore != -1) {
+          final candidate = effectiveVideoId.substring(lastUnderscore + 1);
+          effectiveVideoId = _extractVideoId(candidate) ?? candidate;
+        }
+      } else {
+        effectiveVideoId = _extractVideoId(effectiveVideoId) ?? effectiveVideoId;
+      }
+
+      if (effectiveVideoId.startsWith('song_')) {
+        effectiveVideoId = '';
+      }
 
       // 1. SEARCH FALLBACK if videoId is missing
       if (effectiveVideoId.isEmpty) {
@@ -1363,13 +1396,8 @@ class RadioAudioHandler extends BaseAudioHandler
     _isInitialBuffering = false;
     _expectingStop = false;
     try {
-      // For playlist songs, use pause() to keep position. For radio, stop() to clear buffer.
-      if (mediaItem.value?.extras?['type'] == 'playlist_song') {
-        await _player.pause();
-      } else {
-        await _player.stop();
-        _recognitionTimer?.cancel();
-      }
+      await _player.pause();
+      _recognitionTimer?.cancel();
     } catch (_) {}
     // Manually update state so UI knows we paused immediately
     _logAnalyticsEvent('toggle_play', {'action': 'pause'});
@@ -1415,8 +1443,8 @@ class RadioAudioHandler extends BaseAudioHandler
     final currentItem = mediaItem.value;
     final isRadio = currentItem?.extras?['type'] == 'station';
 
-    // If paused, just resume without reloading (only for playlists, Radio needs full restart)
-    if (!isRadio && _player.state == PlayerState.paused) {
+    // If paused, just resume without reloading
+    if (_player.state == PlayerState.paused) {
       _expectingStop = false;
       try {
         await _activateAudioSession();
@@ -1447,12 +1475,10 @@ class RadioAudioHandler extends BaseAudioHandler
         _logAnalyticsEvent('toggle_play', {'action': 'play'});
       }
 
-      // AA FIX: For radio stations, simulate a tap on the station in the AA list
-      // by routing through playFromMediaId with user_initiated:true.
-      // This prevents Android Auto from misinterpreting the resume as a skipToNext,
-      // which happened when playFromUri was called with stale extras lacking user_initiated.
+      // AA FIX: For radio stations, route through playFromMediaId with user_initiated:true.
       if (isRadio) {
-        final stationUrl = currentItem.extras?['url'] as String? ?? currentItem.id;
+        String stationUrl = currentItem.extras?['url'] as String? ?? currentItem.id;
+        stationUrl = _cleanStationUrl(stationUrl);
         await playFromMediaId(stationUrl, {
           ...?currentItem.extras,
           'user_initiated': true,
@@ -1460,7 +1486,10 @@ class RadioAudioHandler extends BaseAudioHandler
       } else {
         await playFromUri(
           Uri.parse(currentItem.id),
-          currentItem.extras,
+          {
+            ...?currentItem.extras,
+            'user_initiated': true,
+          },
           logEvent,
         );
       }

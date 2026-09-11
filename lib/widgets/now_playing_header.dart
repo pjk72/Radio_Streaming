@@ -9,8 +9,6 @@ import '../providers/language_provider.dart';
 import '../screens/artist_details_screen.dart';
 import 'realistic_visualizer.dart';
 
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'dart:io';
@@ -44,7 +42,6 @@ class NowPlayingHeader extends StatefulWidget {
 }
 
 class _NowPlayingHeaderState extends State<NowPlayingHeader> {
-  String? _fetchedArtistImage;
   String? _lastArtistChecked;
 
   bool _isListening = false;
@@ -59,52 +56,27 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
 
   // Removed redundant lifecycle methods as we handle check in build
 
-  Future<void> _fetchArtistImage(String artistName) async {
+  Future<void> _fetchArtistImage(String artistName,
+      {String? trackTitle}) async {
     try {
-      // Logic copied from ArtistDetailsScreen
-      final uri = Uri.parse(
-        "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(artistName)}&limit=1",
-      );
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        if (json['data'] != null && (json['data'] as List).isNotEmpty) {
-          String? picture =
-              json['data'][0]['picture_xl'] ??
-              json['data'][0]['picture_big'] ??
-              json['data'][0]['picture_medium'];
+      // Use the provider's cached + verified lookup (artist + track title
+      // where available) to avoid wrong matches for ambiguous names.
+      // The provider caches the result per-artist, so the header's
+      // cache-based lookup picks it up on the next rebuild.
+      final provider = Provider.of<RadioProvider>(context, listen: false);
+      final picture =
+          await provider.fetchArtistImage(artistName, trackTitle: trackTitle);
 
-          if (picture != null && mounted) {
-            // Only update if it matches the currently checked artist to avoid race conditions
-            if (_lastArtistChecked == artistName) {
-              setState(() {
-                _fetchedArtistImage = picture;
-              });
+      if (!mounted) return;
+      // Only push if it still matches the currently checked artist to avoid race conditions
+      if (_lastArtistChecked != artistName) return;
 
-              // Push to provider so StationCard can see it too
-              Provider.of<RadioProvider>(
-                context,
-                listen: false,
-              ).setArtistImage(picture);
-              return;
-            }
-          }
-        }
-      }
-
-      // If we reach here, we found nothing or valid response but no image
-      if (mounted && _lastArtistChecked == artistName) {
-        setState(() {
-          _fetchedArtistImage = null; // Clear if not found
-        });
+      if (picture != null) {
+        // Push to provider so StationCard (and our own cache lookup) reflect it
+        provider.setArtistImage(picture);
       }
     } catch (e) {
-      debugPrint("Error fetching artist image in header: \$e");
-      if (mounted && _lastArtistChecked == artistName) {
-        setState(() {
-          _fetchedArtistImage = null; // Clear on error
-        });
-      }
+      debugPrint("Error fetching artist image in header: $e");
     }
   }
 
@@ -408,21 +380,21 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                       listen: false,
                     ).translate('unknown_artist') &&
                 !isPlaceholder) {
-              _fetchArtistImage(artist);
-            } else {
-              // If valid artist is gone (e.g. unknown), clear immediately
-              _fetchedArtistImage = null;
+              _fetchArtistImage(artist, trackTitle: provider.currentTrack);
             }
           });
         }
       });
     }
 
-    // PRIORITY: Local Fetch -> Provider Artist Image -> Station Logo
-    // NOTE: currentAlbumArt intentionally excluded to avoid the brief album-cover
-    // flash before the artist photo loads. Falls back directly to station logo.
+    // PRIORITY: Per-artist cache (always up-to-date, includes any manual
+    // override from the photo picker) -> Provider Artist Image -> Station Logo
+    // NOTE: the local _fetchedArtistImage state and currentAlbumArt are
+    // intentionally not used, to avoid flashing a previous artist's profile
+    // photo while the new one loads (fetchArtistImage already fills the cache).
+    final String? cachedArtistImage = provider.getArtistImageFor(artist);
     final String? imageUrl = station != null
-        ? (_fetchedArtistImage ?? provider.currentArtistImage ?? station.logo)
+        ? (cachedArtistImage ?? provider.currentArtistImage ?? station.logo)
         : null;
 
     // Logic to determine if we are showing a specific image (Artist/Album) or just the default Station Logo
@@ -465,7 +437,9 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                         builder: (context) => ArtistDetailsScreen(
                           artistName: provider.currentArtist,
                           artistImage:
-                              _fetchedArtistImage ??
+                              provider.getArtistImageFor(
+                                    provider.currentArtist,
+                                  ) ??
                               provider.currentArtistImage,
                           genre: station.genre,
                         ),
@@ -482,7 +456,6 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                 right: 20.0 * t,
               ),
               decoration: BoxDecoration(
-                // Increase opacity when collapsed (t -> 0) to prevent background content mix
                 // Increase opacity when collapsed (t -> 0) to prevent background content mix
                 color:
                     Theme.of(context).appBarTheme.backgroundColor ??
@@ -1085,7 +1058,6 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         colorBlendMode: colorBlendMode,
         alignment: alignment ?? Alignment.center,
         fadeInDuration: const Duration(milliseconds: 300),
-        useOldImageOnUrlChange: true, // Reduce flickering
         memCacheWidth: 1024,
         maxWidthDiskCache: 1024,
         // If the main image (artist/album art) fails, fall back to station logo

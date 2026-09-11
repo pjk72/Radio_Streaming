@@ -95,6 +95,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   static const String _keyFollowedArtists = 'followed_artists';
   static const String _keyFollowedAlbums = 'followed_albums';
   static const String _keyArtistImagesCache = 'artist_images_cache';
+  static const String _keyArtistImageOverrides = 'artist_image_overrides';
   static const String _keyCategoryCompactViews = 'category_compact_views';
 
   final Set<String> _followedArtists = {};
@@ -1880,23 +1881,40 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         // If recognition failed and artist reverted to station info (genre/name),
         // clear the artist image so the header falls back to the station logo.
         final stationForCheck = _currentStation;
-        if (stationForCheck != null &&
+        final bool isStationPlaceholder =
+            stationForCheck != null &&
             (_currentArtist == stationForCheck.genre ||
-                _currentArtist == stationForCheck.name ||
-                _isRecognizing)) {
+                _currentArtist == stationForCheck.name);
+        if (isStationPlaceholder ||
+            _isRecognizing ||
+            _currentArtist.isEmpty ||
+            _currentArtist == "Unknown Artist" ||
+            _currentArtist == "Live Broadcast") {
           _currentArtistImage = null;
-        } else if (_currentArtist.isNotEmpty &&
-            _currentArtist != "Unknown Artist" &&
-            _currentArtist != "Live Broadcast" &&
-            !_isRecognizing &&
-            _currentArtistImage == null) {
-          // AUTO-FETCH artist image if artist changed and we don't have one
-          fetchArtistImage(_currentArtist).then((img) {
-            if (_currentArtist == item.artist && _currentArtistImage == null) {
-              _currentArtistImage = img;
-              notifyListeners();
+        } else {
+          // New valid artist: adopt the cached image for THIS artist only.
+          // Otherwise clear any stale image (which may belong to the previous
+          // artist) before auto-fetching the correct one.
+          final String cachedForCurrent =
+              _artistImageCache[_currentArtist.trim().toLowerCase()] ?? '';
+          if (cachedForCurrent.isNotEmpty) {
+            if (_currentArtistImage != cachedForCurrent) {
+              _currentArtistImage = cachedForCurrent;
             }
-          });
+          } else if (_currentArtistImage != null) {
+            _currentArtistImage = null; // stale -> refetch for the new artist
+          }
+          if (_currentArtistImage == null) {
+            // AUTO-FETCH artist image if artist changed and we don't have one
+            fetchArtistImage(_currentArtist, trackTitle: _currentTrack)
+                .then((img) {
+              if (_currentArtist == item.artist &&
+                  _currentArtistImage == null) {
+                _currentArtistImage = img;
+                notifyListeners();
+              }
+            });
+          }
         }
       }
 
@@ -2115,6 +2133,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     _loadManageSettings();
 
     _loadArtistImagesCache();
+    _loadArtistImageOverrides();
     _loadStations();
 
     _loadPlaylists().then((_) {
@@ -2472,6 +2491,21 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<void> _saveArtistImagesCache() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyArtistImagesCache, jsonEncode(_artistImageCache));
+  }
+
+  Future<void> _loadArtistImageOverrides() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String>? list = prefs.getStringList(_keyArtistImageOverrides);
+    if (list != null) _manualArtistImageOverrides.addAll(list);
+  }
+
+  Future<void> _saveArtistImageOverrides() async {
+    if (_manualArtistImageOverrides.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _keyArtistImageOverrides,
+      _manualArtistImageOverrides.toList(),
+    );
   }
 
   Future<void> _loadManageSettings() async {
@@ -7970,7 +8004,36 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   // --- Artist Image Caching ---
   final Map<String, String?> _artistImageCache = {};
 
-  Future<String?> fetchArtistImage(String artistName) async {
+  // Artist names (lowercased) whose photo was set manually via the photo
+  // picker. Background auto-fetches must never overwrite these, otherwise a
+  // stale lookup for the same artist can clobber the user's chosen photo.
+  final Set<String> _manualArtistImageOverrides = {};
+
+  // Tracks the most recent manual photo override (set via the artist photo
+  // picker) so UI that keeps its own local copy can prioritize it.
+  String? _lastArtistImageOverrideArtist;
+  String? _lastArtistImageOverrideUrl;
+
+  String? get lastArtistImageOverrideArtist => _lastArtistImageOverrideArtist;
+  String? get lastArtistImageOverrideUrl => _lastArtistImageOverrideUrl;
+
+  // Public read access to the artist image cache for a specific artist.
+  // Used by screens linking to ArtistDetailsScreen so they don't pass the
+  // album/playlist artwork as if it were the artist's photo.
+  String? getArtistImageFor(String artistName) {
+    final key = artistName.trim().toLowerCase();
+    if (key.isEmpty) return null;
+    return _artistImageCache[key];
+  }
+
+  static const String lastFmApiKey = '13f9f113af99d150c10d1ac9d12aec7b';
+
+  // Last.fm "no image" placeholder hash (identical for every artist without
+  // a photo). If an image points to it, treat the artist as having no photo.
+  static const String lastFmPlaceholderHash = '2a96cbd8b46e442fc41c2b86b821562f';
+
+  Future<String?> fetchArtistImage(String artistName,
+      {String? trackTitle}) async {
     // 1. Normalize name for cache key
     final rawKey = artistName.trim().toLowerCase();
 
@@ -7979,23 +8042,207 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       return _artistImageCache[rawKey];
     }
 
-    // Helper: Returns URL (String), "NOT_FOUND" (String), or null (Error)
-    Future<String?> searchDeezer(String query) async {
+    // --- Helper: sanitize an artist name for searching ---
+    String _sanitize(String name) {
+      String s = name;
+      // Strip feat/ft collaborators
+      final lc = s.toLowerCase();
+      if (lc.contains(' feat')) s = s.substring(0, lc.indexOf(' feat'));
+      if (lc.contains(' ft.')) s = s.substring(0, lc.indexOf(' ft.'));
+      // Strip everything after these delimiters
+      s = s.split('•').first;
+      s = s.split('(').first;
+      s = s.split('[').first;
+      s = s.split('{').first;
+      s = s.split(' - ').first;
+      s = s.split(RegExp(r'[,;&/|+\*\._]')).first;
+      return s.trim();
+    }
+
+    // --- Helper: clean a track title for searching ---
+    String _sanitizeTrack(String title) {
+      String s = title.trim();
+      // Remove feat/with credits
+      s = s.replaceAll(
+        RegExp(r'\(\s*feat[^)]*\)', caseSensitive: false),
+        ' ',
+      );
+      s = s.replaceAll(
+        RegExp(r'\(\s*with[^)]*\)', caseSensitive: false),
+        ' ',
+      );
+      // Strip common annotations: (Official Video), [lyrics], - Radio Edit...
+      s = s.split('(').first;
+      s = s.split('[').first;
+      s = s.split('{').first;
+      s = s.split(' - ').first;
+      s = s.split(' – ').first;
+      s = s.split('•').first;
+      return s.trim();
+    }
+
+    // --- Helper: Last.fm lookup (FIRST search source) ---
+    // Uses the track title to disambiguate the artist when available, then
+    // returns the largest artist profile image. Returns URL, "NOT_FOUND", or
+    // null (network error).
+    Future<String?> _searchLastFm(
+      String artistQuery, {
+      String? trackTitle,
+    }) async {
+      if (artistQuery.isEmpty) return "NOT_FOUND";
+
+      String artistName = artistQuery;
+
+      // 1. (Optional) Resolve the canonical artist via the track, which is
+      //    far more reliable than an artist-name-only lookup. If the returned
+      //    track belongs to a different artist, the name is not a match.
+      if (trackTitle != null && trackTitle.isNotEmpty) {
+        try {
+          final cleanTitle = _sanitizeTrack(trackTitle);
+          if (cleanTitle.isNotEmpty) {
+            final trackUri = Uri.parse(
+              "https://ws.audioscrobbler.com/2.0/"
+              "?method=track.getinfo"
+              "&artist=${Uri.encodeComponent(artistQuery)}"
+              "&track=${Uri.encodeComponent(cleanTitle)}"
+              "&api_key=$lastFmApiKey&format=json&autocorrect=1",
+            );
+            final trackResp = await http
+                .get(trackUri)
+                .timeout(const Duration(seconds: 8));
+            if (trackResp.statusCode == 200) {
+              final trackJson = jsonDecode(trackResp.body);
+              if (trackJson['error'] == null) {
+                final trackData = trackJson['track'] as Map?;
+                final matchedArtist =
+                    (trackData?['artist'] as Map?)?['name'] as String?;
+                if (matchedArtist != null && matchedArtist.isNotEmpty) {
+                  final matchedLower = matchedArtist.toLowerCase();
+                  final queryLower = artistQuery.toLowerCase();
+                  if (matchedLower == queryLower ||
+                      matchedLower.contains(queryLower) ||
+                      queryLower.contains(matchedLower)) {
+                    // Use Last.fm's canonical artist name for the image query
+                    artistName = matchedArtist;
+                  } else {
+                    // The track belongs to another artist -> not a match
+                    return "NOT_FOUND";
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          LogService().log("Error in Last.fm track lookup '$artistQuery': $e");
+        }
+      }
+
+      // 2. Fetch the artist profile and keep the largest image available.
+      try {
+        final artistUri = Uri.parse(
+          "https://ws.audioscrobbler.com/2.0/"
+          "?method=artist.getinfo"
+          "&artist=${Uri.encodeComponent(artistName)}"
+          "&api_key=$lastFmApiKey&format=json&autocorrect=1",
+        );
+        final artistResp = await http
+            .get(artistUri)
+            .timeout(const Duration(seconds: 8));
+        if (artistResp.statusCode != 200) {
+          LogService().log(
+            "Last.fm artist fetch failed ($artistName): ${artistResp.statusCode}",
+          );
+          return null; // Server/Network error -> allow fallback & retry
+        }
+        final artistJson = jsonDecode(artistResp.body);
+        if (artistJson['error'] != null) return "NOT_FOUND";
+        final artistData = artistJson['artist'] as Map?;
+        if (artistData == null) return "NOT_FOUND";
+        final images = artistData['image'] as List? ?? [];
+
+        const sizeRank = <String, int>{
+          'mega': 4,
+          'extralarge': 3,
+          'large': 2,
+          'medium': 1,
+          'small': 0,
+        };
+        String? best;
+        int bestRank = -1;
+        for (final entry in images) {
+          final entryMap = entry as Map?;
+          final url = (entryMap?['#text'] as String? ?? '').trim();
+          if (url.isEmpty) continue;
+          // Skip Last.fm's default "no image" placeholder
+          if (url.contains(lastFmPlaceholderHash)) continue;
+          final size = entryMap?['size'] as String? ?? '';
+          final rank = sizeRank[size] ?? -1;
+          if (rank > bestRank) {
+            bestRank = rank;
+            best = url;
+          }
+        }
+        if (best != null && best.isNotEmpty) return best;
+        return "NOT_FOUND";
+      } catch (e) {
+        LogService().log("Error fetching Last.fm artist '$artistName': $e");
+        return null; // Network error
+      }
+    }
+
+    // --- Helper: search Deezer with exact-name verification ---
+    // Returns URL, "NOT_FOUND", or null (network error).
+    Future<String?> _searchDeezerVerified(String query) async {
       if (query.isEmpty) return "NOT_FOUND";
       try {
+        // Fetch up to 5 candidates and pick the one whose name is the
+        // closest match to what we actually searched for.
         final uri = Uri.parse(
-          "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(query)}&limit=1",
+          "https://api.deezer.com/search/artist?q=${Uri.encodeComponent(query)}&limit=5",
         );
-        final response = await http.get(uri);
+        final response =
+            await http.get(uri).timeout(const Duration(seconds: 8));
         if (response.statusCode == 200) {
           final json = jsonDecode(response.body);
-          if (json['data'] != null && (json['data'] as List).isNotEmpty) {
-            return json['data'][0]['picture_xl'] ??
-                json['data'][0]['picture_big'] ??
-                json['data'][0]['picture_medium'];
-          } else {
-            return "NOT_FOUND";
+          final data = json['data'] as List? ?? [];
+          if (data.isEmpty) return "NOT_FOUND";
+
+          final queryLower = query.toLowerCase();
+
+          // Priority 1: exact name match (case-insensitive)
+          for (final item in data) {
+            final name = (item['name'] as String? ?? '').toLowerCase();
+            if (name == queryLower) {
+              return item['picture_xl'] ??
+                  item['picture_big'] ??
+                  item['picture_medium'];
+            }
           }
+
+          // Priority 2: candidate whose name CONTAINS the query
+          for (final item in data) {
+            final name = (item['name'] as String? ?? '').toLowerCase();
+            if (name.contains(queryLower) || queryLower.contains(name)) {
+              return item['picture_xl'] ??
+                  item['picture_big'] ??
+                  item['picture_medium'];
+            }
+          }
+
+          // Priority 3: first result with a non-placeholder photo
+          // (Deezer placeholder = URLs ending with /images/artist//56x56-000000-80-0-0.jpg)
+          for (final item in data) {
+            final pic = item['picture_xl'] ??
+                item['picture_big'] ??
+                item['picture_medium'] as String?;
+            if (pic != null &&
+                !pic.contains('/images/artist//') &&
+                !pic.contains('default_artist')) {
+              return pic;
+            }
+          }
+
+          return "NOT_FOUND";
         } else {
           LogService().log(
             "Artist fetch failed ($query): ${response.statusCode}",
@@ -8007,56 +8254,161 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       return null; // Network or Server Error
     }
 
-    // 3. Prepare Sanitized Name
-    String searchName = artistName;
-    searchName = searchName.split('•').first;
-    searchName = searchName.split('(').first;
-    searchName = searchName.split('[').first;
-    searchName = searchName.split('{').first;
+    // --- Helper: disambiguate artists using the track title ---
+    // Artist-only queries can be ambiguous (e.g. "Mina" matches many artists).
+    // Searching artist + title on Deezer returns the actual featured artist
+    // with its correct profile picture. Returns URL, "NOT_FOUND", or null
+    // (network error).
+    Future<String?> _searchDeezerTrackVerified(
+      String artistQuery,
+      String titleQuery,
+    ) async {
+      if (artistQuery.isEmpty || titleQuery.isEmpty) return "NOT_FOUND";
+      try {
+        final cleanTitle = _sanitizeTrack(titleQuery);
+        if (cleanTitle.isEmpty) return "NOT_FOUND";
 
-    final lowerName = searchName.toLowerCase();
-    if (lowerName.contains(' feat')) {
-      searchName = searchName.substring(0, lowerName.indexOf(' feat'));
-    } else if (lowerName.contains(' ft.')) {
-      searchName = searchName.substring(0, lowerName.indexOf(' ft.'));
-    }
+        final searchQuery = 'artist:"$artistQuery" track:"$cleanTitle"';
+        final uri = Uri.parse(
+          "https://api.deezer.com/search?q=${Uri.encodeComponent(searchQuery)}&limit=5",
+        );
+        final response =
+            await http.get(uri).timeout(const Duration(seconds: 8));
+        if (response.statusCode != 200) {
+          LogService().log(
+            "Artist track fetch failed ($searchQuery): ${response.statusCode}",
+          );
+          return null; // Network or Server Error
+        }
+        final json = jsonDecode(response.body);
+        final data = json['data'] as List? ?? [];
+        if (data.isEmpty) return "NOT_FOUND";
 
-    searchName = searchName.split(' - ').first; // "Artist - Title" split
-    searchName = searchName
-        .split(RegExp(r'[,;&/|+\*\._]'))
-        .first; // Special chars
-    searchName = searchName.trim();
+        final artistLower = artistQuery.toLowerCase();
+        final titleLower = cleanTitle.toLowerCase();
 
-    // 4. Attempt 1: Sanitized Name
-    String? result = await searchDeezer(searchName);
+        for (final track in data) {
+          final trackArtist = track['artist'] as Map?;
+          final artistName =
+              (trackArtist?['name'] as String? ?? '').toLowerCase();
+          if (artistName.isEmpty) continue;
 
-    // 5. Attempt 2: Raw Name (Fallback if Sanitized failed/empty, mimicking Artist Page)
-    if ((result == "NOT_FOUND" || result == null) &&
-        searchName != artistName.trim()) {
-      // LogService().log("Sanitized search failed for '$searchName', trying raw: '$artistName'");
-      final rawResult = await searchDeezer(artistName.trim());
+          // The track must belong to the artist we are looking for
+          if (artistName != artistLower &&
+              !artistName.contains(artistLower) &&
+              !artistLower.contains(artistName)) {
+            continue;
+          }
 
-      // If Raw found something, use it
-      if (rawResult != null && rawResult != "NOT_FOUND") {
-        result = rawResult;
-      } else if (rawResult == "NOT_FOUND" && result == "NOT_FOUND") {
-        // Both confirmed NOT FOUND
-        result = "NOT_FOUND";
+          // Title must loosely match to avoid grabbing a random track
+          final trackTitle = _sanitizeTrack(track['title'] as String? ?? '')
+              .toLowerCase();
+          final bool titleMatches = trackTitle.isNotEmpty &&
+              (trackTitle == titleLower ||
+                  trackTitle.contains(titleLower) ||
+                  titleLower.contains(trackTitle));
+          if (!titleMatches) continue;
+
+          final dynamic rawPic = trackArtist?['picture_xl'] ??
+              trackArtist?['picture_big'] ??
+              trackArtist?['picture_medium'];
+          final String? pic = rawPic as String?;
+          if (pic != null && pic.isNotEmpty) return pic;
+        }
+        return "NOT_FOUND";
+      } catch (e) {
+        LogService().log("Error fetching artist track '$artistQuery': $e");
+        return null; // Network or Server Error
       }
-      // If rawResult is null (Error), keep previous result (which might be NOT_FOUND or null)
     }
 
-    // 6. Cache & Return
+    // --- Helper: TheAudioDB fallback ---
+    Future<String?> _searchTheAudioDB(String query) async {
+      if (query.isEmpty) return null;
+      try {
+        final uri = Uri.parse(
+          "https://www.theaudiodb.com/api/v1/json/2/search.php?s=${Uri.encodeComponent(query)}",
+        );
+        final response =
+            await http.get(uri).timeout(const Duration(seconds: 8));
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body);
+          final artists = json['artists'] as List?;
+          if (artists != null && artists.isNotEmpty) {
+            final artist = artists.first;
+            // Prefer artist thumb (profile photo) over banner
+            final pic = artist['strArtistThumb'] ??
+                artist['strArtistFanart'] ??
+                artist['strArtistBanner'];
+            return pic as String?;
+          }
+        }
+      } catch (e) {
+        LogService().log("Error fetching TheAudioDB artist '$query': $e");
+      }
+      return null;
+    }
+
+    // 3. Build search candidates (sanitized first, then raw)
+    final sanitizedName = _sanitize(artistName);
+    final rawName = artistName.trim();
+
+    // 4. FIRST SEARCH: Last.fm (track-aware when possible)
+    String? result;
+    final String cleanTrack = trackTitle?.trim() ?? '';
+    final hasTitle = cleanTrack.isNotEmpty;
+    result = await _searchLastFm(sanitizedName, trackTitle: cleanTrack);
+
+    // 5. SECOND SEARCH: existing Deezer cascade, only if Last.fm gave nothing
+    if (result == "NOT_FOUND" || result == null) {
+      if (hasTitle) {
+        result = await _searchDeezerTrackVerified(sanitizedName, cleanTrack);
+      }
+    }
+    if (result == "NOT_FOUND" || result == null) {
+      final String? artistResult = await _searchDeezerVerified(sanitizedName);
+      if ((artistResult == "NOT_FOUND" || artistResult == null) &&
+          sanitizedName != rawName) {
+        final rawResult = await _searchDeezerVerified(rawName);
+        result = rawResult != null && rawResult != "NOT_FOUND"
+            ? rawResult
+            : artistResult;
+      } else {
+        result = artistResult;
+      }
+    }
+
+    // 6. Fallback: TheAudioDB (same source as artist_details_screen)
+    if (result == null || result == "NOT_FOUND") {
+      final audioDbPic = await _searchTheAudioDB(sanitizedName);
+      if (audioDbPic != null && audioDbPic.isNotEmpty) {
+        result = audioDbPic;
+      } else if (audioDbPic == null && sanitizedName != rawName) {
+        // Try raw name in AudioDB too
+        final audioDbRaw = await _searchTheAudioDB(rawName);
+        if (audioDbRaw != null && audioDbRaw.isNotEmpty) {
+          result = audioDbRaw;
+        }
+      }
+    }
+
+    // 7. Cache & Return
+    // Never overwrite a manual photo override: a fetch that started before the
+    // override was set would otherwise clobber the user's chosen photo.
     if (result != null && result != "NOT_FOUND") {
-      _artistImageCache[rawKey] = result;
-      _saveArtistImagesCache(); // Persist
+      if (!_manualArtistImageOverrides.contains(rawKey)) {
+        _artistImageCache[rawKey] = result;
+        _saveArtistImagesCache();
+      }
       return result;
     } else if (result == "NOT_FOUND") {
-_artistImageCache[rawKey] = null;
-      _saveArtistImagesCache(); // Persist even if not found to avoid repeated searches
+      if (!_manualArtistImageOverrides.contains(rawKey)) {
+        _artistImageCache[rawKey] = null;
+        _saveArtistImagesCache();
+      }
       return null;
     } else {
-      // Error case: Do not cache, allow retry
+      // Network error — do not cache, allow retry
       return null;
     }
   }
@@ -8578,6 +8930,27 @@ _artistImageCache[rawKey] = null;
       _currentArtistImage = imageUrl;
       notifyListeners();
     }
+  }
+
+  // Persist a manually chosen photo as the default artist image
+  // (used by the artist photo picker). It is stored in the same cache that
+  // fetchArtistImage reads, so it becomes the default everywhere.
+  Future<void> setArtistImageOverride(
+    String artistName,
+    String imageUrl,
+  ) async {
+    if (artistName.trim().isEmpty || imageUrl.isEmpty) return;
+    final key = artistName.trim().toLowerCase();
+    _artistImageCache[key] = imageUrl;
+    _manualArtistImageOverrides.add(key);
+    _lastArtistImageOverrideArtist = artistName;
+    _lastArtistImageOverrideUrl = imageUrl;
+    await _saveArtistImagesCache();
+    await _saveArtistImageOverrides();
+    if (_currentArtist == artistName && _currentArtistImage != imageUrl) {
+      _currentArtistImage = imageUrl;
+    }
+    notifyListeners();
   }
 
   Future<String?> searchYoutubeVideo(String title, String artist) async {
@@ -9267,7 +9640,7 @@ _artistImageCache[rawKey] = null;
 
           // 4. Update artist image specifically (only if missing)
           if (_currentArtistImage == null) {
-            fetchArtistImage(newArtist).then((img) {
+            fetchArtistImage(newArtist, trackTitle: newTitle).then((img) {
               if (_audioOnlySongId == songId && _currentArtistImage == null) {
                 _currentArtistImage = img;
                 notifyListeners();

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math';
 import 'dart:io';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -8,6 +9,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart'
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
@@ -50,6 +52,32 @@ enum PlaylistSortMode { custom, alphabetical }
 
 enum PlaylistGroupingMode { album, artist, none }
 
+/// Sendable payload for [ _runMergeSuggestions ], which runs on a
+/// background isolate so the heavy merge scan never blocks the UI.
+class _MergeRequest {
+  final List<String> rawValues;
+  final String Function(String) groupingKey;
+  final List<String>? companions;
+  final double companionWeight;
+
+  const _MergeRequest({
+    required this.rawValues,
+    required this.groupingKey,
+    this.companions,
+    required this.companionWeight,
+  });
+}
+
+List<MergeSuggestion> _runMergeSuggestions(_MergeRequest request) {
+  return MergeUtils.findMergeSuggestions(
+    request.rawValues,
+    groupingKey: request.groupingKey,
+    threshold: 70.0,
+    companions: request.companions,
+    companionWeight: request.companionWeight,
+  );
+}
+
 class _AdItem {
   const _AdItem();
 }
@@ -91,6 +119,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   final Set<String> _dismissedMergePairs = {};
   final Set<String> _dismissedAlbumMergePairs = {};
   bool _modeSwitchPending = false;
+  bool _hideLocalMusicCard = false;
+  static const String _hideLocalMusicCardKey = 'hide_local_music_card';
 
   @override
   void initState() {
@@ -98,6 +128,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     _loadFilterState();
     _loadDismissedMergePairs();
     _loadDismissedAlbumMergePairs();
+    _loadHideLocalMusicCard();
     _searchController.addListener(() {
       setState(() {
         _searchQuery = _searchController.text.toLowerCase();
@@ -1402,6 +1433,14 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   Future<void> _persistAlbumFilter(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('filter_followed_albums', value);
+  }
+
+  Future<void> _loadHideLocalMusicCard() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _hideLocalMusicCard = prefs.getBool(_hideLocalMusicCardKey) ?? false;
+    });
   }
 
   @override
@@ -2871,7 +2910,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     final canUseLocal = entitlements.isFeatureEnabled('local_library');
 
     final bool showLocalLink =
-        _searchQuery.isEmpty && !hasAnyLocal && canUseLocal;
+        _searchQuery.isEmpty &&
+        !hasAnyLocal &&
+        canUseLocal &&
+        !_hideLocalMusicCard;
 
     final int extraCount = (showLocalLink ? 1 : 0);
 
@@ -2984,6 +3026,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       builder: (_) => const LocalLibraryScreen(),
                     ),
                   ),
+                  onRemove: () => _confirmRemoveLocalFolders(),
                   const ValueKey('inv_local'),
                 );
               }
@@ -3024,6 +3067,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   context,
                   MaterialPageRoute(builder: (_) => const LocalLibraryScreen()),
                 ),
+                onRemove: () => _confirmRemoveLocalFolders(),
                 const ValueKey('inv_local'),
               );
             }
@@ -3470,8 +3514,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     IconData icon,
     Color accentColor,
     VoidCallback onTap,
-    Key key,
-  ) {
+    Key key, {
+    VoidCallback? onRemove,
+  }) {
     return Container(
       key: key,
       decoration: BoxDecoration(
@@ -3496,56 +3541,131 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          hoverColor: accentColor.withValues(alpha: 0.1),
-          splashColor: accentColor.withValues(alpha: 0.2),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: accentColor, size: 22),
+      child: Stack(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(20),
+              hoverColor: accentColor.withValues(alpha: 0.1),
+              splashColor: accentColor.withValues(alpha: 0.2),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: accentColor, size: 22),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFFE6E0E9),
+                        fontSize: 11,
+                        height: 1.4,
+                        leadingDistribution: TextLeadingDistribution.even,
+                        decoration: TextDecoration.none,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFFE6E0E9),
-                    fontSize: 11,
-                    height: 1.4,
-                    leadingDistribution: TextLeadingDistribution.even,
-                    decoration: TextDecoration.none,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              ),
             ),
           ),
-        ),
+          if (onRemove != null)
+            Positioned(
+              top: 6,
+              right: 6,
+              child: GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.white70,
+                    size: 15,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmRemoveLocalFolders() async {
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    final confirmed =
+        await GlassUtils.showGlassDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                surfaceTintColor: Colors.transparent,
+                title: Text(
+                  lang.translate('remove_local_folder_title'),
+                  style: const TextStyle(color: Colors.white),
+                ),
+                content: Text(
+                  lang.translate('remove_local_folder_message'),
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text(lang.translate('cancel')),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: Text(
+                      lang.translate('delete'),
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+
+    if (!confirmed || !mounted) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideLocalMusicCardKey, true);
+    if (!mounted) return;
+    setState(() {
+      _hideLocalMusicCard = true;
+    });
+
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(lang.translate('remove_local_folder_done')),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -6794,29 +6914,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       }
       if (!_isCalculatingAlbumMerges) {
         _isCalculatingAlbumMerges = true;
-        Future.microtask(() {
-          final suggestions = MergeUtils.findMergeSuggestions(
-            songs.map((s) => s.album),
-            groupingKey: grouping,
-            companions: songs.map((s) => s.artist),
-            companionWeight: 0.35,
-          )
-              .where((s) {
-            final pairKey = _dismissPairKey(
-              grouping(s.source),
-              grouping(s.target),
-            );
-            return !dismissedSet.contains(pairKey);
-          })
-              .toList();
-          if (mounted) {
-            setState(() {
-              _cachedAlbumMergeSuggestions = suggestions;
-              _albumMergeCacheKey = key;
-              _isCalculatingAlbumMerges = false;
-            });
-          }
-        });
+        _computeMergesInBackground(
+          isAlbum: true,
+          key: key,
+          rawValues: songs.map((s) => s.album).toList(),
+          groupingKey: MergeUtils.albumGroupingKey,
+          companions: songs.map((s) => s.artist).toList(),
+          companionWeight: 0.35,
+          grouping: grouping,
+          dismissedSet: dismissedSet,
+        );
       }
       return _cachedAlbumMergeSuggestions ?? const <MergeSuggestion>[];
     } else {
@@ -6825,31 +6932,69 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       }
       if (!_isCalculatingArtistMerges) {
         _isCalculatingArtistMerges = true;
-        Future.microtask(() {
-          final suggestions = MergeUtils.findMergeSuggestions(
-            songs.map((s) => s.artist),
-            groupingKey: grouping,
-            companions: null,
-            companionWeight: 0.0,
-          )
-              .where((s) {
-            final pairKey = _dismissPairKey(
-              grouping(s.source),
-              grouping(s.target),
-            );
-            return !dismissedSet.contains(pairKey);
-          })
-              .toList();
-          if (mounted) {
-            setState(() {
-              _cachedArtistMergeSuggestions = suggestions;
-              _artistMergeCacheKey = key;
-              _isCalculatingArtistMerges = false;
-            });
-          }
-        });
+        _computeMergesInBackground(
+          isAlbum: false,
+          key: key,
+          rawValues: songs.map((s) => s.artist).toList(),
+          groupingKey: MergeUtils.artistGroupingKey,
+          companions: null,
+          companionWeight: 0.0,
+          grouping: grouping,
+          dismissedSet: dismissedSet,
+        );
       }
       return _cachedArtistMergeSuggestions ?? const <MergeSuggestion>[];
+    }
+  }
+
+  // Runs the (O(n^2)) merge scan on a background isolate and stores the
+  // result back into state when it's ready, leaving the UI responsive.
+  Future<void> _computeMergesInBackground({
+    required bool isAlbum,
+    required String key,
+    required List<String> rawValues,
+    required String Function(String) groupingKey,
+    required List<String>? companions,
+    required double companionWeight,
+    required String Function(String) grouping,
+    required Set<String> dismissedSet,
+  }) async {
+    try {
+      final suggestions = await compute(
+        _runMergeSuggestions,
+        _MergeRequest(
+          rawValues: rawValues,
+          groupingKey: groupingKey,
+          companions: companions,
+          companionWeight: companionWeight,
+        ),
+      );
+      final filtered = suggestions.where((s) {
+        final pairKey = _dismissPairKey(grouping(s.source), grouping(s.target));
+        return !dismissedSet.contains(pairKey);
+      }).toList();
+      if (!mounted) return;
+      setState(() {
+        if (isAlbum) {
+          _cachedAlbumMergeSuggestions = filtered;
+          _albumMergeCacheKey = key;
+          _isCalculatingAlbumMerges = false;
+        } else {
+          _cachedArtistMergeSuggestions = filtered;
+          _artistMergeCacheKey = key;
+          _isCalculatingArtistMerges = false;
+        }
+      });
+    } catch (e) {
+      developer.log("Background merge computation failed: $e");
+      if (!mounted) return;
+      setState(() {
+        if (isAlbum) {
+          _isCalculatingAlbumMerges = false;
+        } else {
+          _isCalculatingArtistMerges = false;
+        }
+      });
     }
   }
 
@@ -9728,27 +9873,38 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                                 ),
                         ),
                         child: ClipOval(
-                          child: _imageUrl != null
-                              ? CachedNetworkImage(
-                                  imageUrl: _imageUrl!,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => Container(
-                                    color: Colors.white10,
-                                    child: const Icon(
-                                      Icons.person,
-                                      color: Colors.white54,
-                                      size: 40,
-                                    ),
-                                  ),
-                                )
-                              : Container(
-                                  color: Colors.white10,
-                                  child: const Icon(
-                                    Icons.person,
-                                    color: Colors.white54,
-                                    size: 40,
-                                  ),
-                                ),
+                          child: Consumer<RadioProvider>(
+                            builder: (context, provider, _) {
+                              // Prefer the provider's image cache so a profile
+                              // photo override done on the artist details screen
+                              // shows up here immediately when coming back.
+                              final imageUrl =
+                                  provider.getArtistImageFor(widget.artist) ??
+                                  _imageUrl ??
+                                  widget.fallbackImageUrl;
+                              return imageUrl != null
+                                  ? CachedNetworkImage(
+                                      imageUrl: imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) => Container(
+                                        color: Colors.white10,
+                                        child: const Icon(
+                                          Icons.person,
+                                          color: Colors.white54,
+                                          size: 40,
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: Colors.white10,
+                                      child: const Icon(
+                                        Icons.person,
+                                        color: Colors.white54,
+                                        size: 40,
+                                      ),
+                                    );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -9837,8 +9993,8 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                       bottom: 4,
                       right: 4,
                       child: GestureDetector(
-                        onTap: () {
-                          Navigator.push(
+                        onTap: () async {
+                          await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => ArtistDetailsScreen(
@@ -9847,6 +10003,19 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                               ),
                             ),
                           );
+                          if (!mounted) return;
+                          // A profile photo may have been changed on the
+                          // details screen: re-read the provider cache so the
+                          // local snapshot stays in sync immediately.
+                          final cached = Provider.of<RadioProvider>(
+                            context,
+                            listen: false,
+                          ).getArtistImageFor(widget.artist);
+                          if (cached != null && cached != _imageUrl) {
+                            setState(() {
+                              _imageUrl = cached;
+                            });
+                          }
                         },
                         child: Container(
                           padding: const EdgeInsets.all(6),
