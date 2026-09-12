@@ -4010,6 +4010,34 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     return combined;
   }
 
+  Future<List<ArtistSearchResult>> searchArtists(String query) async {
+    final countryCode = _detectCountryCode();
+
+    LogService().log('Searching Artists for query: "$query"');
+    try {
+      return await _musicMetadataService
+          .searchArtists(query: query, limit: 30, countryCode: countryCode)
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      LogService().log('Artist Search Error: $e');
+      return [];
+    }
+  }
+
+  Future<List<AlbumSearchResult>> searchAlbums(String query) async {
+    final countryCode = _detectCountryCode();
+
+    LogService().log('Searching Albums for query: "$query"');
+    try {
+      return await _musicMetadataService
+          .searchAlbums(query: query, limit: 30, countryCode: countryCode)
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      LogService().log('Album Search Error: $e');
+      return [];
+    }
+  }
+
   Future<void> addFoundSongToGenre(SongSearchResult result) async {
     // Check if result.genre is valid, otherwise use default
     String genre = result.genre;

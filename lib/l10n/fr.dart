@@ -383,6 +383,9 @@ final Map<String, String> fr = {
   'no_results_found': 'Aucun résultat trouvé',
   'try_searching_different':
       'Essayez de rechercher avec des mots-clés différents',
+  'artists': 'Artistes',
+  'albums': 'Albums',
+  'songs': 'Chansons',
   'add_count': 'Ajouter ({0})',
   'successfully_added': '{0} {1} ajouté(s) avec succès',
   'song_singular': 'chanson',

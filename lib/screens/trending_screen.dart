@@ -458,7 +458,10 @@ class _TrendingScreenState extends State<TrendingScreen>
           groupedTrending.putIfAbsent(groupKey, () => []).add(p);
         }
 
-        return ListView(
+        return RefreshIndicator(
+          onRefresh: _fetchTrending,
+          child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(), // Allow pull-to-refresh on short content
           scrollCacheExtent: const ScrollCacheExtent.pixels(3000), // Pre-render more children to ensure keys are available for scrolling
           padding: const EdgeInsets.symmetric(vertical: 16),
           children: [
@@ -615,6 +618,7 @@ class _TrendingScreenState extends State<TrendingScreen>
 
             const SizedBox(height: 90), // bottom padding for player
           ],
+          ),
         );
       },
     );

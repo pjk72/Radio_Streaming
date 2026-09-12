@@ -4485,6 +4485,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               required String label,
               required Color color,
               bool enabled = true,
+              Widget? iconOverride,
             }) {
               final pinnedList = isSelectionActive
                   ? provider.pinnedPlaylistActions
@@ -4497,6 +4498,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 label: label,
                 color: color,
                 enabled: enabled,
+                leadingOverride: iconOverride,
                 trailing: provider.isPinningMode
                     ? Icon(
                         isPinned
@@ -4688,14 +4690,15 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     ] else ...[
                       buildHeaderMenuItem(
                         id: 'search_add_song',
-                        icon: Icons.library_music_rounded,
+                        icon: Icons.add_rounded,
                         label: lang.translate('search_add_song'),
-                        color: Colors.blueAccent,
+                        color: Theme.of(context).primaryColor,
+                        iconOverride: _buildAddSongCircleIcon(size: 14),
                       ),
                       if (_viewMode == MetadataViewMode.playlists) ...[
                         buildHeaderMenuItem(
                           id: 'create_playlist',
-                          icon: Icons.add_rounded,
+                          icon: Icons.playlist_add_rounded,
                           label: lang.translate('create_playlist_tooltip'),
                           color: Colors.greenAccent,
                         ),
@@ -4720,8 +4723,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         buildHeaderMenuItem(
                           id: 'toggle_artists',
                           icon: _showFollowedArtistsOnly
-                              ? Icons.how_to_reg
-                              : Icons.person_add_alt,
+                              ? Icons.bookmark
+                              : Icons.bookmark_border,
                           label: lang.translate('followed_artists_only'),
                           color: _showFollowedArtistsOnly
                               ? primaryColor
@@ -4776,20 +4779,22 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     required VoidCallback onTap,
     bool enabled = true,
     Widget? trailing,
+    Widget? leadingOverride,
   }) {
     final effectiveColor = enabled ? color : color.withValues(alpha: 0.3);
     return Material(
       color: Colors.black.withValues(alpha: 0.001),
       child: ListTile(
         enabled: enabled,
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: effectiveColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: effectiveColor, size: 20),
-        ),
+        leading: leadingOverride ??
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: effectiveColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: effectiveColor, size: 20),
+            ),
         title: Text(
           label,
           style: TextStyle(color: effectiveColor, fontWeight: FontWeight.w500),
@@ -9189,7 +9194,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         icon = Icons.library_music_rounded;
         break;
       case 'create_playlist':
-        if (_viewMode == MetadataViewMode.playlists) icon = Icons.add_rounded;
+        if (_viewMode == MetadataViewMode.playlists)
+          icon = Icons.playlist_add_rounded;
         break;
       case 'scan_qr':
         if (_viewMode == MetadataViewMode.playlists)
@@ -9204,8 +9210,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       case 'toggle_artists':
         if (_viewMode == MetadataViewMode.artists)
           icon = _showFollowedArtistsOnly
-              ? Icons.how_to_reg
-              : Icons.person_add_alt;
+              ? Icons.bookmark
+              : Icons.bookmark_border;
         break;
       case 'toggle_albums':
         if (_viewMode == MetadataViewMode.albums)
@@ -9222,6 +9228,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         color = _showOnlyInvalid ? Colors.orangeAccent : color;
         break;
     }
+    if (actionId == 'search_add_song') {
+      return IconButton(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.all(4),
+        constraints: const BoxConstraints(),
+        icon: _buildAddSongCircleIcon(size: 18),
+        tooltip: _getTooltipForAction(actionId),
+        onPressed: () => _handleAction(actionId, fromMenu: false),
+      );
+    }
     if (icon == null) return const SizedBox.shrink();
 
     return IconButton(
@@ -9231,6 +9247,25 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       icon: Icon(icon, color: color, size: 20),
       tooltip: _getTooltipForAction(actionId),
       onPressed: () => _handleAction(actionId, fromMenu: false),
+    );
+  }
+
+  Widget _buildAddSongCircleIcon({double size = 18}) {
+    return Container(
+      width: size + 12,
+      height: size + 12,
+      decoration: BoxDecoration(
+        color: Theme.of(context).primaryColor,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Icon(Icons.add, color: Colors.white, size: size),
     );
   }
 
@@ -10052,8 +10087,8 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                           ),
                           child: Icon(
                             widget.isFollowed
-                                ? Icons.how_to_reg
-                                : Icons.person_add_alt,
+                                ? Icons.bookmark
+                                : Icons.bookmark_border,
                             color: widget.isFollowed
                                 ? Theme.of(context).primaryColor
                                 : Colors.white,

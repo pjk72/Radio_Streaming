@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../services/lyrics_service.dart';
 import '../models/saved_song.dart';
 import '../models/playlist.dart';
+import '../utils/glass_utils.dart';
 
 class ArtistDetailsScreen extends StatefulWidget {
   final String artistName;
@@ -1267,6 +1268,21 @@ class _TopTrackTile extends StatelessWidget {
         final isCurrentPlaying = isCurrent && provider.isPlaying;
         final isLoading = isCurrent && provider.isLoading;
 
+        final savedKeys = provider.allUniqueSongs
+            .map(
+              (s) =>
+                  '${_normalize(s.title)}|${_normalize(s.artist)}'.toLowerCase(),
+            )
+            .toSet();
+        final trackKey =
+            '${_normalize(track.name)}|${_normalize(artistName)}'.toLowerCase();
+        final isSaved = savedKeys.contains(trackKey);
+
+        final langProvider = Provider.of<LanguageProvider>(
+          context,
+          listen: false,
+        );
+
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Material(
@@ -1358,6 +1374,26 @@ class _TopTrackTile extends StatelessWidget {
                         color: Theme.of(context).primaryColor,
                         size: 30,
                       ),
+                    const SizedBox(width: 2),
+                    // Add to playlist
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      iconSize: 22,
+                      icon: Icon(
+                        isSaved
+                            ? Icons.playlist_add_check_rounded
+                            : Icons.add_circle_outline,
+                        color: isSaved
+                            ? Theme.of(context).primaryColor
+                            : Colors.white54,
+                        size: 22,
+                      ),
+                      tooltip: isSaved
+                          ? langProvider.translate('already_in_library')
+                          : langProvider.translate('add_to_playlist'),
+                      onPressed: () => _showAddSongDialog(context),
+                    ),
                   ],
                 ),
               ),
@@ -1370,6 +1406,215 @@ class _TopTrackTile extends StatelessWidget {
 
   String _songId() =>
       'toptrack_${artistName}_${track.name}'.hashCode.toString();
+
+  static String _normalize(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  SavedSong _buildSong() => SavedSong(
+    id: _songId(),
+    title: track.name,
+    artist: artistName,
+    album: track.albumName ?? '',
+    dateAdded: DateTime.now(),
+  );
+
+  void _showAddSongDialog(BuildContext context) {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final song = _buildSong();
+    final langProvider = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    );
+
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (dialogContext) {
+        final playlists = provider.playlists;
+        return AlertDialog(
+          surfaceTintColor: Colors.transparent,
+          title: Text(
+            langProvider.translate('add_to_playlist'),
+            style: TextStyle(
+              color: Theme.of(dialogContext).textTheme.titleLarge?.color,
+            ),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    "${langProvider.translate('add_to_playlist')} '${song.title}' to:",
+                    style: TextStyle(
+                      color: Theme.of(
+                        dialogContext,
+                      ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: playlists.length + 1,
+                    itemBuilder: (ctx, index) {
+                      if (index == 0) {
+                        return Material(
+                          color: Colors.black.withValues(alpha: 0.001),
+                          child: ListTile(
+                            leading: const Icon(
+                              Icons.add,
+                              color: Colors.blueAccent,
+                            ),
+                            title: Text(
+                              langProvider.translate('create_new_playlist'),
+                              style: const TextStyle(color: Colors.blueAccent),
+                            ),
+                            onTap: () {
+                              Navigator.pop(dialogContext);
+                              _createNewPlaylistAndAddSong(context);
+                            },
+                          ),
+                        );
+                      }
+                      final p = playlists[index - 1];
+                      return Material(
+                        color: Colors.black.withValues(alpha: 0.001),
+                        child: ListTile(
+                          leading: const Icon(Icons.playlist_add_rounded),
+                          title: Text(
+                            p.name,
+                            style: TextStyle(
+                              color: Theme.of(
+                                ctx,
+                              ).textTheme.bodyLarge?.color,
+                            ),
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _performAddSong(context, p.id);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _createNewPlaylistAndAddSong(BuildContext context) {
+    final controller = TextEditingController();
+    final song = _buildSong();
+    final langProvider = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    );
+
+    GlassUtils.showGlassDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          langProvider.translate('new_playlist'),
+          style: TextStyle(
+            color: Theme.of(context).textTheme.titleLarge?.color,
+          ),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+          decoration: InputDecoration(
+            labelText: langProvider.translate('playlist_name'),
+            labelStyle: TextStyle(
+              color: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.color?.withValues(alpha: 0.6),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Theme.of(context).dividerColor),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Theme.of(context).primaryColor),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(langProvider.translate('cancel')),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                final name = controller.text;
+                Navigator.pop(ctx);
+                final provider = Provider.of<RadioProvider>(
+                  context,
+                  listen: false,
+                );
+                final songs = [song];
+                final newPlaylist = await provider.createPlaylist(
+                  name,
+                  songs: songs,
+                );
+                provider.resolvePlaylistLinksInBackground(
+                  newPlaylist.id,
+                  songs,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        langProvider
+                            .translate('song_added')
+                            .replaceAll('{0}', song.title),
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
+            child: Text(
+              langProvider.translate('create'),
+              style: TextStyle(color: Theme.of(context).primaryColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performAddSong(
+    BuildContext context,
+    String playlistId,
+  ) async {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final song = _buildSong();
+    await provider.addSongToPlaylist(playlistId, song);
+    provider.resolvePlaylistLinksInBackground(playlistId, [song]);
+    if (context.mounted) {
+      final langProvider = Provider.of<LanguageProvider>(
+        context,
+        listen: false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            langProvider.translate('song_added').replaceAll('{0}', song.title),
+          ),
+        ),
+      );
+    }
+  }
 
   void _playTrack(BuildContext context) {
     final provider = Provider.of<RadioProvider>(context, listen: false);
