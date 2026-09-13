@@ -1676,6 +1676,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   bool _isOffline = false; // Internal connectivity state
 
+  /// True when the device has no active internet connection.
+  bool get isOffline => _isOffline;
+
   final ThemeProvider? _themeProvider;
 
   RadioProvider(
@@ -1693,7 +1696,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         LogService().log("Internet Restored: Attempting auto-resume...");
         _retryAfterConnectionRestored();
       }
+      final bool changed = _isOffline != isNowOffline;
       _isOffline = isNowOffline;
+      if (changed) {
+        notifyListeners();
+      }
     });
     // Check initial state
     Connectivity().checkConnectivity().then((results) {
@@ -9115,6 +9122,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // 3. Check for other music providers (Apple Music, Spotify, Amazon)
     final lowerText = text.toLowerCase();
     if (lowerText.contains("music.apple.com") ||
+        lowerText.contains("itunes.apple.com") ||
         lowerText.contains("spotify.com") ||
         lowerText.contains("spotify.link") ||
         lowerText.contains("spotify:") ||
@@ -9171,6 +9179,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         url = url.replaceFirst(RegExp(r'/intl-[a-z-]+/'), '/');
       }
       LogService().log("SongLink: Normalized URL: $url");
+    }
+
+    // Apple Music special handling: resolve directly via the public iTunes
+    // Lookup API (by numeric track id), which is reliable and does not depend
+    // on Odesli. If this fails we fall back to the regular resolution chain.
+    if (url.contains('music.apple.com') || url.contains('itunes.apple.com')) {
+      final bool resolved = await _resolveAppleMusicLink(url);
+      if (resolved) return;
     }
 
     try {
@@ -9234,6 +9250,83 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       );
       // Fallback to our manual pattern parsing if API fails
       _handleMusicLinkShareManual(text);
+    }
+  }
+
+  /// Resolves an Apple Music song / album-track link via the public iTunes
+  /// Lookup API (no key required). Extracts the numeric track id from the URL,
+  /// fetches the official metadata and tries to find a playable YouTube video.
+  Future<bool> _resolveAppleMusicLink(String url) async {
+    LogService().log("Apple Music direct resolution: $url");
+
+    // 1. Extract numeric track id from the URL.
+    int? trackId;
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      // Album song variant: /album/<...>/<albumId>?i=<trackId>
+      final i = uri.queryParameters['i'];
+      if (i != null) {
+        trackId = int.tryParse(i);
+      }
+      if (trackId == null) {
+        // Explicit song variant: /song/<name>/<trackId> or /song/<trackId>.
+        final m = RegExp(r'/song/(?:[^/\s]+?/)?(\d+)').firstMatch(uri.path);
+        if (m != null) trackId = int.tryParse(m.group(1)!);
+      }
+    }
+    if (trackId == null) {
+      LogService().log("Apple Music: no track id found in $url");
+      return false;
+    }
+
+    try {
+      final response = await http
+          .get(
+            Uri.parse('https://itunes.apple.com/lookup?id=$trackId'),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return false;
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final results = json['results'] as List<dynamic>? ?? [];
+      if (results.isEmpty) {
+        LogService().log("Apple Music Lookup: no results for id $trackId");
+        return false;
+      }
+
+      final item = results.first as Map<String, dynamic>;
+      final String title = (item['trackName'] as String?) ?? '';
+      final String artist = (item['artistName'] as String?) ?? '';
+      if (title.isEmpty || artist.isEmpty) {
+        LogService().log(
+          "Apple Music Lookup: missing title/artist for id $trackId",
+        );
+        return false;
+      }
+
+      String artwork = (item['artworkUrl100'] as String?) ?? '';
+      if (artwork.isNotEmpty) {
+        artwork = artwork.replaceAll('100x100', '600x600');
+      }
+
+      LogService().log("Apple Music Lookup Success: $title by $artist");
+
+      // 2. Find a playable YouTube video.
+      final String? youtubeUrl = await searchYoutubeVideo(title, artist);
+
+      // 3. Import and trigger playback.
+      await _importSharedSong(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: title,
+        artist: artist,
+        album: (item['collectionName'] as String?) ?? 'Apple Music',
+        artUri: artwork.isEmpty ? null : artwork,
+        youtubeUrl: youtubeUrl,
+      );
+      return true;
+    } catch (e) {
+      LogService().log("Apple Music Lookup failed: $e");
+      return false;
     }
   }
 
@@ -9331,13 +9424,43 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         String? scrapedArtist = descMatch?.group(1);
 
         if (scrapedTitle != null && scrapedTitle.isNotEmpty) {
-          // Spotify: Description often has "[Artist] · Song · [Year]" or "Listen to [Song] on Spotify. [Artist] · [Year]"
-          // We'll try to clean it
-          if (scrapedArtist != null) {
+          // Apple Music style: og:title = "Title by Artist on Apple Music"
+          // and og:description = "Song · 2019 · …" (artist is NOT the first
+          // segment).  Detect this first and extract title/artist from
+          // og:title so we get clean values regardless of og:description.
+          final byInTitle = RegExp(
+            r'^(.+?)\s+by\s+(.+?)(?:\s+on\s+[A-Za-z]+)?$',
+            caseSensitive: false,
+          ).firstMatch(scrapedTitle);
+          if (byInTitle != null) {
+            final t = byInTitle.group(1)!.trim();
+            final a = byInTitle.group(2)!.trim();
+            if (t.isNotEmpty && a.isNotEmpty) {
+              scrapedTitle = t;
+              scrapedArtist = a;
+            }
+          }
+
+          // Clean up description-based artist only if it hasn't already been
+          // set from the title pattern above.
+          if (scrapedArtist != null && byInTitle == null) {
             scrapedArtist = scrapedArtist.split(' · ').first;
             scrapedArtist = scrapedArtist
                 .replaceAll("Listen to ", "")
                 .replaceAll("Ascolta ", "");
+          }
+
+          // Reject leading entity types ("Song", "Album" …) that appear in
+          // Apple Music descriptions like "Song · 2019 · Duration 5:23" —
+          // these are NOT artists.
+          if (scrapedArtist != null) {
+            final looksLikeEntityType = RegExp(
+              r'^(song|album|single|ep|playlist|music video|artiste)\s*$',
+              caseSensitive: false,
+            );
+            if (looksLikeEntityType.hasMatch(scrapedArtist)) {
+              scrapedArtist = null;
+            }
           }
 
           LogService().log(
@@ -9378,6 +9501,32 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     String artist,
     String originalText,
   ) async {
+    // Fetch official artwork/metadata (iTunes) concurrently with the YouTube
+    // search so the shared song shows its cover immediately in the PlayerBar
+    // and in the Shared Songs playlist (instead of being filled in later by
+    // the async metadata enrichment).
+    String? artUri;
+    String? album;
+    final artworkFetch = () async {
+      try {
+        final results = await _musicMetadataService.searchSongs(
+          query: "$title $artist",
+          limit: 1,
+        );
+        if (results.isNotEmpty) {
+          final match = results.first.song;
+          if (match.artUri != null && match.artUri!.isNotEmpty) {
+            artUri = match.artUri;
+          }
+          if (match.album.isNotEmpty && match.album != 'Unknown Album') {
+            album = match.album;
+          }
+        }
+      } catch (e) {
+        LogService().log("Shared-song artwork lookup failed: $e");
+      }
+    }();
+
     // 1. Search for a playable YouTube video
     final youtubeUrl = await searchYoutubeVideo(title, artist);
     if (youtubeUrl == null) {
@@ -9387,6 +9536,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       return;
     }
 
+    await artworkFetch;
+
     final songId = DateTime.now().millisecondsSinceEpoch.toString();
 
     // 2. Import and Play
@@ -9394,7 +9545,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       id: songId,
       title: title,
       artist: artist,
-      album: _translate('shared_link'),
+      album: album ?? _translate('shared_link'),
+      artUri: artUri,
       youtubeUrl: youtubeUrl,
     );
   }

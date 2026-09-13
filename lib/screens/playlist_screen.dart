@@ -4090,6 +4090,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     icon: Icons.download_rounded,
                     label: lang.translate('download'),
                     color: Colors.greenAccent,
+                    enabled: !provider.isOffline,
                     onTap: () {
                       Navigator.pop(ctx);
                       downloadPlaylist(context, provider, playlist);
@@ -4133,6 +4134,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     icon: Icons.download_rounded,
                     label: lang.translate('download'),
                     color: Colors.greenAccent,
+                    enabled: !provider.isOffline,
                     onTap: () {
                       Navigator.pop(ctx);
                       downloadPlaylist(context, provider, playlist);
@@ -4383,6 +4385,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   icon: Icons.download_rounded,
                   label: lang.translate('download'),
                   color: Theme.of(context).primaryColor,
+                  enabled: !provider.isOffline,
                   onTap: () {
                     Navigator.pop(ctx);
                     final tempPlaylist = Playlist(

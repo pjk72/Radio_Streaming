@@ -414,6 +414,7 @@ final Map<String, String> de = {
   'data_usage_desc':
       'Das Herunterladen von Musik verbraucht eine erhebliche Menge an mobilen Daten. Dies könnte zu zusätzlichen Kosten in Ihrem Mobilfunktarif führen.',
   'remaining_downloads': 'Verbleibende Downloads: {0}',
+  'offline_download_blocked': 'Du bist offline. Verbinde dich mit dem Internet, um Songs herunterzuladen.',
   'wifi_recommendation':
       'Wir empfehlen die Verwendung einer WLAN-Verbindung, um potenzielle Mobilfunkkosten zu vermeiden.',
   'continue': 'Weiter',
@@ -763,6 +764,10 @@ final Map<String, String> de = {
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Playlist-Name>/',
   'export_mp3_other_group': 'Andere',
   'export_mp3_group_confirm': 'Starten',
+  'export_mp3_partial_title': 'Nicht genug Bonus',
+  'export_mp3_partial_desc':
+      'Du hast {0} Bonuspunkte, aber {1} Titel sind ausgewählt. Jetzt werden nur {0} exportiert. Die restlichen {2} Titel bleiben ausgewählt, bis du weitere Bonuspunkte verdienst.',
+  'export_mp3_partial_confirm': 'Jetzt {0} exportieren',
   'merged_playlist_created': 'Playlist „{0}“ mit {1}-Songs erstellt!',
   'select_folders_to_merge': 'Wählen Sie mindestens 2 Ordner zum Zusammenführen aus.',
   'folders_selected': 'ausgewählt',

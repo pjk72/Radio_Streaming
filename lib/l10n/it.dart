@@ -457,6 +457,7 @@ final Map<String, String> it = {
   'data_usage_desc':
       'Il download della musica consuma una quantità significativa di dati mobili. Questo potrebbe comportare costi aggiuntivi sul tuo piano tariffario.',
   'remaining_downloads': 'Download rimanenti: {0}',
+  'offline_download_blocked': 'Sei offline. Connettiti a internet per scaricare i brani.',
   'wifi_recommendation':
       'Ti consigliamo di utilizzare una connessione WiFi per evitare potenziali costi dell\'operatore.',
   'continue': 'Continua',
@@ -805,6 +806,10 @@ final Map<String, String> it = {
   'musicstream_badge': 'MusicStream',
   'preparing_songs': 'Preparazione delle canzoni',
   'export_mp3_group_confirm': 'Avvia',
+  'export_mp3_partial_title': 'Bonus non sufficienti',
+  'export_mp3_partial_desc':
+      'Hai {0} bonus ma {1} brani selezionati. Verrà esportato solo {0} adesso. I rimanenti {2} brani restano selezionati finché non guadagni altri bonus.',
+  'export_mp3_partial_confirm': 'Esporta {0} adesso',
   'export_mp3_empty_desc': 'TODO: Before exporting, download each song using the download button in the playlists. Only songs downloaded through the app can be exported.',
   'update': 'Aggiorna',
   'merge_action': 'Unisci',

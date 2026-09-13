@@ -39,10 +39,14 @@ class Sidebar extends StatelessWidget {
                     // Brand
                     Row(
                       children: [
-                        Icon(
-                          Icons.radio,
-                          color: Theme.of(context).primaryColor,
-                          size: 28,
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.asset(
+                            'assets/icon.png',
+                            width: 28,
+                            height: 28,
+                            fit: BoxFit.contain,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         const Text(

@@ -438,6 +438,7 @@ final Map<String, String> en = {
   'data_usage_desc':
       'Downloading music consumes a significant amount of mobile data. This could lead to extra charges on your mobile plan.',
   'remaining_downloads': 'Remaining downloads: {0}',
+  'offline_download_blocked': 'You are offline. Connect to the internet to download songs.',
   'wifi_recommendation':
       'We recommend using a WiFi connection to avoid potential carrier costs.',
   'continue': 'Continue',
@@ -788,6 +789,10 @@ final Map<String, String> en = {
   'musicstream_badge': 'MusicStream',
   'preparing_songs': 'Preparing the songs',
   'export_mp3_group_confirm': 'Start',
+  'export_mp3_partial_title': 'Not enough bonuses',
+  'export_mp3_partial_desc':
+      'You have {0} bonus(es) but {1} tracks are selected. Only {0} will be exported now. The remaining {2} tracks stay selected until you earn more bonuses.',
+  'export_mp3_partial_confirm': 'Export {0} now',
   'reload': 'Manual recognition',
   'confirm': 'Confirm',
   'update': 'Update',

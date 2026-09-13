@@ -406,6 +406,7 @@ final Map<String, String> zh = {
   'data_usage_warning': '流量使用提示',
   'data_usage_desc': '下载音乐会消耗大量移动数据流量。这可能会导致您的移动套餐产生额外费用。',
   'remaining_downloads': '剩余下载次数：{0}',
+  'offline_download_blocked': '您处于离线状态。请连接互联网以下载歌曲。',
   'wifi_recommendation': '我们建议使用 WiFi 连接，以免产生移动运营商费用。',
   'continue': '继续',
   'download_limit_reached': '已达到下载限制（{0} 首歌曲）。请删除一些下载以继续。',
@@ -729,6 +730,10 @@ final Map<String, String> zh = {
   'export_mp3_group_playlist_path': 'MusicStream/播放列表/<播放列表名称>/',
   'export_mp3_other_group': '其他',
   'export_mp3_group_confirm': '开始',
+  'export_mp3_partial_title': '积分不足',
+  'export_mp3_partial_desc':
+      '您有{0}个积分，但选择了{1}首歌曲。现在只会导出{0}首。剩余{2}首保持选中，直到您获得更多积分。',
+  'export_mp3_partial_confirm': '现在导出{0}首',
   'create_merged_playlist': '创建合并的播放列表',
   'enter_playlist_name': '新播放列表名称',
   'reload': '手动识别',

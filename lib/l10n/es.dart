@@ -411,6 +411,7 @@ final Map<String, String> es = {
   'data_usage_desc':
       'La descarga de música consume una cantidad significativa de datos móviles. Esto podría generar cargos adicionales en su plan móvil.',
   'remaining_downloads': 'Descargas restantes: {0}',
+  'offline_download_blocked': 'Estás sin conexión. Conéctate a internet para descargar canciones.',
   'wifi_recommendation':
       'Recomendamos usar una conexión WiFi para evitar posibles costos del operador.',
   'continue': 'Continuar',
@@ -763,6 +764,10 @@ final Map<String, String> es = {
   'export_mp3_group_playlist_path': 'MusicStream/Lista de reproducción/<Nombre de la lista de reproducción>/',
   'export_mp3_other_group': 'Otros',
   'export_mp3_group_confirm': 'Iniciar',
+  'export_mp3_partial_title': 'Bonos insuficientes',
+  'export_mp3_partial_desc':
+      'Tienes {0} bono(s) pero hay {1} canciones seleccionadas. Solo se exportarán {0} ahora. Las {2} canciones restantes permanecen seleccionadas hasta que obtengas más bonos.',
+  'export_mp3_partial_confirm': 'Exportar {0} ahora',
   'merge_folders': 'Fusionar carpetas',
   'merge_into_playlist': 'Fusionarse en la lista de reproducción',
   'create_merged_playlist': 'Crear lista de reproducción fusionada',

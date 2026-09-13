@@ -27,6 +27,23 @@ Future<void> downloadPlaylist(
   Playlist playlist, {
   Future<void> Function(SavedSong)? onSongDownloaded,
 }) async {
+  // Offline check: downloading songs requires an active internet connection.
+  if (provider.isOffline) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Provider.of<LanguageProvider>(
+              context,
+              listen: false,
+            ).translate('offline_download_blocked'),
+          ),
+        ),
+      );
+    }
+    return;
+  }
+
   // Entitlement Check: download_songs
   final entitlements = Provider.of<EntitlementService>(
     context,
@@ -287,7 +304,19 @@ Future<void> downloadPlaylist(
   final bool shouldProceed =
       await GlassUtils.showGlassDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => Consumer<RadioProvider>(
+          builder: (context, radio, _) {
+            // Recompute the remaining credits live so the dialog stays in
+            // sync while a background download (or another request) consumes
+            // bonuses. This blocks consecutive requests that would otherwise
+            // both use the same stale "remaining downloads" value.
+            final int liveRemaining = (effectiveLimit == -1)
+                ? -1
+                : (effectiveLimit +
+                      radio.earnedDownloadCredits -
+                      radio.lifetimeDownloadCount);
+
+            return AlertDialog(
           surfaceTintColor: Colors.transparent,
           elevation: 24,
           shadowColor: Colors.black,
@@ -342,7 +371,7 @@ Future<void> downloadPlaylist(
                   height: 1.4,
                 ),
               ),
-              if (remainingCredits != -1)
+              if (liveRemaining != -1)
                 Column(
                   children: [
                     Padding(
@@ -350,7 +379,7 @@ Future<void> downloadPlaylist(
                       child: Text(
                         lang
                             .translate('remaining_downloads')
-                            .replaceAll('{0}', remainingCredits.toString()),
+                            .replaceAll('{0}', liveRemaining.toString()),
                         style: const TextStyle(
                           color: Colors.greenAccent,
                           fontWeight: FontWeight.bold,
@@ -516,7 +545,9 @@ Future<void> downloadPlaylist(
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
+                    onPressed: (liveRemaining == -1 || liveRemaining > 0)
+                        ? () => Navigator.pop(ctx, true)
+                        : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blueAccent,
                       foregroundColor: Colors.white,
@@ -541,6 +572,8 @@ Future<void> downloadPlaylist(
               ],
             ),
           ],
+        );
+          },
         ),
       ) ??
       false;
@@ -945,6 +978,11 @@ Future<void> downloadPlaylist(
           break; // Stop the entire playlist download if limit reached
         }
 
+        // CONSUMA CREDITO PERMANENTE: il bonus viene sottratto all'INIZIO del
+        // download (non al termine), così richieste consecutive non possono
+        // riusare lo stesso saldo.
+        await provider.incrementLifetimeDownloadCount();
+
         try {
           String? audioUrl = song.youtubeUrl;
           if (audioUrl == null) {
@@ -1168,9 +1206,6 @@ Future<void> downloadPlaylist(
                     anyUpdate = true;
                     successCount++;
                     downloadSuccess = true;
-
-                    // CONSUMA CREDITO PERMANENTE
-                    await provider.incrementLifetimeDownloadCount();
 
                     // Sync this status to all other playlists
                     await provider.updateSongDownloadStatusGlobally(

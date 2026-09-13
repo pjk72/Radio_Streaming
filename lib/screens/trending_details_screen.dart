@@ -1096,12 +1096,20 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
               IconButton(
                 icon: Icon(
                   Icons.download,
-                  color: _isLoading || _songs.isEmpty
+                  color: _isLoading ||
+                          _songs.isEmpty ||
+                          Provider.of<RadioProvider>(
+                            context,
+                          ).isOffline
                       ? Colors.white24
                       : Colors.greenAccent,
                   size: 30,
                 ),
-                onPressed: _isLoading || _songs.isEmpty
+                onPressed: _isLoading ||
+                        _songs.isEmpty ||
+                        Provider.of<RadioProvider>(
+                          context,
+                        ).isOffline
                     ? null
                     : _downloadTrendingPlaylist,
                 tooltip: langProvider.translate('download'),
@@ -1224,9 +1232,13 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
               IconButton(
                 icon: Icon(
                   isDownloaded ? Icons.check_circle : Icons.download,
-                  color: isDownloaded ? theme.primaryColor : Colors.white54,
+                  color: isDownloaded
+                      ? theme.primaryColor
+                      : (provider.isOffline ? Colors.white24 : Colors.white54),
                 ),
-                onPressed: isDownloaded ? null : () => _downloadSingleSong(track),
+                onPressed: isDownloaded || provider.isOffline
+                    ? null
+                    : () => _downloadSingleSong(track),
                 tooltip: isDownloaded 
                     ? langProvider.translate('downloaded') 
                     : langProvider.translate('download'),

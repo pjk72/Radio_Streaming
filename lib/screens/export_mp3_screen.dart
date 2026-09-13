@@ -1213,11 +1213,25 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
         .toList();
 
     // Bonus / ad-gating: each exported track consumes 1 download credit.
-    final bool creditsOk = await _ensureExportCredits(
+    // Export always runs as long as at least one bonus is available; if the
+    // bonus balance is lower than the number of selected tracks, only the
+    // affordable amount is exported and the rest stays selected (backlog).
+    final int exportBudget = await _ensureExportCredits(
       context,
       selectedSongs.length,
     );
-    if (!creditsOk || !mounted) return;
+    if (exportBudget == 0 || !mounted) return;
+
+    List<SavedSong> songsToExport = selectedSongs;
+    if (exportBudget > 0 && exportBudget < selectedSongs.length) {
+      final bool proceed = await _confirmPartialExport(
+        context,
+        exportBudget,
+        selectedSongs.length,
+      );
+      if (!proceed || !mounted) return;
+      songsToExport = selectedSongs.take(exportBudget).toList();
+    }
 
     final exportService = MP3ExportService();
 
@@ -1225,36 +1239,40 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
     _showExportingDialog(
       context,
       exportService,
-      selectedSongs,
+      songsToExport,
       groupingMode,
     );
   }
 
-  /// Reuse the same rewarded-ad logic used for song downloads.
-  /// Returns true when enough credits are available to export [needed] tracks.
-  Future<bool> _ensureExportCredits(
+  /// Resolves how many tracks can be exported with the current bonus balance.
+  ///
+  /// Returns `-1` when exports are unlimited, `0` when the user aborted while
+  /// trying to earn bonuses, otherwise the maximum number of tracks that can
+  /// be exported right now. The export always runs as long as at least one
+  /// bonus is available; it is not required to afford *all* the [wanted]
+  /// tracks at once.
+  Future<int> _ensureExportCredits(
     BuildContext ctx,
-    int needed,
+    int wanted,
   ) async {
-    if (needed <= 0) return true;
-
     final entitlements = Provider.of<EntitlementService>(ctx, listen: false);
     final radio = Provider.of<RadioProvider>(ctx, listen: false);
     final lang = Provider.of<LanguageProvider>(ctx, listen: false);
 
     final int downloadLimit = entitlements.getFeatureLimit('download_songs');
 
-    // Feature disabled: no export allowed via the bonus economy.
-    if (downloadLimit == 0) return true;
+    // Feature disabled: exports are not gated by the bonus economy.
+    if (downloadLimit == 0) return -1;
 
     final int effectiveLimit = (downloadLimit == -99) ? 0 : downloadLimit;
     final int availableCredits = (effectiveLimit == -1)
         ? -1 // unlimited
         : (effectiveLimit + radio.earnedDownloadCredits - radio.lifetimeDownloadCount);
 
-    if (availableCredits == -1 || availableCredits >= needed) return true;
+    // Unlimited or some bonuses available: export up to the bonus balance.
+    if (availableCredits == -1 || availableCredits > 0) return availableCredits;
 
-    // Not enough credits: offer the rewarded ad (same dialog as downloads).
+    // No bonuses left: offer the rewarded ad (same dialog as downloads).
     final bool? proceed = await GlassUtils.showGlassDialog<bool>(
       context: ctx,
       builder: (dialogCtx) => AlertDialog(
@@ -1399,7 +1417,7 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
       ),
     );
 
-    if (proceed != true) return false;
+    if (proceed != true) return 0;
 
     // Show loading indicator while waiting for the rewarded ad.
     if (ctx.mounted) {
@@ -1442,11 +1460,11 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
       },
     );
 
-    if (!rewardEarned || !mounted) return false;
+    if (!rewardEarned || !mounted) return 0;
 
     final int bonus = earnedAmount > 0 ? earnedAmount : 5;
     await radio.addEarnedDownloadCredits(bonus);
-    if (!mounted) return false;
+    if (!mounted) return 0;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1458,7 +1476,144 @@ class _ExportMp3ScreenState extends State<ExportMp3Screen> {
     );
 
     // Re-evaluate the credits after the ad reward.
-    return _ensureExportCredits(context, needed);
+    return _ensureExportCredits(context, wanted);
+  }
+
+  /// Confirms a partial export: current bonuses cover only [budget] of the
+  /// [selectedCount] chosen tracks; the rest remain in the list as backlog.
+  Future<bool> _confirmPartialExport(
+    BuildContext ctx,
+    int budget,
+    int selectedCount,
+  ) async {
+    final themeProvider = Provider.of<ThemeProvider>(ctx, listen: false);
+    final lang = Provider.of<LanguageProvider>(ctx, listen: false);
+    final isDark = themeProvider.isDarkMode;
+    final primaryColor = themeProvider.activePrimaryColor;
+    final surfaceColor = themeProvider.activeSurfaceColor;
+    final int backlog = selectedCount - budget;
+
+    final bool? proceed = await GlassUtils.showGlassDialog<bool>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        contentPadding: EdgeInsets.zero,
+        content: Container(
+          padding: const EdgeInsets.all(24),
+          constraints: const BoxConstraints(maxWidth: 400),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                primaryColor.withValues(alpha: 0.25),
+                surfaceColor.withValues(alpha: 0.95),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: primaryColor.withValues(alpha: 0.4),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.amber.withValues(alpha: 0.2),
+                    ),
+                    child: const Icon(
+                      Icons.stars_rounded,
+                      size: 26,
+                      color: Colors.amber,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      lang.translate('export_mp3_partial_title'),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                lang
+                    .translate('export_mp3_partial_desc')
+                    .replaceAll('{0}', budget.toString())
+                    .replaceAll('{1}', selectedCount.toString())
+                    .replaceAll('{2}', backlog.toString()),
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: isDark ? Colors.white70 : Colors.black87,
+                        side: const BorderSide(color: Colors.transparent),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () => Navigator.of(dialogCtx).pop(false),
+                      child: Text(lang.translate('export_mp3_cancel')),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () => Navigator.of(dialogCtx).pop(true),
+                      child: Text(
+                        lang
+                            .translate('export_mp3_partial_confirm')
+                            .replaceAll('{0}', budget.toString()),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return proceed == true;
   }
 
   void _showExportingDialog(

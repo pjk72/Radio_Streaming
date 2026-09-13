@@ -410,6 +410,7 @@ final Map<String, String> pt = {
   'data_usage_desc':
       'O download de música consome uma quantidade significativa de dados móveis. Isso pode gerar cobranças extras em seu plano móvel.',
   'remaining_downloads': 'Downloads restantes: {0}',
+  'offline_download_blocked': 'Você está offline. Conecte-se à internet para baixar músicas.',
   'wifi_recommendation':
       'Recomendamos usar uma conexão WiFi para evitar possíveis custos da operadora.',
   'continue': 'Continuar',
@@ -751,6 +752,10 @@ final Map<String, String> pt = {
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Nome da lista de reprodução>/',
   'export_mp3_other_group': 'Outros',
   'export_mp3_group_confirm': 'Iniciar',
+  'export_mp3_partial_title': 'Bônus insuficientes',
+  'export_mp3_partial_desc':
+      'Você tem {0} bônus, mas {1} faixas estão selecionadas. Apenas {0} serão exportadas agora. As {2} faixas restantes permanecem selecionadas até você ganhar mais bônus.',
+  'export_mp3_partial_confirm': 'Exportar {0} agora',
   'reload': 'Reconhecimento manual',
   'artist_merge_banner': '{0} artistas semelhantes para fundir',
   'artist_merge_banner_desc': 'Verifique e unifique nomes de artistas duplicados',

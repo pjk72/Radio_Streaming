@@ -415,6 +415,7 @@ final Map<String, String> fr = {
   'data_usage_desc':
       'Le téléchargement de musique consomme une quantité importante de données mobiles. Cela pourrait entraîner des frais supplémentaires sur votre forfait mobile.',
   'remaining_downloads': 'Téléchargements restants : {0}',
+  'offline_download_blocked': 'Vous êtes hors ligne. Connectez-vous à Internet pour télécharger des chansons.',
   'wifi_recommendation':
       'Nous vous recommandons d\'utiliser une connexion WiFi pour éviter d\'éventuels frais d\'opérateur.',
   'continue': 'Continuer',
@@ -767,6 +768,10 @@ final Map<String, String> fr = {
   'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Nom de la liste de lecture>/',
   'export_mp3_other_group': 'Autres',
   'export_mp3_group_confirm': 'Démarrer',
+  'export_mp3_partial_title': 'Bonus insuffisants',
+  'export_mp3_partial_desc':
+      'Vous avez {0} bonus mais {1} pistes sont sélectionnées. Seules {0} seront exportées maintenant. Les {2} pistes restantes restent sélectionnées jusqu\'à ce que vous obteniez plus de bonus.',
+  'export_mp3_partial_confirm': 'Exporter {0} maintenant',
   'create_merged_playlist': 'Créer une liste de lecture fusionnée',
   'reload': 'Reconnaissance manuelle',
   'artist_merge_banner': '{0} artistes similaires à fusionner',

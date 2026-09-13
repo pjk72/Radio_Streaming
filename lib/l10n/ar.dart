@@ -392,6 +392,7 @@ final Map<String, String> ar = {
   'data_usage_desc':
       'يستهلك تنزيل الموسيقى كمية كبيرة من بيانات الهاتف المحمول. قد يؤدي هذا إلى فرض رسوم إضافية على خطة الأسعار الخاصة بك.',
   'remaining_downloads': 'التنزيلات المتبقية:{0}',
+  'offline_download_blocked': 'أنت غير متصل بالإنترنت. اتصل بالإنترنت لتنزيل الأغاني.',
   'wifi_recommendation': 'نوصي باستخدام اتصال WiFi لتجنب رسوم الناقل المحتملة.',
   'continue': 'يستمر',
   'download_limit_reached':
@@ -724,6 +725,10 @@ final Map<String, String> ar = {
   'export_mp3_group_playlist_path': 'MusicStream/قائمة التشغيل/<اسم قائمة التشغيل>/',
   'export_mp3_other_group': 'آخر',
   'export_mp3_group_confirm': 'ابدأ',
+  'export_mp3_partial_title': 'المكافآت غير كافية',
+  'export_mp3_partial_desc':
+      'لديك {0} مكافأة لكن {1} مسارات محددة. سيتم تصدير {0} فقط الآن. تبقى المسارات الـ {2} المتبقية محددة حتى تكسب المزيد من المكافآت.',
+  'export_mp3_partial_confirm': 'تصدير {0} الآن',
   'musicstream_folders': 'مجلدات MusicStream',
   'other_device_folders': 'مجلدات الأجهزة الأخرى',
   'musicstream_badge': 'ميوزيك ستريم',
