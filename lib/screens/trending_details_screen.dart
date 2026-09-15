@@ -34,6 +34,7 @@ class TrendingDetailsScreen extends StatefulWidget {
   final String? appleMusicUrl;
   final String? songName;
   final SavedSong? originalSong;
+  final bool canOpenArtist;
 
   const TrendingDetailsScreen({
     super.key,
@@ -44,6 +45,7 @@ class TrendingDetailsScreen extends StatefulWidget {
     this.appleMusicUrl,
     this.songName,
     this.originalSong,
+    this.canOpenArtist = true,
   }) : assert(
          playlist != null || albumName != null,
          'Either playlist or albumName must be provided',
@@ -996,37 +998,47 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
           ),
           if (subtitle.isNotEmpty) ...[
             const SizedBox(height: 8),
-            MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ArtistDetailsScreen(
-                        artistName: subtitle,
-                        artistImage:
-                            Provider.of<RadioProvider>(context,
-                                listen: false,
-                              ).getArtistImageFor(subtitle),
-                        genre: _albumData?['primaryGenreName'] as String?,
+            if (widget.canOpenArtist && widget.playlist == null)
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ArtistDetailsScreen(
+                          artistName: subtitle,
+                          artistImage:
+                              Provider.of<RadioProvider>(context,
+                                  listen: false,
+                                ).getArtistImageFor(subtitle),
+                          genre: _albumData?['primaryGenreName'] as String?,
+                        ),
                       ),
+                    );
+                  },
+                  child: Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontSize: 18,
+                      decoration: TextDecoration.underline,
+                      decorationColor: Theme.of(context).primaryColor,
+                      decorationThickness: 1,
                     ),
-                  );
-                },
-                child: Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontSize: 18,
-                    decoration: TextDecoration.underline,
-                    decorationColor: Theme.of(context).primaryColor,
-                    decorationThickness: 1,
                   ),
                 ),
+              )
+            else
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontSize: 18,
+                ),
               ),
-            ),
           ],
 
           if (widget.playlist?.trackCount != null &&

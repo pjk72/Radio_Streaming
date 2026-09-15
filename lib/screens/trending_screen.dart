@@ -748,6 +748,7 @@ class _TrendingScreenState extends State<TrendingScreen>
               artistName: song.artist,
               artworkUrl: song.artUri,
               originalSong: song,
+              canOpenArtist: true,
             ),
           ),
         );
@@ -931,7 +932,10 @@ class _TrendingScreenState extends State<TrendingScreen>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TrendingDetailsScreen(playlist: item),
+            builder: (_) => TrendingDetailsScreen(
+              playlist: item,
+              canOpenArtist: false,
+            ),
           ),
         );
       },
@@ -1134,7 +1138,10 @@ class _TrendingScreenState extends State<TrendingScreen>
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TrendingDetailsScreen(playlist: item),
+            builder: (_) => TrendingDetailsScreen(
+              playlist: item,
+              canOpenArtist: false,
+            ),
           ),
         );
         if (mounted) setState(() {});
