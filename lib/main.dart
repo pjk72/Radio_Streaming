@@ -107,7 +107,7 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.antigravity.radio.channel.audio.v2',
       androidNotificationChannelName: 'Radio Playback',
       androidNotificationOngoing: false,
-      androidStopForegroundOnPause: true,
+      androidStopForegroundOnPause: false,
       androidNotificationClickStartsActivity: true,
       androidResumeOnClick: true,
       androidShowNotificationBadge: true,

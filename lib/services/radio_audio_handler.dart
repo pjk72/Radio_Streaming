@@ -131,16 +131,6 @@ class RadioAudioHandler extends BaseAudioHandler
   String? _historySongId;
   int _historySecondsAccumulated = 0;
 
-  // Live Notification Auto-Close Timer
-  Timer? _notificationAutoCloseTimer;
-  bool _isNotificationAutoClosed = false;
-
-  void _cancelNotificationAutoCloseTimer() {
-    _notificationAutoCloseTimer?.cancel();
-    _notificationAutoCloseTimer = null;
-    _isNotificationAutoClosed = false;
-  }
-
   // Recognition
   bool _isACRCloudEnabled =
       true; // Kept flag name to avoid breaking external calls
@@ -1439,13 +1429,13 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (_) {}
     _stopAnalyticsHeartbeat();
     _broadcastState(PlayerState.stopped);
+    await super.stop();
   }
 
   @override
   Future<void> play() => _playInternal(true);
 
   Future<void> _playInternal(bool logEvent) async {
-    _cancelNotificationAutoCloseTimer();
     await _initializationComplete;
     _startupLock = false; // User Action unlocks
     _stopRequested = false; // User pressed play: cancel any explicit stop
@@ -2781,7 +2771,6 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // A legitimate (re)start of playback clears any previous explicit stop.
     _stopRequested = false;
-    _cancelNotificationAutoCloseTimer();
 
     // Dispatcher
     if (extras != null && extras['type'] == 'playlist_song') {
@@ -3438,33 +3427,6 @@ class RadioAudioHandler extends BaseAudioHandler
     final String? currentUrl = mediaItem.value?.extras?['url'] as String? ?? mediaItem.value?.id;
     final int index = _stations.indexWhere((s) => s.url == currentUrl);
 
-    // Auto-close live notification logic:
-    // When playing, cancel any pending auto-close timer and ensure notification is active.
-    // When not playing, start a 5-second countdown after which the notification auto-closes for phone & AA.
-    if (playing) {
-      _cancelNotificationAutoCloseTimer();
-    } else if (!_isRetryPending) {
-      if (!_isNotificationAutoClosed && _notificationAutoCloseTimer == null) {
-        _notificationAutoCloseTimer = Timer(const Duration(seconds: 5), () {
-          _notificationAutoCloseTimer = null;
-          final currentState = _player.state;
-          final stillPlaying = (currentState == PlayerState.playing ||
-              _expectingStop ||
-              _isInitialBuffering);
-          if (!stillPlaying && !_isRetryPending) {
-            LogService().log(
-              "AudioHandler: 5s inactivity reached with no track playing. Auto-closing live notification for device & AA.",
-            );
-            _isNotificationAutoClosed = true;
-            _broadcastState();
-            try {
-              super.stop();
-            } catch (_) {}
-          }
-        });
-      }
-    }
-
     // Determine strict processing state
     AudioProcessingState pState = AudioProcessingState.idle;
     if (state == PlayerState.playing) {
@@ -3479,15 +3441,11 @@ class RadioAudioHandler extends BaseAudioHandler
             : AudioProcessingState.buffering;
       } else if (isBuffering) {
         pState = AudioProcessingState.buffering;
-      } else if (_isNotificationAutoClosed) {
-        pState = AudioProcessingState.idle;
       } else {
         pState = AudioProcessingState.ready;
       }
     } else if (state == PlayerState.completed) {
-      pState = _isNotificationAutoClosed
-          ? AudioProcessingState.idle
-          : AudioProcessingState.completed;
+      pState = AudioProcessingState.completed;
     } else {
       pState = (isBuffering || _expectingStop)
           ? AudioProcessingState.buffering
@@ -3496,9 +3454,8 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // Controls for transitioning or active state
     List<MediaControl> controls;
-    if (_isNotificationAutoClosed) {
-      controls = const [];
-    } else if ((_expectingStop || isBuffering) && state != PlayerState.playing) {
+    // 1. Define base controls (without Heart)
+    if ((_expectingStop || isBuffering) && state != PlayerState.playing) {
       controls = [
         MediaControl.skipToPrevious, // 0
         MediaControl.pause, // 1
@@ -3535,18 +3492,16 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     // System Actions
-    final Set<MediaAction> actions = _isNotificationAutoClosed
-        ? const {MediaAction.play}
-        : {
-            MediaAction.skipToNext,
-            MediaAction.skipToPrevious,
-            MediaAction.play,
-            MediaAction.pause,
-            MediaAction.stop,
-            MediaAction.setShuffleMode,
-            MediaAction.custom,
-          };
-    if (isPlaylistSong && !_isNotificationAutoClosed) {
+    final Set<MediaAction> actions = {
+      MediaAction.skipToNext,
+      MediaAction.skipToPrevious,
+      MediaAction.play,
+      MediaAction.pause,
+      MediaAction.stop,
+      MediaAction.setShuffleMode,
+      MediaAction.custom,
+    };
+    if (isPlaylistSong) {
       actions.add(MediaAction.seek);
       actions.add(MediaAction.setShuffleMode);
     }
@@ -3662,11 +3617,9 @@ class RadioAudioHandler extends BaseAudioHandler
       PlaybackState(
         controls: controls,
         systemActions: actions,
-        androidCompactActionIndices: _isNotificationAutoClosed
-            ? const []
-            : (isRecognized && controls.length > 2)
-                ? const [0, 1, 2] // Heart, Play/Pause, Next
-                : const [0, 1, 2], // Prev, Play/Pause, Next
+        androidCompactActionIndices: (isRecognized && controls.length > 2)
+            ? const [0, 1, 2] // Heart, Play/Pause, Next
+            : const [0, 1, 2], // Prev, Play/Pause, Next
         processingState: pState,
         playing: playing,
         updatePosition: effectivePosition,
