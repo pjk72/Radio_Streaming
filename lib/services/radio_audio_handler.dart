@@ -82,6 +82,10 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _isCurrentSongInFavorites = false; // Flag for Android Auto heart icon
   Duration? _handoffDuration; // Bridge duration during crossfade
 
+  // Phone-call interruption state
+  bool _interruptedByCall = false;  // True while a phone call is in progress
+  bool _callInterruptedAsRadio = false; // True if it was radio (not playlist) when call began
+
   static const _heartFilledControl = MediaControl(
     androidIcon: 'drawable/ic_favorite',
     label: 'Remove from Favorites',
@@ -613,6 +617,79 @@ class RadioAudioHandler extends BaseAudioHandler
           _retryPlayback();
         }
       }
+    });
+    // Register phone-call interruption listener
+    _setupCallInterruptionListener();
+  }
+
+  /// Listens to [AudioSession.interruptionEventStream] and handles phone calls.
+  ///
+  /// Rules:
+  ///   • Radio  → stop completely; on call end, relaunch the same station.
+  ///   • Playlist → pause; on call end, resume.
+  void _setupCallInterruptionListener() {
+    AudioSession.instance.then((session) {
+      // Subscription lives for the full lifetime of the singleton – no need to store it
+      session.interruptionEventStream.listen((
+        AudioInterruptionEvent event,
+      ) {
+        if (event.begin) {
+          // --- Call / interruption STARTED ---
+          // Only act if we are actually playing something
+          if (!playbackState.value.playing &&
+              _player.state != PlayerState.playing) {
+            return;
+          }
+
+          final isRadio = mediaItem.value?.extras?['type'] != 'playlist_song';
+
+          _interruptedByCall = true;
+          _callInterruptedAsRadio = isRadio;
+
+          LogService().log(
+            'CallInterruption: BEGIN – ${isRadio ? "radio" : "playlist"}'
+          );
+
+          if (isRadio) {
+            // Stop the radio stream entirely (it cannot be resumed in place)
+            _stopRequested = false; // keep recovery unlocked so we can relaunch
+            _player.stop().catchError((_) {});
+            _nextPlayer.stop().catchError((_) {});
+            _broadcastState(PlayerState.stopped);
+          } else {
+            // Pause the playlist song so position is preserved
+            _player.pause().catchError((_) {});
+            _broadcastState(PlayerState.paused);
+          }
+        } else {
+          // --- Call / interruption ENDED ---
+          if (!_interruptedByCall) return;
+          _interruptedByCall = false;
+
+          LogService().log(
+            'CallInterruption: END – resuming ${_callInterruptedAsRadio ? "radio" : "playlist"}'
+          );
+
+          if (_callInterruptedAsRadio) {
+            // Relaunch the radio stream from scratch
+            final item = mediaItem.value;
+            if (item != null) {
+              final String radioUrl =
+                  item.extras?['url'] as String? ?? item.id;
+              playFromUri(Uri.parse(radioUrl), {
+                ...?item.extras,
+                'user_initiated': true,
+              });
+            }
+          } else {
+            // Resume the playlist song from where it was paused
+            _activateAudioSession()
+                .then((_) => _player.resume())
+                .catchError((_) {});
+            _broadcastState(PlayerState.playing);
+          }
+        }
+      });
     });
   }
 
