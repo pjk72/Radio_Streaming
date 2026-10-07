@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:ui';
+
 import '../providers/language_provider.dart';
 
 import '../providers/radio_provider.dart';
@@ -123,82 +125,154 @@ class _ManageStationsScreenState extends State<ManageStationsScreen> {
           Expanded(child: _buildBody(context, provider, filteredStations)),
         ],
       ),
-      bottomNavigationBar: Container(
-        height: 60,
-        margin: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).shadowColor.withValues(alpha: 0.2),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
+      bottomNavigationBar: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            padding: EdgeInsets.fromLTRB(
+              12,
+              6,
+              12,
+              6 + MediaQuery.of(context).padding.bottom,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            IconButton(
-              icon: Icon(
-                _isSearching ? Icons.close : Icons.search,
-                color: _isSearching
-                    ? Colors.blueAccent
-                    : Theme.of(context).iconTheme.color,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Theme.of(context).cardColor.withValues(alpha: 0.85),
+                  Theme.of(context).cardColor.withValues(alpha: 0.97),
+                ],
               ),
-              onPressed: () {
-                setState(() {
-                  if (_isSearching) {
-                    _isSearching = false;
-                    _searchController.clear();
-                  } else {
-                    _isSearching = true;
-                  }
-                });
-              },
-              tooltip: langProvider.translate('search'),
-            ),
-            IconButton(
-              icon: Icon(
-                provider.isManageGridView ? Icons.view_list : Icons.grid_view,
-                color: Theme.of(context).iconTheme.color,
-              ),
-              onPressed: () =>
-                  provider.setManageGridView(!provider.isManageGridView),
-              tooltip: provider.isManageGridView
-                  ? langProvider.translate('list_view')
-                  : langProvider.translate('grid_view'),
-            ),
-            PopupMenuButton<GroupingMode>(
-              surfaceTintColor: Colors.transparent,
-              icon: Icon(
-                Icons.sort_rounded,
-                color:
-                    provider.manageGroupingMode !=
-                        0 // 0 is GroupingMode.none
-                    ? Colors.blueAccent
-                    : Theme.of(context).iconTheme.color,
-              ),
-              onSelected: (mode) => provider.setManageGroupingMode(mode.index),
-              tooltip: langProvider.translate('group_by'),
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: GroupingMode.none,
-                  child: Text(langProvider.translate('no_grouping')),
+              border: Border(
+                top: BorderSide(
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                  width: 0.5,
                 ),
-                PopupMenuItem(
-                  value: GroupingMode.genre,
-                  child: Text(langProvider.translate('group_by_genre')),
-                ),
-                PopupMenuItem(
-                  value: GroupingMode.origin,
-                  child: Text(langProvider.translate('group_by_origin')),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, -5),
                 ),
               ],
             ),
-          ],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildBarAction(
+                  icon: _isSearching ? Icons.close : Icons.search,
+                  isActive: _isSearching,
+                  tooltip: langProvider.translate('search'),
+                  onPressed: () {
+                    setState(() {
+                      if (_isSearching) {
+                        _isSearching = false;
+                        _searchController.clear();
+                      } else {
+                        _isSearching = true;
+                      }
+                    });
+                  },
+                ),
+                _buildBarAction(
+                  icon: provider.isManageGridView
+                      ? Icons.view_list
+                      : Icons.grid_view,
+                  isActive: false,
+                  tooltip: provider.isManageGridView
+                      ? langProvider.translate('list_view')
+                      : langProvider.translate('grid_view'),
+                  onPressed: () =>
+                      provider.setManageGridView(!provider.isManageGridView),
+                ),
+                _buildBarGroupingButton(langProvider, provider),
+              ],
+            ),
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBarAction({
+    required IconData icon,
+    required bool isActive,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final inactive = Theme.of(context).iconTheme.color;
+    final color = isActive ? primary : inactive;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onPressed,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? primary.withValues(alpha: 0.14)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+              border: isActive
+                  ? Border.all(color: primary.withValues(alpha: 0.25), width: 0.5)
+                  : null,
+            ),
+            child: Icon(icon, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarGroupingButton(
+    LanguageProvider langProvider,
+    RadioProvider provider,
+  ) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final inactive = Theme.of(context).iconTheme.color;
+    final isActive = provider.manageGroupingMode != 0;
+    return Tooltip(
+      message: langProvider.translate('group_by'),
+      child: PopupMenuButton<GroupingMode>(
+        surfaceTintColor: Colors.transparent,
+        onSelected: (mode) => provider.setManageGroupingMode(mode.index),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: isActive
+                ? primary.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            border: isActive
+                ? Border.all(color: primary.withValues(alpha: 0.25), width: 0.5)
+                : null,
+          ),
+          child: Icon(Icons.sort_rounded, color: isActive ? primary : inactive),
+        ),
+        itemBuilder: (context) => [
+          PopupMenuItem(
+            value: GroupingMode.none,
+            child: Text(langProvider.translate('no_grouping')),
+          ),
+          PopupMenuItem(
+            value: GroupingMode.genre,
+            child: Text(langProvider.translate('group_by_genre')),
+          ),
+          PopupMenuItem(
+            value: GroupingMode.origin,
+            child: Text(langProvider.translate('group_by_origin')),
+          ),
+        ],
       ),
     );
   }

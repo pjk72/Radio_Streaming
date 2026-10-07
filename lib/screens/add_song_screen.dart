@@ -14,7 +14,9 @@ import 'package:permission_handler/permission_handler.dart';
 import '../utils/glass_utils.dart';
 
 class AddSongScreen extends StatefulWidget {
-  const AddSongScreen({super.key});
+  final String? targetPlaylistId;
+
+  const AddSongScreen({super.key, this.targetPlaylistId});
 
   @override
   State<AddSongScreen> createState() => _AddSongScreenState();
@@ -712,105 +714,210 @@ class _AddSongScreenState extends State<AddSongScreen> {
   }
 
   void _showPlaylistSelectionDialog() {
+    FocusScope.of(context).unfocus();
     final provider = Provider.of<RadioProvider>(context, listen: false);
     final lang = Provider.of<LanguageProvider>(context, listen: false);
     final playlists = provider.playlists;
+
+    // If a target playlist was passed in context, save directly without showing dialog
+    final targetId = widget.targetPlaylistId;
+    if (targetId != null &&
+        playlists.any((p) => p.id == targetId)) {
+      _performSaveToPlaylist(targetId);
+      return;
+    }
+
+    final TextEditingController filterController = TextEditingController();
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          height: MediaQuery.of(context).size.height * 0.5,
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).scaffoldBackgroundColor.withValues(alpha: 0.9),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-            border: Border.all(color: Colors.white10),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final query = filterController.text.trim().toLowerCase();
+          final filteredPlaylists = query.isEmpty
+              ? playlists
+              : playlists.where((p) {
+                  final name = p.getDisplayName(lang.translate).toLowerCase();
+                  return name.contains(query);
+                }).toList();
+
+          return BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).scaffoldBackgroundColor.withValues(alpha: 0.92),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+                border: Border.all(color: Colors.white10),
+              ),
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    lang.translate('add_to_playlist'),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                  // Center drag handle
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54),
-                    onPressed: () => Navigator.pop(ctx),
+                  // Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        lang.translate('add_to_playlist'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Search filter field if more than 4 playlists
+                  if (playlists.length > 4) ...[
+                    Container(
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: TextField(
+                        controller: filterController,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: lang.translate('search_hint'),
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                          prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white38),
+                          suffixIcon: filterController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16, color: Colors.white38),
+                                  onPressed: () {
+                                    setSheetState(() {
+                                      filterController.clear();
+                                    });
+                                  },
+                                )
+                              : null,
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        onChanged: (_) => setSheetState(() {}),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  // Option: Create New Playlist
+                  Material(
+                    color: Colors.black.withValues(alpha: 0.001),
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).primaryColor.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.add, color: Theme.of(context).primaryColor, size: 20),
+                      ),
+                      title: Text(
+                        lang.translate('create_new_playlist'),
+                        style: TextStyle(
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _createNewPlaylistAndSave();
+                      },
+                    ),
+                  ),
+                  const Divider(color: Colors.white10),
+                  // Playlists List
+                  Expanded(
+                    child: filteredPlaylists.isEmpty
+                        ? Center(
+                            child: Text(
+                              lang.translate('no_results_found'),
+                              style: const TextStyle(color: Colors.white38),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: filteredPlaylists.length,
+                            itemBuilder: (context, index) {
+                              final p = filteredPlaylists[index];
+                              final isTarget = p.id == targetId;
+                              final isFav = p.id == 'favorites';
+                              IconData iconData = Icons.playlist_play_rounded;
+                              Color iconColor = Colors.white70;
+                              if (isTarget) {
+                                iconData = Icons.playlist_add_check_rounded;
+                                iconColor = Theme.of(context).primaryColor;
+                              } else if (isFav) {
+                                iconData = Icons.favorite;
+                                iconColor = Colors.pinkAccent;
+                              }
+
+                              return Material(
+                                color: Colors.black.withValues(alpha: 0.001),
+                                child: ListTile(
+                                  dense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  leading: Icon(iconData, color: iconColor),
+                                  title: Text(
+                                    p.getDisplayName(lang.translate),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: isTarget
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      fontSize: 15,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    '${p.songs.length} ${p.songs.length == 1 ? lang.translate('song_singular') : lang.translate('songs_plural')}',
+                                    style: const TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(ctx);
+                                    _performSaveToPlaylist(p.id);
+                                  },
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              // Option: Create New Playlist
-              Material(
-                color: Colors.black.withValues(alpha: 0.001),
-                child: ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).primaryColor.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.add, color: Theme.of(context).primaryColor),
-                  ),
-                  title: Text(
-                    lang.translate('create_new_playlist'),
-                    style: TextStyle(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _createNewPlaylistAndSave();
-                  },
-                ),
-              ),
-              const Divider(color: Colors.white10),
-              // Playlists List
-              Expanded(
-                child: ListView.builder(
-                  itemCount: playlists.length,
-                  itemBuilder: (context, index) {
-                    final p = playlists[index];
-                    return Material(
-                      color: Colors.black.withValues(alpha: 0.001),
-                      child: ListTile(
-                        leading: const Icon(
-                          Icons.playlist_play_rounded,
-                          color: Colors.white70,
-                        ),
-                        title: Text(
-                          p.name,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _performSaveToPlaylist(p.id);
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -874,7 +981,6 @@ class _AddSongScreenState extends State<AddSongScreen> {
   }) async {
     final provider = Provider.of<RadioProvider>(context, listen: false);
     final lang = Provider.of<LanguageProvider>(context, listen: false);
-    final count = _selectedItems.length;
 
     // Show loading indicator
     GlassUtils.showGlassDialog(
@@ -886,6 +992,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
     try {
       final songs = _selectedItems.map((item) => item.song).toList();
       String targetPlaylistId;
+      int addedCount;
 
       if (newPlaylistName != null) {
         final newPlaylist = await provider.createPlaylist(
@@ -893,33 +1000,47 @@ class _AddSongScreenState extends State<AddSongScreen> {
           songs: songs,
         );
         targetPlaylistId = newPlaylist.id;
+        addedCount = songs.length; // All songs are new when creating a playlist
       } else {
-        await provider.addSongsToPlaylist(playlistId!, songs);
+        addedCount = await provider.addSongsToPlaylist(playlistId!, songs);
         targetPlaylistId = playlistId;
       }
 
       // Start background resolution for all added songs to ensure video links etc.
-      provider.resolvePlaylistLinksInBackground(targetPlaylistId, songs);
+      if (addedCount > 0) {
+        provider.resolvePlaylistLinksInBackground(targetPlaylistId, songs);
+      }
 
       if (mounted) {
         Navigator.pop(context); // Pop loading
         Navigator.pop(context); // Pop AddSongScreen
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              lang
-                  .translate('successfully_added')
-                  .replaceAll('{0}', count.toString())
-                  .replaceAll(
-                    '{1}',
-                    count == 1
-                        ? lang.translate('song_singular')
-                        : lang.translate('songs_plural'),
-                  ),
+
+        if (addedCount == 0) {
+          // All selected songs were already in the playlist
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(lang.translate('songs_already_in_playlist')),
+              behavior: SnackBarBehavior.floating,
             ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                lang
+                    .translate('successfully_added')
+                    .replaceAll('{0}', addedCount.toString())
+                    .replaceAll(
+                      '{1}',
+                      addedCount == 1
+                          ? lang.translate('song_singular')
+                          : lang.translate('songs_plural'),
+                    ),
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

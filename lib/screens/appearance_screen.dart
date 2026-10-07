@@ -1,7 +1,9 @@
+import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:ui';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
+import 'package:palette_generator/palette_generator.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
@@ -439,11 +441,33 @@ class AppearanceScreen extends StatelessWidget {
     );
   }
 
-  void _openImageSearch(BuildContext context, ThemeProvider provider) {
-    Navigator.push(
+  Future<void> _openImageSearch(BuildContext context, ThemeProvider provider) async {
+    final selectedUrl = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (context) => _ImageSearchPage(provider: provider),
+      ),
+    );
+    if (selectedUrl != null && context.mounted) {
+      await provider.setCustomBackgroundImage(selectedUrl);
+      if (context.mounted) {
+        await _suggestAccentColor(context, selectedUrl, provider);
+      }
+    }
+  }
+
+  Future<void> _suggestAccentColor(
+    BuildContext context,
+    String imageUrl,
+    ThemeProvider provider,
+  ) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AccentColorSuggestionSheet(
+        imageUrl: imageUrl,
+        provider: provider,
       ),
     );
   }
@@ -658,8 +682,7 @@ class _ImageSearchPageState extends State<_ImageSearchPage> {
                 itemBuilder: (ctx, index) {
                   return GestureDetector(
                     onTap: () {
-                      widget.provider.setCustomBackgroundImage(results[index]);
-                      Navigator.pop(context);
+                      Navigator.pop(context, results[index]);
                     },
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
@@ -716,7 +739,475 @@ class _ImageSearchPageState extends State<_ImageSearchPage> {
       ),
     );
   }
+
 }
+
+class _AccentColorSuggestionSheet extends StatefulWidget {
+  final String imageUrl;
+  final ThemeProvider provider;
+
+  const _AccentColorSuggestionSheet({
+    required this.imageUrl,
+    required this.provider,
+  });
+
+  @override
+  State<_AccentColorSuggestionSheet> createState() => _AccentColorSuggestionSheetState();
+}
+
+class _AccentColorSuggestionSheetState extends State<_AccentColorSuggestionSheet> {
+  bool _isLoading = true;
+  List<Color> _extractedColors = [];
+  Color? _selectedColor;
+  Color _dominantBg = Colors.black;
+
+  @override
+  void initState() {
+    super.initState();
+    _extractPalette();
+  }
+
+  /// Calculates the WCAG relative luminance contrast ratio between two colors (1.0 to 21.0).
+  double _contrast(Color c1, Color c2) {
+    final l1 = c1.computeLuminance();
+    final l2 = c2.computeLuminance();
+    final lighter = math.max(l1, l2);
+    final darker = math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  /// Guarantees that the accent color contrasts vividly with [bg],
+  /// boosting brightness and saturation if background is dark,
+  /// or deepening value if background is light.
+  Color _ensureHighContrast(Color c, Color bg) {
+    final bgLum = bg.computeLuminance();
+    final isBgDark = bgLum < 0.45;
+    final ratio = _contrast(c, bg);
+
+    if (ratio >= 3.6) {
+      return c;
+    }
+
+    final hsv = HSVColor.fromColor(c);
+    if (isBgDark) {
+      // Dark background: ensure bright, popping accent
+      final val = math.max(hsv.value, 0.88);
+      final sat = math.min(1.0, math.max(hsv.saturation, 0.72));
+      return hsv.withValue(val).withSaturation(sat).toColor();
+    } else {
+      // Light background: ensure deep, rich accent
+      final val = math.min(hsv.value, 0.38);
+      final sat = math.min(1.0, math.max(hsv.saturation, 0.80));
+      return hsv.withValue(val).withSaturation(sat).toColor();
+    }
+  }
+
+  /// Generates a complementary accent color (180° opposite hue)
+  /// guaranteed to stand out chromatically against [bg].
+  Color _complementaryAccent(Color bg) {
+    final bgHsv = HSVColor.fromColor(bg);
+    final isBgDark = bg.computeLuminance() < 0.45;
+    final compHue = (bgHsv.hue + 180.0) % 360.0;
+    final sat = math.min(1.0, math.max(bgHsv.saturation, 0.85));
+    final val = isBgDark ? 0.92 : 0.38;
+    return HSVColor.fromAHSV(1.0, compHue, sat, val).toColor();
+  }
+
+  /// Scores a candidate accent color:
+  /// heavily rewards contrast ratio against background, high saturation, and hue separation.
+  double _scoreAccent(Color c, Color bg) {
+    final ratio = _contrast(c, bg);
+    final hsv = HSVColor.fromColor(c);
+    final bgHsv = HSVColor.fromColor(bg);
+
+    if (ratio < 3.0) return -100.0;
+
+    final hueDiff = (hsv.hue - bgHsv.hue).abs();
+    final circHueDiff = hueDiff > 180.0 ? 360.0 - hueDiff : hueDiff;
+    final hueRatio = circHueDiff / 180.0; // 0.0 to 1.0
+
+    return (ratio * 4.0) + (hsv.saturation * 3.5) + (hueRatio * 2.0);
+  }
+
+  Future<void> _extractPalette() async {
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        NetworkImage(widget.imageUrl),
+        maximumColorCount: 24,
+      );
+
+      final bg = palette.dominantColor?.color ?? Colors.black;
+      _dominantBg = bg;
+
+      final rawColors = <Color>[
+        if (palette.vibrantColor != null) palette.vibrantColor!.color,
+        if (palette.lightVibrantColor != null) palette.lightVibrantColor!.color,
+        if (palette.darkVibrantColor != null) palette.darkVibrantColor!.color,
+        if (palette.lightMutedColor != null) palette.lightMutedColor!.color,
+        if (palette.mutedColor != null) palette.mutedColor!.color,
+        if (palette.darkMutedColor != null) palette.darkMutedColor!.color,
+        ...palette.colors,
+        _complementaryAccent(bg),
+      ];
+
+      // Enhance contrast against the background image tone
+      final contrastEnhanced = rawColors.map((c) => _ensureHighContrast(c, bg)).toList();
+
+      final distinct = <Color>[];
+      for (final c in contrastEnhanced) {
+        // Strictly filter out any color that does not have at least 3.0:1 contrast
+        if (_contrast(c, bg) < 3.0) continue;
+
+        final tooClose = distinct.any((existing) {
+          final dr = (c.r - existing.r).abs();
+          final dg = (c.g - existing.g).abs();
+          final db = (c.b - existing.b).abs();
+          return dr + dg + db < 0.24;
+        });
+        if (!tooClose) distinct.add(c);
+      }
+
+      // Sort descending so the most contrasting & vivid accent color is first
+      distinct.sort((a, b) => _scoreAccent(b, bg).compareTo(_scoreAccent(a, bg)));
+
+      if (mounted) {
+        setState(() {
+          _extractedColors = distinct;
+          if (distinct.isNotEmpty) {
+            _selectedColor = distinct.first;
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context);
+    final theme = Theme.of(context);
+    final activeColor = _selectedColor ?? theme.primaryColor;
+    final currentRatio = _contrast(activeColor, _dominantBg);
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          decoration: BoxDecoration(
+            color: theme.cardColor.withValues(alpha: 0.95),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top drag indicator
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.dividerColor.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: activeColor.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.palette_rounded, color: activeColor, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          langProvider.translate('suggest_accent_title'),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          langProvider.translate('suggest_accent_desc'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              if (_isLoading) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 36),
+                  child: Column(
+                    children: [
+                      CircularProgressIndicator(color: theme.primaryColor),
+                      const SizedBox(height: 16),
+                      Text(
+                        langProvider.translate('extracting_colors'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (_extractedColors.isEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      langProvider.translate('no_images_found'),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                // Main accent color preview & apply card with contrast validation
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: activeColor.withValues(alpha: 0.4),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: activeColor.withValues(alpha: 0.15),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      // Preview circle with active accent color
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: activeColor,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: activeColor.withValues(alpha: 0.6),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.check_rounded,
+                          color: activeColor.computeLuminance() > 0.45 ? Colors.black87 : Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '#${activeColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            // Contrast badge proving visibility over background
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (currentRatio >= 4.5 ? Colors.green : Colors.teal).withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: (currentRatio >= 4.5 ? Colors.green : Colors.teal).withValues(alpha: 0.5),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.contrast_rounded,
+                                    size: 11,
+                                    color: currentRatio >= 4.5 ? Colors.greenAccent : Colors.tealAccent,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${currentRatio.toStringAsFixed(1)}:1 • ${langProvider.translate('high_contrast')}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: currentRatio >= 4.5 ? Colors.greenAccent : Colors.tealAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          widget.provider.setCustomPrimaryColor(activeColor);
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: activeColor,
+                          foregroundColor: activeColor.computeLuminance() > 0.45 ? Colors.black87 : Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          langProvider.translate('save'),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Other extracted contrasting colors row
+                if (_extractedColors.length > 1) ...[
+                  Text(
+                    langProvider.translate('other_extracted_colors'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 52,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _extractedColors.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 10),
+                      itemBuilder: (_, i) {
+                        final c = _extractedColors[i];
+                        final isSelected = c.toARGB32() == activeColor.toARGB32();
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedColor = c;
+                            });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 50,
+                            decoration: BoxDecoration(
+                              color: c,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isSelected ? Colors.white : Colors.transparent,
+                                width: isSelected ? 2.5 : 0,
+                              ),
+                              boxShadow: [
+                                if (isSelected)
+                                  BoxShadow(
+                                    color: c.withValues(alpha: 0.6),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                              ],
+                            ),
+                            child: isSelected
+                                ? Icon(
+                                    Icons.check,
+                                    size: 18,
+                                    color: c.computeLuminance() > 0.45 ? Colors.black87 : Colors.white,
+                                  )
+                                : null,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Action buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text(langProvider.translate('keep_current_color')),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.check, size: 18),
+                        label: Text(langProvider.translate('apply_accent_color')),
+                        onPressed: () {
+                          widget.provider.setCustomPrimaryColor(activeColor);
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: activeColor,
+                          foregroundColor: activeColor.computeLuminance() > 0.45 ? Colors.black87 : Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 
 class _AdvancedColorPicker extends StatefulWidget {
   final String initialKey;

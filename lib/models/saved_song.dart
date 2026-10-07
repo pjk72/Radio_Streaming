@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../utils/artist_merge_utils.dart';
 
 class SavedSong {
   final String id;
@@ -21,7 +22,7 @@ class SavedSong {
   SavedSong({
     required this.id,
     required this.title,
-    required this.artist,
+    required String artist,
     required this.album,
     this.artUri,
     this.youtubeUrl,
@@ -35,7 +36,7 @@ class SavedSong {
     this.rawStreamUrl,
     this.genre,
     this.extras,
-  });
+  }) : artist = MergeUtils.cleanArtistName(artist);
 
   Map<String, dynamic> toJson() {
     return {

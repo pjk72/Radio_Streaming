@@ -112,8 +112,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       await auth.signIn();
       if (auth.isSignedIn && mounted) {
-        // Login successful - Forza il ripristino totale dal cloud (isFullReplace: true)
-        await radio.restoreBackup(isFullReplace: true);
+        // Login successful - usa sempre la cache locale del telefono (mai il cloud)
+        await radio.restoreAfterLogin(themeProvider: theme, isFullReplace: true);
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('was_guest', false);
@@ -233,6 +233,12 @@ class _LoginScreenState extends State<LoginScreen> {
       // Reset state ONLY if we are switching from a Google account back to Guest
       // This prevents wiping current Guest data if the user is already in Guest mode.
       if (auth.isSignedIn) {
+        // Uscita senza backup automatico: conserva solo la cache locale.
+        await radio.snapshotUserSession();
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('use_local_cache_on_login', true);
+
         await auth.signOut();
         // Recupera i dati Guest dallo snapshot salvato precedentemente
         await radio.resetAllData(themeProvider: theme, restoreGuest: true);

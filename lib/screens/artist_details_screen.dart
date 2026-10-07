@@ -125,11 +125,104 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
         (a, b) => (b['playcount'] as int).compareTo(a['playcount'] as int),
       );
       _warmAlbumImages(results);
+
+      // Enrich top albums with release year
+      await _enrichAlbumsWithYears(results.take(6).toList());
+
       return results;
     } catch (e) {
       developer.log("Error fetching discography: $e");
     }
     return [];
+  }
+
+  Future<void> _enrichAlbumsWithYears(List<Map<String, dynamic>> albums) async {
+    if (albums.isEmpty) return;
+    try {
+      final batchYears = <String, String>{};
+      final uri = Uri.parse(
+        "https://itunes.apple.com/search?term=${Uri.encodeComponent(widget.artistName)}&entity=album&limit=50",
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final itunesResults = data['results'] as List? ?? [];
+        for (final r in itunesResults) {
+          final cName = r['collectionName'] as String?;
+          final rDate = r['releaseDate'] as String?;
+          if (cName != null && rDate != null && rDate.length >= 4) {
+            final y = rDate.substring(0, 4);
+            batchYears[_normalizeAlbum(cName)] = y;
+            final cleaned = _cleanAlbumName(cName);
+            if (cleaned.isNotEmpty) {
+              batchYears[_normalizeAlbum(cleaned)] = y;
+            }
+          }
+        }
+      }
+
+      final missingAlbums = <Map<String, dynamic>>[];
+      for (final album in albums) {
+        final name = album['name'] as String? ?? '';
+        final norm = _normalizeAlbum(name);
+        final normClean = _normalizeAlbum(_cleanAlbumName(name));
+        String? year = batchYears[norm] ?? batchYears[normClean];
+
+        if (year == null && normClean.isNotEmpty) {
+          for (final entry in batchYears.entries) {
+            if (entry.key.contains(normClean) || normClean.contains(entry.key)) {
+              year = entry.value;
+              break;
+            }
+          }
+        }
+
+        if (year != null && year.isNotEmpty) {
+          album['year'] = year;
+        } else {
+          missingAlbums.add(album);
+        }
+      }
+
+      if (missingAlbums.isNotEmpty) {
+        await Future.wait(
+          missingAlbums.map((album) async {
+            final name = album['name'] as String? ?? '';
+            final clean = _cleanAlbumName(name);
+            final query = clean.isNotEmpty
+                ? '${widget.artistName} $clean'
+                : '${widget.artistName} $name';
+            try {
+              final qUri = Uri.parse(
+                "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=album&limit=1",
+              );
+              final qResp =
+                  await http.get(qUri).timeout(const Duration(seconds: 4));
+              if (qResp.statusCode == 200) {
+                final qData = jsonDecode(qResp.body);
+                if (qData['resultCount'] > 0) {
+                  final rDate = qData['results'][0]['releaseDate'] as String?;
+                  if (rDate != null && rDate.length >= 4) {
+                    album['year'] = rDate.substring(0, 4);
+                  }
+                }
+              }
+            } catch (_) {}
+          }),
+          eagerError: false,
+        );
+      }
+    } catch (e) {
+      developer.log("Error enriching albums with years: $e");
+    }
+  }
+
+  static String _normalizeAlbum(String s) {
+    return s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  static String _cleanAlbumName(String s) {
+    return s.replaceAll(RegExp(r'\(.*?\)|\[.*?\]| - .*'), '').trim();
   }
 
   // Download the album images in the background so the grid shows them
@@ -745,6 +838,8 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                         album['name']?.toString() ?? "";
                                     final artworkUrl =
                                         album['imageUrl']?.toString() ?? "";
+                                    final albumYear =
+                                        album['year']?.toString() ?? "";
 
                                     return MouseRegion(
                                       cursor: SystemMouseCursors.click,
@@ -828,7 +923,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              '#${index + 1}',
+                                              albumYear,
                                               style: const TextStyle(
                                                 color: Colors.white54,
                                                 fontSize: 11,

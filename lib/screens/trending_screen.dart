@@ -37,6 +37,11 @@ class _TrendingScreenState extends State<TrendingScreen>
   List<TrendingPlaylist> _playlists = [];
   String? _errorMessage;
 
+  // Auto-retry guard: if the "Most Played Playlists" area comes back empty,
+  // the fetching procedure is re-launched (bounded) instead of showing a void.
+  static const int _maxTrendingFetchAttempts = 3;
+  int _trendingFetchAttempts = 0;
+
   // Speech to Text variables
   late stt.SpeechToText _speech;
   bool _isListening = false;
@@ -46,16 +51,103 @@ class _TrendingScreenState extends State<TrendingScreen>
 
   Map<String, String> _getCountryMap(LanguageProvider langProvider) {
     final codes = [
-      "ALL", "AL", "DZ", "AD", "AO", "SA", "AR", "AM", "AU", "AT", "AZ",
-      "BH", "BD", "BE", "BY", "BO", "BR", "BG", "CA", "CL", "CN",
-      "CY", "CO", "KR", "CR", "HR", "CU", "DK", "EC", "EG", "AE",
-      "EE", "PH", "FI", "FR", "GE", "DE", "JP", "JM", "JO", "GR",
-      "GT", "HN", "IN", "ID", "IR", "IQ", "IE", "IS", "IL", "IT",
-      "KZ", "KE", "KW", "LV", "LB", "LT", "LU", "MY", "MT", "MA",
-      "MX", "MD", "MC", "ME", "NG", "NO", "NZ", "NL", "PK", "PA",
-      "PY", "PE", "PL", "PT", "QA", "GB", "CZ", "DO", "RO", "RU",
-      "SG", "SI", "SK", "ES", "US", "ZA", "SE", "CH", "TH", "TN",
-      "TR", "UA", "HU", "UY", "VE", "VN"
+      "ALL",
+      "AL",
+      "DZ",
+      "AD",
+      "AO",
+      "SA",
+      "AR",
+      "AM",
+      "AU",
+      "AT",
+      "AZ",
+      "BH",
+      "BD",
+      "BE",
+      "BY",
+      "BO",
+      "BR",
+      "BG",
+      "CA",
+      "CL",
+      "CN",
+      "CY",
+      "CO",
+      "KR",
+      "CR",
+      "HR",
+      "CU",
+      "DK",
+      "EC",
+      "EG",
+      "AE",
+      "EE",
+      "PH",
+      "FI",
+      "FR",
+      "GE",
+      "DE",
+      "JP",
+      "JM",
+      "JO",
+      "GR",
+      "GT",
+      "HN",
+      "IN",
+      "ID",
+      "IR",
+      "IQ",
+      "IE",
+      "IS",
+      "IL",
+      "IT",
+      "KZ",
+      "KE",
+      "KW",
+      "LV",
+      "LB",
+      "LT",
+      "LU",
+      "MY",
+      "MT",
+      "MA",
+      "MX",
+      "MD",
+      "MC",
+      "ME",
+      "NG",
+      "NO",
+      "NZ",
+      "NL",
+      "PK",
+      "PA",
+      "PY",
+      "PE",
+      "PL",
+      "PT",
+      "QA",
+      "GB",
+      "CZ",
+      "DO",
+      "RO",
+      "RU",
+      "SG",
+      "SI",
+      "SK",
+      "ES",
+      "US",
+      "ZA",
+      "SE",
+      "CH",
+      "TH",
+      "TN",
+      "TR",
+      "UA",
+      "HU",
+      "UY",
+      "VE",
+      "VN",
     ];
 
     final Map<String, String> map = {};
@@ -134,7 +226,11 @@ class _TrendingScreenState extends State<TrendingScreen>
     return 'US'; // Safe international fallback
   }
 
-  Future<void> _fetchTrending() async {
+  Future<void> _fetchTrending({bool isRetry = false}) async {
+    if (!isRetry) {
+      _trendingFetchAttempts = 0;
+    }
+
     // Dismiss keyboard safely if a search is being performed
     if (_customQueryController.text.isNotEmpty) {
       FocusManager.instance.primaryFocus?.unfocus();
@@ -187,6 +283,9 @@ class _TrendingScreenState extends State<TrendingScreen>
           _playlists = results;
         });
 
+        // If the "Most Played Playlists" area is missing, relaunch the
+        // fetch procedure automatically (bounded attempts, 2s apart).
+        _ensureMostPlayedPlaylistsLoaded();
       }
     } catch (e) {
       if (mounted) {
@@ -216,6 +315,27 @@ class _TrendingScreenState extends State<TrendingScreen>
         }
       }
     }
+  }
+
+  bool _hasMostPlayedPlaylists() {
+    return _playlists.any(
+      (p) =>
+          p.provider == 'APPLEMUSIC' &&
+          p.categoryTitle == 'most_played_playlists',
+    );
+  }
+
+  void _ensureMostPlayedPlaylistsLoaded() {
+    if (_customQueryController.text.isNotEmpty) return;
+    if (_hasMostPlayedPlaylists()) return;
+    if (_trendingFetchAttempts >= _maxTrendingFetchAttempts) return;
+
+    _trendingFetchAttempts++;
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && !_isLoading) {
+        _fetchTrending(isRetry: true);
+      }
+    });
   }
 
   @override
@@ -315,7 +435,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                       _selectedCountryCode = val;
                       _customQueryController.clear();
                       _playlists.clear(); // Clear to show full-screen loader
-                      _errorMessage = null; 
+                      _errorMessage = null;
                     });
                     _fetchTrending();
                   }
@@ -337,8 +457,12 @@ class _TrendingScreenState extends State<TrendingScreen>
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
                   hintText: langProvider.translate('search'),
-                  prefixIcon: const Icon(Icons.filter_list, size: 18, color: Colors.white54),
-                  suffixIcon: _filterController.text.isNotEmpty 
+                  prefixIcon: const Icon(
+                    Icons.filter_list,
+                    size: 18,
+                    color: Colors.white54,
+                  ),
+                  suffixIcon: _filterController.text.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.close, size: 16),
                           onPressed: () {
@@ -346,7 +470,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                               _filterController.clear();
                             });
                           },
-                        ) 
+                        )
                       : null,
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -448,8 +572,8 @@ class _TrendingScreenState extends State<TrendingScreen>
             final title = p.title.toLowerCase();
             final owner = p.owner?.toLowerCase() ?? '';
             final provider = p.provider.toLowerCase();
-            if (!title.contains(filterText) && 
-                !owner.contains(filterText) && 
+            if (!title.contains(filterText) &&
+                !owner.contains(filterText) &&
                 !provider.contains(filterText)) {
               continue;
             }
@@ -461,163 +585,189 @@ class _TrendingScreenState extends State<TrendingScreen>
         return RefreshIndicator(
           onRefresh: _fetchTrending,
           child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(), // Allow pull-to-refresh on short content
-          scrollCacheExtent: const ScrollCacheExtent.pixels(3000), // Pre-render more children to ensure keys are available for scrolling
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          children: [
-            // Error Message (if any)
-            if (_errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+            physics:
+                const AlwaysScrollableScrollPhysics(), // Allow pull-to-refresh on short content
+            scrollCacheExtent: const ScrollCacheExtent.pixels(
+              3000,
+            ), // Pre-render more children to ensure keys are available for scrolling
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            children: [
+              // Error Message (if any)
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          langProvider
-                              .translate('error_prefix')
-                              .replaceAll('{0}', _errorMessage!),
-                          style: const TextStyle(color: Colors.red, fontSize: 13),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          color: Colors.red,
+                          size: 20,
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 16, color: Colors.red),
-                        onPressed: () => setState(() => _errorMessage = null),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            langProvider
+                                .translate('error_prefix')
+                                .replaceAll('{0}', _errorMessage!),
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.red,
+                          ),
+                          onPressed: () => setState(() => _errorMessage = null),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            // Top Artists Section
-            if (topArtists.isNotEmpty)
-              _buildHorizontalSection(
-                title: langProvider.translate('top_artists'),
-                items: topArtists.take(30).toList(),
-                height: 140,
-                itemBuilder: (artistData) {
-                  final data = artistData as Map<String, String>;
-                  return _ArtistCard(
-                    key: ValueKey(data['name']),
-                    artistData: data,
-                    showCarIcon: data['isAAMajority'] == 'true',
-                  );
-                },
-              ),
+              // Top Artists Section
+              if (topArtists.isNotEmpty)
+                _buildHorizontalSection(
+                  title: langProvider.translate('top_artists'),
+                  items: topArtists.take(30).toList(),
+                  height: 140,
+                  itemBuilder: (artistData) {
+                    final data = artistData as Map<String, String>;
+                    return _ArtistCard(
+                      key: ValueKey(data['name']),
+                      artistData: data,
+                      showCarIcon: data['isAAMajority'] == 'true',
+                    );
+                  },
+                ),
 
-            // AI "For You" Section
-            if (provider.forYouList.isNotEmpty)
-              _buildHorizontalSection(
-                title: '✨ ${langProvider.translate('for_you')}',
-                height: 180, // Compact height
-                items: provider.forYouList,
-                itemBuilder: (data) {
-                  final item = data as TrendingPlaylist?;
-                  if (item == null) {
-                    return _buildShimmerCard();
+              // AI "For You" Section
+              if (provider.forYouList.isNotEmpty)
+                _buildHorizontalSection(
+                  title: '✨ ${langProvider.translate('for_you')}',
+                  height: 180, // Compact height
+                  items: provider.forYouList,
+                  itemBuilder: (data) {
+                    final item = data as TrendingPlaylist?;
+                    if (item == null) {
+                      return _buildShimmerCard();
+                    }
+                    return SizedBox(
+                      width: 125, // Compact width
+                      child: _buildMixCard(item, false, langProvider),
+                    );
+                  },
+                ),
+
+              // Unified FIFO Section (Recently Played)
+              if (unifiedRecent.isNotEmpty)
+                _buildHorizontalSection(
+                  title: langProvider.translate('recently_played'),
+                  topPadding: 8,
+                  height: 180, // Compact height
+                  items: unifiedRecent.take(30).toList(),
+                  itemBuilder: (data) {
+                    final item = data as Map<String, dynamic>;
+                    return SizedBox(
+                      width: 125, // Compact width
+                      child: _buildSongCard(
+                        item['song'] as SavedSong,
+                        provider,
+                        langProvider,
+                        showCarIcon: item['isLastFromAA'] == true,
+                      ),
+                    );
+                  },
+                ),
+
+              // Search skeleton (for custom queries)
+              if (_isLoading && _customQueryController.text.isNotEmpty)
+                _buildHorizontalSection(
+                  title: langProvider.translate('custom_search'),
+                  height: 180,
+                  items: List.generate(5, (_) => null),
+                  itemBuilder: (_) => _buildShimmerCard(),
+                  topPadding: 16,
+                ),
+
+              // Trending Playlists by Category
+              ...() {
+                final List<Widget> sections = [];
+                bool ytSeen = false;
+
+                final entries = groupedTrending.entries.toList();
+                // Check if YouTube exists in our map
+                final hasYouTube = entries.any((e) => e.key == 'YouTube');
+
+                for (int i = 0; i < entries.length; i++) {
+                  final entry = entries[i];
+                  final String key = entry.key;
+
+                  // Move Search Bar just before YouTube
+                  if (key == 'YouTube' ||
+                      (!hasYouTube && !ytSeen && key == 'AUDIUS')) {
+                    ytSeen = true;
+                    sections.add(_buildInlineSearchCard(context, langProvider));
                   }
-                  return SizedBox(
-                    width: 125, // Compact width
-                    child: _buildMixCard(item, false, langProvider),
-                  );
-                },
-              ),
 
-            // Unified FIFO Section (Recently Played)
-            if (unifiedRecent.isNotEmpty)
-              _buildHorizontalSection(
-                title: langProvider.translate('recently_played'),
-                topPadding: 8,
-                height: 180, // Compact height
-                items: unifiedRecent.take(30).toList(),
-                itemBuilder: (data) {
-                  final item = data as Map<String, dynamic>;
-                  return SizedBox(
-                    width: 125, // Compact width
-                    child: _buildSongCard(
-                      item['song'] as SavedSong,
-                      provider,
-                      langProvider,
-                      showCarIcon: item['isLastFromAA'] == true,
+                  // ALL playlist rows should now be compact (125x180)
+                  const double currentHeight = 180;
+                  const double currentWidth = 125;
+
+                  final String translated = langProvider.translate(key);
+                  final String sectionTitle = (translated != key)
+                      ? translated
+                      : "$key ${langProvider.translate('playlists_suffix')}";
+
+                  sections.add(
+                    _buildHorizontalSection(
+                      title: sectionTitle,
+                      showTitle:
+                          i == 0 &&
+                          _customQueryController
+                              .text
+                              .isEmpty, // Show title only for the first line after Recently Played (hide if searching)
+                      topPadding: 16, // Compact padding
+                      height: currentHeight,
+                      items: entry.value,
+                      itemBuilder: (playlist) {
+                        final item = playlist as TrendingPlaylist;
+                        final isPlaying =
+                            provider.currentPlayingPlaylistId ==
+                            'trending_${item.id}';
+                        return SizedBox(
+                          width: currentWidth,
+                          child: _buildCard(item, isPlaying, langProvider),
+                        );
+                      },
                     ),
                   );
-                },
-              ),
+                }
 
-            // Search skeleton (for custom queries)
-            if (_isLoading && _customQueryController.text.isNotEmpty)
-              _buildHorizontalSection(
-                title: langProvider.translate('custom_search'),
-                height: 180,
-                items: List.generate(5, (_) => null),
-                itemBuilder: (_) => _buildShimmerCard(),
-                topPadding: 16,
-              ),
-
-            // Trending Playlists by Category
-            ...() {
-              final List<Widget> sections = [];
-              bool ytSeen = false;
-
-              final entries = groupedTrending.entries.toList();
-              // Check if YouTube exists in our map
-              final hasYouTube = entries.any((e) => e.key == 'YouTube');
-
-              for (int i = 0; i < entries.length; i++) {
-                final entry = entries[i];
-                final String key = entry.key;
-
-                // Move Search Bar just before YouTube
-                if (key == 'YouTube' || (!hasYouTube && !ytSeen && key == 'AUDIUS')) {
-                  ytSeen = true;
+                // Fallback if YouTube wasn't found (add at the end)
+                if (!ytSeen) {
                   sections.add(_buildInlineSearchCard(context, langProvider));
                 }
 
-                // ALL playlist rows should now be compact (125x180)
-                const double currentHeight = 180;
-                const double currentWidth = 125;
+                return sections;
+              }(),
 
-                final String translated = langProvider.translate(key);
-                final String sectionTitle = (translated != key) 
-                    ? translated 
-                    : "$key ${langProvider.translate('playlists_suffix')}";
-
-                sections.add(_buildHorizontalSection(
-                  title: sectionTitle,
-                  showTitle: i == 0 && _customQueryController.text.isEmpty, // Show title only for the first line after Recently Played (hide if searching)
-                  topPadding: 16,   // Compact padding
-                  height: currentHeight,
-                  items: entry.value,
-                  itemBuilder: (playlist) {
-                    final item = playlist as TrendingPlaylist;
-                    final isPlaying =
-                        provider.currentPlayingPlaylistId ==
-                        'trending_${item.id}';
-                    return SizedBox(
-                      width: currentWidth,
-                      child: _buildCard(item, isPlaying, langProvider),
-                    );
-                  },
-                ));
-              }
-
-              // Fallback if YouTube wasn't found (add at the end)
-              if (!ytSeen) {
-                sections.add(_buildInlineSearchCard(context, langProvider));
-              }
-
-              return sections;
-            }(),
-
-            const SizedBox(height: 90), // bottom padding for player
-          ],
+              const SizedBox(height: 90), // bottom padding for player
+            ],
           ),
         );
       },
@@ -684,10 +834,15 @@ class _TrendingScreenState extends State<TrendingScreen>
               controller: _customQueryController,
               decoration: InputDecoration(
                 hintText: langProvider.translate('custom_search_hint'),
-                prefixIcon: Icon(Icons.search, color: Theme.of(context).primaryColor),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: Theme.of(context).primaryColor,
+                ),
                 border: InputBorder.none,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -697,7 +852,9 @@ class _TrendingScreenState extends State<TrendingScreen>
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Theme.of(context).primaryColor,
+                          ),
                         ),
                       ),
                     IconButton(
@@ -756,87 +913,87 @@ class _TrendingScreenState extends State<TrendingScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-            Expanded(
-              flex: 5,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: theme.cardColor,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                  image: song.artUri != null && song.artUri!.isNotEmpty
-                      ? DecorationImage(
-                          image: CachedNetworkImageProvider(song.artUri!),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                ),
-                child: Stack(
-                  children: [
-                    if (song.artUri == null || song.artUri!.isEmpty)
-                      const Center(
-                        child: Icon(
-                          Icons.music_note,
-                          size: 40,
-                          color: Colors.white24,
-                        ),
-                      ),
-                    if (showCarIcon)
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.directions_car,
-                            color: Colors.white,
-                            size: 14,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+          Expanded(
+            flex: 5,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: theme.cardColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+                image: song.artUri != null && song.artUri!.isNotEmpty
+                    ? DecorationImage(
+                        image: CachedNetworkImageProvider(song.artUri!),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
               ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Stack(
                 children: [
-                  Text(
-                    song.title.replaceFirst("⬇️ ", "").replaceFirst("📱 ", ""),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: isPlaying ? theme.primaryColor : null,
+                  if (song.artUri == null || song.artUri!.isEmpty)
+                    const Center(
+                      child: Icon(
+                        Icons.music_note,
+                        size: 40,
+                        color: Colors.white24,
+                      ),
                     ),
-                  ),
-                  Text(
-                    song.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.textTheme.bodySmall?.color,
+                  if (showCarIcon)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.directions_car,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  song.title.replaceFirst("⬇️ ", "").replaceFirst("📱 ", ""),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: isPlaying ? theme.primaryColor : null,
+                  ),
+                ),
+                Text(
+                  song.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.textTheme.bodySmall?.color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -932,196 +1089,198 @@ class _TrendingScreenState extends State<TrendingScreen>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TrendingDetailsScreen(
-              playlist: item,
-              canOpenArtist: false,
-            ),
+            builder: (_) =>
+                TrendingDetailsScreen(playlist: item, canOpenArtist: false),
           ),
         );
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-            Expanded(
-              flex: 5,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: theme.cardColor,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: Colors.purple.withValues(alpha: 0.3),
-                    width: 1.5,
+          Expanded(
+            flex: 5,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: theme.cardColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
                   ),
-                  image: !isAI && mainImageUrl.isNotEmpty
-                      ? DecorationImage(
-                          image: CachedNetworkImageProvider(mainImageUrl),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
+                ],
+                border: Border.all(
+                  color: Colors.purple.withValues(alpha: 0.3),
+                  width: 1.5,
                 ),
-                child: Stack(
-                  children: [
-                    if (isAI)
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          gradient: LinearGradient(
-                            colors: gradientColors,
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
+                image: !isAI && mainImageUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: CachedNetworkImageProvider(mainImageUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: Stack(
+                children: [
+                  if (isAI)
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        gradient: LinearGradient(
+                          colors: gradientColors,
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              right: -15,
-                              bottom: -15,
-                              child: Icon(
-                                _getGenreIcon(item.title),
-                                size: 100, // Even bigger
-                                color: Colors.white.withValues(
-                                  alpha: 0.3,
-                                ), // More visible
-                              ),
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            right: -15,
+                            bottom: -15,
+                            child: Icon(
+                              _getGenreIcon(item.title),
+                              size: 100, // Even bigger
+                              color: Colors.white.withValues(
+                                alpha: 0.3,
+                              ), // More visible
                             ),
-                            Positioned.fill(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10.0,
-                                  vertical: 14.0,
-                                ),
-                                child: Column(
-                                  children: [
-                                    const SizedBox(
-                                      height: 15,
-                                    ), // Offset title higher
+                          ),
+                          Positioned.fill(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10.0,
+                                vertical: 14.0,
+                              ),
+                              child: Column(
+                                children: [
+                                  const SizedBox(
+                                    height: 15,
+                                  ), // Offset title higher
+                                  Text(
+                                    langProvider.translate(item.title),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 4,
+                                    softWrap: true,
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.1,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.5,
+                                          ),
+                                          offset: const Offset(0, 4),
+                                          blurRadius: 10,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  // Artists List at the bottom
+                                  if (item.predefinedTracks != null &&
+                                      item.predefinedTracks!.isNotEmpty)
                                     Text(
-                                      langProvider.translate(item.title),
+                                      "${item.predefinedTracks!.take(5).map((t) => t['artist'].toString().split(',').first.trim()).join(', ')}...",
                                       textAlign: TextAlign.center,
-                                      maxLines: 4,
-                                      softWrap: true,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.outfit(
                                         color: Colors.white,
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12, // Slightly larger
+                                        fontWeight: FontWeight
+                                            .w600, // Semi-bold for better impact
+                                        letterSpacing: 0.3,
                                         height: 1.1,
                                         shadows: [
                                           Shadow(
                                             color: Colors.black.withValues(
                                               alpha: 0.5,
                                             ),
-                                            offset: const Offset(0, 4),
-                                            blurRadius: 10,
+                                            offset: const Offset(0, 1),
+                                            blurRadius: 4,
                                           ),
                                         ],
                                       ),
                                     ),
-                                    const Spacer(),
-                                    // Artists List at the bottom
-                                    if (item.predefinedTracks != null &&
-                                        item.predefinedTracks!.isNotEmpty)
-                                      Text(
-                                        "${item.predefinedTracks!.take(5).map((t) => t['artist'].toString().split(',').first.trim()).join(', ')}...",
-                                        textAlign: TextAlign.center,
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.outfit(
-                                          color: Colors.white,
-                                          fontSize: 12, // Slightly larger
-                                          fontWeight: FontWeight
-                                              .w600, // Semi-bold for better impact
-                                          letterSpacing: 0.3,
-                                          height: 1.1,
-                                          shadows: [
-                                            Shadow(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.5,
-                                              ),
-                                              offset: const Offset(0, 1),
-                                              blurRadius: 4,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                  ],
-                                ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-
-                    // Heart button overlay for Promoted Apple Playlists in For You
-                    if (item.provider == 'APPLEMUSIC')
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Consumer<RadioProvider>(
-                          builder: (context, radioProvider, _) {
-                            final isPromoted = radioProvider.isPlaylistPromoted(item.id);
-                            return GestureDetector(
-                              onTap: () {
-                                radioProvider.togglePromotedPlaylist(item);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  isPromoted ? Icons.favorite : Icons.favorite_border,
-                                  color: isPromoted ? Colors.red : Colors.white70,
-                                  size: 16,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-
-                    if (!isAI && mainImageUrl.isEmpty)
-                      const Center(
-                        child: Icon(
-                          Icons.auto_awesome,
-                          size: 40,
-                          color: Colors.white24,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            if (!isAI) ...[
-              const SizedBox(height: 8),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: isPlaying ? theme.primaryColor : null,
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+
+                  // Heart button overlay for Promoted Apple Playlists in For You
+                  if (item.provider == 'APPLEMUSIC')
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Consumer<RadioProvider>(
+                        builder: (context, radioProvider, _) {
+                          final isPromoted = radioProvider.isPlaylistPromoted(
+                            item.id,
+                          );
+                          return GestureDetector(
+                            onTap: () {
+                              radioProvider.togglePromotedPlaylist(item);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                isPromoted
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                color: isPromoted ? Colors.red : Colors.white70,
+                                size: 16,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                  if (!isAI && mainImageUrl.isEmpty)
+                    const Center(
+                      child: Icon(
+                        Icons.auto_awesome,
+                        size: 40,
+                        color: Colors.white24,
+                      ),
+                    ),
+                ],
               ),
-            ],
+            ),
+          ),
+          if (!isAI) ...[
+            const SizedBox(height: 8),
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: isPlaying ? theme.primaryColor : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
-        ),
+        ],
+      ),
     );
   }
 
@@ -1138,10 +1297,8 @@ class _TrendingScreenState extends State<TrendingScreen>
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TrendingDetailsScreen(
-              playlist: item,
-              canOpenArtist: false,
-            ),
+            builder: (_) =>
+                TrendingDetailsScreen(playlist: item, canOpenArtist: false),
           ),
         );
         if (mounted) setState(() {});
@@ -1196,7 +1353,6 @@ class _TrendingScreenState extends State<TrendingScreen>
                       ),
                     ),
 
-
                     // Active Status Overlay
                     if (isPlaying)
                       Positioned.fill(
@@ -1232,7 +1388,9 @@ class _TrendingScreenState extends State<TrendingScreen>
                         right: 6,
                         child: Consumer<RadioProvider>(
                           builder: (context, radioProvider, _) {
-                            final isPromoted = radioProvider.isPlaylistPromoted(item.id);
+                            final isPromoted = radioProvider.isPlaylistPromoted(
+                              item.id,
+                            );
                             return GestureDetector(
                               onTap: () {
                                 radioProvider.togglePromotedPlaylist(item);
@@ -1244,8 +1402,12 @@ class _TrendingScreenState extends State<TrendingScreen>
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
-                                  isPromoted ? Icons.favorite : Icons.favorite_border,
-                                  color: isPromoted ? Colors.red : Colors.white70,
+                                  isPromoted
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isPromoted
+                                      ? Colors.red
+                                      : Colors.white70,
                                   size: 14,
                                 ),
                               ),
@@ -1326,8 +1488,10 @@ class _TrendingScreenState extends State<TrendingScreen>
     );
   }
 
-
-  Widget _buildSkeletonLoading(BuildContext context, LanguageProvider langProvider) {
+  Widget _buildSkeletonLoading(
+    BuildContext context,
+    LanguageProvider langProvider,
+  ) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 16),
       itemCount: 4,
@@ -1438,6 +1602,7 @@ class _ArtistCard extends StatefulWidget {
 
 class _ArtistCardState extends State<_ArtistCard> {
   Future<String?>? _imageFuture;
+  String? _lastShownImage;
 
   @override
   void initState() {
@@ -1449,13 +1614,30 @@ class _ArtistCardState extends State<_ArtistCard> {
   void didUpdateWidget(_ArtistCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.artistData['name'] != widget.artistData['name']) {
+      _lastShownImage = null;
+    }
+    _maybeRefreshImage();
+  }
+
+  void _maybeRefreshImage() {
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+    final String shortName = (widget.artistData['name'] ?? '')
+        .split(',')
+        .first
+        .trim();
+    final String? cached = provider.getArtistImageFor(shortName);
+    if (cached != null && cached != _lastShownImage) {
       _fetchImage();
     }
   }
 
   void _fetchImage() {
     final provider = Provider.of<RadioProvider>(context, listen: false);
-    _imageFuture = provider.fetchArtistImage(widget.artistData['name'] ?? '');
+    final String shortName = (widget.artistData['name'] ?? '')
+        .split(',')
+        .first
+        .trim();
+    _imageFuture = provider.fetchArtistImage(shortName);
   }
 
   void _showResetConfirmation(
@@ -1524,6 +1706,7 @@ class _ArtistCardState extends State<_ArtistCard> {
           child: FutureBuilder<String?>(
             future: _imageFuture,
             builder: (context, snapshot) {
+              _lastShownImage = snapshot.data;
               final imageUrl = snapshot.data ?? fallbackImageUrl;
 
               return SizedBox(

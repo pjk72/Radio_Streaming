@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/station.dart';
 import '../providers/radio_provider.dart';
+import '../screens/edit_station_screen.dart';
 
 import 'premium_glass_visualizer.dart';
 
@@ -150,6 +151,43 @@ class _StationCardState extends State<StationCard> {
                       ],
                     ),
                   ),
+                  // Edit button (compact view)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: AnimatedOpacity(
+                      opacity: _isHovering ? 1.0 : 0.45,
+                      duration: const Duration(milliseconds: 200),
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => EditStationScreen(
+                                station: widget.station,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.edit_rounded,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ] else ...[
                   // Right-aligned Station Image Background
                   Positioned.fill(
@@ -260,6 +298,49 @@ class _StationCardState extends State<StationCard> {
 
                         // Live status was relocated next to the radio name
                       ],
+                    ),
+                  ),
+                  // Edit button (list view)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: AnimatedOpacity(
+                      opacity: _isHovering ? 1.0 : 0.35,
+                      duration: const Duration(milliseconds: 200),
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => EditStationScreen(
+                                station: widget.station,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Color(int.parse(widget.station.color))
+                                .withValues(alpha: 0.25),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Color(int.parse(widget.station.color))
+                                  .withValues(alpha: 0.5),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.edit_rounded,
+                            color: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.color
+                                ?.withValues(alpha: 0.9),
+                            size: 16,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],

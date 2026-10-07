@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import '../utils/artist_merge_utils.dart';
 import 'log_service.dart';
 
 class TrendingPlaylist {
@@ -52,8 +53,8 @@ class TrendingPlaylist {
       categoryTitle: json['categoryTitle'],
       predefinedTracks: json['predefinedTracks'] != null
           ? (json['predefinedTracks'] as List)
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
           : null,
     );
   }
@@ -219,58 +220,67 @@ class TrendingService {
     AppleChartType chart,
   ) async {
     const int limit = 100; // Fetch enough for 5 rows of 15 (75 total)
-    final url = Uri.parse(
-      'https://rss.marketingtools.apple.com/api/v2/$appleCC'
-      '/music/${chart.type}/$limit/playlists.json',
-    );
+    // The RSS feed is served from two equivalent hosts; some regions/networks
+    // only answer on one of them, so try both before giving up.
+    const List<String> hosts = [
+      'rss.marketingtools.apple.com',
+      'rss.applemarketingtools.com',
+    ];
 
-    try {
-      final r = await http
-          .get(url, headers: {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 12));
+    for (final host in hosts) {
+      final url = Uri.parse(
+        'https://$host/api/v2/$appleCC/music/${chart.type}/$limit/playlists.json',
+      );
 
-      if (r.statusCode != 200) return [];
+      try {
+        final r = await http
+            .get(url, headers: {'Accept': 'application/json'})
+            .timeout(const Duration(seconds: 12));
 
-      final data = jsonDecode(r.body) as Map<String, dynamic>;
-      final feed = data['feed'] as Map<String, dynamic>? ?? {};
-      final results = (feed['results'] as List?) ?? [];
+        if (r.statusCode != 200) continue;
 
-      final List<TrendingPlaylist> playlists = [];
-      for (int i = 0; i < results.length; i++) {
-        final item = results[i];
-        final title = item['name']?.toString() ?? 'Playlist';
-        final id = item['id']?.toString() ?? '';
-        final extUrl = item['url']?.toString() ?? '';
-        final artUrl = (item['artworkUrl100']?.toString() ?? '')
-            .replaceAll('100x100bb', '600x600bb')
-            .replaceAll('100x100', '600x600');
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        final feed = data['feed'] as Map<String, dynamic>? ?? {};
+        final results = (feed['results'] as List?) ?? [];
+        if (results.isEmpty) continue;
 
-        // Split into 3 categories (rows) based on index
-        // Split into 6 categories (rows) of 15 based on index
-        String category = 'most_played_playlists';
-        if (i >= 15 && i < 30) category = 'top_playlists';
-        if (i >= 30 && i < 45) category = 'recent_releases_playlists';
-        if (i >= 45 && i < 60) category = 'hot_tracks_playlists';
-        if (i >= 60 && i < 75) category = 'new_music_playlists';
-        if (i >= 75) category = 'best_hits_playlists';
+        final List<TrendingPlaylist> playlists = [];
+        for (int i = 0; i < results.length; i++) {
+          final item = results[i];
+          final title = item['name']?.toString() ?? 'Playlist';
+          final id = item['id']?.toString() ?? '';
+          final extUrl = item['url']?.toString() ?? '';
+          final artUrl = (item['artworkUrl100']?.toString() ?? '')
+              .replaceAll('100x100bb', '600x600bb')
+              .replaceAll('100x100', '600x600');
 
-        playlists.add(
-          TrendingPlaylist(
-            id: id,
-            title: title,
-            provider: 'APPLEMUSIC',
-            imageUrls: [artUrl],
-            owner: item['artistName']?.toString() ?? 'Apple Music',
-            externalUrl: extUrl,
-            trackCount: -1,
-            categoryTitle: category,
-          ),
-        );
+          // Split into 6 categories (rows) of 15 based on index
+          String category = 'most_played_playlists';
+          if (i >= 15 && i < 30) category = 'top_playlists';
+          if (i >= 30 && i < 45) category = 'recent_releases_playlists';
+          if (i >= 45 && i < 60) category = 'hot_tracks_playlists';
+          if (i >= 60 && i < 75) category = 'new_music_playlists';
+          if (i >= 75) category = 'best_hits_playlists';
+
+          playlists.add(
+            TrendingPlaylist(
+              id: id,
+              title: title,
+              provider: 'APPLEMUSIC',
+              imageUrls: [artUrl],
+              owner: item['artistName']?.toString() ?? 'Apple Music',
+              externalUrl: extUrl,
+              trackCount: -1,
+              categoryTitle: category,
+            ),
+          );
+        }
+        return playlists;
+      } catch (e) {
+        continue;
       }
-      return playlists;
-    } catch (e) {
-      return [];
     }
+    return [];
   }
 
   Future<TrendingPlaylist?> fetchAppleMusicChart(
@@ -539,7 +549,8 @@ class TrendingService {
                     : 'apple_${title.hashCode}',
                 'provider': 'Apple Music',
                 'url': songUrl,
-                'releaseDate': item['attributes']?['releaseDate']?.toString() ?? '',
+                'releaseDate':
+                    item['attributes']?['releaseDate']?.toString() ?? '',
               };
             }).toList();
           }
@@ -774,35 +785,41 @@ class TrendingService {
 
       // 3. YouTube Handling
       if (playlist.provider == 'YouTube') {
-        List<Video> videos = await _yt.playlists.getVideos(playlist.id).toList();
-        
+        List<Video> videos = await _yt.playlists
+            .getVideos(playlist.id)
+            .toList();
+
         // Fallback for broken playlist parser in youtube_explode_dart
         if (videos.isEmpty) {
-           try {
-             final response = await http.get(Uri.parse('https://www.youtube.com/playlist?list=${playlist.id}'));
-             if (response.statusCode == 200) {
-                final videoIdRegex = RegExp(r'"videoId":"([^"]{11})"');
-                final matches = videoIdRegex.allMatches(response.body);
-                final Set<String> videoIds = {};
-                for (var match in matches) {
-                  videoIds.add(match.group(1)!);
-                }
-                if (videoIds.isNotEmpty) {
-                  // Fetch the first 25 unique videos in parallel to load the playlist fast
-                  final futures = videoIds.take(25).map((id) => _yt.videos.get(id));
-                  videos = await Future.wait(futures);
-                }
-             }
-           } catch(e) {
-             LogService().log('Fallback YouTube playlist error: $e');
-           }
+          try {
+            final response = await http.get(
+              Uri.parse('https://www.youtube.com/playlist?list=${playlist.id}'),
+            );
+            if (response.statusCode == 200) {
+              final videoIdRegex = RegExp(r'"videoId":"([^"]{11})"');
+              final matches = videoIdRegex.allMatches(response.body);
+              final Set<String> videoIds = {};
+              for (var match in matches) {
+                videoIds.add(match.group(1)!);
+              }
+              if (videoIds.isNotEmpty) {
+                // Fetch the first 25 unique videos in parallel to load the playlist fast
+                final futures = videoIds
+                    .take(25)
+                    .map((id) => _yt.videos.get(id));
+                videos = await Future.wait(futures);
+              }
+            }
+          } catch (e) {
+            LogService().log('Fallback YouTube playlist error: $e');
+          }
         }
-        
+
         return videos
             .map(
               (v) => {
                 'title': v.title,
-                'artist': v.author,
+                'artist': MergeUtils.cleanArtistName(v.author),
                 'album': '',
                 'image': v.thumbnails.highResUrl,
                 'id': v.id.value,

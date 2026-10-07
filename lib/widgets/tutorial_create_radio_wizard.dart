@@ -279,12 +279,19 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
     setState(() => _isListening = true);
 
+    // Prevent audio-focus loss (triggered by mic) from pausing the stream
+    final radioProvider = Provider.of<RadioProvider>(context, listen: false);
+    radioProvider.setIgnoringPause(true);
+
     final Directory tempDir = await getTemporaryDirectory();
     final String tempPath = '${tempDir.path}/shazam_wizard_temp.mp3';
 
     try {
       await _record.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc),
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          audioInterruption: AudioInterruptionMode.none,
+        ),
         path: tempPath,
       );
 
@@ -294,6 +301,11 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       if (mounted) setState(() => _isAnalyzing = true);
 
       final path = await _record.stop();
+
+      // Restore normal pause handling after mic is released
+      Future.delayed(const Duration(milliseconds: 500), () {
+        radioProvider.setIgnoringPause(false);
+      });
       
       if (path != null) {
         final File audioFile = File(path);
@@ -327,6 +339,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
         if (mounted) setState(() => _isListening = false);
       }
     } catch (e) {
+      radioProvider.setIgnoringPause(false);
       if (mounted) {
         setState(() => _isListening = false);
         ScaffoldMessenger.of(context).showSnackBar(

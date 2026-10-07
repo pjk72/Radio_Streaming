@@ -114,12 +114,19 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     if (hasPermission) {
       setState(() => _isListening = true);
 
+      // Prevent audio-focus loss (triggered by mic) from pausing the stream
+      final provider = Provider.of<RadioProvider>(context, listen: false);
+      provider.setIgnoringPause(true);
+
       final Directory tempDir = await getTemporaryDirectory();
       final String tempPath = '${tempDir.path}/shazam_temp.mp3';
 
       try {
         await _record.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc),
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            audioInterruption: AudioInterruptionMode.none,
+          ),
           path: tempPath,
         );
 
@@ -129,6 +136,11 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
         if (mounted) setState(() => _isAnalyzing = true);
 
         final path = await _record.stop();
+
+        // Restore normal pause handling after mic is released
+        Future.delayed(const Duration(milliseconds: 500), () {
+          provider.setIgnoringPause(false);
+        });
         
         if (path != null) {
           final File audioFile = File(path);
@@ -167,6 +179,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           if (mounted) setState(() => _isListening = false);
         }
       } catch (e) {
+        provider.setIgnoringPause(false);
         if (mounted) {
             setState(() => _isListening = false);
             ScaffoldMessenger.of(context).showSnackBar(
@@ -360,6 +373,13 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     final station = provider.currentStation;
     final artist = provider.currentArtist;
 
+    // When no track is playing, the artist field holds a placeholder
+    // (station genre or name). Never enrich with a stale artist image
+    // in that case — always show the station logo.
+    final bool isPlaceholder =
+        station != null &&
+        (artist == station.genre || artist == station.name);
+
     // Check for artist change
     if (artist != _lastArtistChecked) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -367,11 +387,6 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
           // Update state to trigger fetch but KEEP old image to prevent flashing
           setState(() {
             _lastArtistChecked = artist;
-
-            // Check placeholder logic
-            final isPlaceholder =
-                (station != null &&
-                (artist == station.genre || artist == station.name));
 
             if (artist.isNotEmpty &&
                 artist !=
@@ -394,7 +409,9 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
     // photo while the new one loads (fetchArtistImage already fills the cache).
     final String? cachedArtistImage = provider.getArtistImageFor(artist);
     final String? imageUrl = station != null
-        ? (cachedArtistImage ?? provider.currentArtistImage ?? station.logo)
+        ? (isPlaceholder
+            ? station.logo
+            : (cachedArtistImage ?? provider.currentArtistImage ?? station.logo))
         : null;
 
     // Logic to determine if we are showing a specific image (Artist/Album) or just the default Station Logo
@@ -971,15 +988,15 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                 duration: const Duration(milliseconds: 400),
                 curve: Curves.easeInOutCirc,
                 top: _isListening
-                    ? (widget.height / 2) - 40 // Centrato verticalmente nella card
+                    ? (widget.height / 2) - 28 // Centrato verticalmente nella card
                     : (widget.topPadding * (1.0 - t)) + 8.0,
                 right: _isListening
-                    ? (screenWidth / 2) - 40 // Centrato orizzontalmente
+                    ? (screenWidth / 2) - 28 // Centrato orizzontalmente
                     : (20.0 * t) + 8.0,
                 child: Opacity(
                   opacity: _isListening ? 1.0 : (isShazamDisabled ? 0.3 : 0.3 + (0.7 * t)),
                   child: Transform.scale(
-                    scale: _isListening ? 2.5 : 0.8 + (0.4 * t),
+                    scale: _isListening ? 1.6 : 0.55 + (0.25 * t),
                     child: Material(
                       color: Colors.transparent,
                       child: Container(
@@ -1003,8 +1020,8 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                             duration: const Duration(milliseconds: 300),
                             child: _isListening
                                 ? SizedBox(
-                                    width: 80,
-                                    height: 80,
+                                    width: 56,
+                                    height: 56,
                                     child: Center(
                                       child: AdvancedRecognitionVisualizer(
                                         isAnalyzing: _isAnalyzing,
@@ -1015,7 +1032,7 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                 : Icon(
                                     Icons.track_changes,
                                     color: isShazamDisabled ? Colors.white54 : Colors.white,
-                                    size: 26,
+                                    size: 20,
                                   ),
                           ),
                           tooltip: isShazamDisabled ? lang.translate('music_recognition_disabled') : lang.translate('music_recognition'),

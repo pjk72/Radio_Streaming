@@ -19,6 +19,20 @@ class MergeSuggestion {
 }
 
 class MergeUtils {
+  /// Removes a trailing YouTube auto-generated channel suffix " - Topic"
+  /// (case-insensitive) from an artist name, e.g. "Adele - Topic" → "Adele".
+  /// Repeated suffixes are stripped and the result is trimmed.
+  static String cleanArtistName(String raw) {
+    String res = raw.trim();
+    final suffix = RegExp(r'\s*-\s*Topic\s*$', caseSensitive: false);
+    while (suffix.hasMatch(res)) {
+      final cleaned = res.replaceFirst(suffix, '').trim();
+      if (cleaned == res) break;
+      res = cleaned;
+    }
+    return res;
+  }
+
   /// Matches the grouping normalization used by the artists grid:
   /// takes the first name of "A • B" or "A, B / C", trims and lowercases.
   static String artistGroupingKey(String raw) {

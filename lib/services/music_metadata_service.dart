@@ -98,6 +98,96 @@ class AlbumSearchResult {
 class MusicMetadataService {
   static const String _baseUrl = 'https://itunes.apple.com/search';
 
+  // Cache for Deezer track and album details to avoid repeated network requests
+  final Map<dynamic, Map<String, dynamic>> _deezerTrackDetailsCache = {};
+  final Map<dynamic, Map<String, dynamic>> _deezerAlbumDetailsCache = {};
+
+  Future<Map<String, dynamic>?> _getDeezerTrackDetails(dynamic trackId) async {
+    if (trackId == null) return null;
+    if (_deezerTrackDetailsCache.containsKey(trackId)) {
+      return _deezerTrackDetailsCache[trackId];
+    }
+    try {
+      final url = Uri.parse('https://api.deezer.com/track/$trackId');
+      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>?;
+        if (data != null && !data.containsKey('error')) {
+          _deezerTrackDetailsCache[trackId] = data;
+          if (_deezerTrackDetailsCache.length > 200) {
+            _deezerTrackDetailsCache.remove(_deezerTrackDetailsCache.keys.first);
+          }
+          return data;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _getDeezerAlbumDetails(dynamic albumId) async {
+    if (albumId == null) return null;
+    if (_deezerAlbumDetailsCache.containsKey(albumId)) {
+      return _deezerAlbumDetailsCache[albumId];
+    }
+    try {
+      final url = Uri.parse('https://api.deezer.com/album/$albumId');
+      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>?;
+        if (data != null && !data.containsKey('error')) {
+          _deezerAlbumDetailsCache[albumId] = data;
+          if (_deezerAlbumDetailsCache.length > 200) {
+            _deezerAlbumDetailsCache.remove(_deezerAlbumDetailsCache.keys.first);
+          }
+          return data;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Searches Deezer directly for a track by title and artist to find release date
+  Future<String?> fetchDeezerReleaseDate(String title, String artist) async {
+    try {
+      final cleanQuery = "$title $artist".trim();
+      final term = Uri.encodeQueryComponent(cleanQuery);
+      final url = Uri.parse('https://api.deezer.com/search?q=$term&limit=1');
+      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final results = data['data'] as List<dynamic>? ?? [];
+        if (results.isNotEmpty) {
+          final trackId = results.first['id'];
+          if (trackId != null) {
+            final trackDetails = await _getDeezerTrackDetails(trackId);
+            if (trackDetails != null) {
+              final rDate = trackDetails['release_date']?.toString();
+              if (rDate != null && rDate.isNotEmpty && rDate != '0000-00-00') {
+                return rDate;
+              }
+              final albumRDate = trackDetails['album']?['release_date']?.toString();
+              if (albumRDate != null && albumRDate.isNotEmpty && albumRDate != '0000-00-00') {
+                return albumRDate;
+              }
+            }
+          }
+          final albumId = results.first['album']?['id'];
+          if (albumId != null) {
+            final albumDetails = await _getDeezerAlbumDetails(albumId);
+            if (albumDetails != null) {
+              final albRDate = albumDetails['release_date']?.toString();
+              if (albRDate != null && albRDate.isNotEmpty && albRDate != '0000-00-00') {
+                return albRDate;
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+
   static String _normalize(String s) {
     const from =
         'àáâäãåèéêëìíîïòóôöõùúûüçñÀÁÂÄÃÅÈÉÊËÌÍÎÏÒÓÔÖÕÙÚÛÜÇÑ';
@@ -195,21 +285,32 @@ class MusicMetadataService {
           return await _searchDeezerFallback(query, limit, countryCode);
         }
 
-        return results.map<SongSearchResult>((item) {
+        final songFutures = results.take(limit).map<Future<SongSearchResult>>((item) async {
           String artworkUrl = item['artworkUrl100'] ?? '';
           if (artworkUrl.isNotEmpty) {
             artworkUrl = artworkUrl.replaceAll('100x100', '600x600');
           }
 
-          String releaseDate = item['releaseDate'] ?? '';
+          String? releaseDate = item['releaseDate']?.toString();
+          if (releaseDate != null && releaseDate.trim().isEmpty) {
+            releaseDate = null;
+          }
+
+          final title = item['trackName'] ?? 'Unknown Title';
+          final artist = item['artistName'] ?? 'Unknown Artist';
+
+          // If iTunes didn't provide releaseDate, try Deezer lookup
+          if (releaseDate == null || releaseDate.isEmpty) {
+            releaseDate = await fetchDeezerReleaseDate(title, artist);
+          }
 
           final int trackTimeMillis = item['trackTimeMillis'] as int? ?? 0;
           final duration = trackTimeMillis > 0 ? Duration(milliseconds: trackTimeMillis) : null;
 
           final song = SavedSong(
             id: item['trackId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-            title: item['trackName'] ?? 'Unknown Title',
-            artist: item['artistName'] ?? 'Unknown Artist',
+            title: title,
+            artist: artist,
             album: item['collectionName'] ?? 'Unknown Album',
             artUri: artworkUrl,
             appleMusicUrl: item['trackViewUrl'],
@@ -226,6 +327,8 @@ class MusicMetadataService {
             genre: item['primaryGenreName'] ?? 'Pop',
           );
         }).toList();
+
+        return await Future.wait(songFutures);
       } else {
         debugPrint('Music Search Status Error: ${response.statusCode}');
         return await _searchDeezerFallback(query, limit, countryCode);
@@ -460,14 +563,58 @@ String urlString =
         final data = jsonDecode(response.body);
         final results = data['data'] as List<dynamic>? ?? [];
 
-        return results.map<SongSearchResult>((item) {
+        final songFutures = results.take(limit).map<Future<SongSearchResult>>((item) async {
           final title = item['title'] ?? 'Unknown Title';
           final artist = item['artist']?['name'] ?? 'Unknown Artist';
           final album = item['album']?['title'] ?? 'Unknown Album';
           
           String artworkUrl = item['album']?['cover_xl'] ?? item['album']?['cover_large'] ?? '';
 
-          final int durationSec = item['duration'] as int? ?? 0;
+          int durationSec = item['duration'] as int? ?? 0;
+          String? releaseDate;
+          String genre = 'Pop';
+
+          final trackId = item['id'];
+          final albumId = item['album']?['id'];
+
+          // 1. Fetch track details for release_date
+          if (trackId != null) {
+            final trackDetails = await _getDeezerTrackDetails(trackId);
+            if (trackDetails != null) {
+              final rDate = trackDetails['release_date']?.toString();
+              if (rDate != null && rDate.isNotEmpty && rDate != '0000-00-00') {
+                releaseDate = rDate;
+              } else {
+                final albumRDate = trackDetails['album']?['release_date']?.toString();
+                if (albumRDate != null && albumRDate.isNotEmpty && albumRDate != '0000-00-00') {
+                  releaseDate = albumRDate;
+                }
+              }
+              final tDur = trackDetails['duration'] as int? ?? 0;
+              if (tDur > 0) durationSec = tDur;
+            }
+          }
+
+          // 2. Fetch album details for genre (and fallback release_date if still missing)
+          if (albumId != null) {
+            final albumDetails = await _getDeezerAlbumDetails(albumId);
+            if (albumDetails != null) {
+              if (releaseDate == null || releaseDate.isEmpty) {
+                final albRDate = albumDetails['release_date']?.toString();
+                if (albRDate != null && albRDate.isNotEmpty && albRDate != '0000-00-00') {
+                  releaseDate = albRDate;
+                }
+              }
+              final genresList = albumDetails['genres']?['data'] as List<dynamic>?;
+              if (genresList != null && genresList.isNotEmpty) {
+                final gName = genresList[0]['name']?.toString();
+                if (gName != null && gName.isNotEmpty) {
+                  genre = gName;
+                }
+              }
+            }
+          }
+
           final duration = durationSec > 0 ? Duration(seconds: durationSec) : null;
 
           final song = SavedSong(
@@ -478,14 +625,18 @@ String urlString =
             artUri: artworkUrl,
             dateAdded: DateTime.now(),
             duration: duration,
-            genre: 'Pop', // Deezer search doesn't return genre directly in this endpoint
+            genre: genre,
+            releaseDate: releaseDate,
+            extras: item,
           );
 
           return SongSearchResult(
             song: song,
-            genre: 'Pop',
+            genre: genre,
           );
         }).toList();
+
+        return await Future.wait(songFutures);
       }
     } catch (e) {
       debugPrint('Deezer Fallback Error: $e');

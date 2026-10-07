@@ -576,8 +576,24 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // Refresh UI when app comes to foreground to sync any background tracking changes
-      notifyListeners();
+      refreshBackupInfo();
+      // Check if an automatic backup became due while the app was in background
+      _checkAutoBackup(reschedule: false);
     }
+  }
+
+  /// Reloads the persisted backup info (frequency + last backup timestamp) and
+  /// notifies listeners so the UI always reflects the most recent backup.
+  Future<void> refreshBackupInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    _backupFrequency = prefs.getString('backup_frequency') ?? 'hourly';
+    _lastBackupTs = prefs.getInt('last_backup_ts') ?? 0;
+    _lastBackupType = prefs.getString('last_backup_type') ?? 'auto';
+    final history = prefs.getStringList(_keyBackupHistory) ?? [];
+    _backupHistory
+      ..clear()
+      ..addAll(history.take(15));
+    notifyListeners();
   }
 
   bool _currentSongIsSaved = false;
@@ -635,6 +651,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_audioHandler is RadioAudioHandler) {
       _syncACRCloudStatus();
     }
+    // Re-align the schedule when auth changes, but do NOT fire an immediate
+    // backup — that would trigger a backup on every login.
+    _checkAutoBackup(skipIfJustLogin: true);
+    _scheduleInAppAutoBackup();
     notifyListeners();
   }
 
@@ -1085,6 +1105,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   @override
   void dispose() {
     _metadataTimer?.cancel();
+    _autoBackupTimer?.cancel();
     _linkSubscription?.cancel();
     _sharingSubscription?.cancel();
     _enrichmentController.close();
@@ -1164,6 +1185,19 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   String _lastBackupType = 'manual';
   String get lastBackupType => _lastBackupType;
+
+  static const String _keyBackupHistory = 'backup_history';
+  final List<String> _backupHistory = [];
+  List<String> get backupHistory => List.unmodifiable(_backupHistory);
+
+  /// Records a successful backup into the persistent history (last 15).
+  Future<void> _recordBackup(int ts, String type) async {
+    _backupHistory.insert(0, jsonEncode({'ts': ts, 'type': type}));
+    if (_backupHistory.length > 15) _backupHistory.removeLast();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyBackupHistory, _backupHistory);
+    notifyListeners();
+  }
 
   String _startOption = 'none'; // 'none', 'last', 'specific'
   String get startOption => _startOption;
@@ -1715,6 +1749,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     _playlistService.onPlaylistsUpdated.listen((_) => reloadPlaylists());
     _checkAutoBackup(); // Start check
+    _scheduleInAppAutoBackup();
     // Listen to playback state from AudioService
     _audioHandler.playbackState.listen((state) {
       bool playing = state.playing;
@@ -1972,9 +2007,20 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
 
       // Sync Artist Image if available in extras (usually from pre-enriched/cached items)
+      // Never adopt it while the artist is a station placeholder (no track playing),
+      // otherwise a stale artist photo would replace the station logo in the UI.
+      final bool isStationPlaceholderNow =
+          _currentStation != null &&
+          (_currentArtist == _currentStation!.genre ||
+              _currentArtist == _currentStation!.name);
       final String? itemArtistImage =
           item.extras?['artistImage'] ?? item.extras?['picture'];
-      if (itemArtistImage != null && _currentArtistImage != itemArtistImage) {
+      if (!isStationPlaceholderNow &&
+          _currentArtist.isNotEmpty &&
+          _currentArtist != "Unknown Artist" &&
+          _currentArtist != "Live Broadcast" &&
+          itemArtistImage != null &&
+          _currentArtistImage != itemArtistImage) {
         _currentArtistImage = itemArtistImage;
         metadataChanged = true;
       }
@@ -2480,6 +2526,51 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Applies a single upgrade proposal and removes it from the pending list,
+  /// without ignoring the remaining proposals. Used for the one-by-one confirm
+  /// flow in the playlist local-files dialog.
+  Future<void> applyUpgradeOne(UpgradeProposal proposal) async {
+    if (!_upgradeProposals.any(
+      (p) => p.playlistId == proposal.playlistId && p.songId == proposal.songId,
+    )) {
+      return;
+    }
+
+    final index = _playlists.indexWhere((p) => p.id == proposal.playlistId);
+    if (index == -1) {
+      _upgradeProposals.removeWhere(
+        (p) =>
+            p.playlistId == proposal.playlistId && p.songId == proposal.songId,
+      );
+      notifyListeners();
+      return;
+    }
+
+    final songIndex = _playlists[index].songs.indexWhere(
+      (s) => s.id == proposal.songId,
+    );
+    if (songIndex == -1) {
+      _upgradeProposals.removeWhere(
+        (p) =>
+            p.playlistId == proposal.playlistId && p.songId == proposal.songId,
+      );
+      notifyListeners();
+      return;
+    }
+
+    final original = _playlists[index].songs[songIndex];
+    _playlists[index].songs[songIndex] = original.copyWith(
+      localPath: proposal.localPath,
+      isValid: true,
+    );
+    await _playlistService.saveAll(_playlists);
+    _upgradeProposals.removeWhere(
+      (p) =>
+          p.playlistId == proposal.playlistId && p.songId == proposal.songId,
+    );
+    notifyListeners();
+  }
+
   Future<void> _loadArtistImagesCache() async {
     final prefs = await SharedPreferences.getInstance();
     final String? jsonStr = prefs.getString(_keyArtistImagesCache);
@@ -2701,7 +2792,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // 2. Explicit Target Logic (e.g. Move to Favorites)
-    if (playlistId.startsWith('local_')) return null;
     await _playlistService.addSongToPlaylist(playlistId, song);
     await _loadPlaylists();
 
@@ -2714,7 +2804,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<void> addSongToPlaylist(String playlistId, SavedSong song) async {
-    if (playlistId.startsWith('local_')) return;
 
     // Ensure we have a YouTube ID whenever possible for ALL songs (including Local files)
     // This makes local-file playlists shareable via the YouTube ID protocol.
@@ -2777,7 +2866,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       'lyric video',
       'lyrics',
       'official',
-      'vevo'
+      'vevo',
       'ft.',
       'ft',
       'feat.',
@@ -3025,13 +3114,25 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   /// local ones), the unique songs list and the current playing state.
   /// Returns the number of songs updated.
   Future<int> mergeArtist(String sourceArtist, String targetArtist) async {
-    if (sourceArtist.trim().isEmpty ||
-        targetArtist.trim().isEmpty ||
-        sourceArtist.trim() == targetArtist.trim()) {
-      return 0;
+    return mergeArtistsBatch([MapEntry(sourceArtist, targetArtist)]);
+  }
+
+  /// Renames the canonical artist for multiple source->target pairs in a single
+  /// efficient pass, saving playlists and notifying listeners only once.
+  Future<int> mergeArtistsBatch(List<MapEntry<String, String>> pairs) async {
+    final Map<String, String> keyToTarget = {};
+    for (var pair in pairs) {
+      if (pair.key.trim().isEmpty ||
+          pair.value.trim().isEmpty ||
+          pair.key.trim() == pair.value.trim()) {
+        continue;
+      }
+      final key = MergeUtils.artistGroupingKey(pair.key);
+      if (key.isNotEmpty) {
+        keyToTarget[key] = pair.value.trim();
+      }
     }
-    final sourceKey = MergeUtils.artistGroupingKey(sourceArtist);
-    if (sourceKey.isEmpty) return 0;
+    if (keyToTarget.isEmpty) return 0;
 
     int changedCount = 0;
 
@@ -3041,9 +3142,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       bool playlistChanged = false;
       for (int j = 0; j < updatedSongs.length; j++) {
         final song = updatedSongs[j];
-        if (MergeUtils.artistGroupingKey(song.artist) == sourceKey &&
-            song.artist != targetArtist) {
-          updatedSongs[j] = song.copyWith(artist: targetArtist);
+        final songKey = MergeUtils.artistGroupingKey(song.artist);
+        final target = keyToTarget[songKey];
+        if (target != null && song.artist != target) {
+          updatedSongs[j] = song.copyWith(artist: target);
           playlistChanged = true;
           changedCount++;
         }
@@ -3055,9 +3157,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     for (int i = 0; i < _allUniqueSongs.length; i++) {
       final song = _allUniqueSongs[i];
-      if (MergeUtils.artistGroupingKey(song.artist) == sourceKey &&
-          song.artist != targetArtist) {
-        _allUniqueSongs[i] = song.copyWith(artist: targetArtist);
+      final songKey = MergeUtils.artistGroupingKey(song.artist);
+      final target = keyToTarget[songKey];
+      if (target != null && song.artist != target) {
+        _allUniqueSongs[i] = song.copyWith(artist: target);
       }
     }
 
@@ -3066,9 +3169,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       bool tempChanged = false;
       for (int j = 0; j < updatedTempSongs.length; j++) {
         final song = updatedTempSongs[j];
-        if (MergeUtils.artistGroupingKey(song.artist) == sourceKey &&
-            song.artist != targetArtist) {
-          updatedTempSongs[j] = song.copyWith(artist: targetArtist);
+        final songKey = MergeUtils.artistGroupingKey(song.artist);
+        final target = keyToTarget[songKey];
+        if (target != null && song.artist != target) {
+          updatedTempSongs[j] = song.copyWith(artist: target);
           tempChanged = true;
         }
       }
@@ -3077,9 +3181,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
     }
 
-    if (MergeUtils.artistGroupingKey(_currentArtist) == sourceKey &&
-        _currentArtist != targetArtist) {
-      _currentArtist = targetArtist;
+    final curKey = MergeUtils.artistGroupingKey(_currentArtist);
+    if (keyToTarget.containsKey(curKey)) {
+      _currentArtist = keyToTarget[curKey]!;
     }
 
     if (changedCount > 0) {
@@ -3094,13 +3198,25 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   /// local ones), the unique songs list and the current playing state.
   /// Returns the number of songs updated.
   Future<int> mergeAlbum(String sourceAlbum, String targetAlbum) async {
-    if (sourceAlbum.trim().isEmpty ||
-        targetAlbum.trim().isEmpty ||
-        sourceAlbum.trim() == targetAlbum.trim()) {
-      return 0;
+    return mergeAlbumsBatch([MapEntry(sourceAlbum, targetAlbum)]);
+  }
+
+  /// Renames canonical albums for multiple source->target pairs in a single
+  /// efficient pass, saving playlists and notifying listeners only once.
+  Future<int> mergeAlbumsBatch(List<MapEntry<String, String>> pairs) async {
+    final Map<String, String> keyToTarget = {};
+    for (var pair in pairs) {
+      if (pair.key.trim().isEmpty ||
+          pair.value.trim().isEmpty ||
+          pair.key.trim() == pair.value.trim()) {
+        continue;
+      }
+      final key = MergeUtils.albumGroupingKey(pair.key);
+      if (key.isNotEmpty) {
+        keyToTarget[key] = pair.value.trim();
+      }
     }
-    final sourceKey = MergeUtils.albumGroupingKey(sourceAlbum);
-    if (sourceKey.isEmpty) return 0;
+    if (keyToTarget.isEmpty) return 0;
 
     int changedCount = 0;
 
@@ -3110,9 +3226,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       bool playlistChanged = false;
       for (int j = 0; j < updatedSongs.length; j++) {
         final song = updatedSongs[j];
-        if (MergeUtils.albumGroupingKey(song.album) == sourceKey &&
-            song.album != targetAlbum) {
-          updatedSongs[j] = song.copyWith(album: targetAlbum);
+        final songKey = MergeUtils.albumGroupingKey(song.album);
+        final target = keyToTarget[songKey];
+        if (target != null && song.album != target) {
+          updatedSongs[j] = song.copyWith(album: target);
           playlistChanged = true;
           changedCount++;
         }
@@ -3124,9 +3241,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     for (int i = 0; i < _allUniqueSongs.length; i++) {
       final song = _allUniqueSongs[i];
-      if (MergeUtils.albumGroupingKey(song.album) == sourceKey &&
-          song.album != targetAlbum) {
-        _allUniqueSongs[i] = song.copyWith(album: targetAlbum);
+      final songKey = MergeUtils.albumGroupingKey(song.album);
+      final target = keyToTarget[songKey];
+      if (target != null && song.album != target) {
+        _allUniqueSongs[i] = song.copyWith(album: target);
       }
     }
 
@@ -3135,9 +3253,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       bool tempChanged = false;
       for (int j = 0; j < updatedTempSongs.length; j++) {
         final song = updatedTempSongs[j];
-        if (MergeUtils.albumGroupingKey(song.album) == sourceKey &&
-            song.album != targetAlbum) {
-          updatedTempSongs[j] = song.copyWith(album: targetAlbum);
+        final songKey = MergeUtils.albumGroupingKey(song.album);
+        final target = keyToTarget[songKey];
+        if (target != null && song.album != target) {
+          updatedTempSongs[j] = song.copyWith(album: target);
           tempChanged = true;
         }
       }
@@ -3146,9 +3265,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       }
     }
 
-    if (MergeUtils.albumGroupingKey(_currentAlbum) == sourceKey &&
-        _currentAlbum != targetAlbum) {
-      _currentAlbum = targetAlbum;
+    final curKey = MergeUtils.albumGroupingKey(_currentAlbum);
+    if (keyToTarget.containsKey(curKey)) {
+      _currentAlbum = keyToTarget[curKey]!;
     }
 
     if (changedCount > 0) {
@@ -3213,17 +3332,18 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<void> addSongsToPlaylist(
+  Future<int> addSongsToPlaylist(
     String playlistId,
     List<SavedSong> songs,
   ) async {
-    if (playlistId.startsWith('local_')) return;
-    
-    await _playlistService.addSongsToPlaylist(playlistId, songs);
+    final added = await _playlistService.addSongsToPlaylist(playlistId, songs);
     await _loadPlaylists();
 
-    // Trigger background enrichment to update UI in real-time as metadata comes in
-    findMissingArtworks(playlistId: playlistId);
+    if (added > 0) {
+      // Trigger background enrichment to update UI in real-time as metadata comes in
+      findMissingArtworks(playlistId: playlistId);
+    }
+    return added;
   }
 
   Future<void> refreshPlaylistInBackground(String playlistId) async {
@@ -3779,8 +3899,6 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<void> removeFromPlaylist(String playlistId, String songId) async {
-    if (playlistId.startsWith('local_')) return;
-
     // 1. Find the song to get its potential physical path
     final playlist = _playlists.firstWhere(
       (p) => p.id == playlistId,
@@ -4311,6 +4429,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool get isRepeatMode => _isRepeatMode;
 
   bool _ignoringPause = false;
+
+  /// Temporarily suppresses pause reactions from external audio-focus events.
+  /// Call with [true] before starting mic/Shazam recording, [false] after stopping.
+  void setIgnoringPause(bool value) => _ignoringPause = value;
 
   /// Returns true if [playlistId] refers to a remote/streaming playlist
   /// (trending sources: YouTube/Audius/Deezer/Apple Music).
@@ -5536,6 +5658,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         _historyMetadata = decoded.map(
           (key, value) => MapEntry(key, SavedSong.fromJson(value)),
         );
+        // If any stored artist still carried the " - Topic" suffix
+        // (SavedSong.fromJson strips it), persist the cleaned data now.
+        final topicSuffix = RegExp(r'-\s*Topic\s*$', caseSensitive: false);
+        final needsRewrite = decoded.values.any((value) {
+          final artist = (value as Map<String, dynamic>)['artist'] as String? ?? '';
+          return artist.contains(topicSuffix);
+        });
+        if (needsRewrite) {
+          await _saveUserPlayHistory();
+        }
       } catch (_) {}
     }
 
@@ -6083,14 +6215,18 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Auto-fetch missing metadata if the corner triangle would be shown.
     // This is the single choke-point for ALL playback paths (tap, skip next/prev,
     // Android Auto, auto-skip) so it reliably covers every case.
+    final rawDate = song.releaseDate ?? song.extras?['releaseDate'] ?? song.extras?['year'];
+    final bool hasReleaseDate = rawDate != null && rawDate.toString().trim().isNotEmpty;
+
     final bool hasIncompleteMetadata =
         (song.artUri == null || song.artUri!.isEmpty) ||
         song.title.trim().isEmpty ||
         song.artist.trim().isEmpty ||
+        song.artist.trim() == "SINC_METADATA" ||
         song.album.trim().isEmpty ||
-        (song.genre == null || song.genre!.trim().isEmpty) ||
+        song.album.trim().toLowerCase() == "youtube" ||
         song.duration == null ||
-        (song.releaseDate == null || song.releaseDate!.trim().isEmpty);
+        !hasReleaseDate;
 
     if (hasIncompleteMetadata) {
       findMissingArtworks(
@@ -6973,42 +7109,95 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   // --- Backup & Restore Logic ---
 
-  String _backupFrequency = 'manual';
+  String _backupFrequency = 'hourly';
   String get backupFrequency => _backupFrequency;
+  Timer? _autoBackupTimer;
 
-  Future<void> _checkAutoBackup() async {
+  Duration _frequencyInterval([String? freq]) {
+    switch (freq ?? _backupFrequency) {
+      case 'daily':
+        return const Duration(days: 1);
+      case 'weekly':
+        return const Duration(days: 7);
+      default:
+        return const Duration(hours: 1);
+    }
+  }
+
+  /// Keeps the in-app auto backup timer aligned with the chosen frequency.
+  void _scheduleInAppAutoBackup() {
+    _autoBackupTimer?.cancel();
+    _autoBackupTimer = null;
+    if (!_backupService.isSignedIn) return;
+    if (_backupFrequency == 'manual') return;
+    final interval = _frequencyInterval();
+    _autoBackupTimer = Timer.periodic(interval, (_) {
+      _checkAutoBackup(reschedule: false);
+    });
+  }
+
+  void _syncWorkmanagerSchedule({bool replace = false}) {
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) return;
+    if (_backupService.isSignedIn &&
+        (_backupFrequency == 'hourly' ||
+            _backupFrequency == 'daily' ||
+            _backupFrequency == 'weekly')) {
+      try {
+        Workmanager().registerPeriodicTask(
+          kAutoBackupTask,
+          kAutoBackupTask,
+          frequency: _frequencyInterval(),
+          existingWorkPolicy: replace
+              ? ExistingPeriodicWorkPolicy.replace
+              : ExistingPeriodicWorkPolicy.keep,
+          constraints: Constraints(networkType: NetworkType.connected),
+        );
+      } catch (e) {
+        LogService().log("[RadioProvider] registerPeriodicTask failed: $e");
+      }
+    } else {
+      try {
+        Workmanager().cancelByUniqueName(kAutoBackupTask);
+      } catch (e) {
+        LogService().log("[RadioProvider] cancelByUniqueName failed: $e");
+      }
+    }
+  }
+
+  Future<void> _checkAutoBackup({bool reschedule = true, bool skipIfJustLogin = false}) async {
     // Wait for auth to settle
     await Future.delayed(const Duration(seconds: 2));
 
     final prefs = await SharedPreferences.getInstance();
-    _backupFrequency = prefs.getString('backup_frequency') ?? 'manual';
+    var freq = prefs.getString('backup_frequency');
+    // Never override a user-chosen 'manual' frequency to 'hourly'
+    if (freq == null) {
+      freq = 'hourly';
+      await prefs.setString('backup_frequency', 'hourly');
+    }
+    _backupFrequency = freq;
     _lastBackupTs = prefs.getInt('last_backup_ts') ?? 0;
-    _lastBackupType = prefs.getString('last_backup_type') ?? 'manual';
+    _lastBackupType = prefs.getString('last_backup_type') ?? 'auto';
     notifyListeners();
 
-    // Sync Workmanager Schedule
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      if (_backupFrequency == 'daily' || _backupFrequency == 'weekly') {
-        Workmanager().registerPeriodicTask(
-          kAutoBackupTask,
-          kAutoBackupTask,
-          frequency: const Duration(hours: 1),
-          existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
-          constraints: Constraints(networkType: NetworkType.connected),
-        );
-      } else {
-        Workmanager().cancelByUniqueName(kAutoBackupTask);
-      }
+    // Sync Workmanager Schedule (without touching the in-app timer here;
+    // the timer is managed exclusively by _scheduleInAppAutoBackup)
+    if (reschedule) {
+      _syncWorkmanagerSchedule();
     }
 
-    if (!_backupService.isSignedIn) return;
+    // When called right after login, only set up the schedule — don't
+    // trigger an immediate backup even if one appears overdue.
+    if (skipIfJustLogin) return;
 
+    if (!_backupService.isSignedIn) return;
     if (_backupFrequency == 'manual') return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final diff = now - _lastBackupTs;
 
     bool due = false;
+    if (_backupFrequency == 'hourly' && diff > 3600000) due = true;
     if (_backupFrequency == 'daily' && diff > 86400000) due = true;
     if (_backupFrequency == 'weekly' && diff > 604800000) due = true;
 
@@ -7022,6 +7211,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('backup_frequency', freq);
     notifyListeners();
+
+    // Immediately update Workmanager schedule
+    _syncWorkmanagerSchedule(replace: true);
+
+    // Re-align the in-app timer with the new frequency
+    _scheduleInAppAutoBackup();
 
     // Check immediately if we switched to auto and it is due
     _checkAutoBackup();
@@ -7071,12 +7266,27 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'type': isAuto ? 'auto' : 'manual',
       };
 
-      await _backupService.uploadBackup(jsonEncode(data));
+      // Automatic backups must never overwrite a valid backup with an
+      // empty payload (e.g. fresh install or wiped local data).
+      if (isAuto && isBackupPayloadEmpty(data)) {
+        LogService().log(
+          "[RadioProvider] Auto backup skipped: backup payload is empty.",
+        );
+        _lastBackupTs = DateTime.now().millisecondsSinceEpoch;
+        await prefs.setInt('last_backup_ts', _lastBackupTs);
+        return;
+      }
+
+      await _backupService.uploadBackup(
+        jsonEncode(data),
+        type: isAuto ? 'auto' : 'manual',
+      );
 
       _lastBackupTs = DateTime.now().millisecondsSinceEpoch;
       _lastBackupType = isAuto ? 'auto' : 'manual';
       await prefs.setInt('last_backup_ts', _lastBackupTs);
       await prefs.setString('last_backup_type', _lastBackupType);
+      await _recordBackup(_lastBackupTs, isAuto ? 'auto' : 'manual');
       notifyListeners();
 
       _addLog("Backup Complete");
@@ -7089,7 +7299,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  Future<void> restoreBackup({bool isFullReplace = false}) async {
+  /// Lists the backup versions available on Google Drive (newest first).
+  Future<List<BackupVersion>> listAvailableBackups() {
+    return _backupService.listBackups();
+  }
+
+  /// Restores the latest backup, or a specific [fileId] version when the
+  /// user picked one from the restore history.
+  Future<void> restoreBackup({bool isFullReplace = false, String? fileId}) async {
     if (!_backupService.isSignedIn) return;
 
     // Ferma la riproduzione per ripulire PlayerBar e NowPlayingHeader durante lo switch
@@ -7102,7 +7319,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     try {
       LogService().log("[RadioProvider] Starting restoreBackup...");
-      final jsonStr = await _backupService.downloadBackup().timeout(
+      final Future<String?> download = fileId != null
+          ? _backupService
+              .downloadBackupById(fileId)
+              .then<String?>((value) => value)
+          : _backupService.downloadBackup();
+      final jsonStr = await download.timeout(
         const Duration(seconds: 25),
         onTimeout: () => throw Exception("Backup download timed out"),
       );
@@ -7112,7 +7334,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         // per sbloccare la UI e lanciamo subito un backup in background.
         _hasPerformedRestore = true;
         _backupOverride = true; 
-        await setBackupFrequency('daily');
+        await setBackupFrequency('hourly');
         await _saveHasPerformedRestore();
         
         // Lanciamo il backup in background senza attendere
@@ -7323,9 +7545,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       // Automatically set backup frequency correctly after restore
       if (_backupFrequency == 'manual') {
         LogService().log(
-          "[RadioProvider] Switching backup frequency to 'daily' after restore.",
+          "[RadioProvider] Switching backup frequency to 'hourly' after restore.",
         );
-        await setBackupFrequency('daily');
+        await setBackupFrequency('hourly');
       }
 
       // Update last backup timestamp to current time to prevent immediate automatic backup
@@ -8555,11 +8777,26 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
              }
           }
 
+          // Fallback: search cleanTitle alone if combined query yielded nothing
+          if (results.isEmpty && cleanTitle.isNotEmpty && cleanArtist.isNotEmpty) {
+            results = await _musicMetadataService.searchSongs(
+              query: cleanTitle,
+              limit: 1,
+            );
+          }
+
           if (results.isNotEmpty) {            
             final ytMatch = results.first.song;
+            String? resolvedReleaseDate = ytMatch.releaseDate;
+            if ((resolvedReleaseDate == null || resolvedReleaseDate.isEmpty) &&
+                (song.releaseDate == null || song.releaseDate!.isEmpty)) {
+              resolvedReleaseDate = await _musicMetadataService.fetchDeezerReleaseDate(cleanTitle, cleanArtist);
+            }
+
             final match = ytMatch.copyWith(
               title: cleanTitle,
               artist: cleanArtist,
+              releaseDate: resolvedReleaseDate,
             );
             bool isExplicitUpdate = explicitSong != null && explicitSong.id == songId;
 
@@ -8802,6 +9039,52 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
                   );
                 }
               }
+            }
+          }
+
+          // If song still has no releaseDate after search attempt, try direct Deezer lookup
+          final currentSongSnapshot = _allUniqueSongs.firstWhere((s) => s.id == songId, orElse: () => song);
+          if (currentSongSnapshot.releaseDate == null || currentSongSnapshot.releaseDate!.trim().isEmpty) {
+            final fallbackDate = await _musicMetadataService.fetchDeezerReleaseDate(cleanTitle, cleanArtist);
+            if (fallbackDate != null && fallbackDate.isNotEmpty) {
+              anyChanged = true;
+              for (int i = 0; i < _playlists.length; i++) {
+                final playlist = _playlists[i];
+                final sIdx = playlist.songs.indexWhere((s) => s.id == songId);
+                if (sIdx != -1) {
+                  final updated = List<SavedSong>.from(playlist.songs);
+                  updated[sIdx] = updated[sIdx].copyWith(releaseDate: fallbackDate);
+                  _playlists[i] = playlist.copyWith(songs: updated);
+                }
+              }
+              if (_tempPlaylist != null) {
+                final tIdx = _tempPlaylist!.songs.indexWhere((s) => s.id == songId);
+                if (tIdx != -1) {
+                  final updated = List<SavedSong>.from(_tempPlaylist!.songs);
+                  updated[tIdx] = updated[tIdx].copyWith(releaseDate: fallbackDate);
+                  _tempPlaylist = _tempPlaylist!.copyWith(songs: updated);
+                }
+              }
+              final uIdx = _allUniqueSongs.indexWhere((s) => s.id == songId);
+              if (uIdx != -1) {
+                _allUniqueSongs[uIdx] = _allUniqueSongs[uIdx].copyWith(releaseDate: fallbackDate);
+              }
+              if (_historyMetadata.containsKey(songId)) {
+                _historyMetadata[songId] = _historyMetadata[songId]!.copyWith(releaseDate: fallbackDate);
+                await _saveUserPlayHistory();
+              }
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                final hintsStr = prefs.getString('releaseDate_hints');
+                final Map<String, dynamic> hints = hintsStr != null ? Map<String, dynamic>.from(jsonDecode(hintsStr)) : {};
+                hints[songId] = fallbackDate;
+                if (hints.length > 200) {
+                  final oldest = hints.keys.take(hints.length - 200).toList();
+                  for (final k in oldest) { hints.remove(k); }
+                }
+                await prefs.setString('releaseDate_hints', jsonEncode(hints));
+              } catch (_) {}
+              notifyListeners();
             }
           }
 
@@ -9558,7 +9841,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       // Try to parse Artist - Title from video title if possible
       String title = video.title;
-      String artist = video.author;
+      String artist = MergeUtils.cleanArtistName(video.author);
 
       if (video.title.contains(' - ')) {
         final parts = video.title.split(' - ');
@@ -9904,7 +10187,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
             final video = await yt.videos.get(videoId);
             if (_audioOnlySongId == songId) {
               String ytTitle = video.title;
-              String ytArtist = video.author;
+              String ytArtist = MergeUtils.cleanArtistName(video.author);
               if (video.title.contains(' - ')) {
                 final parts = video.title.split(' - ');
                 ytArtist = parts[0].trim();
@@ -10412,7 +10695,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         artist = parts[0].trim();
         title = parts[1].trim();
       } else {
-        artist = video.author;
+        artist = MergeUtils.cleanArtistName(video.author);
       }
 
       return song.copyWith(
@@ -10713,6 +10996,110 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     } catch (e) {
       LogService().log("[RadioProvider] Error during guest snapshot: $e");
     }
+  }
+
+  Future<void> snapshotUserSession() async {
+    LogService().log("[RadioProvider] Starting user session snapshot (offline fallback)...");
+    try {
+      await _saveStations();
+      final prefs = await SharedPreferences.getInstance();
+      final Map<String, dynamic> snapshot = {};
+
+      for (var key in _userSessionKeys) {
+        if (prefs.containsKey(key)) {
+          final val = prefs.get(key);
+          snapshot[key] = val;
+        }
+      }
+
+      final themeKeys = [
+        'theme_id',
+        'custom_primary',
+        'custom_bg',
+        'custom_card',
+        'custom_surface',
+        'custom_bg_image',
+        'initial_setup_v2'
+      ];
+      for (var key in themeKeys) {
+        if (prefs.containsKey(key)) {
+          snapshot[key] = prefs.get(key);
+        }
+      }
+
+      final jsonStr = jsonEncode(snapshot);
+      await prefs.setString('user_session_snapshot', jsonStr);
+      LogService().log("[RadioProvider] User session snapshot saved. Size: ${jsonStr.length} chars.");
+    } catch (e) {
+      LogService().log("[RadioProvider] Error during user session snapshot: $e");
+    }
+  }
+
+  Future<void> restoreUserSessionFromSnapshot({ThemeProvider? themeProvider}) async {
+    LogService().log("[RadioProvider] Restoring user session from local snapshot (cache)...");
+    _isRestoring = true;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Phone cache is the source of truth: prefer the user session snapshot
+      // (saved on sign out), fall back to the guest snapshot for genuine
+      // guest-to-Google switches. Never download from the cloud.
+      final snapshotStr =
+          prefs.getString('user_session_snapshot') ??
+          prefs.getString('guest_session_snapshot');
+      if (snapshotStr != null) {
+        final Map<String, dynamic> snapshot = jsonDecode(snapshotStr);
+        for (var entry in snapshot.entries) {
+          final key = entry.key;
+          final value = entry.value;
+          if (value is String) {
+            await prefs.setString(key, value);
+          } else if (value is int) {
+            await prefs.setInt(key, value);
+          } else if (value is bool) {
+            await prefs.setBool(key, value);
+          } else if (value is double) {
+            await prefs.setDouble(key, value);
+          } else if (value is List) {
+            await prefs.setStringList(key, value.map((e) => e.toString()).toList());
+          }
+        }
+        LogService().log("[RadioProvider] User session data restored to SharedPreferences from local cache.");
+      }
+
+      // Clear memory cache of PlaylistService & Theme
+      PlaylistService().clearCache();
+      if (themeProvider != null) {
+        await themeProvider.loadSettings();
+      }
+
+      _hasPerformedRestore = true;
+      _backupOverride = true;
+      await _saveHasPerformedRestore();
+
+      // Reload provider memory state
+      await _loadStations();
+      await _loadPlaylists();
+      await _loadUserPlayHistory();
+      await _loadStationOrder();
+      await _loadStartupSettings();
+    } catch (e) {
+      LogService().log("[RadioProvider] Error during user session restore: $e");
+    } finally {
+      _isRestoring = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> restoreAfterLogin({ThemeProvider? themeProvider, bool isFullReplace = true}) async {
+    // IMPORTANT: The phone's local data is ALWAYS the source of truth.
+    // After a sign-in we never download/restore from Google Drive and we
+    // never upload/backup either: we just load the last local cache.
+    LogService().log("[RadioProvider] restoreAfterLogin: Loading phone local cache. No backup, no cloud restore.");
+
+    final prefs = await SharedPreferences.getInstance();
+    await restoreUserSessionFromSnapshot(themeProvider: themeProvider);
+    await prefs.setBool('use_local_cache_on_login', false);
   }
 
   Future<void> _restoreGuestSessionToPrefs(SharedPreferences prefs) async {

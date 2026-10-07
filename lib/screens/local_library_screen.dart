@@ -81,6 +81,12 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
             return _mapToSavedSong(s, lang);
           }).toList();
 
+          // Preserve any non-device/online songs added by the user to this playlist
+          final extraSongs = existing.songs.where(
+            (s) => s.localPath == null || !s.id.startsWith('local_'),
+          );
+          savedSongs.addAll(extraSongs);
+
           bool contentChanged = savedSongs.length != existing.songs.length;
           if (!contentChanged) {
             for (int i = 0; i < savedSongs.length; i++) {

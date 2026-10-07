@@ -1049,6 +1049,51 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     ),
                                   ),
                                   const SizedBox(width: 4),
+                                  // Per-proposal confirm: applies just this upgrade now
+                                  Tooltip(
+                                    message: lang.translate('update'),
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                          minWidth: 34,
+                                          minHeight: 34,
+                                        ),
+                                        icon: Icon(
+                                          Icons.check_circle_rounded,
+                                          color: isNeverShowAgain
+                                              ? Colors.white24
+                                              : Colors.greenAccent,
+                                          size: 20,
+                                        ),
+                                        onPressed: isNeverShowAgain
+                                            ? null
+                                            : () async {
+                                                setState(() {
+                                                  selectedProposalIds.remove(
+                                                    uniqueId,
+                                                  );
+                                                  neverShowAgainIds.remove(
+                                                    uniqueId,
+                                                  );
+                                                });
+                                                await provider.applyUpgradeOne(
+                                                  p,
+                                                );
+                                                if (ctx.mounted) {
+                                                  setState(() {});
+                                                  if (provider
+                                                      .upgradeProposals
+                                                      .isEmpty) {
+                                                    Navigator.of(ctx).pop();
+                                                  }
+                                                }
+                                              },
+                                      ),
+                                    ),
+                                  ),
                                   // Button to toggle "Do not show this comparison again"
                                   Padding(
                                     padding: const EdgeInsets.only(top: 2),
@@ -4294,8 +4339,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     if (confirm) {
       final deletedSong = song;
-      if (playlist.id == 'temp_view') {
-        provider.removeSongFromLibrary(song.id);
+      // Virtual playlists (artist/album views and "all songs" view) don't
+      // have a real storage ID — we must remove the song from all real
+      // playlists instead of targeting a non-existent one.
+      final isVirtualPlaylist =
+          playlist.id == 'temp_view' ||
+          playlist.id.startsWith('temp_artist_') ||
+          playlist.id.startsWith('temp_album_');
+
+      if (isVirtualPlaylist) {
+        await provider.removeSongFromLibrary(song.id);
         if (mounted) {
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -4312,7 +4365,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             f.deleteSync();
           }
         }
-        provider.removeFromPlaylist(playlist.id, song.id);
+        await provider.removeFromPlaylist(playlist.id, song.id);
         if (mounted) {
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -5007,7 +5060,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   void _showAddSongDialog(BuildContext context, RadioProvider provider) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const AddSongScreen()),
+      MaterialPageRoute(
+        builder: (context) => AddSongScreen(
+          targetPlaylistId: _selectedPlaylistId,
+        ),
+      ),
     );
   }
 
@@ -5547,15 +5604,22 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         song.artist == lang.translate('syncing_yt') ||
         song.artist == "SINC_METADATA";
 
-    // A song is considered incomplete if any of these metadata fields is missing
+    final songYear = _extractSongYear(song);
+
+    // A song is considered incomplete if any primary metadata field or release date is missing
+    final bool hasReleaseDate =
+        (song.releaseDate != null && song.releaseDate!.trim().isNotEmpty) ||
+        (songYear != null && songYear.isNotEmpty);
+
     final bool hasIncompleteMetadata =
         (song.artUri == null || song.artUri!.isEmpty) ||
         song.title.trim().isEmpty ||
         song.artist.trim().isEmpty ||
+        song.artist.trim() == "SINC_METADATA" ||
         song.album.trim().isEmpty ||
-        (song.genre == null || song.genre!.trim().isEmpty) ||
+        song.album.trim().toLowerCase() == "youtube" ||
         song.duration == null ||
-        (song.releaseDate == null || song.releaseDate!.trim().isEmpty);
+        !hasReleaseDate;
 
     return Stack(
       clipBehavior: Clip.hardEdge,
@@ -5823,37 +5887,44 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     else
                                       SizedBox(
                                         width: double.infinity,
-                                        child: Text(
-                                          song.title,
-                                          style: TextStyle(
-                                            color:
-                                                (provider.audioOnlySongId == song.id ||
-                                                        (provider.currentTrack.isNotEmpty &&
-                                                            song.title.trim().toLowerCase() ==
-                                                                provider.currentTrack
-                                                                    .trim()
-                                                                    .toLowerCase() &&
-                                                            song.artist.trim().toLowerCase() ==
-                                                                provider.currentArtist
-                                                                    .trim()
-                                                                    .toLowerCase()))
-                                                    ? Theme.of(context).primaryColor
-                                                    : (isInvalid
-                                                        ? contrastColor.withValues(alpha: 0.5)
-                                                        : contrastColor),
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(right: 70),
+                                          child: Text(
+                                            song.title,
+                                            style: TextStyle(
+                                              color:
+                                                  (provider.audioOnlySongId == song.id ||
+                                                          (provider.currentTrack.isNotEmpty &&
+                                                              song.title.trim().toLowerCase() ==
+                                                                  provider.currentTrack
+                                                                      .trim()
+                                                                      .toLowerCase() &&
+                                                              song.artist.trim().toLowerCase() ==
+                                                                  provider.currentArtist
+                                                                      .trim()
+                                                                      .toLowerCase()))
+                                                      ? Theme.of(context).primaryColor
+                                                      : (isInvalid
+                                                          ? contrastColor.withValues(alpha: 0.5)
+                                                          : contrastColor),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
 
                                     if (!isGrouped)
                                       Padding(
-                                        padding: const EdgeInsets.only(
+                                        padding: EdgeInsets.only(
                                           top: 2.0,
-                                          right: 70,
+                                          right: (playlist.id != 'favorites' &&
+                                                  !isInvalid &&
+                                                  !isSyncing)
+                                              ? 100.0
+                                              : 70.0,
                                         ),
                                         child: Text(
                                           song.artist == "SINC_METADATA"
@@ -5956,6 +6027,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 right: 0,
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     if (playlist.id != 'favorites' &&
                                         !isInvalid &&
@@ -6036,17 +6108,25 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                             }
                                           }
                                         },
-                                        child: Icon(
-                                          isFavorite
-                                              ? Icons.favorite
-                                              : Icons.favorite_border,
-                                          color: isFavorite
-                                              ? Colors.pinkAccent
-                                              : contrastColor.withValues(alpha: 0.5),
-                                          size: 18,
+                                        // Fixed 32×32 touch target to align
+                                        // the heart icon with the IconButtons
+                                        child: SizedBox(
+                                          width: 32,
+                                          height: 32,
+                                          child: Center(
+                                            child: Icon(
+                                              isFavorite
+                                                  ? Icons.favorite
+                                                  : Icons.favorite_border,
+                                              color: isFavorite
+                                                  ? Colors.pinkAccent
+                                                  : contrastColor.withValues(alpha: 0.5),
+                                              size: 18,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                      const SizedBox(width: 10),
+                                      const SizedBox(width: 4),
                                     ],
 
                                     _InvalidSongIndicator(
@@ -6054,8 +6134,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                       isStaticInvalid: !song.isValid,
                                     ),
 
-                                    if (!isInvalid &&
-                                        !isSyncing) ...[
+                                    if (!isInvalid && !isSyncing) ...[
                                       IconButton(
                                         tooltip: lang.translate(
                                           'view_song_details',
@@ -6071,7 +6150,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                           Icons.info_outline,
                                           color: hasIncompleteMetadata
                                               ? Theme.of(context).primaryColor
-                                              : contrastColor.withValues(alpha: 0.7),
+                                              : contrastColor
+                                                  .withValues(alpha: 0.7),
                                         ),
                                         onPressed: () => _showSongDetailsDialog(
                                           context,
@@ -6081,6 +6161,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                         ),
                                       ),
                                       IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                          minWidth: 32,
+                                          minHeight: 32,
+                                        ),
+                                        iconSize: 20,
                                         icon: Icon(
                                           Icons.more_vert_rounded,
                                           color: contrastColor,
@@ -6096,6 +6183,18 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                   ],
                                 ),
                               ),
+                              if (songYear != null && !isInvalid && !isSyncing)
+                                Positioned(
+                                  top: 2,
+                                  right: 10,
+                                  child: Text(
+                                    "• $songYear",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: contrastColor.withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),                           
                     ),
@@ -6156,14 +6255,20 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     // If the song has incomplete metadata (same condition that shows the
     // corner triangle badge), silently fetch the missing data in the background.
+    final songYear = _extractSongYear(song);
+    final bool hasReleaseDate =
+        (song.releaseDate != null && song.releaseDate!.trim().isNotEmpty) ||
+        (songYear != null && songYear.isNotEmpty);
+
     final bool hasIncompleteMetadata =
         (song.artUri == null || song.artUri!.isEmpty) ||
         song.title.trim().isEmpty ||
         song.artist.trim().isEmpty ||
+        song.artist.trim() == "SINC_METADATA" ||
         song.album.trim().isEmpty ||
-        (song.genre == null || song.genre!.trim().isEmpty) ||
+        song.album.trim().toLowerCase() == "youtube" ||
         song.duration == null ||
-        (song.releaseDate == null || song.releaseDate!.trim().isEmpty);
+        !hasReleaseDate;
 
     if (hasIncompleteMetadata) {
       provider.findMissingArtworks(
@@ -6172,6 +6277,29 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         explicitSong: song,
       );
     }
+  }
+
+  String? _extractSongYear(SavedSong song) {
+    String? rawDate = song.releaseDate;
+    if (rawDate == null || rawDate.trim().isEmpty) {
+      final extraDate = song.extras?['releaseDate'] ?? song.extras?['year'];
+      if (extraDate != null) {
+        rawDate = extraDate.toString();
+      }
+    }
+    if (rawDate == null || rawDate.trim().isEmpty) {
+      return null;
+    }
+    rawDate = rawDate.trim();
+    final dt = DateTime.tryParse(rawDate);
+    if (dt != null && dt.year >= 1700 && dt.year <= 2100) {
+      return dt.year.toString();
+    }
+    final match = RegExp(r'\b(1[789]\d\d|20\d\d)\b').firstMatch(rawDate);
+    if (match != null) {
+      return match.group(1);
+    }
+    return null;
   }
 
   void _showDeletePlaylistDialog(
@@ -7153,6 +7281,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     final Map<MergeSuggestion, int> directionByIndex = {};
     final Set<MergeSuggestion> selected = Set.of(suggestions);
     final Set<String> neverShowAgainPairKeys = {};
+    // Mutable copy so per-suggestion confirmation can remove already-applied
+    // proposals while keeping the rest visible for individual review.
+    final List<MergeSuggestion> working = List.of(suggestions);
+    bool isMerging = false;
 
     GlassUtils.showGlassDialog(
       context: context,
@@ -7236,7 +7368,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           const SizedBox.shrink(),
                         Builder(
                           builder: (context) {
-                            final availableSuggestions = suggestions.where(
+                            final availableSuggestions = working.where(
                               (s) => !neverShowAgainPairKeys.contains(
                                 _dismissPairKey(
                                   grouping(s.source),
@@ -7277,11 +7409,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                     Expanded(
                       child: ListView.separated(
                         shrinkWrap: true,
-                        itemCount: suggestions.length,
+                        itemCount: working.length,
                         separatorBuilder: (_, _) =>
                             const SizedBox(height: 8),
                         itemBuilder: (context, index) {
-                          final s = suggestions[index];
+                          final s = working[index];
                           final pairKey = _dismissPairKey(
                             grouping(s.source),
                             grouping(s.target),
@@ -7928,6 +8060,86 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                     ),
                                   ),
                                   const SizedBox(width: 4),
+                                  // Per-suggestion confirm: merges just this pair now
+                                  Tooltip(
+                                    message: lang.translate('merge_action'),
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                          minWidth: 34,
+                                          minHeight: 34,
+                                        ),
+                                        icon: Icon(
+                                          Icons.merge_type_rounded,
+                                          color: isNeverShowAgain
+                                              ? Colors.white24
+                                              : Colors.greenAccent,
+                                          size: 20,
+                                        ),
+                                        onPressed: isNeverShowAgain || isMerging
+                                            ? null
+                                            : () async {
+                                                dialogSetState(() {
+                                                  isMerging = true;
+                                                });
+                                                final dir =
+                                                    directionByIndex[s] ?? 0;
+                                                final source = dir == 0
+                                                    ? s.source
+                                                    : s.target;
+                                                final target = dir == 0
+                                                    ? s.target
+                                                    : s.source;
+                                                if (isAlbum) {
+                                                  await provider.mergeAlbum(
+                                                    source,
+                                                    target,
+                                                  );
+                                                  _cachedAlbumMergeSuggestions =
+                                                      null;
+                                                  _albumMergeCacheKey = '';
+                                                } else {
+                                                  await provider.mergeArtist(
+                                                    source,
+                                                    target,
+                                                  );
+                                                  _cachedArtistMergeSuggestions =
+                                                      null;
+                                                  _artistMergeCacheKey = '';
+                                                }
+                                                if (mounted) setState(() {});
+                                                // The merged-away entity no
+                                                // longer exists, so drop its
+                                                // pending suggestions too.
+                                                final srcKey = grouping(source);
+                                                working.removeWhere(
+                                                  (other) =>
+                                                      grouping(other.source) ==
+                                                          srcKey ||
+                                                      grouping(other.target) ==
+                                                          srcKey,
+                                                );
+                                                selected.removeWhere(
+                                                  (other) =>
+                                                      grouping(other.source) ==
+                                                          srcKey ||
+                                                      grouping(other.target) ==
+                                                          srcKey,
+                                                );
+                                                dialogSetState(() {
+                                                  isMerging = false;
+                                                });
+                                                if (ctx.mounted &&
+                                                    working.isEmpty) {
+                                                  Navigator.of(ctx).pop();
+                                                }
+                                              },
+                                      ),
+                                    ),
+                                  ),
                                   // Trailing visibility_off button
                                   Padding(
                                     padding: const EdgeInsets.only(top: 2),
@@ -8000,7 +8212,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       ),
                     ),
                     onPressed: () async {
-                      for (final s in suggestions) {
+                      for (final s in working) {
                         final pairKey = _dismissPairKey(
                           grouping(s.source),
                           grouping(s.target),
@@ -8054,33 +8266,36 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   )
                 else if (selected.isNotEmpty)
                   ElevatedButton(
-                    onPressed: () async {
-                      var total = 0;
-                      for (final s in suggestions) {
-                        if (!selected.contains(s)) continue;
-                        final dir = directionByIndex[s] ?? 0;
-                        final source = dir == 0 ? s.source : s.target;
-                        final target = dir == 0 ? s.target : s.source;
-                        total += isAlbum
-                            ? await provider.mergeAlbum(source, target)
-                            : await provider.mergeArtist(source, target);
-                      }
-                      if (isAlbum) {
-                        _cachedAlbumMergeSuggestions = null;
-                        _albumMergeCacheKey = '';
-                      } else {
-                        _cachedArtistMergeSuggestions = null;
-                        _artistMergeCacheKey = '';
-                      }
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      if (mounted) {
-                        setState(() {});
-                        _showSnack(
-                          tr('done').replaceAll('{0}', total.toString()),
-                          Colors.green,
-                        );
-                      }
-                    },
+                    onPressed: isMerging
+                        ? null
+                        : () async {
+                            dialogSetState(() => isMerging = true);
+                            var total = 0;
+                            for (final s in working) {
+                              if (!selected.contains(s)) continue;
+                              final dir = directionByIndex[s] ?? 0;
+                              final source = dir == 0 ? s.source : s.target;
+                              final target = dir == 0 ? s.target : s.source;
+                              total += isAlbum
+                                  ? await provider.mergeAlbum(source, target)
+                                  : await provider.mergeArtist(source, target);
+                            }
+                            if (isAlbum) {
+                              _cachedAlbumMergeSuggestions = null;
+                              _albumMergeCacheKey = '';
+                            } else {
+                              _cachedArtistMergeSuggestions = null;
+                              _artistMergeCacheKey = '';
+                            }
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) {
+                              setState(() {});
+                              _showSnack(
+                                tr('done').replaceAll('{0}', total.toString()),
+                                Colors.green,
+                              );
+                            }
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Theme.of(context).primaryColor,
                       foregroundColor: Colors.white,
@@ -8089,18 +8304,25 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         vertical: 8,
                       ),
                     ),
-                    child: Text(
-                      lang.translate('merge_action'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    child: isMerging
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            lang.translate('merge_action'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 TextButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                  },
+                  onPressed: isMerging ? null : () => Navigator.pop(ctx),
                   child: Text(lang.translate('cancel')),
                 ),
               ],

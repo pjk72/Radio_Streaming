@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import '../models/station.dart';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/radio_provider.dart';
 import '../services/backup_service.dart';
@@ -20,6 +22,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/glass_utils.dart';
+import '../widgets/backup_restore_picker.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -30,6 +33,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   Timer? _backupUnlockTimer;
+  Timer? _backupRefreshTimer;
   String _appVersion = '1.1.1';
   String _buildNumber = '';
 
@@ -37,6 +41,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadAppInfo();
+    _startBackupRefresh();
+  }
+
+  void _startBackupRefresh() {
+    // Reload the last backup timestamp from storage so the UI always reflects
+    // the most recent backup, including ones made by the background task.
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      Provider.of<RadioProvider>(context, listen: false).refreshBackupInfo();
+    });
+    _backupRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      Provider.of<RadioProvider>(context, listen: false).refreshBackupInfo();
+    });
   }
 
   Future<void> _loadAppInfo() async {
@@ -52,21 +70,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _backupUnlockTimer?.cancel();
+    _backupRefreshTimer?.cancel();
     super.dispose();
   }
 
-  String _getLastBackupText(int timestamp, String type, LanguageProvider lang) {
+  String _getLastBackupText(int timestamp, LanguageProvider lang) {
     if (timestamp == 0) return lang.translate('never');
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final now = DateTime.now();
     final diff = now.difference(date);
-    String typeStr =
-        " (${lang.translate(type == 'auto' ? 'auto_type' : 'manual_type')})";
 
     if (diff.inDays >= 365) {
       final years = (diff.inDays / 365).floor();
-      if (years == 1) return "${lang.translate('year_ago')}$typeStr";
-      return "${lang.translate('years_ago').replaceAll('{0}', years.toString())}$typeStr";
+      if (years == 1) return lang.translate('year_ago');
+      return lang.translate('years_ago').replaceAll('{0}', years.toString());
     } else if (diff.inDays >= 30) {
       final months = (diff.inDays / 30).floor();
       final days = diff.inDays % 30;
@@ -77,17 +94,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final dayStr = days == 1
             ? lang.translate('day_ago')
             : lang.translate('days_ago').replaceAll('{0}', days.toString());
-        return "$monthStr${lang.translate('and_separator')}$dayStr$typeStr";
+        return "$monthStr${lang.translate('and_separator')}$dayStr";
       }
-      return "${months == 1 ? lang.translate('month_ago') : lang.translate('months_ago').replaceAll('{0}', months.toString())}$typeStr";
+      return months == 1
+          ? lang.translate('month_ago')
+          : lang.translate('months_ago').replaceAll('{0}', months.toString());
     } else if (diff.inDays >= 1) {
-      return "${diff.inDays == 1 ? lang.translate('day_ago') : lang.translate('days_ago').replaceAll('{0}', diff.inDays.toString())}$typeStr";
+      return diff.inDays == 1
+          ? lang.translate('day_ago')
+          : lang.translate('days_ago').replaceAll('{0}', diff.inDays.toString());
     } else if (diff.inHours >= 1) {
-      return "${diff.inHours == 1 ? lang.translate('hour_ago') : lang.translate('hours_ago').replaceAll('{0}', diff.inHours.toString())}$typeStr";
+      return diff.inHours == 1
+          ? lang.translate('hour_ago')
+          : lang.translate('hours_ago').replaceAll('{0}', diff.inHours.toString());
     } else if (diff.inMinutes >= 1) {
-      return "${diff.inMinutes == 1 ? lang.translate('minute_ago') : lang.translate('minutes_ago').replaceAll('{0}', diff.inMinutes.toString())}$typeStr";
+      return diff.inMinutes == 1
+          ? lang.translate('minute_ago')
+          : lang.translate('minutes_ago').replaceAll('{0}', diff.inMinutes.toString());
     } else {
-      return "${lang.translate('just_now')}$typeStr";
+      return lang.translate('just_now');
     }
   }
 
@@ -330,80 +355,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               TextButton(
                                 onPressed: () async {
                                   if (auth.isSignedIn) {
-                                    final confirm =
-                                        await GlassUtils.showGlassDialog<bool>(
-                                          context: context,
-                                          builder: (ctx) => AlertDialog(
-                                            surfaceTintColor:
-                                                Colors.transparent,
-                                            title: Text(
-                                              langProvider.translate(
-                                                'logout_confirm_title',
-                                              ),
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            content: Text(
-                                              langProvider.translate(
-                                                'logout_confirm_desc',
-                                              ),
-                                              style: const TextStyle(
-                                                color: Colors.white70,
-                                              ),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(ctx, false),
-                                                child: Text(
-                                                  langProvider.translate(
-                                                    'cancel',
-                                                  ),
-                                                ),
-                                              ),
-                                              ElevatedButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(ctx, true),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor:
-                                                      Colors.white12,
-                                                  foregroundColor: Colors.white,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          12,
-                                                        ),
-                                                  ),
-                                                ),
-                                                child: Text(
-                                                  langProvider.translate(
-                                                    'sign_out',
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                    final themeProvider =
+                                        Provider.of<ThemeProvider>(
+                                          context,
+                                          listen: false,
                                         );
 
-                                    if (confirm == true) {
-                                      if (!context.mounted) return;
-                                      final themeProvider =
-                                          Provider.of<ThemeProvider>(
-                                            context,
-                                            listen: false,
-                                          );
-                                      await auth.signOut();
-                                      // Clear ALL local session data for Guest mode
-                                      // (playlists, history, theme, artist follows, etc.)
-                                      await radio.resetAllData(
-                                        themeProvider: themeProvider,
-                                      );
-                                      final prefs =
-                                          await SharedPreferences.getInstance();
-                                      await prefs.setBool('was_guest', true);
-                                    }
+                                    // Uscita senza backup automatico: conserva
+                                    // solo la cache locale del telefono.
+                                    await radio.snapshotUserSession();
+
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    await prefs.setBool(
+                                      'use_local_cache_on_login',
+                                      true,
+                                    );
+
+                                    if (!context.mounted) return;
+                                    await auth.signOut();
+                                    // Clear ALL local session data for Guest mode
+                                    // (playlists, history, theme, artist follows, etc.)
+                                    await radio.resetAllData(
+                                      themeProvider: themeProvider,
+                                    );
+                                    await prefs.setBool('was_guest', true);
                                   } else {
                                     try {
                                       final radio = Provider.of<RadioProvider>(
@@ -427,8 +403,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                                       await auth.signIn();
                                       if (auth.isSignedIn && context.mounted) {
-                                        // Forza il ripristino totale dal cloud (isFullReplace: true)
-                                        await radio.restoreBackup(
+                                        // Ripristino post-login: usa sempre la
+                                        // cache locale del telefono (mai il cloud)
+                                        await radio.restoreAfterLogin(
+                                          themeProvider: theme,
                                           isFullReplace: true,
                                         );
 
@@ -511,7 +489,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ],
                           ),
                           if (auth.isSignedIn) ...[
-                            const Divider(color: Colors.white10, height: 32),
+                            Divider(color: Theme.of(context).dividerColor.withValues(alpha: 0.2), height: 32),
 
                             // Last Backup
                             Row(
@@ -527,18 +505,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         ?.withValues(alpha: 0.7),
                                   ),
                                 ),
-                                Text(
-                                  _getLastBackupText(
-                                    radio.lastBackupTs,
-                                    radio.lastBackupType,
-                                    langProvider,
-                                  ),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(
-                                      context,
-                                    ).textTheme.bodyLarge?.color,
-                                  ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _getLastBackupText(
+                                        radio.lastBackupTs,
+                                        langProvider,
+                                      ),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(
+                                          context,
+                                        ).textTheme.bodyLarge?.color,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(20),
+                                      onTap: () => _showBackupLog(
+                                        context,
+                                        radio,
+                                        langProvider,
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(2),
+                                        child: Icon(
+                                        Icons.history,
+                                        size: 16,
+                                        color: Theme.of(
+                                          context,
+                                        ).primaryColor.withValues(
+                                          alpha: 0.6,
+                                        ),
+                                      ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -633,13 +636,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       absorbing: !radio.canInitiateBackup,
                                       child: ElevatedButton.icon(
                                         icon: radio.isBackingUp
-                                            ? const SizedBox(
+                                            ? SizedBox(
                                                 width: 16,
                                                 height: 16,
                                                 child:
                                                     CircularProgressIndicator(
                                                       strokeWidth: 2,
-                                                      color: Colors.white,
+                                                      color: Theme.of(context).colorScheme.onPrimary,
                                                     ),
                                               )
                                             : const Icon(
@@ -653,16 +656,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           backgroundColor: Theme.of(
                                             context,
                                           ).primaryColor,
-                                          foregroundColor: Colors.white,
+                                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                           padding: const EdgeInsets.symmetric(
                                             vertical: 12,
                                           ),
                                           // Visual feedback for disabled state
                                           disabledBackgroundColor: Theme.of(
                                             context,
-                                          ).primaryColor.withValues(alpha: 0.5),
+                                          ).primaryColor.withValues(alpha: 0.35),
                                           disabledForegroundColor:
-                                              Colors.white38,
+                                              Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.38),
                                         ),
                                         onPressed: !radio.canInitiateBackup
                                             ? null
@@ -679,17 +682,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                           langProvider.translate(
                                                             'overwrite_backup_title',
                                                           ),
-                                                          style: TextStyle(
-                                                            color: Colors.white,
-                                                          ),
                                                         ),
                                                         content: Text(
                                                           langProvider.translate(
                                                             'overwrite_backup_desc',
-                                                          ),
-                                                          style: TextStyle(
-                                                            color:
-                                                                Colors.white70,
                                                           ),
                                                         ),
                                                         actions: [
@@ -770,12 +766,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 Expanded(
                                   child: ElevatedButton.icon(
                                     icon: radio.isRestoring
-                                        ? const SizedBox(
+                                        ? SizedBox(
                                             width: 16,
                                             height: 16,
                                             child: CircularProgressIndicator(
                                               strokeWidth: 2,
-                                              color: Colors.white,
+                                              color: Theme.of(context).colorScheme.onPrimary,
                                             ),
                                           )
                                         : const Icon(
@@ -789,15 +785,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       backgroundColor: Theme.of(
                                         context,
                                       ).primaryColor,
-                                      foregroundColor: Colors.white,
+                                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 12,
                                       ),
+                                      disabledBackgroundColor: Theme.of(
+                                        context,
+                                      ).primaryColor.withValues(alpha: 0.35),
+                                      disabledForegroundColor:
+                                          Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.38),
                                     ),
                                     onPressed:
                                         (radio.isBackingUp || radio.isRestoring)
                                         ? null
                                         : () async {
+                                            final selected =
+                                                await showBackupRestorePicker(
+                                                  context: context,
+                                                  radio: radio,
+                                                  langProvider: langProvider,
+                                                );
+                                            if (selected == null ||
+                                                !context.mounted) {
+                                              return;
+                                            }
                                             final confirm =
                                                 await GlassUtils.showGlassDialog<
                                                   bool
@@ -814,9 +825,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                                     content: Text(
                                                       langProvider.translate(
                                                         'restore_backup_desc',
-                                                      ),
-                                                      style: const TextStyle(
-                                                        color: Colors.white70,
                                                       ),
                                                     ),
                                                     actions: [
@@ -857,7 +865,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             if (confirm == true &&
                                                 context.mounted) {
                                               try {
-                                                await radio.restoreBackup();
+                                                await radio.restoreBackup(
+                                                  fileId: selected.fileId,
+                                                );
                                                 if (context.mounted) {
                                                   ScaffoldMessenger.of(
                                                     context,
@@ -1705,7 +1715,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     LanguageProvider langProvider,
   ) {
     final options = [
-      {'code': 'manual', 'label': langProvider.translate('manual')},
+      {'code': 'hourly', 'label': langProvider.translate('hourly')},
       {'code': 'daily', 'label': langProvider.translate('daily')},
       {'code': 'weekly', 'label': langProvider.translate('weekly')},
     ];
@@ -1716,6 +1726,226 @@ class _SettingsScreenState extends State<SettingsScreen> {
       options: options,
       currentValue: radio.backupFrequency,
       onSelect: (code) => radio.setBackupFrequency(code),
+    );
+  }
+
+  void _showBackupLog(
+    BuildContext context,
+    RadioProvider radio,
+    LanguageProvider langProvider,
+  ) {
+    final history = radio.backupHistory;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        final cardColor = Theme.of(context).cardColor;
+        final contrastColor = cardColor.computeLuminance() > 0.5
+            ? Colors.black
+            : Colors.white;
+        return ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    cardColor.withValues(alpha: 0.95),
+                    cardColor.withValues(alpha: 0.98),
+                  ],
+                ),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+                border: Border(
+                  top: BorderSide(
+                    color: contrastColor.withValues(alpha: 0.1),
+                    width: 0.5,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 20,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.65,
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).dividerColor.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.history,
+                        color: Theme.of(context).primaryColor,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        langProvider.translate('backup_log'),
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).textTheme.titleLarge?.color,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Flexible(
+                    child: history.isEmpty
+                        ? SizedBox(
+                            height: 120,
+                            child: Center(
+                              child: Text(
+                                langProvider.translate('backup_log_empty'),
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.color
+                                      ?.withValues(alpha: 0.6),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Builder(
+                            builder: (context) {
+                              // Deduplicate entries with the same dd/MM/yyyy HH:mm
+                              final seen = <String>{};
+                              final deduped = history.where((raw) {
+                                final entry = _parseBackupRecord(raw);
+                                final int ts = int.tryParse('${entry['ts']}') ?? 0;
+                                final date = DateTime.fromMillisecondsSinceEpoch(ts);
+                                final key = DateFormat('dd/MM/yyyy HH:mm').format(date);
+                                return seen.add(key);
+                              }).toList();
+
+                              return ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: deduped.length,
+                                separatorBuilder: (_, _) => Divider(
+                                  color: Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.3),
+                                  height: 1,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final entry = _parseBackupRecord(
+                                    deduped[index],
+                                  );
+                                  return _buildBackupLogRow(
+                                    context,
+                                    entry,
+                                    langProvider,
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Map<String, dynamic> _parseBackupRecord(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {}
+    return <String, dynamic>{};
+  }
+
+  Widget _buildBackupLogRow(
+    BuildContext context,
+    Map<String, dynamic> entry,
+    LanguageProvider langProvider,
+  ) {
+    final bool isAuto = entry['type'] == 'auto';
+    final typeText = isAuto
+        ? langProvider.translate('backup_type_auto')
+        : langProvider.translate('backup_type_manual');
+    final int ts = int.tryParse('${entry['ts']}') ?? 0;
+    final date = DateTime.fromMillisecondsSinceEpoch(ts);
+    final dateStr = DateFormat('dd/MM/yyyy HH:mm').format(date);
+    final theme = Theme.of(context);
+    final color = isAuto
+        ? theme.colorScheme.primary
+        : theme.colorScheme.errorContainer;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.15),
+            ),
+            child: Icon(
+              isAuto ? Icons.schedule : Icons.cloud_upload,
+              size: 16,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  dateStr,
+                  style: TextStyle(
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  typeText,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

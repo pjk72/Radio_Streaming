@@ -1204,23 +1204,39 @@ class RadioAudioHandler extends BaseAudioHandler
 
     // 1. Immediate UI Feedback (Before Stop)
     final String stableId = song.youtubeUrl ?? 'song_${song.id}';
+    final Uri? placeholderArt = _sanitizeArtUri(
+      song.artUri,
+      "${song.title} ${song.artist}",
+    );
+    // AA: publish the artwork through the standard Android Auto metadata keys
+    // also on the transient item, so the dashboard gets a complete metadata
+    // bundle right away instead of relying on the final resolved item.
+    final placeholderExtras = <String, dynamic>{
+      'type': 'playlist_song',
+      'playlistId': playlistId,
+      'songId': song.id,
+      'videoId': videoId,
+      'stableId': stableId,
+      'duration': song.duration?.inSeconds,
+      'genre': song.genre,
+      'releaseDate': song.releaseDate,
+    };
+    if (placeholderArt != null) {
+      final placeholderArtStr = placeholderArt.toString();
+      placeholderExtras['android.media.metadata.DISPLAY_ICON_URI'] =
+          placeholderArtStr;
+      placeholderExtras['android.media.metadata.ART_URI'] = placeholderArtStr;
+      placeholderExtras['android.media.metadata.ALBUM_ART_URI'] =
+          placeholderArtStr;
+    }
     final placeholderItem = MediaItem(
       id: stableId,
       album: song.album,
       title: _getSongTitleWithIcons(song.title, song.localPath),
       artist: song.artist,
       duration: song.duration, // FIX: Use known duration immediately
-      artUri: _sanitizeArtUri(song.artUri, "${song.title} ${song.artist}"),
-      extras: {
-        'type': 'playlist_song',
-        'playlistId': playlistId,
-        'songId': song.id,
-        'videoId': videoId,
-        'stableId': stableId,
-        'duration': song.duration?.inSeconds,
-        'genre': song.genre,
-        'releaseDate': song.releaseDate,
-      },
+      artUri: placeholderArt,
+      extras: placeholderExtras,
     );
     mediaItem.add(placeholderItem);
 
@@ -1248,15 +1264,19 @@ class RadioAudioHandler extends BaseAudioHandler
 
       String effectiveVideoId = videoId;
       if (song.youtubeUrl != null && song.youtubeUrl!.isNotEmpty) {
-        effectiveVideoId = _extractVideoId(song.youtubeUrl!) ?? song.youtubeUrl!;
+        // Only keep a genuine YouTube video ID. If the URL is not a YouTube
+        // link (e.g. an Apple Music playlist track that carries its Apple
+        // Music page URL), leave the ID empty so the search fallback below
+        // can resolve a playable stream instead of failing on the raw URL.
+        effectiveVideoId = _extractVideoId(song.youtubeUrl!) ?? '';
       } else if (effectiveVideoId.startsWith('ctx_')) {
         final lastUnderscore = effectiveVideoId.lastIndexOf('_');
         if (lastUnderscore != -1) {
           final candidate = effectiveVideoId.substring(lastUnderscore + 1);
-          effectiveVideoId = _extractVideoId(candidate) ?? candidate;
+          effectiveVideoId = _extractVideoId(candidate) ?? '';
         }
       } else {
-        effectiveVideoId = _extractVideoId(effectiveVideoId) ?? effectiveVideoId;
+        effectiveVideoId = _extractVideoId(effectiveVideoId) ?? '';
       }
 
       if (effectiveVideoId.startsWith('song_')) {
@@ -3166,7 +3186,21 @@ class RadioAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> updateMediaItem(MediaItem mediaItem) async {
-    this.mediaItem.add(mediaItem);
+    // AA FIX: When switching FROM a radio station TO a playlist song, the
+    // provider pushes an optimistic media item keyed by the temporary
+    // database song.id before the real stream is resolved. On Android Auto
+    // this intermediate churn (station id -> song.id -> stable video id)
+    // makes the dashboard keep the station artwork cached for the wrong id.
+    // Skip that optimistic push so AA receives a single consolidated item
+    // (the placeholder + final resolved item share the same stable id).
+    final isOptimisticSongAfterStation =
+        _isInAndroidAutoMode &&
+        mediaItem.extras?['type'] == 'playlist_song' &&
+        this.mediaItem.value?.extras?['type'] == 'station';
+
+    if (!isOptimisticSongAfterStation) {
+      this.mediaItem.add(mediaItem);
+    }
     _broadcastState(_player.state);
 
     // Persist metadata updates for quick restore
@@ -3993,21 +4027,41 @@ class RadioAudioHandler extends BaseAudioHandler
       final downloadedSongs = result.uniqueSongs
           .where((s) => s.localPath != null)
           .toList();
-      final List<MediaItem> songItems = downloadedSongs.map((s) {
-        final String mId = s.youtubeUrl ?? 'song_${s.id}';
-        return _songToMediaItem(
-          s,
-          'downloads_root',
-          mediaIdOverride: 'ctx_downloads_root_$mId',
-        );
-      }).toList();
+      final totalDownloads = downloadedSongs.length;
+      final langCode = _detectLanguageCode();
+      final String playAllLabel =
+          AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
 
-      if (songItems.isNotEmpty) {
-        final langCode = _detectLanguageCode();
-        final String playAllLabel =
-            AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
-        songItems.insert(
-          0,
+      if (totalDownloads <= 300) {
+        // Flat list
+        final List<MediaItem> songItems = downloadedSongs.map((s) {
+          final String mId = s.youtubeUrl ?? 'song_${s.id}';
+          return _songToMediaItem(
+            s,
+            'downloads_root',
+            mediaIdOverride: 'ctx_downloads_root_$mId',
+          );
+        }).toList();
+
+        if (songItems.isNotEmpty) {
+          songItems.insert(
+            0,
+            MediaItem(
+              id: 'play_all_downloads_root',
+              title: playAllLabel,
+              playable: true,
+              artUri: Uri.parse(
+                "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+              ),
+              extras: {'style': 'list_item'},
+            ),
+          );
+        }
+        return songItems;
+      } else {
+        // Large list — show Play All + sub-folders
+        final List<MediaItem> items = [];
+        items.add(
           MediaItem(
             id: 'play_all_downloads_root',
             title: playAllLabel,
@@ -4018,8 +4072,49 @@ class RadioAudioHandler extends BaseAudioHandler
             extras: {'style': 'list_item'},
           ),
         );
+        final int parts = (totalDownloads / 300).ceil();
+        for (int i = 0; i < parts; i++) {
+          final start = i * 300 + 1;
+          final end = (i * 300 + 300 > totalDownloads) ? totalDownloads : i * 300 + 300;
+          items.add(
+            MediaItem(
+              id: 'downloads_root_part_$i',
+              title: 'Part ${i + 1} ($start-$end)',
+              playable: false,
+              artUri: Uri.parse("https://img.icons8.com/fluency/240/folder-invoices.png"),
+              extras: {
+                'style': 'list_item',
+                'android.media.metadata.DISPLAY_ICON_URI': "https://img.icons8.com/fluency/240/folder-invoices.png",
+                'android.media.metadata.ART_URI': "https://img.icons8.com/fluency/240/folder-invoices.png",
+              },
+            ),
+          );
+        }
+        return items;
       }
-      return songItems;
+    }
+
+    // 2a. Downloads Sub-folder Content
+    if (parentMediaId.startsWith('downloads_root_part_')) {
+      final partStr = parentMediaId.substring('downloads_root_part_'.length);
+      final partIndex = int.tryParse(partStr) ?? 0;
+      final result = await _playlistService.loadPlaylistsResult();
+      final downloadedSongs = result.uniqueSongs
+          .where((s) => s.localPath != null)
+          .toList();
+      final totalDownloads = downloadedSongs.length;
+      final start = partIndex * 300;
+      final end = (start + 300 > totalDownloads) ? totalDownloads : start + 300;
+      if (start >= totalDownloads) return [];
+      final chunk = downloadedSongs.sublist(start, end);
+      return chunk.map((s) {
+        final String mId = s.youtubeUrl ?? 'song_${s.id}';
+        return _songToMediaItem(
+          s,
+          'downloads_root',
+          mediaIdOverride: 'ctx_downloads_root_$mId',
+        );
+      }).toList();
     }
 
     // 2. Per Te (For You) AI Mixes Folder
@@ -4389,22 +4484,43 @@ class RadioAudioHandler extends BaseAudioHandler
       final downloadedSongs = result.uniqueSongs
           .where((s) => s.localPath != null)
           .toList();
+      final totalDownloads = downloadedSongs.length;
+      final langCode = _detectLanguageCode();
+      final String playAllLabel =
+          AppTranslations.translations[langCode]?['play_all'] ?? 'Play All';
 
-      final List<MediaItem> songItems = downloadedSongs.map((s) {
-        final String mId = s.youtubeUrl ?? 'song_${s.id}';
-        return _songToMediaItem(
-          s,
-          'downloads_root',
-          mediaIdOverride: 'ctx_downloads_root_$mId',
-        );
-      }).toList();
+      if (totalDownloads <= 300) {
+        final List<MediaItem> songItems = downloadedSongs.map((s) {
+          final String mId = s.youtubeUrl ?? 'song_${s.id}';
+          return _songToMediaItem(
+            s,
+            'downloads_root',
+            mediaIdOverride: 'ctx_downloads_root_$mId',
+          );
+        }).toList();
 
-      if (songItems.isNotEmpty) {
-        songItems.insert(
-          0,
+        if (songItems.isNotEmpty) {
+          songItems.insert(
+            0,
+            MediaItem(
+              id: 'play_all_downloads_root',
+              title: playAllLabel,
+              playable: true,
+              artUri: Uri.parse(
+                "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
+              ),
+              extras: {'style': 'list_item'},
+            ),
+          );
+        }
+        return songItems;
+      } else {
+        // Large list — show Play All + sub-folders
+        final List<MediaItem> items = [];
+        items.add(
           MediaItem(
             id: 'play_all_downloads_root',
-            title: 'Play All Downloads',
+            title: playAllLabel,
             playable: true,
             artUri: Uri.parse(
               "https://img.icons8.com/ios-filled/100/D32F2F/play--v1.png",
@@ -4412,8 +4528,49 @@ class RadioAudioHandler extends BaseAudioHandler
             extras: {'style': 'list_item'},
           ),
         );
+        final int parts = (totalDownloads / 300).ceil();
+        for (int i = 0; i < parts; i++) {
+          final start = i * 300 + 1;
+          final end = (i * 300 + 300 > totalDownloads) ? totalDownloads : i * 300 + 300;
+          items.add(
+            MediaItem(
+              id: 'downloads_root_part_$i',
+              title: 'Part ${i + 1} ($start-$end)',
+              playable: false,
+              artUri: Uri.parse("https://img.icons8.com/fluency/240/folder-invoices.png"),
+              extras: {
+                'style': 'list_item',
+                'android.media.metadata.DISPLAY_ICON_URI': "https://img.icons8.com/fluency/240/folder-invoices.png",
+                'android.media.metadata.ART_URI': "https://img.icons8.com/fluency/240/folder-invoices.png",
+              },
+            ),
+          );
+        }
+        return items;
       }
-      return songItems;
+    }
+
+    // 5a. Downloads Sub-folder Content
+    if (parentMediaId.startsWith('downloads_root_part_')) {
+      final partStr = parentMediaId.substring('downloads_root_part_'.length);
+      final partIndex = int.tryParse(partStr) ?? 0;
+      final result = await _playlistService.loadPlaylistsResult();
+      final downloadedSongs = result.uniqueSongs
+          .where((s) => s.localPath != null)
+          .toList();
+      final totalDownloads = downloadedSongs.length;
+      final start = partIndex * 300;
+      final end = (start + 300 > totalDownloads) ? totalDownloads : start + 300;
+      if (start >= totalDownloads) return [];
+      final chunk = downloadedSongs.sublist(start, end);
+      return chunk.map((s) {
+        final String mId = s.youtubeUrl ?? 'song_${s.id}';
+        return _songToMediaItem(
+          s,
+          'downloads_root',
+          mediaIdOverride: 'ctx_downloads_root_$mId',
+        );
+      }).toList();
     }
 
     return [];
@@ -5130,7 +5287,7 @@ class RadioAudioHandler extends BaseAudioHandler
         // CRITICAL SAFETY CHECK: Ensure we haven't switched to a playlist song or another station
         final String currentUrl = mediaItem.value?.extras?['url'] as String? ?? mediaItem.value?.id ?? '';
         if (currentUrl == streamUrl) {
-          mediaItem.add(newMediaItem);
+          mediaItem.add(_syncArtExtras(newMediaItem));
         } else {
           LogService().log(
             "RecognitionAPI: Match discarded because current media changed to $currentUrl",
@@ -5257,7 +5414,7 @@ class RadioAudioHandler extends BaseAudioHandler
         artUri: station.logo != null ? Uri.parse(station.logo!) : null,
         extras: newExtras,
       );
-      if (newItem != null) mediaItem.add(newItem);
+      if (newItem != null) mediaItem.add(_syncArtExtras(newItem));
     }
     _scheduleRetry(45);
   }
@@ -5299,7 +5456,9 @@ class RadioAudioHandler extends BaseAudioHandler
     if (finalArt != null) {
       final item = mediaItem.value;
       if (item != null && item.title == title && item.artist == artist) {
-        mediaItem.add(item.copyWith(artUri: Uri.parse(finalArt)));
+        mediaItem.add(
+          _syncArtExtras(item.copyWith(artUri: Uri.parse(finalArt))),
+        );
       }
     }
 
@@ -5330,9 +5489,11 @@ class RadioAudioHandler extends BaseAudioHandler
           }
 
           mediaItem.add(
-            item.copyWith(
-              artUri: finalArt != null ? Uri.parse(finalArt) : item.artUri,
-              extras: newExtras,
+            _syncArtExtras(
+              item.copyWith(
+                artUri: finalArt != null ? Uri.parse(finalArt) : item.artUri,
+                extras: newExtras,
+              ),
             ),
           );
         }
@@ -5402,6 +5563,26 @@ class RadioAudioHandler extends BaseAudioHandler
       return Uri.tryParse(art);
     }
     return null;
+  }
+
+  /// Ensures the Android Auto artwork keys inside [MediaItem.extras] always
+  /// match the current [MediaItem.artUri]. Recognition and metadata recovery
+  /// rebuild items with `copyWith(artUri: ...)`, which would otherwise keep
+  /// the previous (stale) artwork in the extras and make the AA dashboard
+  /// keep showing outdated cover art.
+  MediaItem _syncArtExtras(MediaItem item) {
+    final artStr = item.artUri?.toString() ?? '';
+    if (artStr.isEmpty) return item;
+    final extras = Map<String, dynamic>.from(item.extras ?? {});
+    if (extras['android.media.metadata.DISPLAY_ICON_URI'] == artStr &&
+        extras['android.media.metadata.ART_URI'] == artStr &&
+        extras['android.media.metadata.ALBUM_ART_URI'] == artStr) {
+      return item;
+    }
+    extras['android.media.metadata.DISPLAY_ICON_URI'] = artStr;
+    extras['android.media.metadata.ART_URI'] = artStr;
+    extras['android.media.metadata.ALBUM_ART_URI'] = artStr;
+    return item.copyWith(extras: extras);
   }
 
   // --- Background History Tracking ---
@@ -5541,6 +5722,49 @@ class RadioAudioHandler extends BaseAudioHandler
                     releaseDate = res['releaseDate'] as String?;
                   }
                 }
+              }
+              // Deezer fallback if still missing releaseDate or genre
+              if ((genre == null || genre.isEmpty) || (releaseDate == null || releaseDate.isEmpty)) {
+                try {
+                  final dzRes = await http.get(
+                    Uri.parse('https://api.deezer.com/search?q=$encoded&limit=1'),
+                  ).timeout(const Duration(seconds: 3));
+                  if (dzRes.statusCode == 200) {
+                    final dzData = jsonDecode(dzRes.body);
+                    final dzTracks = dzData['data'] as List<dynamic>? ?? [];
+                    if (dzTracks.isNotEmpty) {
+                      final track = dzTracks[0];
+                      final tId = track['id'];
+                      if (tId != null && (releaseDate == null || releaseDate.isEmpty)) {
+                        final tRes = await http.get(Uri.parse('https://api.deezer.com/track/$tId')).timeout(const Duration(seconds: 3));
+                        if (tRes.statusCode == 200) {
+                          final tData = jsonDecode(tRes.body);
+                          final rDate = tData['release_date']?.toString();
+                          if (rDate != null && rDate.isNotEmpty && rDate != '0000-00-00') {
+                            releaseDate = rDate;
+                          }
+                        }
+                      }
+                      final albId = track['album']?['id'];
+                      if (albId != null && (genre == null || genre.isEmpty)) {
+                        final albRes = await http.get(Uri.parse('https://api.deezer.com/album/$albId')).timeout(const Duration(seconds: 3));
+                        if (albRes.statusCode == 200) {
+                          final albData = jsonDecode(albRes.body);
+                          final gList = albData['genres']?['data'] as List<dynamic>?;
+                          if (gList != null && gList.isNotEmpty) {
+                            genre = gList[0]['name']?.toString();
+                          }
+                          if (releaseDate == null || releaseDate.isEmpty) {
+                            final albRDate = albData['release_date']?.toString();
+                            if (albRDate != null && albRDate.isNotEmpty && albRDate != '0000-00-00') {
+                              releaseDate = albRDate;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (_) {}
               }
             }
           } catch (_) {}

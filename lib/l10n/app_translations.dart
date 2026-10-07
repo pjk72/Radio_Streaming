@@ -20,3 +20,4 @@ class AppTranslations {
     'ar': ar,
   };
 }
+

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 
 import '../providers/radio_provider.dart';
+import '../providers/language_provider.dart';
 import '../models/station.dart';
 import '../widgets/station_card.dart';
 import '../widgets/now_playing_header.dart';
@@ -260,6 +261,40 @@ class _StationCategoryTileState extends State<StationCategoryTile> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          IconButton(
+                            icon: Icon(
+                              Icons.add_circle_rounded,
+                              size: 20,
+                              color: localTheme.iconTheme.color?.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
+                            tooltip: Provider.of<LanguageProvider>(
+                              context,
+                            ).translate('station_wizard'),
+                            onPressed: () {
+                              final langProvider =
+                                  Provider.of<LanguageProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => Scaffold(
+                                    appBar: AppBar(
+                                      title: Text(
+                                        langProvider.translate(
+                                          'add_station_wizard',
+                                        ),
+                                      ),
+                                    ),
+                                    body: const TutorialCreateRadioWizard(),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                           IconButton(
                             icon: Icon(
                               widget.isCompactView

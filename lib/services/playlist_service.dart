@@ -10,7 +10,11 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 class PlaylistLoadResult {
   final List<Playlist> playlists;
   final List<SavedSong> uniqueSongs;
-  PlaylistLoadResult(this.playlists, this.uniqueSongs);
+
+  /// True when loaded data contained artists that needed cleaning
+  /// (e.g. a " - Topic" suffix) and was rewritten to disk.
+  final bool changed;
+  PlaylistLoadResult(this.playlists, this.uniqueSongs, {this.changed = false});
 }
 
 class PlaylistService {
@@ -50,6 +54,10 @@ class PlaylistService {
         final result = await compute(_decodePlaylists, jsonString);
         _cachedPlaylists = result.playlists;
         _cachedUniqueSongs = result.uniqueSongs;
+        if (result.changed) {
+          // Cleaned artist names during load: rewrite so the fix is permanent.
+          await _savePlaylists(prefs, result.playlists);
+        }
         return result;
       }
     }
@@ -134,6 +142,21 @@ class PlaylistService {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     final playlists = jsonList.map((j) => Playlist.fromJson(j)).toList();
 
+    // Detect artists that still carry the YouTube " - Topic" channel suffix.
+    // SavedSong.fromJson already strips it, so check the raw JSON instead.
+    bool changed = false;
+    final topicSuffix = RegExp(r'-\s*Topic\s*$', caseSensitive: false);
+    for (final entry in jsonList) {
+      final entryMap = entry as Map<String, dynamic>;
+      final songs = entryMap['songs'] as List? ?? const [];
+      for (final song in songs) {
+        final artist = (song as Map<String, dynamic>)['artist'] as String? ?? '';
+        if (artist.contains(topicSuffix)) {
+          changed = true;
+        }
+      }
+    }
+
     final Set<String> ids = {};
     final List<SavedSong> uniqueSongs = [];
     for (var p in playlists) {
@@ -143,7 +166,7 @@ class PlaylistService {
         }
       }
     }
-    return PlaylistLoadResult(playlists, uniqueSongs);
+    return PlaylistLoadResult(playlists, uniqueSongs, changed: changed);
   }
 
   void clearCache() {
@@ -246,10 +269,13 @@ class PlaylistService {
     final index = playlists.indexWhere((p) => p.id == playlistId);
     if (index != -1) {
       // Check duplicates
+      final cleanTitle = song.title.toLowerCase().trim();
+      final cleanArtist = song.artist.toLowerCase().trim();
       if (!playlists[index].songs.any(
         (s) =>
             s.id == song.id ||
-            (s.title == song.title && s.artist == song.artist),
+            (s.title.toLowerCase().trim() == cleanTitle &&
+                s.artist.toLowerCase().trim() == cleanArtist),
       )) {
         playlists[index].songs.insert(0, song);
         await _savePlaylists(prefs, playlists);
@@ -258,7 +284,7 @@ class PlaylistService {
     }
   }
 
-  Future<void> addSongsToPlaylist(
+  Future<int> addSongsToPlaylist(
     String playlistId,
     List<SavedSong> songs,
   ) async {
@@ -271,10 +297,13 @@ class PlaylistService {
       final List<SavedSong> toAdd = [];
 
       for (var song in songs) {
+        final cleanTitle = song.title.toLowerCase().trim();
+        final cleanArtist = song.artist.toLowerCase().trim();
         if (!existing.any(
           (s) =>
               s.id == song.id ||
-              (s.title == song.title && s.artist == song.artist),
+              (s.title.toLowerCase().trim() == cleanTitle &&
+                  s.artist.toLowerCase().trim() == cleanArtist),
         )) {
           toAdd.add(song);
         }
@@ -285,8 +314,11 @@ class PlaylistService {
         playlists[index].songs.insertAll(0, toAdd);
         await _savePlaylists(prefs, playlists);
         _notifyListeners();
+        return toAdd.length;
       }
+      return 0;
     }
+    return 0;
   }
 
   Future<void> removeSongFromPlaylist(String playlistId, String songId) async {

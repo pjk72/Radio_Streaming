@@ -385,9 +385,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
                     return yearStr == decadeKey;
                   }).toList();
 
+                  // For the unknown entry, don't append 's'
+                  final sheetTitle = int.tryParse(decadeKey) != null
+                      ? '${decadeKey}s'
+                      : decadeKey;
+
                   _showTemporaryPlaylistSheet(
                     context: context,
-                    title: '${decadeKey}s',
+                    title: sheetTitle,
                     subtitle: '${matchingSongs.length} ${langProvider.translate('songs').toLowerCase()} • ${langProvider.translate('years')}',
                     songs: matchingSongs,
                     provider: provider,
@@ -747,13 +752,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
       );
     }
 
-    // Sort valid decades chronologically
+    // Sort valid decades chronologically; collect unknown entry separately
     final validEntries = data.entries
         .where((e) => int.tryParse(e.key) != null)
         .toList()
       ..sort((a, b) => int.parse(a.key).compareTo(int.parse(b.key)));
 
-    if (validEntries.isEmpty) {
+    // The unknown entry (key is not a valid integer, e.g. 'Sconosciuto')
+    final unknownEntry = data.entries
+        .where((e) => int.tryParse(e.key) == null)
+        .toList();
+
+    if (validEntries.isEmpty && unknownEntry.isEmpty) {
       return Center(
         child: Text(
           Provider.of<LanguageProvider>(context, listen: false)
@@ -762,17 +772,24 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
       );
     }
 
-    final maxVal = validEntries
+    final allEntries = [...validEntries, ...unknownEntry];
+    final maxVal = allEntries
         .map((e) => e.value)
         .reduce((a, b) => a > b ? a : b)
         .toDouble();
 
     return Column(
-      children: validEntries.asMap().entries.map((entry) {
+      children: allEntries.asMap().entries.map((entry) {
         final idx = entry.key;
         final e = entry.value;
+        final isUnknown = int.tryParse(e.key) == null;
+        // Unknown entry uses grey; valid decades use the shared color palette
+        final color = isUnknown
+            ? Colors.white38
+            : _sharedChartColors[idx % _sharedChartColors.length];
         final fraction = maxVal > 0 ? e.value / maxVal : 0.0;
-        final color = _sharedChartColors[idx % _sharedChartColors.length];
+        // Label: valid decade → append 's'; unknown → display as-is
+        final label = isUnknown ? e.key : '${e.key}s';
 
         return Material(
           color: Colors.transparent,
@@ -784,11 +801,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
               child: Row(
                 children: [
                   SizedBox(
-                    width: 50,
+                    width: 65,
                     child: Text(
-                      '${e.key}s',
-                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isUnknown ? Colors.white38 : Colors.white70,
+                        fontStyle: isUnknown ? FontStyle.italic : FontStyle.normal,
+                      ),
                       textAlign: TextAlign.right,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1716,10 +1738,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
             ),
             const SizedBox(height: 24),
             
-            // Grafico Lineare degli ascolti
+            // Grafico a istogrammi verticali degli ascolti
             _buildChartCard(
               '${langProvider.translate('listening_trend')} (${filteredLog.length})',
-              _buildLineChart(
+              _buildBarChart(
                 dailyListens,
                 context,
                 onDayTap: (dayKey) {
@@ -2045,7 +2067,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildLineChart(
+  Widget _buildBarChart(
     Map<String, int> dailyListens,
     BuildContext context, {
     void Function(String dayKey)? onDayTap,
@@ -2061,58 +2083,56 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
 
     final sortedKeys = dailyListens.keys.toList()..sort();
 
-    List<FlSpot> spots = [];
-    double maxX = (sortedKeys.length - 1).toDouble();
-    if (maxX < 1) {
-      maxX = 1;
-    }
-
     double maxY = 0;
-
-    for (int i = 0; i < sortedKeys.length; i++) {
-      double y = dailyListens[sortedKeys[i]]!.toDouble();
-      if (y > maxY) {
-        maxY = y;
+    for (final key in sortedKeys) {
+      if (dailyListens[key]! > maxY) {
+        maxY = dailyListens[key]!.toDouble();
       }
-      spots.add(FlSpot(i.toDouble(), y));
     }
-
     if (maxY == 0) {
       maxY = 10;
     } else {
       maxY = maxY * 1.5;
     }
 
-    return LineChart(
-      LineChartData(
-        lineTouchData: LineTouchData(
+    final primaryColor = Theme.of(context).primaryColor;
+    final Brightness brightness = Theme.of(context).brightness;
+    final Color highlightColor = brightness == Brightness.dark
+        ? Color.lerp(primaryColor, Colors.white, 0.35)!
+        : Color.lerp(primaryColor, Colors.black, 0.25)!;
+    final double barWidth = sortedKeys.length > 30 ? 6 : 14;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY,
+        minY: 0,
+        barTouchData: BarTouchData(
           enabled: true,
-          touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+          touchCallback: (FlTouchEvent event, BarTouchResponse? response) {
             if (event is FlTapUpEvent &&
-                touchResponse != null &&
-                touchResponse.lineBarSpots != null &&
-                touchResponse.lineBarSpots!.isNotEmpty) {
-              final spotIndex = touchResponse.lineBarSpots!.first.spotIndex;
-              if (spotIndex >= 0 && spotIndex < sortedKeys.length) {
-                final dayKey = sortedKeys[spotIndex];
+                response != null &&
+                response.spot != null) {
+              final groupIndex = response.spot!.touchedBarGroupIndex;
+              if (groupIndex >= 0 && groupIndex < sortedKeys.length) {
+                final dayKey = sortedKeys[groupIndex];
                 onDayTap?.call(dayKey);
               }
             }
           },
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (touchedSpots) {
-              return touchedSpots.map((spot) {
-                final idx = spot.spotIndex;
-                final date = idx >= 0 && idx < sortedKeys.length ? sortedKeys[idx] : '';
-                return LineTooltipItem(
-                  '$date\n${spot.y.toInt()} ascolti\n▶ Tocca per ascoltare',
-                  const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                );
-              }).toList();
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final date = groupIndex >= 0 && groupIndex < sortedKeys.length
+                  ? sortedKeys[groupIndex]
+                  : '';
+              return BarTooltipItem(
+                '$date\n${rod.toY.toInt()} ascolti\n▶ Tocca per ascoltare',
+                const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              );
             },
           ),
         ),
@@ -2174,26 +2194,40 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         borderData: FlBorderData(show: false),
-        minX: 0,
-        maxX: maxX,
-        minY: 0,
-        maxY: maxY,
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: Theme.of(context).primaryColor,
-            barWidth: 3,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: true),
-            belowBarData: BarAreaData(
-              show: true,
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-            ),
-          ),
-        ],
+        barGroups: List.generate(sortedKeys.length, (i) {
+          return BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: dailyListens[sortedKeys[i]]!.toDouble(),
+                color: i == _highlightBarIndex(sortedKeys, dailyListens)
+                    ? highlightColor
+                    : primaryColor,
+                width: barWidth,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                backDrawRodData: BackgroundBarChartRodData(
+                  show: true,
+                  color: Colors.white10,
+                  toY: maxY,
+                ),
+              ),
+            ],
+          );
+        }),
       ),
     );
+  }
+
+  int _highlightBarIndex(List<String> sortedKeys, Map<String, int> dailyListens) {
+    int bestIndex = 0;
+    int bestValue = -1;
+    for (int i = 0; i < sortedKeys.length; i++) {
+      if (dailyListens[sortedKeys[i]]! > bestValue) {
+        bestValue = dailyListens[sortedKeys[i]]!;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
   }
 
   Widget _buildSongTile(

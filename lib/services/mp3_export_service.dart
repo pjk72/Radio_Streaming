@@ -294,7 +294,7 @@ class MP3ExportService extends ChangeNotifier {
 
           if (resultPath != null && resultPath.isNotEmpty) {
             final resultFile = File(resultPath);
-            if (await resultFile.exists()) {
+            if (await resultFile.exists() && await resultFile.length() > 0) {
               // Inject iTunes metadata tags into the transcoded container
               try {
                 final transcodedBytes = await resultFile.readAsBytes();
@@ -350,19 +350,39 @@ class MP3ExportService extends ChangeNotifier {
       if (exportSucceeded && finalExportedPath.isNotEmpty) {
         await _scanMediaFile(finalExportedPath);
 
-        try {
-          await sourceFile.delete();
-          LogService().log(
-            'MP3ExportService: Export completed successfully. Source deleted: $sourcePath',
-          );
-        } catch (e) {
-          LogService().log(
-            'MP3ExportService: Export completed but source deletion failed: $e',
-          );
+        // Only remove the offline (.mst) source after confirming the new
+        // exported file is a real, non-empty audio file. If verification fails
+        // the .mst is kept as the song's link so no offline track is lost.
+        final exportedFile = File(finalExportedPath);
+        final bool exportedVerified =
+            await exportedFile.exists() && await exportedFile.length() > 0;
+
+        if (exportedVerified) {
+          try {
+            await sourceFile.delete();
+            LogService().log(
+              'MP3ExportService: Export completed successfully. Source deleted: $sourcePath',
+            );
+            await _tryDeleteEmptySourceDir(sourceFile);
+          } catch (e) {
+            LogService().log(
+              'MP3ExportService: Export completed but source deletion failed: $e',
+            );
+          }
+
+          onExportSuccess(finalExportedPath);
+          return true;
         }
 
-        onExportSuccess(finalExportedPath);
-        return true;
+        // Exported file is empty or unreadable: keep the .mst as the link and
+        // clean up the invalid exported file to avoid corrupt leftovers.
+        LogService().log(
+          'MP3ExportService: Exported file verification failed ($finalExportedPath). '
+          'Keeping offline source: $sourcePath',
+        );
+        try {
+          await exportedFile.delete();
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint(
@@ -371,6 +391,27 @@ class MP3ExportService extends ChangeNotifier {
     }
 
     return false;
+  }
+
+  /// Removes an empty offline source folder after its last .mst has been
+  /// deleted on a successful export. Leaves the folder untouched if it still
+  /// contains any file or subdirectory.
+  static Future<void> _tryDeleteEmptySourceDir(File sourceFile) async {
+    try {
+      final parent = sourceFile.parent;
+      if (!await parent.exists()) return;
+      final bool hasEntries = await parent.list(recursive: true).any((_) => true);
+      if (!hasEntries) {
+        await parent.delete(recursive: true);
+        LogService().log(
+          'MP3ExportService: Removed empty offline source folder: ${parent.path}',
+        );
+      }
+    } catch (e) {
+      LogService().log(
+        'MP3ExportService: Could not remove empty offline source folder: $e',
+      );
+    }
   }
 
   /// Exports selected songs to non-encrypted audio files (MP3 / MP3) in destination directory

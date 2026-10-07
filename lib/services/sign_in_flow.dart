@@ -7,7 +7,7 @@ import 'backup_service.dart';
 
 /// Runs the complete Google sign-in flow, identical to the "Accedi" button in
 /// Settings: snapshots the guest session, switches to the Google account and
-/// restores the cloud backup. Returns true when the user signed in.
+/// restores the local phone cache (never the cloud). Returns true when the user signed in.
 Future<bool> runGoogleSignInFlow(
   BuildContext context,
   RadioProvider radio,
@@ -25,8 +25,8 @@ Future<bool> runGoogleSignInFlow(
 
     await auth.signIn();
     if (auth.isSignedIn) {
-      // Forza il ripristino totale dal cloud (isFullReplace: true)
-      await radio.restoreBackup(isFullReplace: true);
+      // Ripristino post-login: se il backup precedente era fallito, usa la cache locale
+      await radio.restoreAfterLogin(themeProvider: theme, isFullReplace: true);
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('was_guest', false);
