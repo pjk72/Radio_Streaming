@@ -34,6 +34,7 @@ class _TrendingScreenState extends State<TrendingScreen>
   final TextEditingController _filterController = TextEditingController();
 
   bool _isLoading = false;
+  bool _isAppleMusicLoading = false;
   List<TrendingPlaylist> _playlists = [];
   String? _errorMessage;
 
@@ -238,6 +239,7 @@ class _TrendingScreenState extends State<TrendingScreen>
 
     setState(() {
       _isLoading = true;
+      _isAppleMusicLoading = true;
       _errorMessage = null;
     });
 
@@ -264,23 +266,45 @@ class _TrendingScreenState extends State<TrendingScreen>
 
       _trendingService = TrendingService();
 
-      final results = await _trendingService.searchTrending(
-        countryMap[_selectedCountryCode]!.contains(' ')
-            ? countryMap[_selectedCountryCode]!.substring(
-                countryMap[_selectedCountryCode]!.indexOf(' ') + 1,
-              )
-            : countryMap[_selectedCountryCode] ?? 'USA',
+      final countryLabel = countryMap[_selectedCountryCode]!.contains(' ')
+          ? countryMap[_selectedCountryCode]!.substring(
+              countryMap[_selectedCountryCode]!.indexOf(' ') + 1,
+            )
+          : countryMap[_selectedCountryCode] ?? 'USA';
+
+      bool firstBatch = true;
+
+      // ── Progressive streaming: UI updates as each provider returns ──
+      await for (final batch in _trendingService.searchTrendingStream(
+        countryLabel,
         DateTime.now().year.toString(),
-        countryCode:
-            _selectedCountryCode, // ISO code (IT, US, etc.) for Apple Music
+        countryCode: _selectedCountryCode,
         customQuery: _customQueryController.text.isNotEmpty
             ? _customQueryController.text
             : null,
-      );
+      )) {
+        if (!mounted) break;
+
+        final hasApple = batch.any((p) => p.provider == 'APPLEMUSIC');
+
+        setState(() {
+          _playlists = batch;
+          if (hasApple) {
+            _isAppleMusicLoading = false;
+          }
+          // Hide skeleton after the first provider returns data
+          if (firstBatch) {
+            _isLoading = false;
+            firstBatch = false;
+          }
+        });
+      }
 
       if (mounted) {
+        // Ensure loading is cleared even if stream was empty
         setState(() {
-          _playlists = results;
+          _isLoading = false;
+          _isAppleMusicLoading = false;
         });
 
         // If the "Most Played Playlists" area is missing, relaunch the
@@ -289,11 +313,18 @@ class _TrendingScreenState extends State<TrendingScreen>
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = e.toString());
+        setState(() {
+          _errorMessage = e.toString();
+          _isLoading = false;
+          _isAppleMusicLoading = false;
+        });
       }
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isAppleMusicLoading = false;
+        });
 
         // Auto-scroll to the search results/bar when doing a custom search
         if (_customQueryController.text.isNotEmpty) {
@@ -315,6 +346,10 @@ class _TrendingScreenState extends State<TrendingScreen>
         }
       }
     }
+  }
+
+  bool _hasApplePlaylists() {
+    return _playlists.any((p) => p.provider == 'APPLEMUSIC');
   }
 
   bool _hasMostPlayedPlaylists() {
@@ -707,24 +742,60 @@ class _TrendingScreenState extends State<TrendingScreen>
               // Trending Playlists by Category
               ...() {
                 final List<Widget> sections = [];
-                bool ytSeen = false;
 
-                final entries = groupedTrending.entries.toList();
-                // Check if YouTube exists in our map
-                final hasYouTube = entries.any((e) => e.key == 'YouTube');
+                // ── Apple Music Loading Placeholder ──────────────────────────
+                // Notifies the user that Apple Music playlists are loading in background
+                if (_isAppleMusicLoading &&
+                    !_hasApplePlaylists() &&
+                    _customQueryController.text.isEmpty) {
+                  sections.add(_buildAppleMusicLoadingSection(langProvider));
+                }
+
+                // ── Canonical display order ──────────────────────────────────
+                // 4. Apple Music categories (in sub-order)
+                // 5. Search bar inline
+                // 5.1 YouTube  5.2 Audius  5.3 Deezer
+                const List<String> canonicalOrder = [
+                  'most_played_playlists',
+                  'top_playlists',
+                  'recent_releases_playlists',
+                  'hot_tracks_playlists',
+                  'new_music_playlists',
+                  'best_hits_playlists',
+                  'top_songs',
+                  // search bar is injected here automatically
+                  'YouTube',
+                  'AUDIUS',
+                  'DEEZER',
+                ];
+
+                int canonicalIndex(String key) {
+                  final i = canonicalOrder.indexOf(key);
+                  return i == -1 ? canonicalOrder.length : i;
+                }
+
+                final entries = groupedTrending.entries.toList()
+                  ..sort((a, b) =>
+                      canonicalIndex(a.key).compareTo(canonicalIndex(b.key)));
+
+                bool searchBarInserted = false;
 
                 for (int i = 0; i < entries.length; i++) {
                   final entry = entries[i];
                   final String key = entry.key;
 
-                  // Move Search Bar just before YouTube
-                  if (key == 'YouTube' ||
-                      (!hasYouTube && !ytSeen && key == 'AUDIUS')) {
-                    ytSeen = true;
-                    sections.add(_buildInlineSearchCard(context, langProvider));
+                  // Inject Search Bar just before the first non-Apple section
+                  if (!searchBarInserted &&
+                      (key == 'YouTube' ||
+                          key == 'AUDIUS' ||
+                          key == 'DEEZER')) {
+                    searchBarInserted = true;
+                    sections.add(
+                      _buildInlineSearchCard(context, langProvider),
+                    );
                   }
 
-                  // ALL playlist rows should now be compact (125x180)
+                  // ALL playlist rows — compact (125x180)
                   const double currentHeight = 180;
                   const double currentWidth = 125;
 
@@ -758,19 +829,74 @@ class _TrendingScreenState extends State<TrendingScreen>
                   );
                 }
 
-                // Fallback if YouTube wasn't found (add at the end)
-                if (!ytSeen) {
+                // Fallback: search bar at the end if no YouTube/Audius/Deezer
+                if (!searchBarInserted) {
                   sections.add(_buildInlineSearchCard(context, langProvider));
                 }
 
                 return sections;
               }(),
 
+
               const SizedBox(height: 90), // bottom padding for player
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildAppleMusicLoadingSection(LanguageProvider langProvider) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.primaryColor;
+
+    return _buildHorizontalSection(
+      title: langProvider.translate('most_played_playlists'),
+      showTitle: _customQueryController.text.isEmpty,
+      topPadding: 16,
+      height: 180,
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: primaryColor.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: primaryColor.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const FaIcon(
+              FontAwesomeIcons.apple,
+              size: 13,
+              color: Colors.white70,
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 11,
+              height: 11,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: primaryColor,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              "${langProvider.translate('APPLEMUSIC')} • ${langProvider.translate('loading')}",
+              style: GoogleFonts.outfit(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: primaryColor,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+      items: List.generate(5, (_) => null),
+      itemBuilder: (_) => _buildShimmerCard(),
     );
   }
 
@@ -781,6 +907,7 @@ class _TrendingScreenState extends State<TrendingScreen>
     double height = 190,
     double topPadding = 24,
     bool showTitle = true,
+    Widget? trailing,
   }) {
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
@@ -790,9 +917,17 @@ class _TrendingScreenState extends State<TrendingScreen>
         if (showTitle)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                ?trailing,
+              ],
             ),
           ),
         SizedBox(
@@ -846,7 +981,7 @@ class _TrendingScreenState extends State<TrendingScreen>
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_isLoading)
+                    if (_isLoading || _isAppleMusicLoading)
                       SizedBox(
                         width: 20,
                         height: 20,

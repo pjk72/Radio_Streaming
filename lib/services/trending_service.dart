@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -71,35 +72,30 @@ class TrendingService {
     _yt.close();
   }
 
-  Future<List<TrendingPlaylist>> searchTrending(
+  /// Streams partial results as each provider returns, then caches the full set.
+  /// Yields a growing [List<TrendingPlaylist>] every time a new provider completes.
+  Stream<List<TrendingPlaylist>> searchTrendingStream(
     String country,
     String year, {
     String? countryCode,
     String? customQuery,
-  }) async {
+  }) async* {
     final String query = customQuery ?? "Top 50 - $country";
     final cacheKey = '${countryCode ?? country}_$query'.toLowerCase();
 
+    // Return cache instantly if available
     if (_cache.containsKey(cacheKey)) {
-      return _cache[cacheKey]!;
+      yield _cache[cacheKey]!;
+      return;
     }
 
-    final results = await Future.wait([
-      _searchAppleMusic(customQuery, countryCode ?? country),
-      _searchYouTube(customQuery ?? "Top $country $year"),
-      _searchAudius(customQuery ?? country),
-      _searchDeezer(customQuery ?? "Top $country"),
-    ]);
-
     final Set<String> seenImages = {};
-    final finalResults = <TrendingPlaylist>[];
+    final List<TrendingPlaylist> accumulated = [];
 
-    for (var sublist in results) {
+    void addFiltered(List<TrendingPlaylist> sublist) {
       int countForThisSource = 0;
       const int maxForSource = 100;
-
       for (var p in sublist) {
-        // Allow playlists with tracks, predefined tracks, OR external URLs (for lazy-load)
         final hasTracks =
             p.trackCount > 0 ||
             p.trackCount == -1 ||
@@ -113,15 +109,67 @@ class TrendingService {
 
         if (countForThisSource < maxForSource) {
           if (imageUrl != null) seenImages.add(imageUrl);
-          finalResults.add(p);
+          accumulated.add(p);
           countForThisSource++;
         }
       }
     }
 
-    _cache[cacheKey] = finalResults;
-    return finalResults;
+    // Fire all providers simultaneously; yield as each one completes
+    final controller = StreamController<List<TrendingPlaylist>>();
+    int pending = 4;
+
+    void handleResult(List<TrendingPlaylist> result) {
+      addFiltered(result);
+      if (accumulated.isNotEmpty) {
+        controller.add(List.from(accumulated));
+      }
+      pending--;
+      if (pending == 0) controller.close();
+    }
+
+    _searchAppleMusic(customQuery, countryCode ?? country)
+        .then(handleResult)
+        .catchError((_) => handleResult([]));
+    _searchYouTube(customQuery ?? "Top $country $year")
+        .then(handleResult)
+        .catchError((_) => handleResult([]));
+    _searchAudius(customQuery ?? country)
+        .then(handleResult)
+        .catchError((_) => handleResult([]));
+    _searchDeezer(customQuery ?? "Top $country")
+        .then(handleResult)
+        .catchError((_) => handleResult([]));
+
+    await for (final batch in controller.stream) {
+      yield batch;
+    }
+
+    if (accumulated.isNotEmpty) {
+      _cache[cacheKey] = accumulated;
+    }
   }
+
+
+  /// Legacy Future-based wrapper — awaits the full stream.
+  Future<List<TrendingPlaylist>> searchTrending(
+    String country,
+    String year, {
+    String? countryCode,
+    String? customQuery,
+  }) async {
+    List<TrendingPlaylist> last = [];
+    await for (final batch in searchTrendingStream(
+      country,
+      year,
+      countryCode: countryCode,
+      customQuery: customQuery,
+    )) {
+      last = batch;
+    }
+    return last;
+  }
+
 
   // ─────────────────────────────────────────────────────────────────────────
   // APPLE MUSIC — public RSS API, no authentication required
@@ -785,11 +833,22 @@ class TrendingService {
 
       // 3. YouTube Handling
       if (playlist.provider == 'YouTube') {
-        List<Video> videos = await _yt.playlists
-            .getVideos(playlist.id)
-            .toList();
+        // Fast path: parse ytInitialData from the playlist page. A single
+        // request gives titles, channels and thumbnails, avoiding the
+        // youtube_explode_dart parser (which returns no videos anymore) and
+        // its per-video calls (which get rate limited).
+        final scraped = await _scrapeYouTubePlaylistTracks(playlist.id);
+        if (scraped.isNotEmpty) return scraped;
 
-        // Fallback for broken playlist parser in youtube_explode_dart
+        // Fallback: youtube_explode_dart playlist parser
+        List<Video> videos = [];
+        try {
+          videos = await _yt.playlists.getVideos(playlist.id).toList();
+        } catch (e) {
+          LogService().log('YouTube getVideos error: $e');
+        }
+
+        // Last resort: extract raw video ids and resolve them individually
         if (videos.isEmpty) {
           try {
             final response = await http.get(
@@ -797,17 +856,23 @@ class TrendingService {
             );
             if (response.statusCode == 200) {
               final videoIdRegex = RegExp(r'"videoId":"([^"]{11})"');
-              final matches = videoIdRegex.allMatches(response.body);
-              final Set<String> videoIds = {};
-              for (var match in matches) {
-                videoIds.add(match.group(1)!);
-              }
+              final Set<String> videoIds = videoIdRegex
+                  .allMatches(response.body)
+                  .map((m) => m.group(1)!)
+                  .toSet();
               if (videoIds.isNotEmpty) {
-                // Fetch the first 25 unique videos in parallel to load the playlist fast
-                final futures = videoIds
-                    .take(25)
-                    .map((id) => _yt.videos.get(id));
-                videos = await Future.wait(futures);
+                // Resolve the first 25 unique videos in parallel, skipping
+                // any that fail (e.g. rate limiting) instead of aborting.
+                final futures = videoIds.take(25).map((id) async {
+                  try {
+                    return await _yt.videos.get(id);
+                  } catch (_) {
+                    return null;
+                  }
+                });
+                videos = (await Future.wait(futures))
+                    .whereType<Video>()
+                    .toList();
               }
             }
           } catch (e) {
@@ -880,6 +945,262 @@ class TrendingService {
     }
     return [];
   }
+
+  /// Scrapes a YouTube playlist page and builds the track list from its
+  /// embedded `ytInitialData` payload. Handles both the current `lockupViewModel`
+  /// layout and the legacy `playlistVideoRenderer` layout.
+  Future<List<Map<String, String>>> _scrapeYouTubePlaylistTracks(
+    String playlistId,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://www.youtube.com/playlist?list=$playlistId'),
+      );
+      if (response.statusCode != 200) {
+        LogService().log(
+          'YouTube playlist page status ${response.statusCode} for $playlistId',
+        );
+        return [];
+      }
+
+      final raw = _extractYtInitialData(response.body);
+      if (raw == null) return [];
+
+      final entries = <_YtPlaylistEntry>[];
+      _collectYtPlaylistEntries(jsonDecode(raw), playlistId, entries);
+      if (entries.isEmpty) return [];
+
+      entries.sort((a, b) {
+        final ia = a.index;
+        final ib = b.index;
+        if (ia != null && ib != null) return ia.compareTo(ib);
+        if (ia != null) return -1;
+        if (ib != null) return 1;
+        return a.position.compareTo(b.position);
+      });
+
+      final seen = <String>{};
+      final tracks = <Map<String, String>>[];
+      for (final entry in entries) {
+        if (!seen.add(entry.videoId)) continue;
+        tracks.add({
+          'title': entry.title,
+          'artist': MergeUtils.cleanArtistName(entry.author),
+          'album': '',
+          'image': entry.image,
+          'id': entry.videoId,
+          'provider': 'YouTube',
+          'releaseDate': '',
+        });
+      }
+      return tracks;
+    } catch (e) {
+      LogService().log('YouTube playlist scrape error: $e');
+      return [];
+    }
+  }
+}
+
+/// A single video discovered while scraping a YouTube playlist page.
+class _YtPlaylistEntry {
+  final String videoId;
+  final String title;
+  final String author;
+  final String image;
+  final int? index;
+  final int position;
+
+  const _YtPlaylistEntry({
+    required this.videoId,
+    required this.title,
+    required this.author,
+    required this.image,
+    required this.index,
+    required this.position,
+  });
+
+  /// Builds an entry from the current `lockupViewModel` layout.
+  static _YtPlaylistEntry? fromLockup(
+    Map<dynamic, dynamic> lockup,
+    String playlistId,
+    int position,
+  ) {
+    if (lockup['contentType'] != 'LOCKUP_CONTENT_TYPE_VIDEO') return null;
+    final videoId = lockup['contentId']?.toString() ?? '';
+    if (videoId.isEmpty) return null;
+
+    final watch = _deep(lockup, ['rendererContext', 'commandContext', 'onTap',
+        'innertubeCommand', 'watchEndpoint']);
+    if (watch is Map) {
+      final watchPlaylistId = watch['playlistId']?.toString() ?? '';
+      if (watchPlaylistId.isNotEmpty && watchPlaylistId != playlistId) {
+        return null;
+      }
+    }
+
+    final title =
+        _deep(lockup, ['metadata', 'lockupMetadataViewModel', 'title', 'content'])
+            ?.toString() ??
+        '';
+
+    var author = '';
+    final rows = _deep(lockup, [
+      'metadata', 'lockupMetadataViewModel', 'metadata',
+      'contentMetadataViewModel', 'metadataRows',
+    ]);
+    if (rows is List && rows.isNotEmpty) {
+      final parts = (rows.first is Map) ? rows.first['metadataParts'] : null;
+      if (parts is List && parts.isNotEmpty) {
+        author = _deep(parts.first, ['text', 'content'])?.toString() ?? '';
+      }
+    }
+
+    var image = '';
+    final sources = _deep(lockup, [
+      'contentImage', 'thumbnailViewModel', 'image', 'sources'
+    ]);
+    if (sources is List && sources.isNotEmpty) {
+      image = _deep(sources.last, ['url'])?.toString() ?? '';
+    }
+    if (image.isEmpty) {
+      image = 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+    }
+
+    return _YtPlaylistEntry(
+      videoId: videoId,
+      title: title,
+      author: author,
+      image: image,
+      index: watch is Map ? (watch['index'] as num?)?.toInt() : null,
+      position: position,
+    );
+  }
+
+  /// Builds an entry from the legacy `playlistVideoRenderer` layout.
+  static _YtPlaylistEntry? fromLegacy(
+    Map<dynamic, dynamic> renderer,
+    int position,
+  ) {
+    final videoId = renderer['videoId']?.toString() ?? '';
+    if (videoId.isEmpty) return null;
+
+    var title = '';
+    final titleNode = renderer['title'];
+    if (titleNode is Map) {
+      final runs = titleNode['runs'];
+      if (runs is List && runs.isNotEmpty) {
+        title = _deep(runs.first, ['text'])?.toString() ?? '';
+      }
+      if (title.isEmpty) {
+        title = titleNode['simpleText']?.toString() ?? '';
+      }
+    }
+
+    var author = '';
+    final byline = renderer['shortBylineText'] ?? renderer['longBylineText'];
+    if (byline is Map) {
+      final runs = byline['runs'];
+      if (runs is List && runs.isNotEmpty) {
+        author = _deep(runs.first, ['text'])?.toString() ?? '';
+      }
+    }
+
+    var image = '';
+    final thumbnail = renderer['thumbnail'];
+    if (thumbnail is Map) {
+      final thumbs = thumbnail['thumbnails'];
+      if (thumbs is List && thumbs.isNotEmpty) {
+        image = _deep(thumbs.last, ['url'])?.toString() ?? '';
+      }
+    }
+    if (image.isEmpty) {
+      image = 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+    }
+
+    return _YtPlaylistEntry(
+      videoId: videoId,
+      title: title,
+      author: author,
+      image: image,
+      index: null,
+      position: position,
+    );
+  }
+}
+
+/// Recursively collects playlist video entries from a decoded JSON tree.
+void _collectYtPlaylistEntries(
+  dynamic node,
+  String playlistId,
+  List<_YtPlaylistEntry> out,
+) {
+  if (node is Map) {
+    final lockup = node['lockupViewModel'];
+    if (lockup is Map) {
+      final entry = _YtPlaylistEntry.fromLockup(lockup, playlistId, out.length);
+      if (entry != null) out.add(entry);
+    }
+    final legacy = node['playlistVideoRenderer'];
+    if (legacy is Map) {
+      final entry = _YtPlaylistEntry.fromLegacy(legacy, out.length);
+      if (entry != null) out.add(entry);
+    }
+    for (final value in node.values) {
+      _collectYtPlaylistEntries(value, playlistId, out);
+    }
+  } else if (node is List) {
+    for (final value in node) {
+      _collectYtPlaylistEntries(value, playlistId, out);
+    }
+  }
+}
+
+/// Extracts the `ytInitialData` JSON object from a YouTube page.
+String? _extractYtInitialData(String html) {
+  const markers = ['var ytInitialData = ', 'window["ytInitialData"] = '];
+  for (final marker in markers) {
+    final start = html.indexOf(marker);
+    if (start == -1) continue;
+    final jsonStart = start + marker.length;
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (int i = jsonStart; i < html.length; i++) {
+      final ch = html[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch == '\\') {
+          escaped = true;
+        } else if (ch == '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch == '"') {
+        inString = true;
+      } else if (ch == '{' || ch == '[') {
+        depth++;
+      } else if (ch == '}' || ch == ']') {
+        depth--;
+        if (depth == 0) return html.substring(jsonStart, i + 1);
+      }
+    }
+  }
+  return null;
+}
+
+/// Reads a nested value from a decoded JSON structure.
+dynamic _deep(dynamic node, List<String> path) {
+  dynamic current = node;
+  for (final key in path) {
+    if (current is Map && current.containsKey(key)) {
+      current = current[key];
+    } else {
+      return null;
+    }
+  }
+  return current;
 }
 
 /// Describes an Apple Music RSS chart endpoint.
