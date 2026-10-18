@@ -50,14 +50,38 @@ class RadioAudioHandler extends BaseAudioHandler
       audioFocus: AndroidAudioFocus.none,
     ),
     iOS: AudioContextIOS(
-      category: AVAudioSessionCategory.playAndRecord,
-      options: {
-        AVAudioSessionOptions.allowBluetooth,
-        AVAudioSessionOptions.defaultToSpeaker,
-        AVAudioSessionOptions.mixWithOthers,
-      },
+      category: AVAudioSessionCategory.playback,
+      options: const {},
     ),
   );
+
+  bool _wasPlayingBeforeInterruption = false;
+  StreamSubscription? _interruptionSubscription;
+  StreamSubscription? _becomingNoisySubscription;
+
+  Future<void> _setupAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(
+        const AudioSessionConfiguration.music().copyWith(
+          androidWillPauseWhenDucked: false,
+        ),
+      );
+
+      _interruptionSubscription?.cancel();
+      _interruptionSubscription = null;
+
+      _becomingNoisySubscription?.cancel();
+      _becomingNoisySubscription = session.becomingNoisyEventStream.listen((_) {
+        if (_player.state == PlayerState.playing) {
+          LogService().log("AudioSession: becoming noisy. Pausing active playback.");
+          pause();
+        }
+      });
+    } catch (e) {
+      LogService().log("AudioSession setup error: $e");
+    }
+  }
 
   Future<void> _activateAudioSession() async {
     try {
@@ -67,6 +91,7 @@ class RadioAudioHandler extends BaseAudioHandler
       LogService().log("AudioSession error: $e");
     }
   }
+
   void setCrossfadeDuration(int seconds) {
     _crossfadeSeconds = seconds;
     LogService().log(
@@ -81,10 +106,6 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _stopRequested = false; // User explicitly stopped: block auto-restart/recovery
   bool _isCurrentSongInFavorites = false; // Flag for Android Auto heart icon
   Duration? _handoffDuration; // Bridge duration during crossfade
-
-  // Phone-call interruption state
-  bool _interruptedByCall = false;  // True while a phone call is in progress
-  bool _callInterruptedAsRadio = false; // True if it was radio (not playlist) when call began
 
   static const _heartFilledControl = MediaControl(
     androidIcon: 'drawable/ic_favorite',
@@ -115,7 +136,7 @@ class RadioAudioHandler extends BaseAudioHandler
   String? _cachedLanguageCode;
   static const int _maxRetries = 5;
   int _currentSessionId = 0;
-  final double _volume = 1.0;
+  double _volume = 1.0;
   Duration _currentPosition = Duration.zero;
   String? _currentPlayingPlaylistId;
 
@@ -149,8 +170,6 @@ class RadioAudioHandler extends BaseAudioHandler
       Duration.zero; // Local track for position offset
   bool get _isAudioPlaying =>
       _player.state == PlayerState.playing || playbackState.value.playing;
-  Timer? _analyticsHeartbeatTimer;
-  DateTime? _lastHeartbeatTime;
   Future<void>? _firebaseInitFuture;
 
   Future<void> _ensureFirebase() async {
@@ -248,34 +267,128 @@ class RadioAudioHandler extends BaseAudioHandler
     _recognitionApiService.cancel();
     _lastRecognitionTime = null;
     _nextCheckDuration = null;
+    _isSearching = false;
 
     final currentItem = mediaItem.value;
-    if (currentItem != null && currentItem.duration != null) {
-      mediaItem.add(currentItem.copyWith(duration: null));
-    }
-    _broadcastState();
+    final isRadio = currentItem?.extras?['type'] != 'playlist_song';
 
-    _isSearching = false;
-    _broadcastState();
-
-    // Revert identifying state if it was showing
-    if (currentItem != null && (currentItem.extras?['isSearching'] == true)) {
-      Station? station;
-      try {
-        station = _stations.firstWhere((s) => s.url == currentItem.id);
-      } catch (_) {}
-      if (station != null) {
-        final newExtras = Map<String, dynamic>.from(currentItem.extras ?? {});
-        newExtras['isSearching'] = false;
+    // Only clear virtual recognition duration and countdown extras for radio stations!
+    // Playlist songs have a real track duration that must NEVER be set to null.
+    if (currentItem != null && isRadio) {
+      if (currentItem.duration != null ||
+          currentItem.extras?['countdown_start'] != null) {
+        final updatedExtras = Map<String, dynamic>.from(currentItem.extras ?? {});
+        updatedExtras.remove('countdown_start');
+        updatedExtras.remove('ui_duration');
         mediaItem.add(
-          currentItem.copyWith(
-            title: station.name,
-            artist: station.genre,
-            extras: newExtras,
-          ),
+          currentItem.copyWith(duration: null, extras: updatedExtras),
         );
       }
     }
+    _broadcastState();
+
+    // Revert identifying state if it was showing or if stopped
+    if (currentItem != null && currentItem.extras?['type'] != 'playlist_song') {
+      if (currentItem.extras?['isSearching'] == true || _stopRequested) {
+        _resetRadioToStationLogo();
+      }
+    }
+    _broadcastState();
+  }
+
+  void _resetRadioToStationLogo() {
+    final currentItem = mediaItem.value;
+    if (currentItem == null || currentItem.extras?['type'] == 'playlist_song') {
+      return;
+    }
+
+    final currentUrl = currentItem.extras?['url'] as String? ?? currentItem.id;
+    final cleanUrl = _cleanStationUrl(currentUrl);
+    final stationId = currentItem.extras?['stationId'];
+    final stationIdStr = stationId?.toString();
+
+    Station? station;
+    try {
+      station = _stations.firstWhere(
+        (s) =>
+            (stationIdStr != null && s.id.toString() == stationIdStr) ||
+            s.url == currentUrl ||
+            _cleanStationUrl(s.url) == cleanUrl ||
+            s.id.toString() == currentItem.id,
+      );
+    } catch (_) {}
+
+    if (station == null) {
+      try {
+        station = _stations.firstWhere((s) => s.name == currentItem.title);
+      } catch (_) {}
+    }
+
+    if (station != null) {
+      final updatedExtras = Map<String, dynamic>.from(currentItem.extras ?? {});
+      updatedExtras.remove('countdown_start');
+      updatedExtras.remove('ui_duration');
+      updatedExtras['isSearching'] = false;
+      updatedExtras['isRecognized'] = false;
+      updatedExtras['type'] = 'station';
+      updatedExtras['stationId'] = station.id;
+      updatedExtras['url'] = station.url;
+
+      final Uri? stationLogo = _sanitizeArtUri(
+        station.logo,
+        station.genre.isNotEmpty ? station.genre : station.name,
+      );
+
+      final restoredItem = currentItem.copyWith(
+        title: station.name,
+        artist: station.genre,
+        album: station.name,
+        artUri: stationLogo,
+        duration: null,
+        extras: updatedExtras,
+      );
+
+      mediaItem.add(_syncArtExtras(restoredItem));
+      _broadcastState();
+    }
+  }
+
+  void _startInitialRecognitionCountdown() {
+    _recognitionTimer?.cancel();
+    LogService().log(
+      "Recognition: Streaming started. Scheduling primary attempt in 5s on progress bar (Playing: $_isAudioPlaying)...",
+    );
+    _lastRecognitionTime = DateTime.now();
+    _nextCheckDuration = const Duration(seconds: 5);
+    if (mediaItem.value != null) {
+      final updatedExtras = Map<String, dynamic>.from(
+        mediaItem.value!.extras ?? {},
+      );
+      updatedExtras['countdown_start'] =
+          _lastRecognitionTime?.millisecondsSinceEpoch;
+      updatedExtras['ui_duration'] = 5000;
+      updatedExtras['isRecognized'] = false;
+      updatedExtras['hasExactOffset'] = false;
+
+      mediaItem.add(
+        _syncArtExtras(
+          mediaItem.value!.copyWith(
+            duration: _nextCheckDuration,
+            extras: updatedExtras,
+          ),
+        ),
+      );
+    }
+    _broadcastState();
+
+    _recognitionTimer = Timer(const Duration(seconds: 5), () {
+      if (_isAudioPlaying &&
+          _isACRCloudEnabled &&
+          mediaItem.value?.extras?['type'] != 'playlist_song') {
+        LogService().log("Recognition: 5s timer elapsed. Attempting recognition...");
+        _attemptRecognition();
+      }
+    });
   }
 
   // Skip context
@@ -327,10 +440,11 @@ class RadioAudioHandler extends BaseAudioHandler
 
       // 3. Configure (Use defaults to match Test Screen, add minimal config)
 
-      // 3. Configure both players for gapless/crossfade
+      // 3. Configure audio session with ducking support
+      await _setupAudioSession();
+
       try {
-        final session = await AudioSession.instance;
-        await session.configure(const AudioSessionConfiguration.music());
+        await AudioPlayer.global.setAudioContext(_appFocusContext);
       } catch (_) {}
 
       try {
@@ -423,7 +537,7 @@ class RadioAudioHandler extends BaseAudioHandler
     );
 
     _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
-      if (_expectingStop) return;
+      if (_expectingStop || _stopRequested || _wasPlayingBeforeInterruption) return;
 
       final currentPos = _currentPosition;
       final totalDuration = mediaItem.value?.duration;
@@ -486,10 +600,8 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       // 2. Initial Buffering Recovery
-      // During a skip transition, _expectingStop is true and the OLD player may
-      // still emit positions > 0. Don't clear _isInitialBuffering here — the
-      // transition code (_playYoutubeSong) will clear it once the NEW player starts.
-      if (_isInitialBuffering && !_expectingStop) {
+      // Streaming has truly started once the position starts advancing (> 0).
+      if (_isInitialBuffering && !_expectingStop && pos > Duration.zero) {
         _isInitialBuffering = false;
         _broadcastState(_player.state);
         _startStuckMonitor();
@@ -498,24 +610,7 @@ class RadioAudioHandler extends BaseAudioHandler
         if (_isAudioPlaying &&
             _isACRCloudEnabled &&
             mediaItem.value?.extras?['type'] != 'playlist_song') {
-          _recognitionTimer?.cancel();
-          LogService().log(
-            "Recognition: Scheduling primary attempt in 5s (Source: PositionChanged, Playing: $_isAudioPlaying)...",
-          );
-          _lastRecognitionTime = DateTime.now();
-          _nextCheckDuration = const Duration(seconds: 5);
-          if (mediaItem.value != null) {
-            mediaItem.add(
-              mediaItem.value!.copyWith(duration: _nextCheckDuration),
-            );
-          }
-          _recognitionTimer = Timer(const Duration(seconds: 5), () {
-            if (_isAudioPlaying &&
-                _isACRCloudEnabled &&
-                mediaItem.value?.extras?['type'] != 'playlist_song') {
-              _attemptRecognition();
-            }
-          });
+          _startInitialRecognitionCountdown();
         }
         return;
       }
@@ -552,6 +647,7 @@ class RadioAudioHandler extends BaseAudioHandler
 
   RadioAudioHandler() {
     _stations = [];
+    _setupAudioSession();
     // Don't wait for futures in constructor, but start them
     _initializePlayer();
     _initializeBackgroundState();
@@ -599,7 +695,8 @@ class RadioAudioHandler extends BaseAudioHandler
           if (mediaItem.value?.extras?['type'] == 'playlist_song') {
             _player.pause();
           } else {
-            _player.stop(); // Clear buffer for radio
+            _player.stop();
+            _player.release(); // Clear buffer for radio
           }
 
           _isRetryPending = true;
@@ -617,79 +714,6 @@ class RadioAudioHandler extends BaseAudioHandler
           _retryPlayback();
         }
       }
-    });
-    // Register phone-call interruption listener
-    _setupCallInterruptionListener();
-  }
-
-  /// Listens to [AudioSession.interruptionEventStream] and handles phone calls.
-  ///
-  /// Rules:
-  ///   • Radio  → stop completely; on call end, relaunch the same station.
-  ///   • Playlist → pause; on call end, resume.
-  void _setupCallInterruptionListener() {
-    AudioSession.instance.then((session) {
-      // Subscription lives for the full lifetime of the singleton – no need to store it
-      session.interruptionEventStream.listen((
-        AudioInterruptionEvent event,
-      ) {
-        if (event.begin) {
-          // --- Call / interruption STARTED ---
-          // Only act if we are actually playing something
-          if (!playbackState.value.playing &&
-              _player.state != PlayerState.playing) {
-            return;
-          }
-
-          final isRadio = mediaItem.value?.extras?['type'] != 'playlist_song';
-
-          _interruptedByCall = true;
-          _callInterruptedAsRadio = isRadio;
-
-          LogService().log(
-            'CallInterruption: BEGIN – ${isRadio ? "radio" : "playlist"}'
-          );
-
-          if (isRadio) {
-            // Stop the radio stream entirely (it cannot be resumed in place)
-            _stopRequested = false; // keep recovery unlocked so we can relaunch
-            _player.stop().catchError((_) {});
-            _nextPlayer.stop().catchError((_) {});
-            _broadcastState(PlayerState.stopped);
-          } else {
-            // Pause the playlist song so position is preserved
-            _player.pause().catchError((_) {});
-            _broadcastState(PlayerState.paused);
-          }
-        } else {
-          // --- Call / interruption ENDED ---
-          if (!_interruptedByCall) return;
-          _interruptedByCall = false;
-
-          LogService().log(
-            'CallInterruption: END – resuming ${_callInterruptedAsRadio ? "radio" : "playlist"}'
-          );
-
-          if (_callInterruptedAsRadio) {
-            // Relaunch the radio stream from scratch
-            final item = mediaItem.value;
-            if (item != null) {
-              final String radioUrl =
-                  item.extras?['url'] as String? ?? item.id;
-              playFromUri(Uri.parse(radioUrl), {
-                ...?item.extras,
-                'user_initiated': true,
-              });
-            }
-          } else {
-            // Resume the playlist song from where it was paused
-            _activateAudioSession()
-                .then((_) => _player.resume())
-                .catchError((_) {});
-            _broadcastState(PlayerState.playing);
-          }
-        }
-      });
     });
   }
 
@@ -710,7 +734,6 @@ class RadioAudioHandler extends BaseAudioHandler
               screenName: 'AA Background AutoStart',
               screenClass: 'AutoService',
             );
-            _startAnalyticsHeartbeat();
           })
           .catchError((e) {
             LogService().log(
@@ -798,9 +821,6 @@ class RadioAudioHandler extends BaseAudioHandler
         mediaItem.add(item);
         // Broadcast stopped state with this item to satisfy AA immediately
         _broadcastState(PlayerState.stopped);
-
-        // Ensure heartbeat is stopped on restore
-        _stopAnalyticsHeartbeat();
       }
     } catch (_) {}
   }
@@ -1492,13 +1512,24 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> pause() async {
     _isInitialBuffering = false;
     _expectingStop = false;
+    final isRadio = mediaItem.value?.extras?['type'] != 'playlist_song';
     try {
-      await _player.pause();
-      _recognitionTimer?.cancel();
+      if (isRadio) {
+        // Stop radio completely to drop network buffer and prevent stale stream playback
+        try {
+          await _player.stop();
+          await _player.release();
+          await _nextPlayer.stop();
+          await _nextPlayer.release();
+        } catch (_) {}
+        _resetRadioToStationLogo();
+      } else {
+        await _player.pause();
+      }
+      _stopRecognition();
     } catch (_) {}
     // Manually update state so UI knows we paused immediately
     _logAnalyticsEvent('toggle_play', {'action': 'pause'});
-    _stopAnalyticsHeartbeat();
     _broadcastState(PlayerState.paused);
   }
 
@@ -1511,8 +1542,13 @@ class RadioAudioHandler extends BaseAudioHandler
     // Explicit user stop: block all auto-restart/recovery (retry, watchdog,
     // connectivity restore, AA auto-start) so the music stays stopped.
     _stopRequested = true;
+    _wasPlayingBeforeInterruption = false;
     _isRetryPending = false;
     _stopRecognition();
+    final isRadio = mediaItem.value?.extras?['type'] != 'playlist_song';
+    if (isRadio) {
+      _resetRadioToStationLogo();
+    }
     _isInitialBuffering = false;
 
     // Force-clear any in-progress transition so a pending swap/crossfade
@@ -1522,9 +1558,14 @@ class RadioAudioHandler extends BaseAudioHandler
     _stuckSecondsCount = 0;
     try {
       await _player.stop();
-      await _nextPlayer.stop(); // Ensure both are stopped on explicit stop
+      if (isRadio) {
+        await _player.release();
+      }
+      await _nextPlayer.stop();
+      if (isRadio) {
+        await _nextPlayer.release();
+      }
     } catch (_) {}
-    _stopAnalyticsHeartbeat();
     _broadcastState(PlayerState.stopped);
     await super.stop();
   }
@@ -1538,10 +1579,11 @@ class RadioAudioHandler extends BaseAudioHandler
     _stopRequested = false; // User pressed play: cancel any explicit stop
     
     final currentItem = mediaItem.value;
-    final isRadio = currentItem?.extras?['type'] == 'station';
+    final isRadio = currentItem?.extras?['type'] != 'playlist_song';
 
-    // If paused, just resume without reloading
-    if (_player.state == PlayerState.paused) {
+    // If paused, resume directly ONLY for playlist songs (preserving position).
+    // For radio stations, NEVER resume obsolete buffered chunks: re-fetch live stream fresh!
+    if (!isRadio && _player.state == PlayerState.paused) {
       _expectingStop = false;
       try {
         await _activateAudioSession();
@@ -1550,19 +1592,10 @@ class RadioAudioHandler extends BaseAudioHandler
         _handleFatalPlayerError("Resume failed (State mismatch): $e");
         return;
       }
-      // State will be updated by listener, but we can force it for responsiveness
       if (logEvent) {
         _logAnalyticsEvent('toggle_play', {'action': 'play'});
       }
       _broadcastState(PlayerState.playing);
-      _startAnalyticsHeartbeat();
-
-      // Restart Recognition Cycle if Radio Mode
-      if (_isACRCloudEnabled &&
-          mediaItem.value?.extras?['type'] != 'playlist_song') {
-        LogService().log("Attempting Recognition...6");
-        _attemptRecognition();
-      }
       return;
     }
 
@@ -1572,7 +1605,6 @@ class RadioAudioHandler extends BaseAudioHandler
         _logAnalyticsEvent('toggle_play', {'action': 'play'});
       }
 
-      // AA FIX: For radio stations, route through playFromMediaId with user_initiated:true.
       if (isRadio) {
         String stationUrl = currentItem.extras?['url'] as String? ?? currentItem.id;
         stationUrl = _cleanStationUrl(stationUrl);
@@ -1590,7 +1622,23 @@ class RadioAudioHandler extends BaseAudioHandler
           logEvent,
         );
       }
-      _startAnalyticsHeartbeat();
+      return;
+    }
+
+    // Fallback: If no current item but stations exist, start the first station
+    if (_stations.isNotEmpty) {
+      final s = _stations.first;
+      await playFromUri(
+        Uri.parse(s.url),
+        {
+          'type': 'station',
+          'title': s.name,
+          'artUri': s.logo,
+          'stationId': s.id,
+          'user_initiated': true,
+        },
+        logEvent,
+      );
     }
   }
 
@@ -1762,8 +1810,10 @@ class RadioAudioHandler extends BaseAudioHandler
           'duration': finalDuration,
         };
         _nextPlayerSourceUrl = videoId;
+        await _nextPlayer.setAudioContext(_appFocusContext);
+        await _nextPlayer.setVolume(0.0);
         await _nextPlayer.setSource(UrlSource(videoId));
-        await _nextPlayer.stop();
+        await _nextPlayer.pause();
         LogService().log("Preload: READY for HTTP Stream $videoId");
         return;
       }
@@ -1785,6 +1835,8 @@ class RadioAudioHandler extends BaseAudioHandler
             filePath.endsWith('.mst') ||
             filePath.contains('offline_music');
 
+        await _nextPlayer.setAudioContext(_appFocusContext);
+        await _nextPlayer.setVolume(0.0);
         if (isEncrypted) {
           final tempFile = await EncryptionService().decryptToTempFile(
             filePath,
@@ -1793,6 +1845,7 @@ class RadioAudioHandler extends BaseAudioHandler
         } else {
           await _nextPlayer.setSource(DeviceFileSource(filePath));
         }
+        await _nextPlayer.pause();
 
         _cachedNextSongUrl = filePath;
 
@@ -1814,7 +1867,6 @@ class RadioAudioHandler extends BaseAudioHandler
           'duration': finalDuration,
         };
         _nextPlayerSourceUrl = filePath;
-        await _nextPlayer.stop();
         return;
       }
 
@@ -1849,9 +1901,11 @@ class RadioAudioHandler extends BaseAudioHandler
 
       // Set URL flag BEFORE loading source so crossfade trigger sees it immediately
       _nextPlayerSourceUrl = streamUrl;
+      await _nextPlayer.setAudioContext(_appFocusContext);
+      await _nextPlayer.setVolume(0.0);
       await _nextPlayer.setSource(UrlSource(streamUrl));
-      // Keep it paused/stopped while buffering, ready for resume
-      await _nextPlayer.stop();
+      // Keep it primed and paused at volume 0.0, ready for instant crossfade resume
+      await _nextPlayer.pause();
       LogService().log(
         "Preload: READY for $videoId (${video.duration?.inSeconds}s). Crossfade can now trigger.",
       );
@@ -2201,6 +2255,7 @@ class RadioAudioHandler extends BaseAudioHandler
     } else if (name == 'setVolume') {
       final vol = extras?['volume'] as double?;
       if (vol != null) {
+        _volume = vol;
         try {
           await _player.setVolume(vol);
         } catch (_) {}
@@ -2762,61 +2817,128 @@ class RadioAudioHandler extends BaseAudioHandler
         extras: extras,
       );
 
-      // 2. START PLAYBACK
+      // 2. START PLAYBACK ON INCOMING PLAYER
       final incomingPlayer = _nextPlayer;
       final outgoingPlayer = _player;
 
-      await incomingPlayer.setVolume(0.0);
-      await _activateAudioSession();
-      await incomingPlayer.resume();
+      // Ensure both players have audioFocus none so neither pauses the other
+      try {
+        await incomingPlayer.setAudioContext(_appFocusContext);
+        await outgoingPlayer.setAudioContext(_appFocusContext);
+      } catch (_) {}
 
-      // Wait for play confirmation (max 5s)
+      await incomingPlayer.setVolume(0.0);
+
+      if (incomingPlayer.state == PlayerState.paused) {
+        await incomingPlayer.resume();
+      } else if (incomingPlayer.state == PlayerState.stopped) {
+        final streamUrl = _cachedNextSongUrl ?? _nextPlayerSourceUrl;
+        if (streamUrl != null) {
+          if (streamUrl.startsWith('http://') || streamUrl.startsWith('https://')) {
+            await incomingPlayer.play(UrlSource(streamUrl), volume: 0.0);
+          } else {
+            await incomingPlayer.play(DeviceFileSource(streamUrl), volume: 0.0);
+          }
+        } else {
+          await incomingPlayer.resume();
+        }
+      } else {
+        await incomingPlayer.resume();
+      }
+
+      // Wait for incoming player to enter playing state (max 2s)
       int retry = 0;
-      while (incomingPlayer.state != PlayerState.playing && retry < 50) {
+      while (incomingPlayer.state != PlayerState.playing && retry < 20) {
         await Future.delayed(const Duration(milliseconds: 100));
         retry++;
       }
 
-      // 3. ROBUST FADE LOOP (Time-based for background reliability)
+      // 3. ROBUST FADE LOOP (Continuous audio blending and real-time counter updates)
       if (_crossfadeSeconds > 0) {
         final startTime = DateTime.now();
         final totalDurationMs = _crossfadeSeconds * 1000;
         bool hasSwappedMetadata = false;
+        DateTime lastUiUpdate = startTime;
 
         while (true) {
           if (_currentSessionId != sessionId) break;
 
-          final elapsedMs = DateTime.now().difference(startTime).inMilliseconds;
+          final now = DateTime.now();
+          final elapsedMs = now.difference(startTime).inMilliseconds;
           if (elapsedMs >= totalDurationMs) break;
 
-          double ratio = elapsedMs / totalDurationMs;
-          await incomingPlayer.setVolume(ratio);
-          await outgoingPlayer.setVolume(1.0 - ratio);
+          final double ratio = (elapsedMs / totalDurationMs).clamp(0.0, 1.0);
+          final double volIn = (ratio * _volume).clamp(0.0, 1.0);
+          final double volOut = ((1.0 - ratio) * _volume).clamp(0.0, 1.0);
 
-          // Mid-point swap
+          await incomingPlayer.setVolume(volIn);
+          await outgoingPlayer.setVolume(volOut);
+
+          // Update position counter so the UI continues advancing seamlessly
+          if (!hasSwappedMetadata) {
+            try {
+              final pos = await outgoingPlayer.getCurrentPosition();
+              if (pos != null) _currentPosition = pos;
+            } catch (_) {}
+          } else {
+            try {
+              final pos = await incomingPlayer.getCurrentPosition();
+              if (pos != null) _currentPosition = pos;
+            } catch (_) {}
+          }
+
+          // Mid-point metadata and primary player swap
           if (ratio >= 0.5 && !hasSwappedMetadata) {
             hasSwappedMetadata = true;
             _player = incomingPlayer;
             _nextPlayer = outgoingPlayer;
             _nextPlayerSourceUrl = null;
+
+            if (_playlistQueue.isNotEmpty) {
+              try {
+                final idx = _playlistQueue.indexWhere(
+                  (item) => item.extras?['songId'] == nextSongId,
+                );
+                if (idx != -1) _playlistIndex = idx;
+              } catch (_) {}
+            }
+
+            // Sync incoming position before broadcasting new MediaItem
+            final inPos = await incomingPlayer.getCurrentPosition() ?? Duration(milliseconds: elapsedMs);
+            _currentPosition = inPos;
+
             mediaItem.add(nextItem);
             _broadcastState(PlayerState.playing);
             _setupPlayerListeners();
             _hasTriggeredPreload = false;
             _hasTriggeredEarlyStart = false;
+            lastUiUpdate = now;
             LogService().log(
-              "Crossfade: Mid-point metadata swap performed in background",
+              "Crossfade: Mid-point metadata swap performed smoothly",
             );
+          } else if (now.difference(lastUiUpdate).inMilliseconds >= 1000) {
+            // Periodically broadcast state every ~1s so the UI counter advances smoothly
+            lastUiUpdate = now;
+            _broadcastState(PlayerState.playing);
           }
 
-          // Small delay but ratio is absolute time-based, so it's robust against background lag
-          await Future.delayed(const Duration(milliseconds: 150));
+          await Future.delayed(const Duration(milliseconds: 100));
         }
       } else {
         // Instant swap for 0s crossfade
         _player = incomingPlayer;
         _nextPlayer = outgoingPlayer;
         _nextPlayerSourceUrl = null;
+        if (_playlistQueue.isNotEmpty) {
+          try {
+            final idx = _playlistQueue.indexWhere(
+              (item) => item.extras?['songId'] == nextSongId,
+            );
+            if (idx != -1) _playlistIndex = idx;
+          } catch (_) {}
+        }
+        final inPos = await incomingPlayer.getCurrentPosition() ?? Duration.zero;
+        _currentPosition = inPos;
         mediaItem.add(nextItem);
         _broadcastState(PlayerState.playing);
         _setupPlayerListeners();
@@ -2827,7 +2949,7 @@ class RadioAudioHandler extends BaseAudioHandler
       // 4. CLEANUP
       _isSwapping = false;
       _expectingStop = false;
-      await incomingPlayer.setVolume(1.0);
+      await incomingPlayer.setVolume(_volume);
 
       if (_playlistQueue.isNotEmpty) {
         try {
@@ -2839,7 +2961,8 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       await outgoingPlayer.stop();
-      await outgoingPlayer.setVolume(1.0);
+      await outgoingPlayer.setVolume(_volume);
+      _broadcastState(PlayerState.playing);
       LogService().log("Crossfade Complete ($title)");
     } catch (e) {
       LogService().log("Crossfade Audio Error: $e");
@@ -2962,9 +3085,10 @@ class RadioAudioHandler extends BaseAudioHandler
     _currentPlayingPlaylistId = null;
     _playlistIndex = -1;
 
-    // Stop existing playback immediately
+    // Stop and release existing playback immediately to purge stale network buffers
     try {
       await _player.stop();
+      await _player.release();
     } catch (_) {}
 
     // 2. Update Metadata & State IMMEDIATELY
@@ -3090,8 +3214,15 @@ class RadioAudioHandler extends BaseAudioHandler
         } else {
           try {
             await _player.stop();
+            await _player.release();
+            await _nextPlayer.stop();
+            await _nextPlayer.release();
           } catch (_) {}
         }
+        try {
+          await _player.setAudioContext(_appFocusContext);
+          await _nextPlayer.setAudioContext(_appFocusContext);
+        } catch (_) {}
 
         // 2. Resolve URL
         final finalUrl = await _resolveStreamUrl(
@@ -3102,13 +3233,7 @@ class RadioAudioHandler extends BaseAudioHandler
         if (_currentSessionId != sessionId) return;
 
         // 3. Configure & Play
-        await _initializePlayer();
-
-        if (extras?['type'] == 'playlist_song') {
-          await _player.setReleaseMode(ReleaseMode.release);
-        } else {
-          await _player.setReleaseMode(ReleaseMode.stop);
-        }
+        await _player.setReleaseMode(ReleaseMode.stop);
 
         String? mimeType;
         if (finalUrl.toLowerCase().contains(".m3u8")) {
@@ -3124,13 +3249,18 @@ class RadioAudioHandler extends BaseAudioHandler
         _consecutiveErrorCount = 0; // Reset on success
         _broadcastState(PlayerState.playing);
 
-        // Clear initial buffering after success
-        Future.delayed(const Duration(seconds: 1), () {
+        // Safety Fallback: Clear initial buffering after 8 seconds if position doesn't move
+        Future.delayed(const Duration(seconds: 8), () {
           if (_isInitialBuffering &&
               _currentSessionId == sessionId &&
               _player.state == PlayerState.playing) {
             _isInitialBuffering = false;
             _broadcastState();
+            if (_isAudioPlaying &&
+                _isACRCloudEnabled &&
+                mediaItem.value?.extras?['type'] != 'playlist_song') {
+              _startInitialRecognitionCountdown();
+            }
           }
         });
       } catch (e) {
@@ -3482,7 +3612,6 @@ class RadioAudioHandler extends BaseAudioHandler
       if (!_isInitialBuffering) {
         _expectingStop = false;
       }
-      _startAnalyticsHeartbeat();
 
       // Reset error counter on successful playback (not buffering)
       if (!_isInitialBuffering) {
@@ -3490,11 +3619,6 @@ class RadioAudioHandler extends BaseAudioHandler
       }
     } else {
       _stopStuckMonitor();
-      if (state == PlayerState.paused ||
-          state == PlayerState.stopped ||
-          state == PlayerState.completed) {
-        _stopAnalyticsHeartbeat();
-      }
     }
 
     // If we are pending a retry, don't clear notification
@@ -3794,9 +3918,6 @@ class RadioAudioHandler extends BaseAudioHandler
           name: 'last_interface',
           value: 'android_auto',
         );
-
-        // 3. Force start heartbeat to maintain active session while browsing
-        _startAnalyticsHeartbeat();
       }
       // Auto-start logic for Android Auto (First Run only)
       if (!_hasTriggeredEarlyStart &&
@@ -4594,9 +4715,18 @@ class RadioAudioHandler extends BaseAudioHandler
     final playlists = await _playlistService.loadPlaylists();
 
     // 1. Check Stations
+    Station? station;
     try {
-      final s = _stations.firstWhere((s) => s.url == mediaId);
+      final cleanTarget = _cleanStationUrl(mediaId);
+      station = _stations.firstWhere(
+        (s) =>
+            s.url == mediaId ||
+            _cleanStationUrl(s.url) == cleanTarget ||
+            s.id.toString() == mediaId,
+      );
+    } catch (_) {}
 
+    if (station != null) {
       // Update skip context based on where it was played from
       if (extras?['origin'] == 'favorites') {
         _radioSkipContext = 'favorites';
@@ -4604,15 +4734,15 @@ class RadioAudioHandler extends BaseAudioHandler
         _radioSkipContext = 'all';
       }
 
-      await playFromUri(Uri.parse(s.url), {
+      await playFromUri(Uri.parse(station.url), {
         'type': 'station',
-        'title': s.name,
-        'artUri': s.logo,
+        'title': station.name,
+        'artUri': station.logo,
         'user_initiated': true,
-        'stationId': s.id,
+        'stationId': station.id,
       });
       return;
-    } catch (_) {}
+    }
 
     // 2. Check Action Buttons (Play All / Shuffle)
     if (mediaId.startsWith('play_all_') || mediaId.startsWith('shuffle_all_')) {
@@ -5206,6 +5336,16 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     final result = await _recognitionApiService.identifyStream(streamUrl);
+
+    // Guard: If playback was stopped/paused or recognition cancelled during search
+    if (!_isAudioPlaying || !_isSearching || _stopRequested) {
+      LogService().log(
+        "RecognitionAPI: Search cancelled or playback stopped. Discarding match and ensuring station logo.",
+      );
+      _isSearching = false;
+      _resetRadioToStationLogo();
+      return;
+    }
 
     if (result != null && result.containsKey('track')) {
       final trackInfo = result['track'];
@@ -5885,100 +6025,7 @@ class RadioAudioHandler extends BaseAudioHandler
     return names[code] ?? 'Global';
   }
 
-  void _startAnalyticsHeartbeat() {
-    if (_lastHeartbeatTime != null) return; // Already running
-
-    _lastHeartbeatTime = DateTime.now();
-    // Initial pulse to trigger session activity - Increased to 10s for stronger engagement signal
-    _sendHeartbeatEvent(msec: _isInAndroidAutoMode ? 10000 : 5000);
-
-    // Log a screen view if in AA to ensure the session is marked as interactive
-    if (_isInAndroidAutoMode) {
-      _ensureFirebase().then((_) async {
-        await FirebaseAnalytics.instance.logScreenView(
-          screenName: 'AA Background Playback',
-          screenClass: 'AutoService',
-        );
-        // SOLUZIONE "FINALE" SOLO PER ANDROID AUTO:
-        // Poiché AA non apre mai l'app in primo piano, non c'è mai un "session_start".
-        // Inviando un secondo "screen_view" dopo 15 secondi, forziamo matematicamente GA4 
-        // a considerare questa sessione come "Engaged" (regola dei 2+ screen views).
-        await Future.delayed(const Duration(seconds: 15));
-        await FirebaseAnalytics.instance.logScreenView(
-          screenName: 'AA Background Playback',
-          screenClass: 'AutoService',
-        );
-      });
-    }
-    // Start the continuous heartbeat loop
-    _runHeartbeatLoop();
-  }
-
-  Future<void> _runHeartbeatLoop() async {
-    while (_lastHeartbeatTime != null) {
-      // Frequency set to 1 minute to ensure session active status for both AA and phone
-      final delay = const Duration(seconds: 60);
-      await Future.delayed(delay);
-
-      // Check if we should still be running
-      if (_lastHeartbeatTime == null) break;
-
-      if (_isAudioPlaying || _isInAndroidAutoMode) {
-        LogService().log(
-          "Analytics: Sending periodic heartbeat (Loop - AA: $_isInAndroidAutoMode, Playing: $_isAudioPlaying)...",
-        );
-        _lastHeartbeatTime = DateTime.now();
-        _sendHeartbeatEvent(msec: delay.inMilliseconds);
-      } else {
-        // If not playing and not in car, we stop the loop
-        _stopAnalyticsHeartbeat();
-        break;
-      }
-    }
-  }
-
-  void _stopAnalyticsHeartbeat() {
-    _analyticsHeartbeatTimer?.cancel();
-    _analyticsHeartbeatTimer = null;
-    _lastHeartbeatTime = null;
-  }
-
-  void _sendHeartbeatEvent({int msec = 60000}) {
-    final currentItem = mediaItem.value;
-
-    // L'evento custom originale che invia l'engagement time per le dashboard
-    _logAnalyticsEvent('heartbeat_engagement', {
-      'engagement_time_msec': msec,
-      'playback_type': currentItem?.extras?['type'] ?? 'unknown',
-      'is_android_auto': _isInAndroidAutoMode,
-      'session_active': 1,
-      'is_background': true,
-      'song_id': currentItem?.extras?['songId'] ?? currentItem?.id,
-    });
-
-    // Per forzare GA4 a considerare l'utente "Attivo" durante l'ascolto da AA a schermo spento
-    if (_isInAndroidAutoMode) {
-      _logAnalyticsEvent('user_engagement', {
-        'engagement_time_msec': msec,
-        'is_android_auto': true,
-      });
-    }
-  }
-
   void _handleUnifiedPosition(Duration pos) {
-    // 0. Heartbeat logic (driven by position to survive background doze mode)
-    if (_isAudioPlaying) {
-      final now = DateTime.now();
-      if (_lastHeartbeatTime == null ||
-          now.difference(_lastHeartbeatTime!).inSeconds >= 60) {
-        LogService().log(
-          "Analytics: Sending periodic heartbeat_engagement (via Position Listener)...",
-        );
-        _lastHeartbeatTime = now;
-        _sendHeartbeatEvent(msec: 60000);
-      }
-    }
-
     if (mediaItem.value?.extras?['type'] == 'playlist_song') {
       _currentPosition = pos;
     }
