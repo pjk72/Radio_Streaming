@@ -1,4 +1,4 @@
-﻿final Map<String, String> zh = {
+final Map<String, String> zh = {
   // Settings
   'language': '语言',
   'language_desc': '更改应用程序语言',
@@ -616,6 +616,7 @@
   'followed_artists_only': '仅关注艺术家',
   'followed_albums_only': '仅关注专辑',
   'filter_local_device': '仅显示场地',
+  'filter_incomplete_metadata': '仅显示元数据不完整的歌曲',
   'filter_invalid_tracks': '仅显示无效',
   'group_by_none_label': '不分组',
   'ad_offer_title': '获取下载积分',

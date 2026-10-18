@@ -1,4 +1,4 @@
-﻿final Map<String, String> ar = {
+final Map<String, String> ar = {
   'language': 'لغة',
   'language_desc': 'تغيير لغة التطبيق',
   'system': 'الافتراضي للنظام',
@@ -608,6 +608,7 @@
   'followed_artists_only': 'الفنانين المتابعين فقط',
   'followed_albums_only': 'الألبومات المُتابعة فقط',
   'filter_local_device': 'عرض الأماكن فقط',
+  'filter_incomplete_metadata': 'عرض البيانات الوصفية غير المكتملة فقط',
   'filter_invalid_tracks': 'عرض غير صالح فقط',
   'group_by_none_label': 'بدون تجميع',
   'ad_offer_title': 'احصل على اعتمادات التنزيل',

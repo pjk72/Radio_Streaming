@@ -676,6 +676,7 @@ final Map<String, String> en = {
   'followed_artists_only': 'Only Followed Artists',
   'followed_albums_only': 'Followed Albums only',
   'filter_local_device': 'Show only Venues',
+  'filter_incomplete_metadata': 'Show only incomplete metadata',
   'filter_invalid_tracks': 'Show only Invalid',
   'group_by_none_label': 'Without Grouping',
   'ad_offer_title': 'Get Download Credits',

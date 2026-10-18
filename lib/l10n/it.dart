@@ -699,6 +699,7 @@ final Map<String, String> it = {
   'followed_artists_only': 'Solo Artisti Seguiti',
   'followed_albums_only': 'Solo Album Seguiti',
   'filter_local_device': 'Mostra solo Locali',
+  'filter_incomplete_metadata': 'Mostra solo metadati incompleti',
   'filter_invalid_tracks': 'Mostra solo Non Validi',
   'group_by_none_label': 'Senza Raggruppamento',
   'success': 'Successo',

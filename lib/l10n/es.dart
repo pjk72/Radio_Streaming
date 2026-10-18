@@ -1,4 +1,4 @@
-﻿final Map<String, String> es = {
+final Map<String, String> es = {
   // Settings
   'language': 'Idioma',
   'language_desc': 'Cambiar el idioma de la aplicación',
@@ -637,6 +637,7 @@
   'followed_artists_only': 'Sólo artistas seguidos',
   'followed_albums_only': 'Solo álbumes seguidos',
   'filter_local_device': 'Mostrar solo lugares',
+  'filter_incomplete_metadata': 'Mostrar solo metadatos incompletos',
   'filter_invalid_tracks': 'Mostrar sólo Inválido',
   'group_by_none_label': 'Sin agrupar',
   'ad_offer_title': 'Obtenga créditos de descarga',

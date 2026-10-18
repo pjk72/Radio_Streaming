@@ -639,6 +639,7 @@ final Map<String, String> de = {
   'followed_artists_only': 'Nur verfolgte Künstler',
   'followed_albums_only': 'Nur verfolgte Alben',
   'filter_local_device': 'Nur Veranstaltungsorte anzeigen',
+  'filter_incomplete_metadata': 'Nur unvollständige Metadaten anzeigen',
   'filter_invalid_tracks': 'Nur Ungültig anzeigen',
   'group_by_none_label': 'Ohne Gruppierung',
   'ad_offer_title': 'Holen Sie sich Download-Credits',

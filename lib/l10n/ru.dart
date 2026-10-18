@@ -1,4 +1,4 @@
-﻿final Map<String, String> ru = {
+final Map<String, String> ru = {
   // Settings
   'language': 'Язык',
   'language_desc': 'Изменить язык приложения',
@@ -631,6 +631,7 @@
   'followed_artists_only': 'Только подписанные исполнители',
   'followed_albums_only': 'Только подписанные альбомы',
   'filter_local_device': 'Показать только места',
+  'filter_incomplete_metadata': 'Показать только неполные метаданные',
   'filter_invalid_tracks': 'Показать только недействительные',
   'group_by_none_label': 'Без группировки',
   'ad_offer_title': 'Получите кредиты на загрузку',

@@ -1264,7 +1264,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   }
 
   bool _showOnlyInvalid = false;
-  bool _showOnlyLocal = false;
+  bool _showOnlyIncompleteMetadata = false;
   bool _showFollowedArtistsOnly = false;
   bool _showFollowedAlbumsOnly = false;
   final TextEditingController _searchController = TextEditingController();
@@ -1354,14 +1354,28 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         false;
   }
 
-  bool get hasLocalSongs {
-    final rawPlaylist = rawEffectivePlaylist;
-    return (rawPlaylist?.creator == 'local') ||
-        (rawPlaylist?.songs.any(
-              (s) => s.localPath != null || s.id.startsWith('local_'),
-            ) ??
-            false);
+  bool _hasIncompleteMetadata(SavedSong song) {
+    final songYear = _extractSongYear(song);
+    final bool hasReleaseDate =
+        (song.releaseDate != null && song.releaseDate!.trim().isNotEmpty) ||
+        (songYear != null && songYear.isNotEmpty);
+
+    return (song.artUri == null || song.artUri!.isEmpty) ||
+        song.title.trim().isEmpty ||
+        song.artist.trim().isEmpty ||
+        song.artist.trim() == "SINC_METADATA" ||
+        song.album.trim().isEmpty ||
+        song.album.trim().toLowerCase() == "youtube" ||
+        song.duration == null ||
+        !hasReleaseDate;
   }
+
+  bool get hasIncompleteMetadataSongs {
+    final rawPlaylist = rawEffectivePlaylist;
+    return rawPlaylist?.songs.any(_hasIncompleteMetadata) ?? false;
+  }
+
+  bool get hasLocalSongs => hasIncompleteMetadataSongs;
 
   Playlist? _getEffectivePlaylist({required bool applyFilter}) {
     final provider = Provider.of<RadioProvider>(context, listen: false);
@@ -1440,10 +1454,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             .toList();
       }
 
-      if (_showOnlyLocal) {
-        filteredSongs = filteredSongs
-            .where((s) => s.localPath != null || s.id.startsWith('local_'))
-            .toList();
+      if (_showOnlyIncompleteMetadata) {
+        filteredSongs = filteredSongs.where(_hasIncompleteMetadata).toList();
       }
 
       if (_sortAlphabetical) {
@@ -2122,13 +2134,11 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         displayPlaylists = allPlaylists;
       }
 
-      // Apply Global Library Filters (Local / Invalid)
-      if (_showOnlyLocal) {
+      // Apply Global Library Filters (Incomplete Metadata / Invalid)
+      if (_showOnlyIncompleteMetadata) {
         displayPlaylists = displayPlaylists
             .where(
-              (p) => p.songs.any(
-                (s) => s.localPath != null || s.id.startsWith('local_'),
-              ),
+              (p) => p.songs.any(_hasIncompleteMetadata),
             )
             .toList();
       }
@@ -2145,9 +2155,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
 
     // Apply Global Library Filters to allSongs (used for Artist/Album views)
     List<SavedSong> filteredAllSongs = allSongs;
-    if (_showOnlyLocal) {
+    if (_showOnlyIncompleteMetadata) {
       filteredAllSongs = filteredAllSongs
-          .where((s) => s.localPath != null || s.id.startsWith('local_'))
+          .where(_hasIncompleteMetadata)
           .toList();
     }
     if (_showOnlyInvalid) {
@@ -2405,26 +2415,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                 children: [
                                   // Status Indicators (Selection Mode only)
                                   if (isSelectionActive) ...[
-                                    if (hasLocalSongs)
-                                      GestureDetector(
-                                        onTap: () =>
-                                            _handleAction('toggle_local'),
-                                        behavior: HitTestBehavior.opaque,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 6,
-                                            left: 4,
-                                          ),
-                                          child: Icon(
-                                            Icons.folder_rounded,
-                                            color: _showOnlyLocal
-                                                ? Theme.of(context).primaryColor
-                                                : headerContrastColor
-                                                      .withValues(alpha: 0.5),
-                                            size: 16,
-                                          ),
-                                        ),
-                                      ),
+                                    
                                     if (hasInvalidSongs)
                                       GestureDetector(
                                         onTap: () =>
@@ -3193,7 +3184,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           if (isNewSelection) {
             _selectedPlaylistId = playlist.id;
             _showOnlyInvalid = false;
-            _showOnlyLocal = false;
+            _showOnlyIncompleteMetadata = false;
             // TRIGGER PROACTIVE RESOLUTION
             if (_selectedPlaylistId != null) {
               final pl = Provider.of<RadioProvider>(context, listen: false)
@@ -4797,12 +4788,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               ? primaryColor
                               : Colors.white70,
                         ),
-                      if (hasLocalSongs || _showOnlyLocal)
+                      if (hasIncompleteMetadataSongs || _showOnlyIncompleteMetadata)
                         buildHeaderMenuItem(
-                          id: 'toggle_local',
-                          icon: Icons.folder_rounded,
-                          label: lang.translate('filter_local_device'),
-                          color: _showOnlyLocal ? primaryColor : Colors.white70,
+                          id: 'toggle_incomplete_metadata',
+                          icon: Icons.info_outline,
+                          label: lang.translate('filter_incomplete_metadata'),
+                          color: _showOnlyIncompleteMetadata ? primaryColor : Colors.white70,
                         ),
                       if (hasInvalidSongs || _showOnlyInvalid)
                         buildHeaderMenuItem(
@@ -8546,7 +8537,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   _selectedAlbum = null;
                   _searchController.clear();
                   _showOnlyInvalid = false;
-                  _showOnlyLocal = false;
+                  _showOnlyIncompleteMetadata = false;
 
                   if (isGroup) {
                     _selectedArtist = groupKey; // key for filtering
@@ -8745,7 +8736,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   _selectedPlaylistId = null;
                   _searchController.clear();
                   _showOnlyInvalid = false;
-                  _showOnlyLocal = false;
+                  _showOnlyIncompleteMetadata = false;
 
                   if (isGroup) {
                     _selectedAlbum = groupKey;
@@ -9445,8 +9436,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
               : Icons.bookmark_border;
         break;
       case 'toggle_local':
-        if (hasLocalSongs || _showOnlyLocal) icon = Icons.smartphone_rounded;
-        color = _showOnlyLocal ? Theme.of(context).primaryColor : color;
+      case 'toggle_incomplete_metadata':
+        if (hasIncompleteMetadataSongs || _showOnlyIncompleteMetadata) {
+          icon = Icons.info_outline;
+        }
+        color = _showOnlyIncompleteMetadata
+            ? Theme.of(context).primaryColor
+            : color;
         break;
       case 'toggle_invalid':
         if (hasInvalidSongs || _showOnlyInvalid) icon = Icons.warning_rounded;
@@ -9530,7 +9526,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       case 'toggle_albums':
         return _viewMode == MetadataViewMode.albums;
       case 'toggle_local':
-        return hasLocalSongs || _showOnlyLocal;
+      case 'toggle_incomplete_metadata':
+        return hasIncompleteMetadataSongs || _showOnlyIncompleteMetadata;
       default:
         return false;
     }
@@ -9568,7 +9565,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       case 'toggle_albums':
         return lang.translate('followed_albums_only');
       case 'toggle_local':
-        return lang.translate('filter_local_device');
+      case 'toggle_incomplete_metadata':
+        return lang.translate('filter_incomplete_metadata');
       case 'toggle_invalid':
         return lang.translate('filter_invalid_tracks');
       default:
@@ -9687,7 +9685,10 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         _persistAlbumFilter(_showFollowedAlbumsOnly);
         break;
       case 'toggle_local':
-        setState(() => _showOnlyLocal = !_showOnlyLocal);
+      case 'toggle_incomplete_metadata':
+        setState(
+          () => _showOnlyIncompleteMetadata = !_showOnlyIncompleteMetadata,
+        );
         break;
       case 'toggle_invalid':
         setState(() => _showOnlyInvalid = !_showOnlyInvalid);

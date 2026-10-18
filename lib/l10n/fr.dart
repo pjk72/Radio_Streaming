@@ -1,4 +1,4 @@
-﻿final Map<String, String> fr = {
+final Map<String, String> fr = {
   // Settings
   'language': 'Langue',
   'language_desc': 'Changer la langue de l\'application',
@@ -641,6 +641,7 @@
   'followed_artists_only': 'Uniquement les artistes suivis',
   'followed_albums_only': 'Albums suivis uniquement',
   'filter_local_device': 'Afficher uniquement les sites',
+  'filter_incomplete_metadata': 'Afficher uniquement les métadonnées incomplètes',
   'filter_invalid_tracks': 'Afficher uniquement Invalide',
   'group_by_none_label': 'Sans regroupement',
   'ad_offer_title': 'Obtenez des crédits de téléchargement',
