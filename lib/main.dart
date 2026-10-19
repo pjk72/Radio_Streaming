@@ -111,7 +111,7 @@ Future<void> main() async {
       androidNotificationClickStartsActivity: true,
       androidResumeOnClick: true,
       androidShowNotificationBadge: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidNotificationIcon: 'drawable/ic_status_icon',
     ),
   );
 
