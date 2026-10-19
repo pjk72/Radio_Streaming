@@ -2,6 +2,7 @@ import 'package:http/http.dart' as http; // Added import
 import 'package:audio_session/audio_session.dart' hide AndroidAudioFocus, AVAudioSessionCategory;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -59,6 +60,12 @@ class RadioAudioHandler extends BaseAudioHandler
   StreamSubscription? _interruptionSubscription;
   StreamSubscription? _becomingNoisySubscription;
 
+  // Phone call handling: stop radio / pause playlist song during calls,
+  // then restore playback when the call ends.
+  StreamSubscription? _phoneStateSubscription;
+  bool _interruptedByPhoneCall = false;
+  bool _phoneCallInterruptedRadio = false;
+
   Future<void> _setupAudioSession() async {
     try {
       final session = await AudioSession.instance;
@@ -90,6 +97,78 @@ class RadioAudioHandler extends BaseAudioHandler
     } catch (e) {
       LogService().log("AudioSession error: $e");
     }
+  }
+
+  /// Listens for real phone calls (cellular + third-party VoIP) without any
+  /// dangerous permission: the native side observes AudioManager audio modes
+  /// (MODE_RINGTONE / MODE_IN_CALL / MODE_IN_COMMUNICATION) and emits
+  /// CALL_STARTED / CALL_ENDED on this EventChannel.
+  ///
+  /// Only in that case:
+  /// - Radio playing: full stop, then restart the station from scratch when
+  ///   the call ends.
+  /// - Playlist song playing: pause, then resume from the same position when
+  ///   the call ends.
+  static const EventChannel _phoneCallChannel =
+      EventChannel('com.antigravity.radio/phone_state');
+
+  Future<void> _setupPhoneCallListener() async {
+    if (kIsWeb) return;
+    try {
+      _phoneStateSubscription?.cancel();
+      _phoneStateSubscription = _phoneCallChannel
+          .receiveBroadcastStream()
+          .listen((event) {
+            final status = event is Map ? event['status'] : null;
+            if (status == 'CALL_STARTED') {
+              _onPhoneCallStarted();
+            } else if (status == 'CALL_ENDED') {
+              _onPhoneCallEnded();
+            }
+          }, onError: (Object e) {
+            LogService().log("PhoneCall channel error: $e");
+          });
+    } catch (e) {
+      LogService().log("PhoneCall listener setup error: $e");
+    }
+  }
+
+  void _onPhoneCallStarted() {
+    if (_interruptedByPhoneCall) return; // Already handled (e.g. INCOMING -> STARTED)
+    final isPlaying =
+        playbackState.value.playing || _player.state == PlayerState.playing;
+    if (!isPlaying) return;
+
+    final isRadio = mediaItem.value?.extras?['type'] != 'playlist_song';
+    _interruptedByPhoneCall = true;
+    _phoneCallInterruptedRadio = isRadio;
+
+    if (isRadio) {
+      LogService().log("PhoneCall: stopping radio due to phone call");
+      stop(); // Definitive stop of the live stream
+    } else {
+      LogService().log("PhoneCall: pausing playlist song due to phone call");
+      pause(); // Keeps the current position
+    }
+  }
+
+  Future<void> _onPhoneCallEnded() async {
+    if (!_interruptedByPhoneCall) return;
+    final wasRadio = _phoneCallInterruptedRadio;
+    _interruptedByPhoneCall = false;
+    _phoneCallInterruptedRadio = false;
+
+    // Give the system a moment to release the audio channel
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    LogService().log(
+      wasRadio
+          ? "PhoneCall: call ended, restarting radio from scratch"
+          : "PhoneCall: call ended, resuming playlist song",
+    );
+    // For radio: _playInternal re-fetches the live stream from zero.
+    // For playlist song: the player is paused, so it resumes from position.
+    await _playInternal(false);
   }
 
   void setCrossfadeDuration(int seconds) {
@@ -667,6 +746,7 @@ class RadioAudioHandler extends BaseAudioHandler
   RadioAudioHandler() {
     _stations = [];
     _setupAudioSession();
+    _setupPhoneCallListener();
     // Don't wait for futures in constructor, but start them
     _initializePlayer();
     _initializeBackgroundState();

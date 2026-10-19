@@ -10,6 +10,7 @@ import android.util.Log
 import android.util.Rational
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
@@ -17,6 +18,7 @@ import java.io.FileInputStream
 class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "com.antigravity.radio/pip"
     private val MEDIA_CHANNEL = "com.antigravity.radio/media_scanner"
+    private val PHONE_STATE_CHANNEL = "com.antigravity.radio/phone_state"
     private var methodChannel: MethodChannel? = null
     private var mediaChannel: MethodChannel? = null
 
@@ -29,6 +31,10 @@ class MainActivity : AudioServiceActivity() {
             "smallAdFactory",
             NativeAdFactorySmall(this)
         )
+
+        // Phone call detection (no permission): observes AudioManager modes
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, PHONE_STATE_CHANNEL)
+            .setStreamHandler(PhoneStateDetector(this))
 
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel!!.setMethodCallHandler { call, result ->
