@@ -1557,20 +1557,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     SavedSong song,
     String playlistId,
   ) {
-    bool isLocalPlaylist = false;
-    try {
-      final p = provider.playlists.firstWhere(
-        (element) => element.id == playlistId,
-      );
-      isLocalPlaylist = (p.creator == 'local');
-    } catch (_) {}
-
     final bool isLocalSong =
         (song.localPath != null &&
             song.localPath!.isNotEmpty &&
             File(song.localPath!).existsSync()) ||
         song.id.startsWith('local_');
-    final bool hideOnline = isLocalPlaylist || isLocalSong;
+    final bool hideOnline = isLocalSong;
 
     GlassUtils.showGlassBottomSheet(
       context: context,
@@ -3278,24 +3270,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             ),
 
             // Source/Type Icon (Top Left)
-            if (playlist.creator == 'local')
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.folder_rounded,
-                    color: Theme.of(context).primaryColor,
-                    size: 12,
-                  ),
-                ),
-              )
-            else if (playlist.id == 'favorites')
+            if (playlist.id == 'favorites')
               Positioned(
                 top: 8,
                 left: 8,
@@ -3896,7 +3871,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
     RadioProvider provider,
     Playlist playlist,
   ) {
-    if (playlist.id == 'favorites' || playlist.creator == 'local') return;
+    if (playlist.id == 'favorites') return;
 
     final controller = TextEditingController(text: playlist.name);
     GlassUtils.showGlassDialog(
@@ -3913,37 +3888,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (playlist.creator == 'local')
-              Container(
-                padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.orangeAccent.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.orangeAccent.withValues(alpha: 0.5),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: Colors.orangeAccent,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        "This will rename the folder on your device. Ensure no other apps are using it.",
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             TextField(
               controller: controller,
               style: TextStyle(
@@ -4164,7 +4108,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                       _showRenamePlaylistDialog(context, provider, playlist);
                     },
                   ),
-                if (isEligible && playlist.creator != 'local')
+                if (isEligible)
                   _buildMenuItem(
                     context,
                     icon: Icons.download_rounded,
@@ -4623,9 +4567,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                         color: Colors.greenAccent,
                       ),
                       if (isSelectionActive &&
-                          (effectivePlaylist == null ||
-                              effectivePlaylist!.id == 'favorites' ||
-                              effectivePlaylist!.creator != 'local') &&
                           (Provider.of<EntitlementService>(
                                     context,
                                     listen: false,
@@ -4642,8 +4583,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                           label: lang.translate('download'),
                           color: Colors.blueAccent,
                         ),
-                      if (effectivePlaylist != null &&
-                          effectivePlaylist!.creator != 'local')
+                      if (effectivePlaylist != null)
                         buildHeaderMenuItem(
                           id: 'share_playlist',
                           icon: Icons.share_rounded,
@@ -6346,13 +6286,6 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   }
 
   Widget _buildDialogIcon(BuildContext context, Playlist p) {
-    if (p.creator == 'local') {
-      return Icon(
-        Icons.folder_rounded,
-        color: Theme.of(context).primaryColor,
-        size: 20,
-      );
-    }
     if (p.creator == 'app' || p.id == 'favorites') {
       return ClipOval(
         child: Image.asset(
@@ -9360,17 +9293,12 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           context,
           listen: false,
         ).getFeatureLimit('download_songs');
-        if (isSelectionActive &&
-            (effectivePlaylist == null ||
-                effectivePlaylist!.id == 'favorites' ||
-                effectivePlaylist!.creator != 'local') &&
-            (dLimit != 0 || dLimit == -99)) {
+        if (isSelectionActive && (dLimit != 0 || dLimit == -99)) {
           icon = Icons.download_rounded;
         }
         break;
       case 'share_playlist':
-        if (effectivePlaylist != null &&
-            effectivePlaylist!.creator != 'local') {
+        if (effectivePlaylist != null) {
           icon = Icons.share_rounded;
         }
         break;
@@ -9505,13 +9433,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         ).getFeatureLimit('download_songs');
         // Visible if selection is active AND (not local playlist OR Artist/Album view)
         return isSelectionActive &&
-            (effectivePlaylist == null ||
-                effectivePlaylist!.id == 'favorites' ||
-                effectivePlaylist!.creator != 'local') &&
             (dLimit != 0 || dLimit == -99);
       case 'share_playlist':
-        return effectivePlaylist != null &&
-            effectivePlaylist!.creator != 'local';
+        return effectivePlaylist != null;
       case 'duplicates':
         return _selectedPlaylistId != null;
       case 'bulk_check':
