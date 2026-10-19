@@ -353,6 +353,26 @@ class RadioAudioHandler extends BaseAudioHandler
     }
   }
 
+  void _onPlaybackStarted() {
+    if (!_isInitialBuffering && !_expectingStop) return;
+
+    LogService().log(
+      "Playback: Sound started. Ending initial buffering/loading. Eligible for recognition: $_isACRCloudEnabled",
+    );
+    _isInitialBuffering = false;
+    _expectingStop = false;
+    _consecutiveErrorCount = 0;
+    _startStuckMonitor();
+    _broadcastState(_player.state);
+
+    // Start recognition countdown (5s) if playing radio and eligible from Remote Config
+    if ((_isAudioPlaying || _player.state == PlayerState.playing) &&
+        _isACRCloudEnabled &&
+        mediaItem.value?.extras?['type'] != 'playlist_song') {
+      _startInitialRecognitionCountdown();
+    }
+  }
+
   void _startInitialRecognitionCountdown() {
     _recognitionTimer?.cancel();
     LogService().log(
@@ -382,7 +402,7 @@ class RadioAudioHandler extends BaseAudioHandler
     _broadcastState();
 
     _recognitionTimer = Timer(const Duration(seconds: 5), () {
-      if (_isAudioPlaying &&
+      if ((_isAudioPlaying || _player.state == PlayerState.playing) &&
           _isACRCloudEnabled &&
           mediaItem.value?.extras?['type'] != 'playlist_song') {
         LogService().log("Recognition: 5s timer elapsed. Attempting recognition...");
@@ -500,7 +520,14 @@ class RadioAudioHandler extends BaseAudioHandler
     _playerDurationSubscription?.cancel();
 
     _playerStateSubscription = _player.onPlayerStateChanged.listen(
-      _broadcastState,
+      (state) {
+        if (state == PlayerState.playing &&
+            (_isInitialBuffering || _expectingStop)) {
+          _onPlaybackStarted();
+        } else {
+          _broadcastState(state);
+        }
+      },
       onError: (Object e) {
         // CRITICAL FIX: Ignore player state errors for local files
         final bool isLocal =
@@ -600,18 +627,10 @@ class RadioAudioHandler extends BaseAudioHandler
       }
 
       // 2. Initial Buffering Recovery
-      // Streaming has truly started once the position starts advancing (> 0).
-      if (_isInitialBuffering && !_expectingStop && pos > Duration.zero) {
-        _isInitialBuffering = false;
-        _broadcastState(_player.state);
-        _startStuckMonitor();
-
-        // Start recognition if in Radio Mode and enabled
-        if (_isAudioPlaying &&
-            _isACRCloudEnabled &&
-            mediaItem.value?.extras?['type'] != 'playlist_song') {
-          _startInitialRecognitionCountdown();
-        }
+      // Streaming has truly started once sound/position arrives while playing.
+      if ((_isInitialBuffering || _expectingStop) &&
+          _player.state == PlayerState.playing) {
+        _onPlaybackStarted();
         return;
       }
 
@@ -3247,20 +3266,18 @@ class RadioAudioHandler extends BaseAudioHandler
 
         _expectingStop = false;
         _consecutiveErrorCount = 0; // Reset on success
-        _broadcastState(PlayerState.playing);
+        if (_player.state == PlayerState.playing) {
+          _onPlaybackStarted();
+        } else {
+          _broadcastState(PlayerState.playing);
+        }
 
-        // Safety Fallback: Clear initial buffering after 8 seconds if position doesn't move
-        Future.delayed(const Duration(seconds: 8), () {
-          if (_isInitialBuffering &&
+        // Safety Fallback: Clear initial buffering after 3 seconds if state event was missed
+        Future.delayed(const Duration(seconds: 3), () {
+          if ((_isInitialBuffering || _expectingStop) &&
               _currentSessionId == sessionId &&
               _player.state == PlayerState.playing) {
-            _isInitialBuffering = false;
-            _broadcastState();
-            if (_isAudioPlaying &&
-                _isACRCloudEnabled &&
-                mediaItem.value?.extras?['type'] != 'playlist_song') {
-              _startInitialRecognitionCountdown();
-            }
+            _onPlaybackStarted();
           }
         });
       } catch (e) {
