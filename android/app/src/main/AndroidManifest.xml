@@ -95,6 +95,11 @@
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
         <package android:name="com.spotify.music" />
+        <!-- Android Auto / car head unit connection detection (androidx.car.app.connection) -->
+        <provider android:authorities="androidx.car.app.connection" />
+        <intent>
+            <action android:name="androidx.car.app.connection.action.CAR_CONNECTION_UPDATED" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />

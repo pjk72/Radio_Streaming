@@ -66,6 +66,12 @@ class RadioAudioHandler extends BaseAudioHandler
   bool _interruptedByPhoneCall = false;
   bool _phoneCallInterruptedRadio = false;
 
+  // Android Auto / car head unit connection handling: when the phone projects
+  // to a car head unit and then disconnects (e.g. the car is turned off),
+  // playback must NOT resume on the phone.
+  StreamSubscription? _carConnectionSubscription;
+  bool _carConnected = false;
+
   Future<void> _setupAudioSession() async {
     try {
       final session = await AudioSession.instance;
@@ -169,6 +175,63 @@ class RadioAudioHandler extends BaseAudioHandler
     // For radio: _playInternal re-fetches the live stream from zero.
     // For playlist song: the player is paused, so it resumes from position.
     await _playInternal(false);
+  }
+
+  /// Listens for Android Auto / car head unit connection changes so we can
+  /// stop playback when the phone stops projecting (car turned off) instead of
+  /// letting the audio automatically resume through the phone speaker.
+  static const EventChannel _carConnectionChannel =
+      EventChannel('com.antigravity.radio/car_connection');
+
+  Future<void> _setupCarConnectionListener() async {
+    if (kIsWeb) return;
+    try {
+      _carConnectionSubscription?.cancel();
+      _carConnectionSubscription = _carConnectionChannel
+          .receiveBroadcastStream()
+          .listen((event) {
+            LogService().log("CarConnection event: $event");
+            final status = event is Map ? event['status'] : null;
+            if (status == 'CAR_CONNECTED') {
+              _carConnected = true;
+              LogService().log("CarConnection: Android Auto connected");
+            } else if (status == 'CAR_DISCONNECTED') {
+              _onCarDisconnected();
+            }
+          }, onError: (Object e) {
+            LogService().log("CarConnection channel error: $e");
+          });
+      LogService().log("CarConnection: listener ready");
+    } catch (e) {
+      LogService().log("CarConnection listener setup error: $e");
+    }
+  }
+
+  /// Called when the phone stops projecting to a car head unit (e.g. the car is
+  /// turned off). If playback was running through Android Auto, stop it
+  /// completely so it does not resume on the phone speaker. [_stopRequested] is
+  /// set by [stop] and blocks any auto-restart from audio focus regain, retry,
+  /// watchdog or the AA auto-start logic.
+  Future<void> _onCarDisconnected() async {
+    // Act if either the native detector reported a car connection or the head
+    // unit had browsed our media browser (`_isInAndroidAutoMode`).
+    final wasInAndroidAuto = _isInAndroidAutoMode;
+    final wasCarConnected = _carConnected;
+    _carConnected = false;
+    _isInAndroidAutoMode = false;
+
+    if (!wasCarConnected && !wasInAndroidAuto) return;
+
+    final isPlaying =
+        playbackState.value.playing || _player.state == PlayerState.playing;
+    if (!isPlaying) return;
+
+    LogService().log(
+      "CarConnection: Android Auto disconnected "
+      "(carConnected: $wasCarConnected, aaMode: $wasInAndroidAuto), "
+      "stopping playback (must not resume on phone)",
+    );
+    await stop();
   }
 
   void setCrossfadeDuration(int seconds) {
@@ -747,6 +810,7 @@ class RadioAudioHandler extends BaseAudioHandler
     _stations = [];
     _setupAudioSession();
     _setupPhoneCallListener();
+    _setupCarConnectionListener();
     // Don't wait for futures in constructor, but start them
     _initializePlayer();
     _initializeBackgroundState();
