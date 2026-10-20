@@ -11,11 +11,8 @@ import 'realistic_visualizer.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:record/record.dart';
-import 'package:path_provider/path_provider.dart';
 import '../services/recognition_api_service.dart';
+import '../services/shazam_capture_service.dart';
 import '../models/saved_song.dart';
 import '../utils/glass_utils.dart';
 import '../services/entitlement_service.dart';
@@ -46,11 +43,11 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
 
   bool _isListening = false;
   bool _isAnalyzing = false;
-  final AudioRecorder _record = AudioRecorder();
+  final ShazamCaptureService _shazamService = ShazamCaptureService();
 
   @override
   void dispose() {
-    _record.dispose();
+    _shazamService.dispose();
     super.dispose();
   }
 
@@ -96,7 +93,10 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
       return;
     }
 
-    bool hasPermission = await _record.hasPermission();
+    // Prevent audio-focus loss (triggered by mic) from pausing the stream
+    final provider = Provider.of<RadioProvider>(context, listen: false);
+
+    bool hasPermission = await _shazamService.hasPermission();
 
     if (!hasPermission) {
       if (mounted) {
@@ -111,83 +111,55 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
       return;
     }
 
-    if (hasPermission) {
-      setState(() => _isListening = true);
+    setState(() => _isListening = true);
 
-      // Prevent audio-focus loss (triggered by mic) from pausing the stream
-      final provider = Provider.of<RadioProvider>(context, listen: false);
-      provider.setIgnoringPause(true);
-
-      final Directory tempDir = await getTemporaryDirectory();
-      final String tempPath = '${tempDir.path}/shazam_temp.mp3';
-
-      try {
-        await _record.start(
-          const RecordConfig(
-            encoder: AudioEncoder.aacLc,
-            audioInterruption: AudioInterruptionMode.none,
-          ),
-          path: tempPath,
-        );
-
-        // Fase 1: Registrazione (5 secondi) - Animazione note musicali
-        await Future.delayed(const Duration(seconds: 5));
-
-        if (mounted) setState(() => _isAnalyzing = true);
-
-        final path = await _record.stop();
-
-        // Restore normal pause handling after mic is released
-        Future.delayed(const Duration(milliseconds: 500), () {
-          provider.setIgnoringPause(false);
-        });
-        
-        if (path != null) {
-          final File audioFile = File(path);
-          final Uint8List audioBytes = await audioFile.readAsBytes();
-
-          if (audioBytes.isNotEmpty && mounted) {
-            // Fase 2: Analisi (Animazione scanner digitale)
-            final result = await RecognitionApiService().identifyFromAudioBytes(
-              audioBytes,
-            );
-
-            // Una volta finito, il pulsante torna al suo posto
-            if (mounted) {
-              setState(() {
-                _isListening = false;
-                _isAnalyzing = false;
-              });
-            }
-
-            if (result != null && result['track'] != null) {
-              // Pre-carica l'annuncio ora che sappiamo che è un successo
-              InterstitialAdService().loadAd();
-              // Fase 3: Risultato (Sfondo sfocato e popup glass)
-              _showShazamResultPopup(result['track']);
-            } else {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(lang.translate('song_not_recognized'))),
-                );
-              }
-            }
-          } else {
-            if (mounted) setState(() => _isListening = false);
+    try {
+      // Multi-window capture: up to 3 clips of 6s, recognition after each.
+      final result = await _shazamService.captureAndRecognize(
+        onPhaseChanged: (phase, clipIndex, totalClips) {
+          if (mounted) {
+            setState(() {
+              // Keep the listening overlay active for both phases
+              // (recording + analyzing) so the button doesn't jump around.
+              _isListening = true;
+              _isAnalyzing = phase == ShazamCapturePhase.analyzing;
+            });
           }
-        } else {
-          if (mounted) setState(() => _isListening = false);
-        }
-      } catch (e) {
-        provider.setIgnoringPause(false);
-        if (mounted) {
-            setState(() => _isListening = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-               SnackBar(content: Text(lang.translate('mic_error').replaceAll('{0}', e.toString()))),
-            );
-        }
-        debugPrint('Record error: $e');
+        },
+        onMicAcquired: () => provider.setIgnoringPause(true),
+        onMicReleased: () {
+          // Restore normal pause handling after mic is released
+          Future.delayed(const Duration(milliseconds: 500), () {
+            provider.setIgnoringPause(false);
+          });
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          _isAnalyzing = false;
+        });
       }
+
+      if (result != null && result['track'] != null) {
+        // Pre-carica l'annuncio ora che sappiamo che è un successo
+        InterstitialAdService().loadAd();
+        _showShazamResultPopup(result['track']);
+      } else if (!_shazamService.wasCancelled && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(lang.translate('song_not_recognized'))),
+        );
+      }
+    } catch (e) {
+      provider.setIgnoringPause(false);
+      if (mounted) {
+          setState(() => _isListening = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text(lang.translate('mic_error').replaceAll('{0}', e.toString()))),
+          );
+      }
+      debugPrint('Record error: $e');
     }
   }
 
@@ -1036,7 +1008,12 @@ class _NowPlayingHeaderState extends State<NowPlayingHeader> {
                                   ),
                           ),
                           tooltip: isShazamDisabled ? lang.translate('music_recognition_disabled') : lang.translate('music_recognition'),
-                          onPressed: _isListening ? null : () {
+                          onPressed: () {
+                            if (_isListening) {
+                              // During capture the button cancels the process
+                              _shazamService.cancel();
+                              return;
+                            }
                             ShazamUtils.checkAndShowShazamInfoDialog(context, _startListening);
                           },
                         ),

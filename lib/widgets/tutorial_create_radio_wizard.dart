@@ -4,12 +4,10 @@ import 'package:http/http.dart' as http;
 import 'package:palette_generator/palette_generator.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:record/record.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/recognition_api_service.dart';
+import '../services/shazam_capture_service.dart';
 import '../models/saved_song.dart';
 import 'advanced_recognition_visualizer.dart';
 
@@ -39,11 +37,11 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
   @override
   void dispose() {
-    _record.dispose();
+    _shazamService.dispose();
     super.dispose();
   }
 
-  final AudioRecorder _record = AudioRecorder();
+  final ShazamCaptureService _shazamService = ShazamCaptureService();
   bool _isListening = false;
   bool _isAnalyzing = false;
 
@@ -266,7 +264,10 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
       return;
     }
 
-    bool hasPermission = await _record.hasPermission();
+    // Prevent audio-focus loss (triggered by mic) from pausing the stream
+    final radioProvider = Provider.of<RadioProvider>(context, listen: false);
+
+    bool hasPermission = await _shazamService.hasPermission();
 
     if (!hasPermission) {
       if (mounted) {
@@ -279,64 +280,42 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
     setState(() => _isListening = true);
 
-    // Prevent audio-focus loss (triggered by mic) from pausing the stream
-    final radioProvider = Provider.of<RadioProvider>(context, listen: false);
-    radioProvider.setIgnoringPause(true);
-
-    final Directory tempDir = await getTemporaryDirectory();
-    final String tempPath = '${tempDir.path}/shazam_wizard_temp.mp3';
-
     try {
-      await _record.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          audioInterruption: AudioInterruptionMode.none,
-        ),
-        path: tempPath,
-      );
-
-      // Fase 1: Registrazione (5 secondi)
-      await Future.delayed(const Duration(seconds: 5));
-
-      if (mounted) setState(() => _isAnalyzing = true);
-
-      final path = await _record.stop();
-
-      // Restore normal pause handling after mic is released
-      Future.delayed(const Duration(milliseconds: 500), () {
-        radioProvider.setIgnoringPause(false);
-      });
-      
-      if (path != null) {
-        final File audioFile = File(path);
-        final Uint8List audioBytes = await audioFile.readAsBytes();
-
-        if (audioBytes.isNotEmpty && mounted) {
-          // Fase 2: Analisi
-          final result = await RecognitionApiService().identifyFromAudioBytes(audioBytes);
-          
+      // Multi-window capture: up to 3 clips of 6s, recognition after each.
+      final result = await _shazamService.captureAndRecognize(
+        onPhaseChanged: (phase, clipIndex, totalClips) {
           if (mounted) {
             setState(() {
-              _isListening = false;
-              _isAnalyzing = false;
+              // Keep the overlay active for both phases so the UI
+              // doesn't jump between positions.
+              _isListening = true;
+              _isAnalyzing = phase == ShazamCapturePhase.analyzing;
             });
           }
+        },
+        onMicAcquired: () => radioProvider.setIgnoringPause(true),
+        onMicReleased: () {
+          // Restore normal pause handling after mic is released
+          Future.delayed(const Duration(milliseconds: 500), () {
+            radioProvider.setIgnoringPause(false);
+          });
+        },
+      );
 
-          if (result != null && result['track'] != null) {
-            InterstitialAdService().loadAd();
-            _showShazamResultPopup(result['track']);
-          } else {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(lang.translate('song_not_recognized'))),
-              );
-            }
-          }
-        } else {
-          if (mounted) setState(() => _isListening = false);
-        }
-      } else {
-        if (mounted) setState(() => _isListening = false);
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          _isAnalyzing = false;
+        });
+      }
+
+      if (result != null && result['track'] != null) {
+        InterstitialAdService().loadAd();
+        _showShazamResultPopup(result['track']);
+      } else if (!_shazamService.wasCancelled && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(lang.translate('song_not_recognized'))),
+        );
       }
     } catch (e) {
       radioProvider.setIgnoringPause(false);
@@ -1088,7 +1067,12 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                       border: Border.all(color: baseColor.withValues(alpha: 0.15)),
                     ),
                     child: InkWell(
-                      onTap: _isListening ? null : () {
+                      onTap: () {
+                        if (_isListening) {
+                          // During capture the tap cancels the process
+                          _shazamService.cancel();
+                          return;
+                        }
                         ShazamUtils.checkAndShowShazamInfoDialog(context, _startListening);
                       },
                       borderRadius: BorderRadius.circular(16),
