@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:ui';
 import 'package:http/http.dart' as http;
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -553,58 +554,76 @@ class _ImageSearchPageState extends State<_ImageSearchPage> {
     }
   }
 
+  static const String _remoteConfigKeyUnsplash = 'key_unsplash';
+
+  /// Fetch the Unsplash Access Key from Firebase Remote Config.
+  /// Returns an empty string if unavailable.
+  Future<String> _getUnsplashAccessKey() async {
+    try {
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      try {
+        await remoteConfig.fetchAndActivate().timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // Use the cached/activated value if the fetch fails
+      }
+      return remoteConfig.getString(_remoteConfigKeyUnsplash);
+    } catch (e) {
+      debugPrint("Remote Config error (key_unsplash): $e");
+      return '';
+    }
+  }
+
   Future<List<String>> _searchImagesRemote(String query) async {
     try {
-      final String encodedQuery = Uri.encodeComponent(query);
-      final endpoints = [
-        'https://unsplash.com/napi/search/photos?query=$encodedQuery&per_page=30',
-        'https://unsplash.com/napi/search?query=$encodedQuery&per_page=30',
-        'https://unsplash.com/napi/search/photos?query=$encodedQuery&xp=search-trending:control',
-      ];
-      final headers = {
-        'User-Agent':
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Referer': 'https://unsplash.com/',
-      };
-      for (var endpoint in endpoints) {
-        try {
-          final url = Uri.parse(endpoint);
-          final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 8));
-          if (res.statusCode == 200) {
-            final data = jsonDecode(res.body);
-            dynamic resultsData;
-            if (data['results'] is List) {
-              resultsData = data['results'];
-            } else if (data['photos']?['results'] is List) {
-              resultsData = data['photos']['results'];
-            } else if (data['results']?['photos']?['results'] is List) {
-              resultsData = data['results']['photos']['results'];
-            }
-            if (resultsData is List && resultsData.isNotEmpty) {
-              return resultsData
-                  .map<String>((item) {
-                    if (item is Map) {
-                      final urls = item['urls'] as Map?;
-                      return urls?['regular']?.toString() ??
-                          urls?['small']?.toString() ??
-                          urls?['full']?.toString() ??
-                          '';
-                    }
-                    return '';
-                  })
-                  .where((u) => u.isNotEmpty)
-                  .toList();
-            }
-          }
-        } catch (e) {
-          continue;
-        }
+      final accessKey = await _getUnsplashAccessKey();
+      if (accessKey.isEmpty) {
+        debugPrint("Unsplash: missing '$_remoteConfigKeyUnsplash' in Remote Config");
+        return [];
       }
+      final uri = Uri.parse(
+        'https://api.unsplash.com/search/photos'
+        '?query=${Uri.encodeComponent(query)}'
+        '&per_page=30'
+        '&orientation=landscape',
+      );
+      final res = await http
+          .get(
+            uri,
+            headers: {
+              'Authorization': 'Client-ID $accessKey',
+              'Accept-Version': 'v1',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        debugPrint("Unsplash: invalid or exhausted API key (${res.statusCode})");
+        return [];
+      }
+      if (res.statusCode != 200) {
+        debugPrint("Unsplash search failed: HTTP ${res.statusCode}");
+        return [];
+      }
+      final data = jsonDecode(res.body);
+      final resultsData = data['results'];
+      if (resultsData is! List) return [];
+      return resultsData
+          .map<String>((item) {
+            if (item is Map) {
+              final urls = item['urls'] as Map?;
+              return urls?['regular']?.toString() ??
+                  urls?['small']?.toString() ??
+                  urls?['full']?.toString() ??
+                  '';
+            }
+            return '';
+          })
+          .where((u) => u.isNotEmpty)
+          .toList();
     } catch (e) {
-      debugPrint("Global search error: $e");
+      debugPrint("Unsplash search error: $e");
+      return [];
     }
-    return [];
   }
 
   @override
