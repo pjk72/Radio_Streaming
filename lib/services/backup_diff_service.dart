@@ -138,7 +138,48 @@ class BackupDiffService {
       ),
     ];
 
-    return BackupDiff(sections);
+    return BackupDiff(_mergeSections(sections));
+  }
+
+  /// Merges sections sharing the same [DiffSection.labelKey] so that the
+  /// restore popup shows a single grouped entry per label (e.g. "cronologia
+  /// di ascolto" instead of repeating it once per underlying data source).
+  static List<DiffSection> _mergeSections(List<DiffSection> sections) {
+    final order = <String>[];
+    final grouped = <String, DiffSection>{};
+
+    for (final section in sections) {
+      final existing = grouped[section.labelKey];
+      if (existing == null) {
+        order.add(section.labelKey);
+        grouped[section.labelKey] = section;
+        continue;
+      }
+      grouped[section.labelKey] = DiffSection(
+        key: existing.key,
+        labelKey: existing.labelKey,
+        added: existing.added + section.added,
+        removed: existing.removed + section.removed,
+        changed: existing.changed + section.changed,
+        addedLabels: _mergeLabels(existing.addedLabels, section.addedLabels),
+        removedLabels:
+            _mergeLabels(existing.removedLabels, section.removedLabels),
+        changedLabels:
+            _mergeLabels(existing.changedLabels, section.changedLabels),
+      );
+    }
+
+    return [for (final key in order) grouped[key]!];
+  }
+
+  /// Concatenates two label lists dropping duplicated display labels while
+  /// preserving the original order.
+  static List<String> _mergeLabels(List<String> first, List<String> second) {
+    final seen = <String>{};
+    return [
+      for (final label in [...first, ...second])
+        if (label.isNotEmpty && seen.add(label)) label,
+    ];
   }
 
   static List<Map<String, dynamic>> _asMapList(dynamic value) {

@@ -163,9 +163,12 @@ class _BackupRestorePickerDialogState extends State<BackupRestorePickerDialog> {
 
     final parts = <String>[];
     merged.forEach((label, counts) {
-      if (counts[0] > 0) parts.add('+${counts[0]} $label');
-      if (counts[1] > 0) parts.add('-${counts[1]} $label');
-      if (counts[2] > 0) parts.add('~${counts[2]} $label');
+      final markers = <String>[
+        if (counts[0] > 0) '+${counts[0]}',
+        if (counts[1] > 0) '-${counts[1]}',
+        if (counts[2] > 0) '~${counts[2]}',
+      ];
+      if (markers.isNotEmpty) parts.add('${markers.join(' ')} $label');
     });
 
     if (parts.isEmpty) return _lang.translate('diff_no_changes');

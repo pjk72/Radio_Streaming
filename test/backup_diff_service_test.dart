@@ -141,6 +141,37 @@ void main() {
       expect(orders.changed, 1);
       expect(orders.changedLabels, ['station_order']);
     });
+
+    test('history sources are merged into a single diff_history section', () {
+      Map<String, dynamic> song(String id, String title, String artist) => {
+            'title': title,
+            'artist': artist,
+          };
+
+      final prev = {
+        'history_metadata': {
+          's1': song('s1', 'Old Song', 'Artist'),
+        },
+        'user_play_history': {'s1': 5},
+        'recent_songs_order': ['s1'],
+      };
+      final curr = {
+        'history_metadata': {
+          's1': song('s1', 'Old Song', 'Artist'),
+          's2': song('s2', 'New Song', 'Artist'),
+        },
+        'user_play_history': {'s1': 5, 's2': 9},
+        'recent_songs_order': ['s1', 's2'],
+      };
+
+      final diff = BackupDiffService.compute(prev, curr);
+      final history =
+          diff.changes.where((s) => s.labelKey == 'diff_history').toList();
+
+      expect(history, hasLength(1));
+      expect(history.single.added, 3);
+      expect(history.single.addedLabels, ['New Song - Artist']);
+    });
   });
 
   group('isBackupPayloadEmpty', () {
