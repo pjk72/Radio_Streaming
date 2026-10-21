@@ -3630,8 +3630,16 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<void> renamePlaylist(String id, String newName) async {
+    if (id == 'favorites') return;
     final index = _playlists.indexWhere((p) => p.id == id);
-    if (index != -1 && _playlists[index].creator == 'local') return;
+    if (index == -1) return;
+    if (_playlists[index].creator == 'local') {
+      final playlist = _playlists[index];
+      final updated = playlist.copyWith(name: newName);
+      await _playlistService.addPlaylist(updated);
+      await _loadPlaylists();
+      return;
+    }
 
     await _playlistService.renamePlaylist(id, newName);
     await _loadPlaylists();

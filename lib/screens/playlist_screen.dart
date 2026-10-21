@@ -4097,17 +4097,16 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                   },
                 ),
               ] else ...[
-                if (playlist.creator != 'local')
-                  _buildMenuItem(
-                    context,
-                    icon: Icons.edit_rounded,
-                    label: lang.translate('rename'),
-                    color: Colors.blueAccent,
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _showRenamePlaylistDialog(context, provider, playlist);
-                    },
-                  ),
+                _buildMenuItem(
+                  context,
+                  icon: Icons.edit_rounded,
+                  label: lang.translate('rename'),
+                  color: Colors.blueAccent,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showRenamePlaylistDialog(context, provider, playlist);
+                  },
+                ),
                 if (isEligible)
                   _buildMenuItem(
                     context,
