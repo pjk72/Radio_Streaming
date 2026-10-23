@@ -711,9 +711,13 @@ class _ImageSearchPageState extends State<_ImageSearchPage> {
                           Image.network(
                             results[index],
                             fit: BoxFit.cover,
+                            cacheWidth: 600,
+                            cacheHeight: 900,
                             loadingBuilder: (context, child, loadingProgress) {
                               if (loadingProgress == null) return child;
-                              return const Center(child: CircularProgressIndicator());
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
                             },
                             errorBuilder: (_, _, _) => Container(
                               color: Colors.grey.withValues(alpha: 0.1),

@@ -371,6 +371,8 @@ class _StationCardState extends State<StationCard> {
         fit: BoxFit.cover,
         width: isBackground ? double.infinity : null,
         height: isBackground ? double.infinity : null,
+        cacheWidth: isBackground ? 1200 : 512,
+        cacheHeight: isBackground ? 1200 : 512,
         errorBuilder: (c, e, s) =>
             _buildIcon(station.icon, isBackground: isBackground),
       );
