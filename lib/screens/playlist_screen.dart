@@ -1759,7 +1759,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
   void _showQRScanner(BuildContext context, RadioProvider provider) async {
     final status = await Permission.camera.request();
     if (status.isDenied || status.isPermanentlyDenied) {
-      if (mounted) {
+      if (context.mounted) {
         final lang = Provider.of<LanguageProvider>(context, listen: false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(lang.translate('permission_camera_denied'))),
@@ -1970,8 +1970,9 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       final candidateUrl = links['youtube'] ?? song.youtubeUrl;
       if (candidateUrl != null) {
         var videoId = YoutubePlayer.convertUrlToId(candidateUrl);
-        if (videoId == null && candidateUrl.length == 11)
+        if (videoId == null && candidateUrl.length == 11) {
           videoId = candidateUrl;
+        }
 
         if (videoId != null) {
           final yt = ye.YoutubeExplode();
@@ -3473,13 +3474,13 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
-        errorWidget: (_, __, ___) => Container(
+        errorWidget: (_, _, _) => Container(
           color: Colors.white.withValues(alpha: 0.1),
           child: const Center(
             child: Icon(Icons.broken_image, color: Colors.white54, size: 40),
           ),
         ),
-        placeholder: (_, __) => Container(
+        placeholder: (_, _) => Container(
           color: Colors.white.withValues(alpha: 0.1),
           child: const Center(
             child: CircularProgressIndicator(color: Colors.white24),
@@ -3492,7 +3493,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         fit: BoxFit.cover,
         width: double.infinity,
         height: double.infinity,
-        errorBuilder: (_, __, ___) => Container(
+        errorBuilder: (_, _, _) => Container(
           color: Colors.white.withValues(alpha: 0.1),
           child: const Center(
             child: Icon(Icons.broken_image, color: Colors.white54, size: 40),
@@ -3505,7 +3506,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         fit: BoxFit.cover,
         width: double.infinity,
         height: double.infinity,
-        errorBuilder: (_, __, ___) => Container(
+        errorBuilder: (_, _, _) => Container(
           color: Colors.white.withValues(alpha: 0.1),
           child: const Center(
             child: Icon(Icons.broken_image, color: Colors.white54, size: 40),
@@ -6307,7 +6308,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
             width: 24,
             height: 24,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
+            errorBuilder: (_, _, _) =>
                 const Icon(Icons.person, color: Colors.white),
           ),
         );
@@ -6751,7 +6752,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               child: CachedNetworkImage(
                                 imageUrl: song.artUri!,
                                 fit: BoxFit.contain,
-                                errorWidget: (_, __, ___) => Container(
+                                errorWidget: (_, _, _) => Container(
                                   width: 72,
                                   height: 72,
                                   color: Theme.of(context).cardColor,
@@ -8720,7 +8721,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                               child: CachedNetworkImage(
                                   imageUrl: displaySong.artUri!,
                                   fit: BoxFit.contain,
-                              errorWidget: (_, __, ___) => Container(
+                              errorWidget: (_, _, _) => Container(
                                 color: Colors.white10,
                                 child: const Icon(
                                   Icons.album,
@@ -9318,7 +9319,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         break;
       case 'bulk_check':
         if (hasInvalidSongs || _showOnlyInvalid) {
-          if (_isBulkChecking)
+          if (_isBulkChecking) {
             return const SizedBox(
               width: 32,
               height: 32,
@@ -9330,6 +9331,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                 ),
               ),
             );
+          }
           icon = Icons.playlist_add_check_circle_rounded;
         }
         break;
@@ -9337,30 +9339,35 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         icon = Icons.library_music_rounded;
         break;
       case 'create_playlist':
-        if (_viewMode == MetadataViewMode.playlists)
+        if (_viewMode == MetadataViewMode.playlists) {
           icon = Icons.playlist_add_rounded;
+        }
         break;
       case 'scan_qr':
-        if (_viewMode == MetadataViewMode.playlists)
+        if (_viewMode == MetadataViewMode.playlists) {
           icon = Icons.qr_code_scanner_rounded;
+        }
         break;
       case 'sort_mode':
-        if (_viewMode == MetadataViewMode.playlists)
+        if (_viewMode == MetadataViewMode.playlists) {
           icon = _sortMode == PlaylistSortMode.custom
               ? Icons.sort
               : Icons.sort_by_alpha;
+        }
         break;
       case 'toggle_artists':
-        if (_viewMode == MetadataViewMode.artists)
+        if (_viewMode == MetadataViewMode.artists) {
           icon = _showFollowedArtistsOnly
               ? Icons.bookmark
               : Icons.bookmark_border;
+        }
         break;
       case 'toggle_albums':
-        if (_viewMode == MetadataViewMode.albums)
+        if (_viewMode == MetadataViewMode.albums) {
           icon = _showFollowedAlbumsOnly
               ? Icons.bookmark
               : Icons.bookmark_border;
+        }
         break;
       case 'toggle_local':
       case 'toggle_incomplete_metadata':
@@ -9534,7 +9541,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       return;
     }
 
-    final currentSongs = this.currentSongList;
+    final currentSongs = currentSongList;
 
     switch (actionId) {
       case 'play_all':
@@ -9748,7 +9755,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                     child: CachedNetworkImage(
                                         imageUrl: artUri,
                                         fit: BoxFit.fitHeight,
-                                        errorWidget: (_, __, ___) => Container(
+                                        errorWidget: (_, _, _) => Container(
                                           width: 55,
                                           height: 55,
                                           color: contrastColor.withValues(
@@ -9925,7 +9932,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: widget.groupItems.length,
-              separatorBuilder: (_, __) =>
+              separatorBuilder: (_, _) =>
                   const Divider(height: 1, color: Colors.white10),
               itemBuilder: (ctx, i) {
                 final item = widget.groupItems[i];
@@ -10070,7 +10077,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                                   ? CachedNetworkImage(
                                       imageUrl: imageUrl,
                                       fit: BoxFit.cover,
-                                      errorWidget: (_, __, ___) => Container(
+                                      errorWidget: (_, _, _) => Container(
                                         color: Colors.white10,
                                         child: const Icon(
                                           Icons.person,
@@ -10187,7 +10194,7 @@ class _ArtistGridItemState extends State<_ArtistGridItem> {
                               ),
                             ),
                           );
-                          if (!mounted) return;
+                          if (!context.mounted) return;
                           // A profile photo may have been changed on the
                           // details screen: re-read the provider cache so the
                           // local snapshot stays in sync immediately.
@@ -10338,7 +10345,7 @@ class _DuplicateResolutionDialogState
         height: 500, // Fixed height or flexible
         child: ListView.separated(
           itemCount: widget.duplicates.length,
-          separatorBuilder: (_, __) => const Divider(color: Colors.white12),
+          separatorBuilder: (_, _) => const Divider(color: Colors.white12),
           itemBuilder: (ctx, index) {
             final group = widget.duplicates[index];
             final first = group.first;
@@ -10633,11 +10640,10 @@ class _DoubleTapSpinnerWrapper extends StatefulWidget {
   final VoidCallback onTap;
 
   const _DoubleTapSpinnerWrapper({
-    Key? key,
     required this.child,
     required this.onDoubleTap,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   State<_DoubleTapSpinnerWrapper> createState() => _DoubleTapSpinnerWrapperState();

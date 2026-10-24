@@ -1332,7 +1332,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
       setState(() => _isSearching = false);
 
       if (verifiedImages.isEmpty) {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -1344,7 +1344,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
         return;
       }
 
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       final selected = await GlassUtils.showGlassDialog<String>(
         context: context,
@@ -1423,7 +1423,7 @@ class _EditStationScreenState extends State<EditStationScreen> {
         _extractColorFromLogo();
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         debugPrint("Logo search error: $e");
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

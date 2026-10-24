@@ -8480,7 +8480,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // --- Helper: sanitize an artist name for searching ---
-    String _sanitize(String name) {
+    String sanitize(String name) {
       String s = name;
       // Strip feat/ft collaborators
       final lc = s.toLowerCase();
@@ -8497,7 +8497,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // --- Helper: clean a track title for searching ---
-    String _sanitizeTrack(String title) {
+    String sanitizeTrack(String title) {
       String s = title.trim();
       // Remove feat/with credits
       s = s.replaceAll(
@@ -8522,7 +8522,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Uses the track title to disambiguate the artist when available, then
     // returns the largest artist profile image. Returns URL, "NOT_FOUND", or
     // null (network error).
-    Future<String?> _searchLastFm(
+    Future<String?> searchLastFm(
       String artistQuery, {
       String? trackTitle,
     }) async {
@@ -8535,7 +8535,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       //    track belongs to a different artist, the name is not a match.
       if (trackTitle != null && trackTitle.isNotEmpty) {
         try {
-          final cleanTitle = _sanitizeTrack(trackTitle);
+          final cleanTitle = sanitizeTrack(trackTitle);
           if (cleanTitle.isNotEmpty) {
             final trackUri = Uri.parse(
               "https://ws.audioscrobbler.com/2.0/"
@@ -8629,7 +8629,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // --- Helper: search Deezer with exact-name verification ---
     // Returns URL, "NOT_FOUND", or null (network error).
-    Future<String?> _searchDeezerVerified(String query) async {
+    Future<String?> searchDeezerVerified(String query) async {
       if (query.isEmpty) return "NOT_FOUND";
       try {
         // Fetch up to 5 candidates and pick the one whose name is the
@@ -8696,13 +8696,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Searching artist + title on Deezer returns the actual featured artist
     // with its correct profile picture. Returns URL, "NOT_FOUND", or null
     // (network error).
-    Future<String?> _searchDeezerTrackVerified(
+    Future<String?> searchDeezerTrackVerified(
       String artistQuery,
       String titleQuery,
     ) async {
       if (artistQuery.isEmpty || titleQuery.isEmpty) return "NOT_FOUND";
       try {
-        final cleanTitle = _sanitizeTrack(titleQuery);
+        final cleanTitle = sanitizeTrack(titleQuery);
         if (cleanTitle.isEmpty) return "NOT_FOUND";
 
         final searchQuery = 'artist:"$artistQuery" track:"$cleanTitle"';
@@ -8738,7 +8738,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           }
 
           // Title must loosely match to avoid grabbing a random track
-          final trackTitle = _sanitizeTrack(track['title'] as String? ?? '')
+          final trackTitle = sanitizeTrack(track['title'] as String? ?? '')
               .toLowerCase();
           final bool titleMatches = trackTitle.isNotEmpty &&
               (trackTitle == titleLower ||
@@ -8760,7 +8760,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // --- Helper: TheAudioDB fallback ---
-    Future<String?> _searchTheAudioDB(String query) async {
+    Future<String?> searchTheAudioDB(String query) async {
       if (query.isEmpty) return null;
       try {
         final uri = Uri.parse(
@@ -8787,26 +8787,26 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     }
 
     // 3. Build search candidates (sanitized first, then raw)
-    final sanitizedName = _sanitize(artistName);
+    final sanitizedName = sanitize(artistName);
     final rawName = artistName.trim();
 
     // 4. FIRST SEARCH: Last.fm (track-aware when possible)
     String? result;
     final String cleanTrack = trackTitle?.trim() ?? '';
     final hasTitle = cleanTrack.isNotEmpty;
-    result = await _searchLastFm(sanitizedName, trackTitle: cleanTrack);
+    result = await searchLastFm(sanitizedName, trackTitle: cleanTrack);
 
     // 5. SECOND SEARCH: existing Deezer cascade, only if Last.fm gave nothing
     if (result == "NOT_FOUND" || result == null) {
       if (hasTitle) {
-        result = await _searchDeezerTrackVerified(sanitizedName, cleanTrack);
+        result = await searchDeezerTrackVerified(sanitizedName, cleanTrack);
       }
     }
     if (result == "NOT_FOUND" || result == null) {
-      final String? artistResult = await _searchDeezerVerified(sanitizedName);
+      final String? artistResult = await searchDeezerVerified(sanitizedName);
       if ((artistResult == "NOT_FOUND" || artistResult == null) &&
           sanitizedName != rawName) {
-        final rawResult = await _searchDeezerVerified(rawName);
+        final rawResult = await searchDeezerVerified(rawName);
         result = rawResult != null && rawResult != "NOT_FOUND"
             ? rawResult
             : artistResult;
@@ -8817,12 +8817,12 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     // 6. Fallback: TheAudioDB (same source as artist_details_screen)
     if (result == null || result == "NOT_FOUND") {
-      final audioDbPic = await _searchTheAudioDB(sanitizedName);
+      final audioDbPic = await searchTheAudioDB(sanitizedName);
       if (audioDbPic != null && audioDbPic.isNotEmpty) {
         result = audioDbPic;
       } else if (audioDbPic == null && sanitizedName != rawName) {
         // Try raw name in AudioDB too
-        final audioDbRaw = await _searchTheAudioDB(rawName);
+        final audioDbRaw = await searchTheAudioDB(rawName);
         if (audioDbRaw != null && audioDbRaw.isNotEmpty) {
           result = audioDbRaw;
         }

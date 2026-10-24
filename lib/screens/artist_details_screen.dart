@@ -2209,7 +2209,7 @@ class _SkeletonBoxState extends State<_SkeletonBox>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _anim,
-      builder: (_, __) => Container(
+      builder: (_, _) => Container(
         width: widget.width,
         height: widget.height,
         decoration: BoxDecoration(
@@ -2294,8 +2294,8 @@ class _SimilarArtistsSkeleton extends StatelessWidget {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: 6,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
-            itemBuilder: (_, __) => Column(
+            separatorBuilder: (_, _) => const SizedBox(width: 14),
+            itemBuilder: (_, _) => Column(
               children: const [
                 _SkeletonBox(width: 68, height: 68, borderRadius: 34), // circle
                 SizedBox(height: 6),
