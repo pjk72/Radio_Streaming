@@ -1125,21 +1125,6 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                 );
               },
             ),
-            Text(
-              langProvider.translate('wizard_welcome'),
-              style: Theme.of(context).textTheme.headlineSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              langProvider.translate('wizard_desc'),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
-            ),
             const SizedBox(height: 16),
             Expanded(
               child: ListView(

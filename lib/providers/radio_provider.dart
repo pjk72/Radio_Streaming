@@ -1190,6 +1190,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   final List<String> _backupHistory = [];
   List<String> get backupHistory => List.unmodifiable(_backupHistory);
 
+  /// Persisted counterpart of the in-memory [_appDataReady] flag, shared with
+  /// the Workmanager background isolate.
+  static const String _keyAppDataReady = 'app_data_ready';
+
   /// Records a successful backup into the persistent history (last 15).
   Future<void> _recordBackup(int ts, String type) async {
     _backupHistory.insert(0, jsonEncode({'ts': ts, 'type': type}));
@@ -1722,6 +1726,9 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     this._themeProvider,
   ]) {
     WidgetsBinding.instance.addObserver(this);
+    // Until the data below has been fully loaded, no automatic backup may run
+    // (also resets the persisted flag read by the Workmanager task).
+    _markAppDataLoading();
     // connectivity_plus listener
     Connectivity().onConnectivityChanged.listen((results) {
       final bool isNowOffline = results.contains(ConnectivityResult.none);
@@ -2187,15 +2194,25 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     _loadArtistImagesCache();
     _loadArtistImageOverrides();
-    _loadStations();
 
-    _loadPlaylists().then((_) {
+    final int loadToken = _appDataLoadToken;
+    Future.wait([
+      _loadStations(),
+      _loadPlaylists(),
+    ]).then((_) {
       // Start background scan for local duplicates after data is ready
       Future.delayed(const Duration(seconds: 3), _scanForLocalUpgrades);
       // Check and request permissions if local content is present
       ensureLocalPermissions();
       // Initialize sharing handlers only AFTER data (playlists) is ready
       _initExternalHandlers();
+      // All user data is now in memory: automatic backups are safe. Skip if a
+      // newer reset/login cycle has started in the meantime.
+      if (loadToken == _appDataLoadToken) {
+        _markAppDataReady();
+      }
+    }).catchError((Object e) {
+      LogService().log("[RadioProvider] Initial data load failed: $e");
     });
   }
 
@@ -4339,6 +4356,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool _backupOverride = false;
   bool get backupOverride => _backupOverride;
 
+  /// True for the brief window right after a login/restore completes.
+  /// Prevents [_markAppDataReady] from triggering an immediate auto-backup,
+  /// which would upload an empty or just-restored snapshot to Drive.
+  bool _justCompletedRestore = false;
+
   // Backup State
   bool _isBackingUp = false;
   bool get isBackingUp => _isBackingUp;
@@ -4354,7 +4376,68 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   bool get canInitiateBackup =>
       !_isBackingUp &&
       !_isRestoring &&
+      _appDataReady &&
       (_lastBackupTs != 0 || _hasPerformedRestore || _backupOverride);
+
+  // --- App data readiness ---------------------------------------------------
+  // Automatic backups must never start while the app is still loading the
+  // user's data (cold start, login/session switch, restore). Running them too
+  // early would upload an empty or incomplete snapshot over a valid backup.
+  bool _appDataReady = false;
+  bool get isAppDataReady => _appDataReady;
+  Completer<void> _appDataReadyCompleter = Completer<void>();
+
+  /// Incremented every time a new loading/reset cycle starts. Used to discard
+  /// completions coming from a stale load (e.g. the cold-start load finishing
+  /// while a login reset is already in progress).
+  int _appDataLoadToken = 0;
+
+  /// Completes the first time the app has finished loading all user data.
+  Future<void> get appDataReadyFuture => _appDataReadyCompleter.future;
+
+  /// Marks the app as "loading": blocks any automatic backup until
+  /// [_markAppDataReady] is called again.
+  void _markAppDataLoading() {
+    _appDataLoadToken++;
+    final bool wasReady = _appDataReady;
+    _appDataReady = false;
+    if (_appDataReadyCompleter.isCompleted) {
+      _appDataReadyCompleter = Completer<void>();
+    }
+    // Persist the flag too: Workmanager reads it from its own isolate and must
+    // never upload while the app is loading/switching session.
+    unawaited(_persistAppDataReadyFlag(false));
+    if (wasReady) notifyListeners();
+  }
+
+  /// Marks the app as fully loaded. Only from this moment on it is safe to
+  /// create automatic backups.
+  void _markAppDataReady() {
+    if (_appDataReady) return;
+    _appDataReady = true;
+    if (!_appDataReadyCompleter.isCompleted) {
+      _appDataReadyCompleter.complete();
+    }
+    unawaited(_persistAppDataReadyFlag(true));
+    LogService().log(
+      "[RadioProvider] App data fully loaded: automatic backups enabled.",
+    );
+    // A backup may have become due while the app was loading: check again now
+    // that the complete data set is available.
+    // If we just completed a login/restore, skip any immediate backup trigger
+    // so we never upload right after the user logs in.
+    final bool skipImmediate = _justCompletedRestore;
+    _justCompletedRestore = false;
+    _checkAutoBackup(reschedule: false, skipIfJustLogin: skipImmediate);
+    notifyListeners();
+  }
+
+  Future<void> _persistAppDataReadyFlag(bool ready) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyAppDataReady, ready);
+    } catch (_) {}
+  }
 
   // Return sorted stations if custom order exists, otherwise default list
   List<Station> get allStations {
@@ -7121,6 +7204,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   String get backupFrequency => _backupFrequency;
   Timer? _autoBackupTimer;
 
+  /// Timestamp of when this RadioProvider instance was created (= app open).
+  final DateTime _appStartTime = DateTime.now();
+
+  /// After the app opens, backup is deferred for this duration even if the
+  /// scheduled interval has already elapsed. This avoids uploading right at
+  /// startup before the user has had a chance to interact with the app.
+  static const Duration _backupStartupGrace = Duration(minutes: 5);
+
   Duration _frequencyInterval([String? freq]) {
     switch (freq ?? _backupFrequency) {
       case 'daily':
@@ -7210,6 +7301,39 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_backupFrequency == 'weekly' && diff > 604800000) due = true;
 
     if (due) {
+      // Safety net: never create a backup while the app is still loading or
+      // restoring the user's data. _markAppDataReady() will re-check later.
+      if (!_appDataReady) {
+        LogService().log(
+          "[RadioProvider] Auto backup due but app data is not fully loaded yet. Deferred.",
+        );
+        return;
+      }
+
+      // Startup grace period: even if the interval has elapsed, never upload
+      // within the first few minutes of the app being open. Schedule a
+      // one-shot timer for the end of the grace window instead.
+      final int msSinceStart =
+          DateTime.now().difference(_appStartTime).inMilliseconds;
+      final int graceMs = _backupStartupGrace.inMilliseconds;
+      if (msSinceStart < graceMs) {
+        final int remaining = graceMs - msSinceStart;
+        LogService().log(
+          "[RadioProvider] Auto backup due but within startup grace period. "
+          "Deferred by ${(remaining / 1000).round()}s.",
+        );
+        Future.delayed(Duration(milliseconds: remaining), () {
+          if (_backupService.isSignedIn && _appDataReady && !_isBackingUp) {
+            performBackup(isAuto: true).catchError((e) {
+              LogService().log(
+                "[RadioProvider] Deferred startup backup failed: $e",
+              );
+            });
+          }
+        });
+        return;
+      }
+
       await performBackup(isAuto: true);
     }
   }
@@ -7232,6 +7356,38 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
   Future<void> performBackup({bool isAuto = false}) async {
     if (!_backupService.isSignedIn) return;
+    // Never run two backups at the same time.
+    if (_isBackingUp) return;
+
+    // A restore is replacing the local data right now: never snapshot it.
+    if (_isRestoring) {
+      LogService().log(
+        "[RadioProvider] Backup skipped: a restore is currently in progress.",
+      );
+      return;
+    }
+
+    // Never persist a snapshot before the app has finished loading all the
+    // user's data. This is the situation right after login (resetAllData +
+    // restoreAfterLogin) and during cold start, where an early backup would
+    // create an empty or partial backup.
+    if (!_appDataReady) {
+      if (isAuto) {
+        LogService().log(
+          "[RadioProvider] Auto backup skipped: app data is not ready yet.",
+        );
+        return;
+      }
+      // Manual requests wait for the initial load instead of silently failing.
+      try {
+        await appDataReadyFuture.timeout(const Duration(seconds: 30));
+      } on TimeoutException {
+        LogService().log(
+          "[RadioProvider] Backup aborted: app data is not ready yet.",
+        );
+        return;
+      }
+    }
 
     _isBackingUp = true;
     notifyListeners();
@@ -7317,6 +7473,11 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<void> restoreBackup({bool isFullReplace = false, String? fileId}) async {
     if (!_backupService.isSignedIn) return;
 
+    // A restore replaces the local data: automatic backups must stay blocked
+    // until every piece of data has been loaded again.
+    final bool wasReadyBeforeRestore = _appDataReady;
+    _markAppDataLoading();
+
     // Ferma la riproduzione per ripulire PlayerBar e NowPlayingHeader durante lo switch
     try {
       await _audioHandler.stop();
@@ -7345,13 +7506,15 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         await setBackupFrequency('hourly');
         await _saveHasPerformedRestore();
         
+        _isRestoring = false;
+        _markAppDataReady();
+        notifyListeners();
+
         // Lanciamo il backup in background senza attendere
         performBackup(isAuto: true).catchError((e) {
           LogService().log("[RadioProvider] First background backup failed: $e");
         });
         
-        _isRestoring = false;
-        notifyListeners();
         return;
       }
       LogService().log(
@@ -7612,6 +7775,8 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
       // Dismiss spinner BEFORE potential permission dialog
       _isRestoring = false;
+      // Restore is complete: the data can be backed up again.
+      _markAppDataReady();
       notifyListeners();
 
       LogService().log("[RadioProvider] Checking permissions...");
@@ -7621,6 +7786,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     } catch (e, stack) {
       LogService().log("[RadioProvider] restoreBackup FAILED: $e\n$stack");
       _isRestoring = false;
+      // If the app was already fully loaded before this restore attempt,
+      // restore readiness (the local data is still the running one). During a
+      // login restore we intentionally stay "not ready" so that no partial
+      // backup can be uploaded.
+      if (wasReadyBeforeRestore) {
+        _markAppDataReady();
+      }
       notifyListeners();
       if (e.toString().contains("No backup found")) {
         _hasPerformedRestore = true;
@@ -11091,6 +11263,13 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
       await _loadUserPlayHistory();
       await _loadStationOrder();
       await _loadStartupSettings();
+
+    // Only now the post-login restore is complete and the data is safe to
+    // be backed up. Mark the restore flag BEFORE calling _markAppDataReady so
+    // that the auto-backup check inside it uses skipIfJustLogin=true and does
+    // NOT upload immediately after a login/restore.
+    _justCompletedRestore = true;
+    _markAppDataReady();
     } catch (e) {
       LogService().log("[RadioProvider] Error during user session restore: $e");
     } finally {
@@ -11134,6 +11313,10 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   Future<void> resetAllData({ThemeProvider? themeProvider, bool restoreGuest = true}) async {
+    // Local data is being cleared/reloaded: block automatic backups until the
+    // reset (or the following login restore) has completed.
+    _markAppDataLoading();
+
     final prefs = await SharedPreferences.getInstance();
 
     // Ferma la musica per ripulire PlayerBar e NowPlayingHeader
@@ -11194,6 +11377,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     await _loadUserPlayHistory();
     await _loadStationOrder();
     await _loadStartupSettings();
+    if (restoreGuest) {
+      // The guest data is fully restored: backups can run again.
+      _markAppDataReady();
+    } else {
+      // We just switched to a signed-in context (or to an empty guest state)
+      // and the caller (e.g. sign-in flow) will mark readiness after restoring
+      // the local cache.
+    }
     notifyListeners();
   }
 }

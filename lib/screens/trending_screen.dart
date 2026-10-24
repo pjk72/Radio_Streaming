@@ -968,7 +968,7 @@ class _TrendingScreenState extends State<TrendingScreen>
             child: TextField(
               controller: _customQueryController,
               decoration: InputDecoration(
-                hintText: langProvider.translate('custom_search_hint'),
+                hintText: langProvider.translate('custom_search_hint', args: [DateTime.now().year.toString()]),
                 prefixIcon: Icon(
                   Icons.search,
                   color: Theme.of(context).primaryColor,

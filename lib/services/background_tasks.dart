@@ -34,6 +34,17 @@ Future<bool> _performBackgroundBackup() async {
       return true;
     }
 
+    // The app writes this flag only after it has fully loaded the user's data.
+    // Without it (fresh install, login/session switch in progress, restore)
+    // a background backup could upload an empty or partial snapshot.
+    final bool appDataReady = prefs.getBool('app_data_ready') ?? false;
+    if (!appDataReady) {
+      debugPrint(
+        "Workmanager: Backup skipped - app data is not fully loaded yet.",
+      );
+      return true;
+    }
+
     final lastBackupTs = prefs.getInt('last_backup_ts') ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
     final diff = now - lastBackupTs;

@@ -45,12 +45,12 @@ class TrendingPlaylist {
   factory TrendingPlaylist.fromJson(Map<String, dynamic> json) {
     return TrendingPlaylist(
       id: json['id'],
-      title: json['title'],
+      title: _decodeHtml(json['title'] ?? ''),
       provider: json['provider'],
       imageUrls: List<String>.from(json['imageUrls']),
       externalUrl: json['externalUrl'],
       trackCount: json['trackCount'] ?? -1,
-      owner: json['owner'],
+      owner: json['owner'] != null ? _decodeHtml(json['owner']) : null,
       categoryTitle: json['categoryTitle'],
       predefinedTracks: json['predefinedTracks'] != null
           ? (json['predefinedTracks'] as List)
@@ -60,6 +60,42 @@ class TrendingPlaylist {
     );
   }
 }
+
+/// Decodes HTML entities in playlist titles/names from external APIs.
+/// Handles:
+///  - Named:   &amp; &quot; &nbsp; &lt; &gt; &apos; (with or without ;)
+///  - Decimal: &#NNN; or &#NNN  (semicolon optional)
+///  - Hex:     &#xHHH; or &#xHHH
+String _decodeHtml(String text) {
+  return text
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&apos;', "'")
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      // without semicolon (malformed)
+      .replaceAll('&nbsp', ' ')
+      .replaceAll('&amp', '&')
+      .replaceAll('&quot', '"')
+      // hex numeric: &#xHHH; or &#xHHH
+      .replaceAllMapped(
+        RegExp(r'&#[xX]([0-9a-fA-F]+);?'),
+        (m) {
+          final code = int.tryParse(m[1]!, radix: 16);
+          return code != null ? String.fromCharCode(code) : m[0]!;
+        },
+      )
+      // decimal numeric: &#NNN; or &#NNN
+      .replaceAllMapped(
+        RegExp(r'&#(\d+);?'),
+        (m) {
+          final code = int.tryParse(m[1]!);
+          return code != null ? String.fromCharCode(code) : m[0]!;
+        },
+      );
+}
+
 
 class TrendingService {
   final YoutubeExplode _yt = YoutubeExplode();
@@ -313,10 +349,10 @@ class TrendingService {
           playlists.add(
             TrendingPlaylist(
               id: id,
-              title: title,
+              title: _decodeHtml(title),
               provider: 'APPLEMUSIC',
               imageUrls: [artUrl],
-              owner: item['artistName']?.toString() ?? 'Apple Music',
+              owner: _decodeHtml(item['artistName']?.toString() ?? 'Apple Music'),
               externalUrl: extUrl,
               trackCount: -1,
               categoryTitle: category,
@@ -397,7 +433,7 @@ class TrendingService {
 
       return TrendingPlaylist(
         id: 'apple_chart_${chart.type}_$appleCC',
-        title: playlistTitle,
+        title: _decodeHtml(playlistTitle),
         provider: 'APPLEMUSIC',
         imageUrls: imageUrls,
         trackCount: -1,
@@ -691,7 +727,7 @@ class TrendingService {
         final p = result as SearchPlaylist;
         return TrendingPlaylist(
           id: p.id.value,
-          title: p.title,
+          title: _decodeHtml(p.title),
           provider: 'YouTube',
           imageUrls: p.thumbnails.isNotEmpty
               ? [p.thumbnails.last.url.toString()]
@@ -726,11 +762,11 @@ class TrendingService {
           }
           return TrendingPlaylist(
             id: item['id'].toString(),
-            title: item['playlist_name'],
+            title: _decodeHtml(item['playlist_name']),
             provider: 'AUDIUS',
             imageUrls: img != null ? [img] : [],
             trackCount: -1,
-            owner: item['user']?['name'],
+            owner: item['user']?['name'] != null ? _decodeHtml(item['user']['name']) : null,
           );
         }).toList();
       }
@@ -755,13 +791,13 @@ class TrendingService {
         return list.map((item) {
           return TrendingPlaylist(
             id: item['id'].toString(),
-            title: item['title'],
+            title: _decodeHtml(item['title']),
             provider: 'DEEZER',
             imageUrls: item['picture_medium'] != null
                 ? [item['picture_medium']]
                 : [],
             trackCount: -1,
-            owner: item['user']?['name'],
+            owner: item['user']?['name'] != null ? _decodeHtml(item['user']['name']) : null,
             externalUrl: item['link'],
           );
         }).toList();
