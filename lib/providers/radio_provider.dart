@@ -889,6 +889,24 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // Only preload if we are in playlist mode using native player
     if (_currentPlayingPlaylistId == null || _isPreloading) return;
 
+    // Remote contexts played from Android Auto (e.g. the "For You" / "Per Te"
+    // AI mixes, the remote trending playlists and the downloads list) only
+    // exist inside the audio handler queue: the provider has no Playlist with
+    // that id, so _getNextSongInPlaylist() would return null and the crossfade
+    // would never start. Delegate to the handler, which knows the queue.
+    final bool isKnownLocalPlaylist =
+        (_tempPlaylist?.id == _currentPlayingPlaylistId) ||
+        playlists.any((p) => p.id == _currentPlayingPlaylistId);
+    if (!isKnownLocalPlaylist && _audioHandler is RadioAudioHandler) {
+      _isPreloading = true;
+      try {
+        await _audioHandler.preloadNextFromQueue();
+      } finally {
+        _isPreloading = false;
+      }
+      return;
+    }
+
     // Just find the next song
     final nextSong = _getNextSongInPlaylist();
     if (nextSong != null) {

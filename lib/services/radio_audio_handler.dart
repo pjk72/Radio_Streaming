@@ -285,10 +285,16 @@ class RadioAudioHandler extends BaseAudioHandler
   // Callbacks
   VoidCallback? onSkipNext;
   VoidCallback? onSkipPrevious;
-  VoidCallback? onPreloadNext; // New callback
+  Future<void> Function()? onPreloadNext; // New callback
 
   // Preloading State
   bool _hasTriggeredPreload = false;
+  bool _isQueuePreloadInFlight = false;
+  int _preloadAttempts = 0;
+  DateTime? _nextPreloadRetryAt;
+  bool _hasLoggedCrossfadeMiss = false;
+  bool _isRecoveringDuration = false;
+  DateTime? _lastDurationRecoveryAttempt;
   String? _cachedNextSongUrl;
   Map<String, dynamic>? _cachedNextSongExtras;
   DateTime? _lastSkipRequestTime;
@@ -1310,6 +1316,9 @@ class RadioAudioHandler extends BaseAudioHandler
     // Always reset flags
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
+    _preloadAttempts = 0;
+    _nextPreloadRetryAt = null;
+    _hasLoggedCrossfadeMiss = false;
 
     // LOCAL FILE CHECK
     // Fallback: If local path is null but videoId looks like a path
@@ -2045,10 +2054,19 @@ class RadioAudioHandler extends BaseAudioHandler
         "Preload: Fetching stream for videoId=$videoId (duration hint: ${metadataExtras['duration']})",
       );
       var yt = YoutubeExplode();
-      var video = await yt.videos.get(videoId);
-      var manifest = await yt.videos.streamsClient.getManifest(videoId);
-      var streamInfo = manifest.muxed.withHighestBitrate();
-      yt.close();
+      Video video;
+      VideoStreamInfo streamInfo;
+      try {
+        video = await yt.videos
+            .get(videoId)
+            .timeout(const Duration(seconds: 10));
+        final manifest = await yt.videos.streamsClient
+            .getManifest(videoId)
+            .timeout(const Duration(seconds: 10));
+        streamInfo = manifest.muxed.withHighestBitrate();
+      } finally {
+        yt.close();
+      }
 
       final streamUrl = streamInfo.url.toString();
       _cachedNextSongUrl = streamUrl;
@@ -2280,6 +2298,9 @@ class RadioAudioHandler extends BaseAudioHandler
     // RESET TRIGGER FLAGS for the next song in the chain
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
+    _preloadAttempts = 0;
+    _nextPreloadRetryAt = null;
+    _hasLoggedCrossfadeMiss = false;
 
     // Delay clearing _expectingStop to ignore residual events from the dying player
     Future.delayed(const Duration(seconds: 1), () {
@@ -2664,6 +2685,9 @@ class RadioAudioHandler extends BaseAudioHandler
     // Always reset flags for fresh playback
     _hasTriggeredPreload = false;
     _hasTriggeredEarlyStart = false;
+    _preloadAttempts = 0;
+    _nextPreloadRetryAt = null;
+    _hasLoggedCrossfadeMiss = false;
 
     // Force immediate transition to Loading state
     _expectingStop = true;
@@ -3075,6 +3099,9 @@ class RadioAudioHandler extends BaseAudioHandler
             _setupPlayerListeners();
             _hasTriggeredPreload = false;
             _hasTriggeredEarlyStart = false;
+            _preloadAttempts = 0;
+            _nextPreloadRetryAt = null;
+            _hasLoggedCrossfadeMiss = false;
             lastUiUpdate = now;
             LogService().log(
               "Crossfade: Mid-point metadata swap performed smoothly",
@@ -3107,6 +3134,9 @@ class RadioAudioHandler extends BaseAudioHandler
         _setupPlayerListeners();
         _hasTriggeredPreload = false;
         _hasTriggeredEarlyStart = false;
+        _preloadAttempts = 0;
+        _nextPreloadRetryAt = null;
+        _hasLoggedCrossfadeMiss = false;
       }
 
       // 4. CLEANUP
@@ -5123,6 +5153,10 @@ class RadioAudioHandler extends BaseAudioHandler
                 artUri: track['image'],
                 youtubeUrl: track['youtubeUrl'],
                 dateAdded: DateTime.now(),
+                genre: track['genre']?.toString(),
+                duration: track['duration'] != null
+                    ? Duration(milliseconds: (track['duration'] as num).toInt())
+                    : null,
                 releaseDate: track['releaseDate']?.toString(),
               );
 
@@ -5197,6 +5231,10 @@ class RadioAudioHandler extends BaseAudioHandler
                 artUri: track['image']?.toString(),
                 youtubeUrl: track['youtubeUrl'] ?? track['url'],
                 dateAdded: DateTime.now(),
+                genre: track['genre']?.toString(),
+                duration: track['duration'] != null
+                    ? Duration(milliseconds: (track['duration'] as num).toInt())
+                    : null,
                 releaseDate: track['releaseDate']?.toString(),
               );
 
@@ -6192,7 +6230,18 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     final currentMedia = mediaItem.value;
-    final expectedDuration = currentMedia?.duration;
+
+    // On Android Auto some tracks are started straight from the handler queue
+    // (For You mixes, trending playlists) and can be published without a
+    // duration. The preload/crossfade triggers below require it, so recover it
+    // from the player itself instead of silently doing nothing.
+    if (currentMedia?.extras?['type'] == 'playlist_song' &&
+        (currentMedia?.duration == null ||
+            currentMedia!.duration! <= Duration.zero)) {
+      _recoverDurationFromPlayer();
+    }
+
+    final expectedDuration = mediaItem.value?.duration;
 
     if (expectedDuration != null &&
         currentMedia?.extras?['type'] == 'playlist_song' &&
@@ -6204,16 +6253,17 @@ class RadioAudioHandler extends BaseAudioHandler
           (pos.inSeconds >= expectedDuration.inSeconds * 0.5) ||
           (remaining.inSeconds <= 60);
 
-      if (shouldPreload && !_hasTriggeredPreload && !_isSwapping) {
+      if (shouldPreload &&
+          !_hasTriggeredPreload &&
+          !_isSwapping &&
+          _preloadAttempts < 3 &&
+          (_nextPreloadRetryAt == null ||
+              DateTime.now().isAfter(_nextPreloadRetryAt!))) {
         _hasTriggeredPreload = true;
         LogService().log(
           "Preload: Background Trigger for ${currentMedia?.title} (Rem: ${remaining.inSeconds}s)",
         );
-        if (onPreloadNext != null) {
-          onPreloadNext!();
-        } else {
-          _autonomousPreload();
-        }
+        unawaited(_preloadNextWithFallback());
       }
 
       // 2. CROSSFADE TRIGGER
@@ -6226,8 +6276,132 @@ class RadioAudioHandler extends BaseAudioHandler
             "Crossfade: Background Trigger starting (${_crossfadeSeconds}s)...",
           );
           _startCrossfade();
+        } else if (!_hasTriggeredEarlyStart &&
+            _nextPlayerSourceUrl == null &&
+            !_isSwapping &&
+            !_hasLoggedCrossfadeMiss) {
+          _hasLoggedCrossfadeMiss = true;
+          LogService().log(
+            "Crossfade: Waiting for preloaded next track "
+            "(${remaining.inSeconds}s remaining, attempts: $_preloadAttempts).",
+          );
         }
       }
+    } else if (currentMedia?.extras?['type'] == 'playlist_song' &&
+        !_hasLoggedCrossfadeMiss) {
+      _hasLoggedCrossfadeMiss = true;
+      LogService().log(
+        "Crossfade: Duration unavailable for '${currentMedia?.title}', "
+        "trying to recover it from the player.",
+      );
+    }
+  }
+
+  /// Asks the player for the duration of the current track and publishes it on
+  /// the [mediaItem] when it was missing. Throttled to avoid hammering the
+  /// platform channel on every position/heartbeat tick.
+  Future<void> _recoverDurationFromPlayer() async {
+    if (_isRecoveringDuration) return;
+    final now = DateTime.now();
+    if (_lastDurationRecoveryAttempt != null &&
+        now.difference(_lastDurationRecoveryAttempt!) <
+            const Duration(seconds: 2)) {
+      return;
+    }
+    _lastDurationRecoveryAttempt = now;
+    _isRecoveringDuration = true;
+    try {
+      final d = await _player.getDuration();
+      if (d != null && d > Duration.zero) {
+        final current = mediaItem.value;
+        if (current != null &&
+            current.extras?['type'] == 'playlist_song' &&
+            current.duration != d) {
+          mediaItem.add(current.copyWith(duration: d));
+          _broadcastState(_player.state);
+          LogService().log(
+            "Crossfade: Recovered duration ${d.inSeconds}s from player",
+          );
+        }
+      }
+    } catch (_) {
+      // Ignore: the next position update will retry.
+    } finally {
+      _isRecoveringDuration = false;
+    }
+  }
+
+  /// Runs the provider preload callback and, when it could not prepare a next
+  /// stream for any reason (unknown context, missing metadata, failed
+  /// resolution, an early return...), falls back to the handler's own queue.
+  ///
+  /// This is essential on Android Auto, where contexts like "For You"/"Per Te"
+  /// mixes are played directly from the handler queue and the provider often
+  /// has no Playlist matching `_currentPlayingPlaylistId`.
+  Future<void> _preloadNextWithFallback() async {
+    _hasLoggedCrossfadeMiss = false;
+    if (onPreloadNext != null) {
+      try {
+        await onPreloadNext!().timeout(const Duration(seconds: 30));
+      } catch (e) {
+        LogService().log("Preload: Provider callback failed: $e");
+      }
+    }
+
+    if (_nextPlayerSourceUrl == null && !_isSwapping) {
+      if (onPreloadNext == null) {
+        LogService().log(
+          "Preload: No provider callback, using handler queue.",
+        );
+      } else {
+        LogService().log(
+          "Preload: Provider could not prepare next track, using handler queue.",
+        );
+      }
+      await preloadNextFromQueue();
+    }
+
+    if (_nextPlayerSourceUrl != null) {
+      _preloadAttempts = 0;
+      _nextPreloadRetryAt = null;
+      LogService().log("Preload: Next track ready for crossfade.");
+    } else if (!_isSwapping) {
+      // Allow a later position/heartbeat update to retry, but never hammer the
+      // network: at most 3 attempts with a 6s cooldown between them.
+      _preloadAttempts++;
+      _hasLoggedCrossfadeMiss = false;
+      if (_preloadAttempts < 3) {
+        _hasTriggeredPreload = false;
+        _nextPreloadRetryAt = DateTime.now().add(
+          const Duration(seconds: 6),
+        );
+        LogService().log(
+          "Preload: attempt $_preloadAttempts failed, retrying in 6s.",
+        );
+      } else {
+        LogService().log(
+          "Preload: giving up after $_preloadAttempts attempts for "
+          "'${mediaItem.value?.title}'.",
+        );
+      }
+    }
+  }
+
+  /// Preloads the next queue item using the handler's own playback queue.
+  ///
+  /// Android Auto contexts such as the "For You" (Per Te) AI mixes and the
+  /// remote trending playlists only exist inside the handler queue, so the
+  /// provider cannot resolve their next song. Without this fallback the next
+  /// stream is never prepared and the crossfade never triggers.
+  Future<void> preloadNextFromQueue() async {
+    if (_isQueuePreloadInFlight) return;
+    _isQueuePreloadInFlight = true;
+    try {
+      await _autonomousPreload().timeout(const Duration(seconds: 30));
+    } catch (e) {
+      LogService().log("Preload: Queue preload failed: $e");
+    } finally {
+      _isQueuePreloadInFlight = false;
     }
   }
 
@@ -6238,14 +6412,43 @@ class RadioAudioHandler extends BaseAudioHandler
     }
 
     LogService().log(
-      "Preload: App inactive. Attempting autonomous resolution for background crossfade...",
+      "Preload: Resolving next track from handler queue for crossfade...",
     );
 
+    // Resolve the current index robustly: when a track is started directly from
+    // Android Auto the queue can have been rebuilt/shuffled and _playlistIndex
+    // may be stale (-1), which would preload the wrong (or the current) song.
+    int currentIndex = _playlistIndex;
+    if (currentIndex < 0 || currentIndex >= _playlistQueue.length) {
+      final current = mediaItem.value;
+      final String? currentSongId = current?.extras?['songId'];
+      final String? currentStableId = current?.extras?['stableId'];
+      currentIndex = _playlistQueue.indexWhere(
+        (item) =>
+            (currentSongId != null &&
+                item.extras?['songId'] == currentSongId) ||
+            (currentStableId != null &&
+                item.extras?['stableId'] == currentStableId),
+      );
+      if (currentIndex < 0 && current != null) {
+        currentIndex = _playlistQueue.indexWhere(
+          (item) => item.id == current.id,
+        );
+      }
+      if (currentIndex < 0) currentIndex = 0;
+    }
+
     // Find next song in queue
-    int nextIdx = (_playlistIndex + 1) % _playlistQueue.length;
+    int nextIdx = (currentIndex + 1) % _playlistQueue.length;
     final nextItem = _playlistQueue[nextIdx];
 
     final songId = nextItem.extras?['songId'];
+    if (songId != null && songId == mediaItem.value?.extras?['songId']) {
+      LogService().log(
+        "Preload: Only the current track is in the queue, nothing to preload.",
+      );
+      return;
+    }
     String? videoId;
 
     // 1. Resolve videoId/Path
@@ -6267,7 +6470,9 @@ class RadioAudioHandler extends BaseAudioHandler
       try {
         final yt = YoutubeExplode();
         final searchQuery = "${nextItem.title} ${nextItem.artist}";
-        final searchList = await yt.search.search(searchQuery);
+        final searchList = await yt.search
+            .search(searchQuery)
+            .timeout(const Duration(seconds: 8));
         if (searchList.isNotEmpty) {
           videoId = searchList.first.id.value;
           LogService().log("Preload: Search Fallback resolved to $videoId");
