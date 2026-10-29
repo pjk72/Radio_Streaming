@@ -44,11 +44,20 @@ class _TopTrack {
   });
 }
 
+/// A Wikipedia page that has been validated as being about a musical artist.
+class _WikiArtistMatch {
+  final String title;
+  final Map<String, dynamic> summary;
+
+  const _WikiArtistMatch({required this.title, required this.summary});
+}
+
 class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
   late Future<List<Map<String, dynamic>>> _discographyFuture;
   late Future<Map<String, dynamic>?> _artistInfoFuture;
   late Future<List<_SimilarArtist>> _similarArtistsFuture;
   late Future<List<_TopTrack>> _topTracksFuture;
+  Future<_WikiArtistMatch?>? _wikiArtistMatchFuture;
   String? _fetchedArtistImage;
   String? _pickedArtistImage;
   String? _cachedArtistImage;
@@ -93,34 +102,51 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
   /// - Decimal numeric: &#NNN; or &#NNN  (semicolon optional — malformed HTML)
   /// - Hex numeric:     &#xHHH; or &#xHHH
   static String _decodeHtmlEntities(String text) {
-    return text
-        // Named entities (with semicolon)
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&apos;', "'")
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        // Named entities (without semicolon — malformed HTML)
-        .replaceAll('&nbsp', ' ')
-        .replaceAll('&amp', '&')
-        .replaceAll('&quot', '"')
-        // Hex numeric entities: &#xHHH; or &#xHHH (semicolon optional)
-        .replaceAllMapped(
-          RegExp(r'&#[xX]([0-9a-fA-F]+);?'),
-          (m) {
-            final code = int.tryParse(m[1]!, radix: 16);
-            return code != null ? String.fromCharCode(code) : m[0]!;
-          },
-        )
-        // Decimal numeric entities: &#NNN; or &#NNN (semicolon optional)
-        .replaceAllMapped(
-          RegExp(r'&#(\d+);?'),
-          (m) {
-            final code = int.tryParse(m[1]!);
-            return code != null ? String.fromCharCode(code) : m[0]!;
-          },
-        );
+    var decoded = text;
+
+    // Entities can be nested/double-encoded (e.g. "&#38;#160;" decodes to
+    // "&#160;"), so repeat the pass until the text stops changing. The loop is
+    // bounded to avoid pathological inputs.
+    for (var pass = 0; pass < 5; pass++) {
+      final next = decoded
+          // Named entities (with semicolon)
+          .replaceAll('&nbsp;', ' ')
+          .replaceAll('&amp;', '&')
+          .replaceAll('&quot;', '"')
+          .replaceAll('&apos;', "'")
+          .replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>')
+          // Named entities (without semicolon — malformed HTML). The
+          // lookahead avoids corrupting nested entities like "&amp;#160;".
+          .replaceAll('&nbsp', ' ')
+          .replaceAllMapped(
+            RegExp(r'&amp(?![#;a-zA-Z0-9])'),
+            (m) => '&',
+          )
+          .replaceAll('&quot', '"')
+          // Hex numeric entities: &#xHHH; or &#xHHH (semicolon optional)
+          .replaceAllMapped(
+            RegExp(r'&#[xX]([0-9a-fA-F]+);?'),
+            (m) {
+              final code = int.tryParse(m[1]!, radix: 16);
+              return code != null ? String.fromCharCode(code) : m[0]!;
+            },
+          )
+          // Decimal numeric entities: &#NNN; or &#NNN (semicolon optional)
+          .replaceAllMapped(
+            RegExp(r'&#(\d+);?'),
+            (m) {
+              final code = int.tryParse(m[1]!);
+              return code != null ? String.fromCharCode(code) : m[0]!;
+            },
+          );
+
+      if (next == decoded) break;
+      decoded = next;
+    }
+
+    // Non-breaking spaces are rendered as normal spaces in the biography.
+    return decoded.replaceAll('\u00A0', ' ');
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscography() async {
@@ -286,78 +312,285 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
     return null;
   }
 
-  Future<String?> _fetchWikipediaBioEn(String artistName) async {
-    String? cleanExtract(Map<String, dynamic> data) {
-      if (data['type'] == 'disambiguation') return null;
-      final extract = data['extract'] as String?;
-      if (extract == null || extract.trim().isEmpty) return null;
-      return _decodeHtmlEntities(extract.trim());
+  // ─── Wikipedia artist resolution ────────────────────────────────────────
+  //
+  // Wikipedia titles are ambiguous: the page named "883" is about the year,
+  // while the Italian band is at "883 (band)". A page is therefore only used
+  // as an artist biography after validating that it describes a musician,
+  // singer or band, never a year/number/album/song/film.
+
+  static const List<String> _musicKeywords = [
+    'band',
+    'group',
+    'singer',
+    'vocalist',
+    'musician',
+    'rapper',
+    'composer',
+    'songwriter',
+    'lyricist',
+    'record producer',
+    'dj',
+    'duo',
+    'trio',
+    'quartet',
+    'ensemble',
+    'orchestra',
+    'choir',
+    'pop',
+    'rock',
+    'hip hop',
+    'rap',
+    'jazz',
+    'blues',
+    'metal',
+    'punk',
+    'folk',
+    'country',
+    'reggae',
+    'electronic',
+    'classical',
+    'opera',
+    'musical',
+    'soundtrack',
+    'guitarist',
+    'pianist',
+    'drummer',
+    'bassist',
+    'violinist',
+    'cellist',
+    'saxophonist',
+    'trumpeter',
+    'keyboardist',
+    'percussionist',
+    'conductor',
+    'instrumentalist',
+    'disc jockey',
+    'music producer',
+    'bandleader',
+    'arranger',
+    'beatmaker',
+    'tenor',
+    'soprano',
+    'baritone',
+    'contralto',
+    'mezzo-soprano',
+    'organist',
+    'flautist',
+    'clarinetist',
+    'trombonist',
+    'harpist',
+    'accordionist',
+  ];
+
+  /// Matches first sentences that describe a work (album, single, song, EP)
+  /// rather than the artist itself, e.g. "X is the debut studio album by Y".
+  static final RegExp _workPattern = RegExp(
+    r'\b(?:is|was)\s+(?:the\s+|a\s+|an\s+)?(?:\d{4}\s+)?'
+    r'(?:[a-z0-9&,-]+\s+){0,3}(?:album|single|song|ep|mixtape)\b',
+    caseSensitive: false,
+  );
+
+  static const List<String> _nonArtistKeywords = [
+    'calendar',
+    'year',
+    'number',
+    'date',
+    'album',
+    'single',
+    'song',
+    'film',
+    'series',
+    'list',
+    'surname',
+    'given name',
+    'genus',
+    'species',
+    'disambiguation',
+    'record label',
+    'record company',
+  ];
+
+  static bool _hasKeyword(String text, String keyword) {
+    final pattern = RegExp(
+      '(^|[^a-z0-9])${RegExp.escape(keyword)}([^a-z0-9]|\$)',
+      caseSensitive: false,
+    );
+    return pattern.hasMatch(text);
+  }
+
+  static bool _containsAnyKeyword(String text, List<String> keywords) {
+    if (text.isEmpty) return false;
+    return keywords.any((keyword) => _hasKeyword(text, keyword));
+  }
+
+  static String _firstSentence(String text) {
+    final match = RegExp(r'^.*?[.!?](?:\s|$)').firstMatch(text);
+    return match?.group(0)?.trim() ?? text;
+  }
+
+  static bool _looksLikeMusicArtist(Map<String, dynamic> data) {
+    if (data['type'] == 'disambiguation') return false;
+
+    final description = (data['description'] as String? ?? '').trim();
+    final extract = (data['extract'] as String? ?? '').trim();
+    if (description.isEmpty && extract.isEmpty) return false;
+
+    final lowerDescription = description.toLowerCase();
+    if (_containsAnyKeyword(lowerDescription, _nonArtistKeywords)) {
+      return false;
     }
 
-    Future<String?> trySummary(String title) async {
+    // Use the description and the first sentence only: later parts of a long
+    // extract may mention music even on non-musical pages.
+    final firstSentence = _firstSentence(extract).toLowerCase();
+    if (_workPattern.hasMatch(firstSentence)) return false;
+
+    final haystack = '$lowerDescription $firstSentence';
+    return _containsAnyKeyword(haystack, _musicKeywords);
+  }
+
+  /// Resolves [widget.artistName] to a Wikipedia page about a musical artist,
+  /// caching the result so biography, full biography and birth info all use
+  /// the same (correct) page.
+  Future<_WikiArtistMatch?> _resolveWikipediaArtist() {
+    return _wikiArtistMatchFuture ??= _doResolveWikipediaArtist();
+  }
+
+  Future<_WikiArtistMatch?> _doResolveWikipediaArtist() async {
+    final attempted = <String>{};
+
+    Future<_WikiArtistMatch?> tryTitle(String title) async {
+      final cleaned = title.trim();
+      if (cleaned.isEmpty || !attempted.add(cleaned.toLowerCase())) {
+        return null;
+      }
       try {
         final uri = Uri.parse(
-          'https://en.wikipedia.org/api/rest_v1/page/summary/${Uri.encodeComponent(title)}',
+          'https://en.wikipedia.org/api/rest_v1/page/summary/'
+          '${Uri.encodeComponent(cleaned)}',
         );
-        final response = await http.get(uri).timeout(const Duration(seconds: 10));
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          final bio = cleanExtract(data);
-          if (bio != null) return bio;
+        final response = await http
+            .get(uri, headers: {'User-Agent': 'RadioStreamingApp/1.0'})
+            .timeout(const Duration(seconds: 10));
+        if (response.statusCode != 200) return null;
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (!_looksLikeMusicArtist(data)) {
+          developer.log(
+            'Wikipedia: rejected "$cleaned" '
+            '(${data['description'] ?? 'no description'})',
+          );
+          return null;
         }
+
+        final resolvedTitle = (data['title'] as String? ?? cleaned).trim();
+        return _WikiArtistMatch(title: resolvedTitle, summary: data);
       } catch (e) {
-        developer.log("Error fetching Wikipedia summary for $title: $e");
+        developer.log('Error fetching Wikipedia summary for $cleaned: $e');
+        return null;
       }
-      return null;
     }
 
-    // Try direct page
-    String? bio = await trySummary(artistName);
-    if (bio != null && bio.isNotEmpty) return bio;
+    // 1. Exact title (e.g. "Queen").
+    final direct = await tryTitle(widget.artistName);
+    if (direct != null) return direct;
 
-    // Try with band/singer suffixes (prioritize band/singer)
+    // 2. Common disambiguated titles (e.g. "883 (band)").
     for (final suffix in const [
       ' (band)',
       ' (singer)',
       ' (musician)',
       ' (group)',
       ' (singer-songwriter)',
+      ' (Italian singer)',
       ' (rock band)',
       ' (pop band)',
+      ' (duo)',
     ]) {
-      bio = await trySummary('$artistName$suffix');
-      if (bio != null && bio.isNotEmpty) return bio;
+      final match = await tryTitle('${widget.artistName}$suffix');
+      if (match != null) return match;
     }
 
-    // Fallback to MediaWiki API (more robust)
-    try {
-      final uri = Uri.parse(
-        'https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&explaintext=1&redirects=1&titles=${Uri.encodeComponent(artistName)}',
-      );
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final pages = data['query']?['pages'] as Map<String, dynamic>?;
-        if (pages != null && pages.isNotEmpty) {
-          for (final page in pages.values) {
-            if (page is Map<String, dynamic>) {
-              if (page.containsKey('missing')) continue;
-              final extract = page['extract'] as String?;
-              if (extract != null && extract.trim().isNotEmpty) {
-                return _decodeHtmlEntities(extract.trim());
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      developer.log("Error fetching Wikipedia extracts for $artistName: $e");
+    // 3. Let Wikipedia search rank the best musical match. This also handles
+    //    artists whose page title differs from the name used by the app.
+    //    Candidates are capped so an unknown artist cannot trigger dozens of
+    //    sequential requests.
+    final searchTitles = <String>{};
+    for (final query in [
+      '"${widget.artistName}" band',
+      '"${widget.artistName}" singer',
+      '"${widget.artistName}" musician',
+    ]) {
+      searchTitles.addAll(await _searchWikipediaTitles(query));
+      if (searchTitles.length >= 10) break;
+    }
+
+    for (final title in searchTitles) {
+      final match = await tryTitle(title);
+      if (match != null) return match;
     }
 
     return null;
   }
 
-  Future<String?> _fetchWikipediaFullBioEn(String artistName) async {
+  Future<List<String>> _searchWikipediaTitles(String query) async {
+    try {
+      final uri = Uri.parse(
+        'https://en.wikipedia.org/w/api.php?action=query&format=json'
+        '&list=search&srnamespace=0&srlimit=6'
+        '&srsearch=${Uri.encodeComponent(query)}',
+      );
+      final response = await http
+          .get(uri, headers: {'User-Agent': 'RadioStreamingApp/1.0'})
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return const [];
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final results = data['query']?['search'] as List? ?? const [];
+      return results
+          .map((entry) => (entry as Map?)?['title']?.toString().trim() ?? '')
+          .where((title) => title.isNotEmpty)
+          .toList();
+    } catch (e) {
+      developer.log('Error searching Wikipedia for "$query": $e');
+      return const [];
+    }
+  }
+
+  Future<String?> _fetchWikipediaBioEn() async {
+    final match = await _resolveWikipediaArtist();
+    if (match == null) return null;
+
+    final extract = (match.summary['extract'] as String? ?? '').trim();
+    if (extract.isNotEmpty) return _decodeHtmlEntities(extract);
+
+    // Rare case: the summary has no extract. Use the resolved title only.
+    try {
+      final uri = Uri.parse(
+        'https://en.wikipedia.org/w/api.php?action=query&format=json'
+        '&prop=extracts&exintro=1&explaintext=1&redirects=1'
+        '&titles=${Uri.encodeComponent(match.title)}',
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final pages = data['query']?['pages'] as Map<String, dynamic>?;
+        for (final page in pages?.values ?? const <dynamic>[]) {
+          if (page is Map<String, dynamic> && !page.containsKey('missing')) {
+            final text = (page['extract'] as String? ?? '').trim();
+            if (text.isNotEmpty) return _decodeHtmlEntities(text);
+          }
+        }
+      }
+    } catch (e) {
+      developer.log('Error fetching Wikipedia extract for ${match.title}: $e');
+    }
+
+    return null;
+  }
+
+  Future<String?> _fetchWikipediaFullBioEn() async {
     Future<String?> tryFull(String title) async {
       // Try MediaWiki parse API for full page text
       try {
@@ -456,27 +689,38 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
       return null;
     }
 
-    String? fullBio = await tryFull(artistName);
-    if (fullBio != null && fullBio.isNotEmpty) return fullBio;
+    final match = await _resolveWikipediaArtist();
+    if (match == null) return null;
 
-    for (final suffix in const [
-      ' (band)',
-      ' (singer)',
-      ' (musician)',
-      ' (group)',
-      ' (singer-songwriter)',
-      ' (Italian singer)',
-      ' (rock band)',
-      ' (pop band)',
-    ]) {
-      fullBio = await tryFull('$artistName$suffix');
-      if (fullBio != null && fullBio.isNotEmpty) return fullBio;
-    }
+    final fullBio = await tryFull(match.title);
+    if (fullBio != null && fullBio.isNotEmpty) return fullBio;
 
     return null;
   }
 
-  Future<String?> _fetchWikipediaBirthInfo(String artistName) async {
+  Future<String?> _fetchWikipediaBirthInfo() async {
+    // Converts an infobox cell to plain text. Wikipedia renders the age as
+    // "(age&#160;77)" (a literal numeric entity), so entities must be decoded
+    // here or they end up visible in the UI.
+    String cleanInfoboxCell(String html) {
+      var text = html
+          .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), ', ')
+          .replaceAll(RegExp(r'<[^>]+>'), ' ');
+      text = _decodeHtmlEntities(text)
+          .replaceAll(RegExp(r'\[\d+\]'), '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          // Drop the hidden ISO date: "(1958-09-22) 22 September 1958".
+          .replaceAll(RegExp(r'\(\s*\d{4}-\d{2}-\d{2}\s*\)\s*'), '')
+          .trim();
+      // Remove spaces before punctuation and just inside parentheses.
+      text = text
+          .replaceAllMapped(RegExp(r'\s+([,;:.])'), (m) => m[1]!)
+          .replaceAllMapped(RegExp(r'\(\s+'), (m) => '(')
+          .replaceAllMapped(RegExp(r'\s+\)'), (m) => ')')
+          .trim();
+      return text;
+    }
+
     Future<String?> tryBirth(String title) async {
       try {
         final uri = Uri.parse(
@@ -509,15 +753,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
             caseSensitive: false,
           ).firstMatch(infobox);
           if (bornMatch != null) {
-            String b = bornMatch.group(1)!;
-            b = b
-                .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), ', ')
-                .replaceAll(RegExp(r'<[^>]+>'), ' ')
-                .replaceAll('&nbsp;', ' ')
-                .replaceAll('&amp;', '&')
-                .replaceAll(RegExp(r'\[\d+\]'), '')
-                .replaceAll(RegExp(r'\s+'), ' ')
-                .trim();
+            final b = cleanInfoboxCell(bornMatch.group(1)!);
             if (b.isNotEmpty) born = b;
           }
 
@@ -528,15 +764,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
               caseSensitive: false,
             ).firstMatch(infobox);
             if (bdMatch != null) {
-              String b = bdMatch.group(1)!;
-              b = b
-                  .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), ', ')
-                  .replaceAll(RegExp(r'<[^>]+>'), ' ')
-                  .replaceAll('&nbsp;', ' ')
-                  .replaceAll('&amp;', '&')
-                  .replaceAll(RegExp(r'\[\d+\]'), '')
-                  .replaceAll(RegExp(r'\s+'), ' ')
-                  .trim();
+              final b = cleanInfoboxCell(bdMatch.group(1)!);
               if (b.isNotEmpty) born = b;
             }
           }
@@ -563,21 +791,11 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
       return null;
     }
 
-    String? info = await tryBirth(artistName);
-    if (info != null && info.isNotEmpty) return info;
+    final match = await _resolveWikipediaArtist();
+    if (match == null) return null;
 
-    for (final suffix in const [
-      ' (band)',
-      ' (singer)',
-      ' (musician)',
-      ' (group)',
-      ' (singer-songwriter)',
-      ' (rock band)',
-      ' (pop band)',
-    ]) {
-      info = await tryBirth('$artistName$suffix');
-      if (info != null && info.isNotEmpty) return info;
-    }
+    final info = await tryBirth(match.title);
+    if (info != null && info.isNotEmpty) return info;
 
     return null;
   }
@@ -620,13 +838,13 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
     }
 
     // 3. Get biography from English Wikipedia (same UI)
-    final wikiBio = await _fetchWikipediaBioEn(widget.artistName);
+    final wikiBio = await _fetchWikipediaBioEn();
     if (wikiBio != null && wikiBio.isNotEmpty) {
       result ??= <String, dynamic>{};
       // Prefer English Wikipedia bio
       result['strBiographyEN'] = wikiBio;
       // Store full bio for popup
-      final fullBio = await _fetchWikipediaFullBioEn(widget.artistName);
+      final fullBio = await _fetchWikipediaFullBioEn();
       if (fullBio != null && fullBio.isNotEmpty && fullBio.length > wikiBio.length) {
         result['strBiographyENFull'] = fullBio;
       } else if (fullBio != null && fullBio.isNotEmpty) {
@@ -635,7 +853,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
     }
 
     // 4. Get birth/origin info from Wikipedia infobox
-    final birthInfo = await _fetchWikipediaBirthInfo(widget.artistName);
+    final birthInfo = await _fetchWikipediaBirthInfo();
     if (birthInfo != null && birthInfo.isNotEmpty) {
       result ??= <String, dynamic>{};
       result['strBirthInfo'] = birthInfo;
@@ -839,7 +1057,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
   }) async {
     String displayBio = cachedFullBio ?? introBio ?? '';
     try {
-      final fetchedFull = await _fetchWikipediaFullBioEn(widget.artistName);
+      final fetchedFull = await _fetchWikipediaFullBioEn();
       if (fetchedFull != null && fetchedFull.isNotEmpty) {
         displayBio = fetchedFull;
       }
@@ -2503,7 +2721,11 @@ class _ExternalBioTextState extends State<ExternalBioText> {
   Widget build(BuildContext context) {
     if (widget.bio.isEmpty) return const SizedBox.shrink();
 
-    final bioToDisplay = _translatedBio ?? widget.bio;
+    // Decode once more at render time: the text may come from translation or
+    // from a cached response produced before entity handling was fixed.
+    final bioToDisplay = _ArtistDetailsScreenState._decodeHtmlEntities(
+      _translatedBio ?? widget.bio,
+    );
     final langProvider = Provider.of<LanguageProvider>(context, listen: false);
     final targetLang = langProvider.resolvedLanguageCode;
 
@@ -2607,7 +2829,9 @@ class _FullBiographyDialogState extends State<_FullBiographyDialog> {
   String? _translatedBio;
   bool _isTranslating = false;
 
-  String get _displayBio => _translatedBio ?? widget.bio;
+  String get _displayBio => _ArtistDetailsScreenState._decodeHtmlEntities(
+    _translatedBio ?? widget.bio,
+  );
 
   Future<void> _translate() async {
     if (_translatedBio != null) {
@@ -2747,18 +2971,6 @@ class _FullBiographyDialogState extends State<_FullBiographyDialog> {
                         Positioned.fill(
                           child: _buildHeaderPlaceholder(),
                         ),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [
-                              Colors.transparent,
-                            ],
-                            stops: const [0.0, 0.14, 0.28, 0.46, 0.72, 0.96],
-                          ),
-                        ),
-                      ),
                       // Artist name anchored to the top of the header
                       Positioned(
                         left: 24,
@@ -2801,7 +3013,9 @@ class _FullBiographyDialogState extends State<_FullBiographyDialog> {
                               SizedBox(
                                 width: MediaQuery.of(context).size.width * 0.56,
                                 child: Text(
-                                  widget.birthInfo!.replaceAll(', ', '\n'),
+                                  _ArtistDetailsScreenState._decodeHtmlEntities(
+                                    widget.birthInfo!,
+                                  ).replaceAll(', ', '\n'),
                                   maxLines: 4,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
