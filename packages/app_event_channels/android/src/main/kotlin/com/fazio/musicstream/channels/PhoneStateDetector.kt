@@ -1,10 +1,11 @@
-package com.fazio.musicstream
+package com.fazio.musicstream.channels
 
 import android.content.Context
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import io.flutter.plugin.common.EventChannel
 import java.util.concurrent.Executor
 
@@ -20,14 +21,20 @@ import java.util.concurrent.Executor
  * Emits:
  *  - {"status": "CALL_STARTED"} when entering any call mode
  *  - {"status": "CALL_ENDED"}   when back to MODE_NORMAL
+ *
+ * Both the [AudioManager.OnModeChangedListener] (API 29+) and a polling
+ * fallback are used: some devices/OEMs do not reliably deliver mode callbacks,
+ * especially while audio is routed through Android Auto / Bluetooth, so the
+ * poll guarantees the transition is still detected.
  */
 class PhoneStateDetector(context: Context) : EventChannel.StreamHandler {
     private val audioManager =
-        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var eventSink: EventChannel.EventSink? = null
     private var lastMode: Int = AudioManager.MODE_NORMAL
+    private var inCall: Boolean = false
 
     private var modeListener: AudioManager.OnModeChangedListener? = null
     private val pollRunnable = object : Runnable {
@@ -44,11 +51,14 @@ class PhoneStateDetector(context: Context) : EventChannel.StreamHandler {
         else -> false
     }
 
+    @Synchronized
     private fun handleModeChange(mode: Int) {
         if (mode == lastMode) return
-        val wasCall = isCallMode(lastMode)
+        val wasCall = inCall
         val isCall = isCallMode(mode)
         lastMode = mode
+        inCall = isCall
+        Log.i(TAG, "AudioManager mode -> $mode (call: $isCall)")
         if (!wasCall && isCall) {
             eventSink?.success(mapOf("status" to "CALL_STARTED"))
         } else if (wasCall && !isCall) {
@@ -59,6 +69,9 @@ class PhoneStateDetector(context: Context) : EventChannel.StreamHandler {
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         eventSink = events
         lastMode = audioManager.mode
+        inCall = isCallMode(lastMode)
+        Log.i(TAG, "onListen: initial mode=$lastMode (call: $inCall)")
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             modeListener = AudioManager.OnModeChangedListener { mode ->
                 mainHandler.post { handleModeChange(mode) }
@@ -67,9 +80,11 @@ class PhoneStateDetector(context: Context) : EventChannel.StreamHandler {
                 Executor { it.run() },
                 modeListener!!,
             )
-        } else {
-            mainHandler.post(pollRunnable)
         }
+
+        // Always poll as a safety net, even when the listener is available.
+        mainHandler.removeCallbacks(pollRunnable)
+        mainHandler.post(pollRunnable)
     }
 
     override fun onCancel(arguments: Any?) {
@@ -79,9 +94,11 @@ class PhoneStateDetector(context: Context) : EventChannel.StreamHandler {
         }
         mainHandler.removeCallbacks(pollRunnable)
         eventSink = null
+        Log.i(TAG, "onCancel: phone state listener removed")
     }
 
     companion object {
+        private const val TAG = "PhoneStateDetector"
         private const val POLL_INTERVAL_MS = 1000L
     }
 }

@@ -100,6 +100,8 @@ dependencies:
   fl_chart: ^1.2.0
   audio_metadata_reader: ^1.7.1
   video_player: ^2.14.0
+  app_event_channels:
+    path: packages/app_event_channels
 
 dev_dependencies:
   flutter_test:

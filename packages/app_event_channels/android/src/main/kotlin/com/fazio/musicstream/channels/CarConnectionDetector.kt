@@ -1,4 +1,4 @@
-package com.fazio.musicstream
+package com.fazio.musicstream.channels
 
 import android.content.BroadcastReceiver
 import android.content.Context

@@ -1,0 +1,22 @@
+name: app_event_channels
+description: >-
+  Registers the app-specific native EventChannels (phone call state and
+  Android Auto connection) on every FlutterEngine, including the one owned by
+  audio_service when the app is started from Android Auto.
+version: 1.0.0
+publish_to: "none"
+
+environment:
+  sdk: ^3.10.3
+  flutter: ">=3.38.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.fazio.musicstream.channels
+        pluginClass: AppEventChannelsPlugin

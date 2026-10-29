@@ -53,6 +53,7 @@
 # Specific App Kotlin Classes
 # Instead of keeping the whole package (which prevents obfuscation), we keep entry points
 -keep class com.fazio.musicstream.MainActivity { *; }
+-keep class com.fazio.musicstream.channels.** { *; }
 -keep class com.fazio.musicstream.HomeWidgetProvider { *; }
 -keep class com.fazio.musicstream.NativeAdFactorySmall { *; }
 -keep class com.fazio.musicstream.BackgroundWorker { *; }

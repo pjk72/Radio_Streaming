@@ -121,7 +121,7 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _setupPhoneCallListener() async {
     if (kIsWeb) return;
     try {
-      _phoneStateSubscription?.cancel();
+      await _phoneStateSubscription?.cancel();
       _phoneStateSubscription = _phoneCallChannel
           .receiveBroadcastStream()
           .listen((event) {
@@ -133,10 +133,34 @@ class RadioAudioHandler extends BaseAudioHandler
             }
           }, onError: (Object e) {
             LogService().log("PhoneCall channel error: $e");
-          });
+            _phoneStateSubscription = null;
+            _schedulePhoneCallListenerRetry();
+          }, cancelOnError: false);
+      _phoneCallRetryAttempt = 0;
+      LogService().log("PhoneCall: listener ready");
     } catch (e) {
       LogService().log("PhoneCall listener setup error: $e");
+      _schedulePhoneCallListenerRetry();
     }
+  }
+
+  int _phoneCallRetryAttempt = 0;
+
+  /// The channel may not exist yet when the handler is created (e.g. the app
+  /// was started by Android Auto before the native side registered it), so we
+  /// keep retrying with a growing delay instead of silently giving up.
+  void _schedulePhoneCallListenerRetry() {
+    if (_phoneCallRetryAttempt >= 10) {
+      LogService().log("PhoneCall: giving up on listener setup");
+      return;
+    }
+    _phoneCallRetryAttempt++;
+    final delay = Duration(milliseconds: 500 * _phoneCallRetryAttempt);
+    LogService().log(
+      "PhoneCall: retrying listener in ${delay.inMilliseconds}ms "
+      "(attempt $_phoneCallRetryAttempt)",
+    );
+    Future.delayed(delay, _setupPhoneCallListener);
   }
 
   void _onPhoneCallStarted() {
@@ -186,7 +210,7 @@ class RadioAudioHandler extends BaseAudioHandler
   Future<void> _setupCarConnectionListener() async {
     if (kIsWeb) return;
     try {
-      _carConnectionSubscription?.cancel();
+      await _carConnectionSubscription?.cancel();
       _carConnectionSubscription = _carConnectionChannel
           .receiveBroadcastStream()
           .listen((event) {
@@ -200,11 +224,31 @@ class RadioAudioHandler extends BaseAudioHandler
             }
           }, onError: (Object e) {
             LogService().log("CarConnection channel error: $e");
-          });
+            _carConnectionSubscription = null;
+            _scheduleCarConnectionListenerRetry();
+          }, cancelOnError: false);
+      _carConnectionRetryAttempt = 0;
       LogService().log("CarConnection: listener ready");
     } catch (e) {
       LogService().log("CarConnection listener setup error: $e");
+      _scheduleCarConnectionListenerRetry();
     }
+  }
+
+  int _carConnectionRetryAttempt = 0;
+
+  void _scheduleCarConnectionListenerRetry() {
+    if (_carConnectionRetryAttempt >= 10) {
+      LogService().log("CarConnection: giving up on listener setup");
+      return;
+    }
+    _carConnectionRetryAttempt++;
+    final delay = Duration(milliseconds: 500 * _carConnectionRetryAttempt);
+    LogService().log(
+      "CarConnection: retrying listener in ${delay.inMilliseconds}ms "
+      "(attempt $_carConnectionRetryAttempt)",
+    );
+    Future.delayed(delay, _setupCarConnectionListener);
   }
 
   /// Called when the phone stops projecting to a car head unit (e.g. the car is

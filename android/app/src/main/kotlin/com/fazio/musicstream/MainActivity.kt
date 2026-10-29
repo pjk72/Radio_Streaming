@@ -10,7 +10,6 @@ import android.util.Log
 import android.util.Rational
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
@@ -18,8 +17,6 @@ import java.io.FileInputStream
 class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "com.antigravity.radio/pip"
     private val MEDIA_CHANNEL = "com.antigravity.radio/media_scanner"
-    private val PHONE_STATE_CHANNEL = "com.antigravity.radio/phone_state"
-    private val CAR_CONNECTION_CHANNEL = "com.antigravity.radio/car_connection"
     private var methodChannel: MethodChannel? = null
     private var mediaChannel: MethodChannel? = null
 
@@ -33,13 +30,8 @@ class MainActivity : AudioServiceActivity() {
             NativeAdFactorySmall(this)
         )
 
-        // Phone call detection (no permission): observes AudioManager modes
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, PHONE_STATE_CHANNEL)
-            .setStreamHandler(PhoneStateDetector(this))
-
-        // Android Auto / car head unit connection detection
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, CAR_CONNECTION_CHANNEL)
-            .setStreamHandler(CarConnectionDetector(this))
+        // Phone call / Android Auto connection channels are provided by the
+        // app_event_channels plugin, which is auto-registered on every engine.
 
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel!!.setMethodCallHandler { call, result ->
