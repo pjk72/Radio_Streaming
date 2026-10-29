@@ -118,6 +118,29 @@ class RadioAudioHandler extends BaseAudioHandler
   static const EventChannel _phoneCallChannel =
       EventChannel('com.antigravity.radio/phone_state');
 
+  /// Used to remove the media notification while nothing is playing.
+  /// The native side hides audio_service's notification; it is re-created
+  /// automatically by audio_service when playback starts again.
+  static const MethodChannel _mediaNotificationChannel =
+      MethodChannel('com.antigravity.radio/media_notification');
+
+  /// Keeps the media notification in sync with playback: visible only while
+  /// something is actually playing, hidden when paused/stopped.
+  void _syncMediaNotification(bool isPlaying) {
+    // While playing, audio_service posts the notification again by itself
+    // when the playback state switches to playing, so there is nothing to do.
+    if (isPlaying || kIsWeb || !Platform.isAndroid) return;
+    _hideMediaNotification();
+  }
+
+  Future<void> _hideMediaNotification() async {
+    try {
+      await _mediaNotificationChannel.invokeMethod<void>('hide');
+    } catch (e) {
+      LogService().log("MediaNotification: unable to hide notification: $e");
+    }
+  }
+
   Future<void> _setupPhoneCallListener() async {
     if (kIsWeb) return;
     try {
@@ -4032,6 +4055,7 @@ class RadioAudioHandler extends BaseAudioHandler
             speed: 1.0,
           ),
         );
+        _syncMediaNotification(playing);
         return;
       } else if (!hasExactOffset || !isRecognized) {
         // Solution 2 found AND Not Found (Retry).
@@ -4103,6 +4127,9 @@ class RadioAudioHandler extends BaseAudioHandler
             : AudioServiceShuffleMode.none,
       ),
     );
+
+    // Keep the media notification visible only while audio is playing.
+    _syncMediaNotification(playing);
 
     // Android Auto Metadata Sync Pulse:
     // If we are in AA mode and just transitioned to playing/ready, re-push mediaItem after a delay
