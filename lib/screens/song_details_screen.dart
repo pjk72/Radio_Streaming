@@ -20,6 +20,10 @@ import '../services/lyrics_service.dart';
 import '../services/entitlement_service.dart';
 import '../services/log_service.dart';
 
+/// Fraction of the artwork size reserved around it so the playback glow can
+/// fade out completely instead of being clipped on the top/bottom edges.
+const double _kArtGlowExtent = 0.09;
+
 class SongDetailsScreen extends StatefulWidget {
   const SongDetailsScreen({super.key});
 
@@ -27,14 +31,12 @@ class SongDetailsScreen extends StatefulWidget {
   State<SongDetailsScreen> createState() => _SongDetailsScreenState();
 }
 
-class _SongDetailsScreenState extends State<SongDetailsScreen>
-    with TickerProviderStateMixin {
+class _SongDetailsScreenState extends State<SongDetailsScreen> {
   double _currentVolume = 0.5;
 
   // Palette State
   String? _lastPaletteImage;
   Color? _extractedColor;
-  late AnimationController _pulseController;
 
   PageController? _pageController;
   bool _isNavigatingCarousel = false;
@@ -50,10 +52,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
     _initVolume();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -94,7 +92,6 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     } catch (_) {}
 
     _playbackTimer?.cancel();
-    _pulseController.dispose();
     FlutterVolumeController.removeListener();
     _pageController?.dispose();
     super.dispose();
@@ -223,37 +220,59 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     // Effective Visualizer Color
     final Color visualizerColor = _extractedColor ?? fallbackColor;
 
+    // Everything on this screen that normally follows the app theme now
+    // follows the palette extracted from the artwork, like the play button.
+    final ThemeData pageTheme = Theme.of(context);
+    final ThemeData paletteTheme = pageTheme.copyWith(
+      primaryColor: visualizerColor,
+      colorScheme: pageTheme.colorScheme.copyWith(
+        primary: visualizerColor,
+        secondary: visualizerColor,
+      ),
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. Background Image
-          if (bgImage != null)
-            CachedNetworkImage(
-              imageUrl: bgImage,
-              key: ValueKey(bgImage), // Force rebuild on image change
-              fit: BoxFit.cover,
-              placeholder: (_, _) =>
-                  Container(color: Color(int.parse(station.color))),
-              errorWidget: (_, _, _) =>
-                  Container(color: Color(int.parse(station.color))),
-            )
-          else
-            Container(color: Color(int.parse(station.color))),
+      body: Theme(
+        data: paletteTheme,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. Background Image
+            if (bgImage != null)
+              CachedNetworkImage(
+                imageUrl: bgImage,
+                key: ValueKey(bgImage), // Force rebuild on image change
+                fit: BoxFit.cover,
+                placeholder: (_, _) =>
+                    Container(color: Color(int.parse(station.color))),
+                errorWidget: (_, _, _) =>
+                    Container(color: Color(int.parse(station.color))),
+              )
+            else
+              Container(color: Color(int.parse(station.color))),
 
-          // 2. Blur / Dark Overlay
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(color: Colors.black.withValues(alpha: 0.6)),
-          ),
+            // 2. Blur / Dark Overlay
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(color: Colors.black.withValues(alpha: 0.6)),
+            ),
 
-          // 3. Content
-          SafeArea(
-            child: OrientationBuilder(
-              builder: (context, orientation) {
-                if (orientation == Orientation.landscape) {
-                  return _buildLandscapeLayout(
+            // 3. Content
+            SafeArea(
+              child: OrientationBuilder(
+                builder: (context, orientation) {
+                  if (orientation == Orientation.landscape) {
+                    return _buildLandscapeLayout(
+                      context,
+                      provider,
+                      station,
+                      mainImage,
+                      visualizerColor,
+                      bgImage,
+                    );
+                  }
+                  return _buildPortraitLayout(
                     context,
                     provider,
                     station,
@@ -261,35 +280,27 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                     visualizerColor,
                     bgImage,
                   );
-                }
-                return _buildPortraitLayout(
-                  context,
-                  provider,
-                  station,
-                  mainImage,
-                  visualizerColor,
-                  bgImage,
-                );
-              },
-            ),
-          ),
-
-          if (canUseLyrics)
-            Positioned(
-              left: 0,
-              bottom: 0, // Raise by banner height
-              top: 0,
-              width: isLandscape
-                  ? MediaQuery.of(context).size.width * 0.5
-                  : MediaQuery.of(context).size.width,
-              child: _buildDraggableLyrics(
-                context,
-                provider,
-                visualizerColor,
-                isLandscape: isLandscape,
+                },
               ),
             ),
-        ],
+
+            if (canUseLyrics)
+              Positioned(
+                left: 0,
+                bottom: 0, // Raise by banner height
+                top: 0,
+                width: isLandscape
+                    ? MediaQuery.of(context).size.width * 0.5
+                    : MediaQuery.of(context).size.width,
+                child: _buildDraggableLyrics(
+                  context,
+                  provider,
+                  visualizerColor,
+                  isLandscape: isLandscape,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -715,6 +726,17 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     Color visualizerColor,
     String? bgImage,
   ) {
+    final Size screenSize = MediaQuery.of(context).size;
+    // Single source of truth for the artwork size: as large as the screen
+    // allows while keeping info + controls visible above the lyrics sheet.
+    final double artSize = min(
+      screenSize.width * 0.80,
+      screenSize.height * 0.40,
+    ).clamp(240.0, 320.0);
+
+    // Room for the glow to fade out around the artwork (top/bottom included).
+    final double artGlowPadding = artSize * _kArtGlowExtent + 4;
+
     return SingleChildScrollView(
       physics: const ClampingScrollPhysics(),
       child: Column(
@@ -723,44 +745,31 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
           // Header (Close Button)
           _buildHeader(context, station.name, provider),
 
-          //const SizedBox(height: 60), // More top space
           SizedBox(
-            height: 280,
+            height: artSize + artGlowPadding * 2,
             child: Stack(
               alignment: Alignment.center,
-              clipBehavior:
-                  Clip.none, // Allow aura to overflow without pushing layout
+              clipBehavior: Clip.none,
               children: [
-                Positioned(
-                  child: SizedBox(
-                    height: 380,
-                    width: MediaQuery.of(context).size.width,
-                    child: _StardustAura(
-                      color: visualizerColor,
-                      isPlaying: provider.isPlaying && !provider.isLoading,
-                      volume: _currentVolume,
-                    ),
-                  ),
-                ),
                 provider.currentPlayingPlaylistId != null &&
                         provider.activeQueue.isNotEmpty
                     ? _buildCarousel(
                         context,
                         provider,
                         visualizerColor,
-                        height: 230,
+                        height: artSize,
                       )
                     : _buildAlbumArt(
                         context,
                         provider,
                         visualizerColor,
                         mainImage,
-                        230,
+                        artSize,
                       ),
               ],
             ),
           ),
-          const SizedBox(height: 16), // Reduced space between art and info
+          const SizedBox(height: 8), // Space between art and info
           // Bottom Section: Info + Controls + Visualizer
           _buildBottomSection(
             context,
@@ -783,7 +792,8 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     String? bgImage,
   ) {
     final double screenHeight = MediaQuery.of(context).size.height;
-    final double artSize = (screenHeight * 0.35).clamp(100.0, 160.0);
+    final double artSize = (screenHeight * 0.46).clamp(140.0, 210.0);
+    final double artGlowPadding = artSize * _kArtGlowExtent + 4;
 
     return Column(
       children: [
@@ -803,23 +813,11 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                     right: 16.0,
                   ),
                   child: SizedBox(
-                    height: artSize,
+                    height: artSize + artGlowPadding * 2,
                     child: Stack(
                       alignment: Alignment.center,
                       clipBehavior: Clip.none,
                       children: [
-                        Positioned(
-                          child: SizedBox(
-                            height: artSize * 2.5,
-                            width: artSize * 2.5,
-                            child: _StardustAura(
-                              color: visualizerColor,
-                              isPlaying:
-                                  provider.isPlaying && !provider.isLoading,
-                              volume: _currentVolume,
-                            ),
-                          ),
-                        ),
                         provider.currentPlayingPlaylistId != null &&
                                 provider.activeQueue.isNotEmpty
                             ? _buildCarousel(
@@ -983,13 +981,14 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               ),
             ],
           ),
-          _buildVolumeControl(),
+          _buildVolumeControl(context),
         ],
       ),
     );
   }
 
-  Widget _buildVolumeControl() {
+  Widget _buildVolumeControl(BuildContext context) {
+    final Color accent = Theme.of(context).primaryColor;
     return SizedBox(
       width: 110,
       height: 40,
@@ -1007,11 +1006,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
                 trackHeight: 2,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                activeTrackColor: Theme.of(
-                  context,
-                ).primaryColor.withValues(alpha: 0.8),
+                activeTrackColor: accent.withValues(alpha: 0.8),
                 inactiveTrackColor: Colors.white10,
-                thumbColor: Theme.of(context).primaryColor,
+                thumbColor: accent,
               ),
               child: Slider(
                 value: _currentVolume.clamp(0.0, 1.0),
@@ -1036,6 +1033,18 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     String? mainImage,
     double size,
   ) {
+    final String? stationLogo = provider.currentStation?.logo;
+    final bool isRadio = provider.currentPlayingPlaylistId == null;
+    // Badge only in radio mode and only when the shown artwork is the track
+    // cover (not the station logo itself, which would be redundant).
+    final bool showStationBadge =
+        isRadio &&
+        mainImage != null &&
+        mainImage.isNotEmpty &&
+        stationLogo != null &&
+        stationLogo.isNotEmpty &&
+        mainImage != stationLogo;
+
     return Hero(
       tag: 'player_image',
       child: MouseRegion(
@@ -1064,34 +1073,31 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               );
             }
           },
-          child: AnimatedBuilder(
-            animation: _pulseController,
-            builder: (context, child) {
-              return Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    if (provider.isPlaying)
-                      BoxShadow(
-                        color: visualizerColor.withValues(alpha: 0.5),
-                        blurRadius: 40,
-                        spreadRadius: 5,
-                        offset: Offset.zero,
+          child: RepaintBoundary(
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: _ShadowedImage(
+                imageUrl: mainImage,
+                size: size,
+                borderRadius: 16,
+                glowColor: provider.isPlaying ? visualizerColor : null,
+                stackChildren: [
+                  if (showStationBadge)
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      child: Tooltip(
+                        message: provider.currentStation?.name ?? '',
+                        child: _StationLogoBadge(
+                          logoUrl: stationLogo,
+                          size: (size * 0.17).clamp(26.0, 44.0),
+                        ),
                       ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: _ShadowedImage(
-                  imageUrl: mainImage,
-                  size: size,
-                  visualizerColor: visualizerColor,
-                  isPlaying: provider.isPlaying,
-                  borderRadius: 12,
-                ),
-              );
-            },
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1612,7 +1618,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
             ),
           ),
 
-          SizedBox(height: isLandscape ? 95 : 30),
+          SizedBox(height: isLandscape ? 80 : 14),
 
           // Spacing for the curtain (initialChildSize is 0.15)
           SizedBox(height: MediaQuery.of(context).size.height * 0.15),
@@ -1915,7 +1921,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     BuildContext context,
     RadioProvider provider,
     Color visualizerColor, {
-    double height = 320,
+    double height = 280,
   }) {
     if (provider.currentPlayingPlaylistId == null) return const SizedBox();
 
@@ -1984,7 +1990,7 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
     }
 
     return SizedBox(
-      height: 320,
+      height: height + (height * _kArtGlowExtent + 4) * 2,
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification is ScrollStartNotification) {
@@ -2046,24 +2052,25 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
 
             // Scale effect
             return AnimatedBuilder(
-              animation: Listenable.merge([_pageController!, _pulseController]),
+              animation: _pageController!,
               builder: (context, child) {
                 double value = 1.0;
                 if (_pageController!.positions.length == 1 &&
                     _pageController!.position.haveDimensions) {
                   value = _pageController!.page! - index;
-                  value = (1 - (value.abs() * 0.3)).clamp(0.0, 1.0);
+                  value = (1 - (value.abs() * 0.28)).clamp(0.0, 1.0);
                 } else {
-                  value = isActive ? 1.0 : 0.7;
+                  value = isActive ? 1.0 : 0.72;
                 }
+                final double scale = Curves.easeOut.transform(value);
                 return Center(
                   child: SizedBox(
-                    height: 280, // Matching the parent height
+                    height: height,
                     width: MediaQuery.of(context).size.width,
                     child: Center(
                       child: SizedBox(
-                        height: Curves.easeOut.transform(value) * 230,
-                        width: Curves.easeOut.transform(value) * 230,
+                        height: scale * height,
+                        width: scale * height,
                         child: child,
                       ),
                     ),
@@ -2072,10 +2079,9 @@ class _SongDetailsScreenState extends State<SongDetailsScreen>
               },
               child: _ShadowedImage(
                 imageUrl: song.artUri,
-                size: 230,
-                visualizerColor: visualizerColor,
-                isPlaying: provider.isPlaying,
-                borderRadius: 26,
+                size: height,
+                borderRadius: 16,
+                glowColor: provider.isPlaying ? visualizerColor : null,
                 isCarousel: true,
                 onTap: () {
                   _playbackTimer?.cancel();
@@ -2326,194 +2332,69 @@ class _LyricsWidgetState extends State<_LyricsWidget> {
   }
 }
 
-class _StardustAura extends StatefulWidget {
-  final Color color;
-  final bool isPlaying;
-  final double volume;
+/// Small circular station logo shown on the top-right corner of the track
+/// artwork while listening to a radio stream.
+class _StationLogoBadge extends StatelessWidget {
+  final String? logoUrl;
+  final double size;
 
-  const _StardustAura({
-    required this.color,
-    required this.isPlaying,
-    required this.volume,
-  });
-
-  @override
-  State<_StardustAura> createState() => _StardustAuraState();
-}
-
-class _StardustAuraState extends State<_StardustAura>
-    with SingleTickerProviderStateMixin {
-  late Ticker _ticker;
-  final List<_StardustParticle> _particles = [];
-  final Random _random = Random();
-  double _rotationAngle = 0.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = createTicker(_onTick)..start();
-    // Initialize some particles
-    for (int i = 0; i < 50; i++) {
-      _particles.add(_createParticle(isInitial: true));
-    }
-  }
-
-  void _onTick(Duration elapsed) {
-    if (!mounted) return;
-    setState(() {
-      _updatePhysics();
-    });
-  }
-
-  _StardustParticle _createParticle({bool isInitial = false}) {
-    final angle = _random.nextDouble() * pi * 2;
-    return _StardustParticle(
-      angle: angle,
-      // Radius adjusted to hug the 230x230 square art (corners are at ~163px from center)
-      radius: _random.nextDouble() * 0.3 + 0.55,
-      size: _random.nextDouble() * 2.5 + 0.5,
-      speed: _random.nextDouble() * 0.01 + 0.005,
-      life: isInitial ? _random.nextDouble() : 1.0,
-      opacity: _random.nextDouble() * 0.5 + 0.2,
-      wobble: _random.nextDouble() * pi * 2,
-    );
-  }
-
-  void _updatePhysics() {
-    final activeMultiplier = widget.isPlaying ? 1.0 : 0.15;
-    _rotationAngle += 0.003 * activeMultiplier;
-
-    // Add new particles - Balanced count for 60fps performance
-    final maxParticles = (100 + (widget.volume * 100)).toInt();
-    if (_particles.length < maxParticles && _random.nextDouble() < 0.4) {
-      _particles.add(_createParticle());
-    }
-
-    // Update existing
-    for (int i = _particles.length - 1; i >= 0; i--) {
-      final p = _particles[i];
-      p.life -= 0.004; // Slightly faster fade for cleaner look
-      p.angle += p.speed * activeMultiplier;
-      p.wobble += 0.04;
-
-      if (p.life <= 0) {
-        _particles.removeAt(i);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _ticker.dispose();
-    super.dispose();
-  }
+  const _StationLogoBadge({required this.logoUrl, required this.size});
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _StardustPainter(
-        particles: _particles,
-        color: widget.color,
-        rotationAngle: _rotationAngle,
-        volume: widget.volume,
+    final bool hasLogo = logoUrl != null && logoUrl!.isNotEmpty;
+
+    return Container(
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(size * 0.06),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.black.withValues(alpha: 0.55),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.35),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: size * 0.25,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      size: Size.infinite,
+      child: ClipOval(
+        child: hasLogo
+            ? CachedNetworkImage(
+                imageUrl: logoUrl!,
+                fit: BoxFit.cover,
+                memCacheWidth: (size * 3).round(),
+                placeholder: (_, _) => _buildFallback(),
+                errorWidget: (_, _, _) => _buildFallback(),
+              )
+            : _buildFallback(),
+      ),
     );
   }
-}
 
-class _StardustParticle {
-  double angle;
-  double radius;
-  double size;
-  double speed;
-  double life;
-  double opacity;
-  double wobble;
-
-  _StardustParticle({
-    required this.angle,
-    required this.radius,
-    required this.size,
-    required this.speed,
-    required this.life,
-    required this.opacity,
-    required this.wobble,
-  });
-}
-
-class _StardustPainter extends CustomPainter {
-  final List<_StardustParticle> particles;
-  final Color color;
-  final double rotationAngle;
-  final double volume;
-
-  _StardustPainter({
-    required this.particles,
-    required this.color,
-    required this.rotationAngle,
-    required this.volume,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final maxRadius = min(size.width, size.height) * 0.8;
-
-    // Removed ambient glow to prevent color mismatch with page background
-
-    for (final p in particles) {
-      final currentAngle = p.angle + rotationAngle;
-      final orbitVariation = 1.0 + sin(p.wobble) * 0.12;
-      final currentRadius = p.radius * maxRadius * orbitVariation;
-
-      final offset = Offset(
-        center.dx + cos(currentAngle) * currentRadius,
-        center.dy +
-            sin(currentAngle) *
-                currentRadius, // Perfect circle for uniform distribution
-      );
-
-      final alpha = (p.opacity * p.life * (0.4 + volume * 0.6)).clamp(0.0, 1.0);
-
-      // OPTIMIZED GLOW: Drawing two circles instead of using MaskFilter.blur
-      // OPTIMIZED GLOW: Drawing two circles
-      // 1. Soft Outer Glow - Reduced size to prevent "bar" effect
-      canvas.drawCircle(
-        offset,
-        p.size * 1.8,
-        Paint()..color = color.withValues(alpha: alpha * 0.25),
-      );
-
-      // 2. Main Particle
-      canvas.drawCircle(
-        offset,
-        p.size,
-        Paint()..color = color.withValues(alpha: alpha),
-      );
-
-      // 3. Brighter core
-      if (p.life > 0.4) {
-        canvas.drawCircle(
-          offset,
-          p.size * 0.4,
-          Paint()..color = Colors.white.withValues(alpha: alpha * 0.8),
-        );
-      }
-    }
+  Widget _buildFallback() {
+    return Center(
+      child: Icon(
+        Icons.radio_rounded,
+        size: size * 0.55,
+        color: Colors.white70,
+      ),
+    );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 class _ShadowedImage extends StatefulWidget {
   final String? imageUrl;
   final double size;
-  final Color visualizerColor;
-  final bool isPlaying;
   final double borderRadius;
   final bool isCarousel;
+  // When not null, a small outline glow in this color wraps the artwork.
+  final Color? glowColor;
   final VoidCallback? onTap;
   final VoidCallback? onDoubleTap;
   final List<Widget>? stackChildren;
@@ -2521,10 +2402,9 @@ class _ShadowedImage extends StatefulWidget {
   const _ShadowedImage({
     required this.imageUrl,
     required this.size,
-    required this.visualizerColor,
-    required this.isPlaying,
     required this.borderRadius,
     this.isCarousel = false,
+    this.glowColor,
     this.onTap,
     this.onDoubleTap,
     this.stackChildren,
@@ -2536,15 +2416,19 @@ class _ShadowedImage extends StatefulWidget {
 
 class _ShadowedImageState extends State<_ShadowedImage>
     with SingleTickerProviderStateMixin {
-  bool _isLoaded = false;
-  late AnimationController _fadeController;
+  late AnimationController _entranceController;
+  late Animation<double> _entranceScale;
 
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(
+    // One-shot entrance so a new track does not "pop" in.
+    _entranceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 260),
+    )..forward();
+    _entranceScale = Tween<double>(begin: 0.96, end: 1.0).animate(
+      CurvedAnimation(parent: _entranceController, curve: Curves.easeOutCubic),
     );
   }
 
@@ -2552,98 +2436,116 @@ class _ShadowedImageState extends State<_ShadowedImage>
   void didUpdateWidget(_ShadowedImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.imageUrl != oldWidget.imageUrl) {
-      _isLoaded = false;
-      _fadeController.reset();
+      _entranceController.forward(from: 0);
     }
   }
 
   @override
   void dispose() {
-    _fadeController.dispose();
+    _entranceController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final showShadow = widget.isPlaying && _isLoaded;
+    // Make sure the glow stays readable even when the extracted palette color
+    // is very dark (it would otherwise disappear on the black background).
+    final Color? glow = widget.glowColor;
+    final Color? glowColor = glow == null
+        ? null
+        : (glow.computeLuminance() < 0.25
+              ? Color.lerp(glow, Colors.white, 0.45)!
+              : glow);
+    final bool hasImage =
+        widget.imageUrl != null && widget.imageUrl!.isNotEmpty;
+    // The glow is painted in an enlarged box centered on the artwork: if it
+    // were painted at the artwork's own bounds the blur would be cut on the
+    // top/bottom edges (ImageFiltered clips its painting bounds).
+    final double glowExtent = widget.size * _kArtGlowExtent;
+    final double glowSigma = widget.size * 0.03;
 
-    return AnimatedBuilder(
-      animation: _fadeController,
-      builder: (context, child) {
-        return Container(
+    return FadeTransition(
+      opacity: _entranceController,
+      child: ScaleTransition(
+        scale: _entranceScale,
+        child: SizedBox(
           width: widget.size,
           height: widget.size,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            boxShadow: [
-              if (showShadow)
-                BoxShadow(
-                  color: widget.visualizerColor.withValues(alpha: 0.8 * _fadeController.value),
-                  blurRadius: widget.isCarousel
-                      ? 8 * _fadeController.value
-                      : 3 * _fadeController.value,
-                  spreadRadius: widget.isCarousel
-                      ? 5 * _fadeController.value
-                      : 4 * _fadeController.value,
-                  offset: Offset.zero,
-                ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: GestureDetector(
-            onTap: widget.onTap,
-            onDoubleTap: widget.onDoubleTap,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Blurred background to fill any transparent/black areas
-                if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty)
-                  ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: CachedNetworkImage(
-                      imageUrl: widget.imageUrl!,
-                      fit: BoxFit.cover,
-                      // Scale up slightly to avoid blur edge artifacts
-                      width: widget.size * 1.2,
-                      height: widget.size * 1.2,
-                      placeholder: (_, _) => const SizedBox.shrink(),
-                      errorWidget: (_, _, _) => const SizedBox.shrink(),
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              // Glow traced on the real alpha contour of the artwork: round
+              // logos get a round glow, full-bleed covers a rounded one.
+              if (glowColor != null && hasImage)
+                Positioned(
+                  top: -glowExtent,
+                  bottom: -glowExtent,
+                  left: -glowExtent,
+                  right: -glowExtent,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: glowSigma,
+                      sigmaY: glowSigma,
+                    ),
+                    child: Center(
+                      child: SizedBox(
+                        width: widget.size,
+                        height: widget.size,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(
+                            widget.borderRadius,
+                          ),
+                          child: ColorFiltered(
+                            colorFilter: ColorFilter.mode(
+                              glowColor.withValues(alpha: 0.9),
+                              BlendMode.srcIn,
+                            ),
+                            child: CachedNetworkImage(
+                              imageUrl: widget.imageUrl!,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) => const SizedBox.shrink(),
+                              errorWidget: (_, _, _) => const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                // Main cover image
-                widget.imageUrl != null && widget.imageUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: widget.imageUrl!,
-                        key: ValueKey(widget.imageUrl),
-                        fit: BoxFit.cover,
-                        imageBuilder: (context, imageProvider) {
-                          if (!_isLoaded) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted) {
-                                setState(() {
-                                  _isLoaded = true;
-                                });
-                                _fadeController.forward();
-                              }
-                            });
-                          }
-                          return Image(
-                            image: imageProvider,
-                            fit: BoxFit.cover,
-                          );
-                        },
-                        placeholder: (context, url) => _buildPlaceholder(),
-                        errorWidget: (context, url, error) {
-                          return _buildPlaceholder();
-                        },
-                      )
-                    : _buildPlaceholder(),
-                if (widget.stackChildren != null) ...widget.stackChildren!,
-              ],
-            ),
+                ),
+              // Artwork card
+              ClipRRect(
+                borderRadius: BorderRadius.circular(widget.borderRadius),
+                child: GestureDetector(
+                  onTap: widget.onTap,
+                  onDoubleTap: widget.onDoubleTap,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // No blurred fill behind the cover: transparent artworks
+                      // (e.g. round station logos) must keep their real shape.
+                      if (hasImage)
+                        CachedNetworkImage(
+                          imageUrl: widget.imageUrl!,
+                          key: ValueKey(widget.imageUrl),
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => _buildPlaceholder(),
+                          errorWidget: (context, url, error) {
+                            return _buildPlaceholder();
+                          },
+                        )
+                      else
+                        _buildPlaceholder(),
+                      if (widget.stackChildren != null)
+                        ...widget.stackChildren!,
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -2651,12 +2553,13 @@ class _ShadowedImageState extends State<_ShadowedImage>
     return Center(
       child: Icon(
         Icons.music_note_rounded,
-        size: widget.isCarousel ? 40 : 80,
+        size: widget.isCarousel ? widget.size * 0.18 : widget.size * 0.35,
         color: Colors.white.withValues(alpha: 0.5),
       ),
     );
   }
 }
+
 
 class _DraggableSyncOverlay extends StatefulWidget {
   final RadioProvider provider;

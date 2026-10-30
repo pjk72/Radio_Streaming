@@ -4552,6 +4552,24 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     return false;
   }
 
+  /// Resolves the display name of the playlist currently being played.
+  ///
+  /// Ad-hoc playlists (trending/album/artist views) are not stored in
+  /// [playlists], they only live in [_tempPlaylist], so that has to be checked
+  /// first to avoid falling back to the generic "Playlist" label.
+  String _resolvePlaylistName(String? playlistId) {
+    if (playlistId == null) return "Playlist";
+    if (_tempPlaylist != null && _tempPlaylist!.id == playlistId) {
+      final String name = _tempPlaylist!.name.trim();
+      if (name.isNotEmpty) return name;
+    }
+    try {
+      final pl = playlists.firstWhere((p) => p.id == playlistId);
+      if (pl.name.trim().isNotEmpty) return pl.name;
+    } catch (_) {}
+    return "Playlist";
+  }
+
   // Shuffle Logic
   List<int> _shuffledIndices = [];
 
@@ -4846,13 +4864,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // 1. UPDATE UI IMMEDIATELY (Prevent flicker / "No Station")
     // --------------------------------------------------------------------------------
 
-    String playlistName = "Playlist";
-    if (playlistId != null) {
-      try {
-        final pl = playlists.firstWhere((p) => p.id == playlistId);
-        playlistName = pl.name;
-      } catch (_) {}
-    }
+    final String playlistName = _resolvePlaylistName(playlistId);
 
     _currentStation = Station(
       id: -999, // Dummy ID for external playback
@@ -6380,13 +6392,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
     // We invoke stop() which usually resets state in AudioService handlers
     // _audioHandler.stop(); // Redundant and potentially causes race with awaited stop() below
 
-    String playlistName = "Playlist";
-    if (playlistId != null) {
-      try {
-        final pl = playlists.firstWhere((p) => p.id == playlistId);
-        playlistName = pl.name;
-      } catch (_) {}
-    }
+    final String playlistName = _resolvePlaylistName(playlistId);
 
     // Optimistically set station to prevent "Select a station" flash
     _currentStation = Station(
