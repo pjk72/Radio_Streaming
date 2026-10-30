@@ -70,15 +70,23 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
   bool _isLoadingPreview = true;
   String? _lastLoadedPreviewCountryCode;
 
+  static const List<String> _radioBrowserServers = [
+    "all.api.radio-browser.info",
+    "de1.api.radio-browser.info",
+    "de2.api.radio-browser.info",
+  ];
+
   Future<void> _loadPreviewRadios([String? countryCode]) async {
-    // 1. Risolviamo il codice effettivo (se null, prendiamo il locale del sistema)
-    String code = countryCode ?? "US"; 
+    // 1. Risolviamo il codice effettivo (se null, prendiamo il locale del sistema o "ALL")
+    String code = countryCode ?? "ALL"; 
     if (countryCode == null) {
       try {
-        final locale = Platform.localeName;
+        final locale = Platform.localeName.replaceAll('-', '_');
         if (locale.contains('_')) {
           final parts = locale.split('_');
-          if (parts.length > 1) code = parts[1].toUpperCase();
+          if (parts.length > 1 && parts[1].isNotEmpty) {
+            code = parts[1].toUpperCase();
+          }
         } else if (locale.length == 2) {
           code = locale.toUpperCase();
         }
@@ -92,20 +100,25 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
     setState(() => _isLoadingPreview = true);
 
-    try {
-      for (int i = 1; i <= 5; i++) {
-        final server = "de$i.api.radio-browser.info";
-        final url = (code == "ALL")
-            ? Uri.parse(
-                "https://$server/json/stations/search?limit=100&order=clickcount&reverse=true",
-              )
-            : Uri.parse(
-                "https://$server/json/stations/search?countrycode=${code.toLowerCase()}&limit=100&order=clickcount&reverse=true",
-              );
+    bool loaded = false;
 
+    for (final server in _radioBrowserServers) {
+      final url = (code == "ALL")
+          ? Uri.parse(
+              "https://$server/json/stations/search?limit=100&order=clickcount&reverse=true",
+            )
+          : Uri.parse(
+              "https://$server/json/stations/search?countrycode=${code.toLowerCase()}&limit=100&order=clickcount&reverse=true",
+            );
+
+      try {
         final response = await http
-            .get(url)
-            .timeout(const Duration(seconds: 4));
+            .get(url, headers: {
+              'User-Agent': 'RadioStreaming/1.0',
+              'Accept': 'application/json',
+            })
+            .timeout(const Duration(seconds: 8));
+
         if (response.statusCode == 200) {
           final List<dynamic> raw = json.decode(response.body);
 
@@ -123,38 +136,52 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
               return bVotes.compareTo(aVotes);
             });
 
-            // 1. Filter internal duplicates (API often returns same station 4 times)
-            // We do this by keeping only the first (most popular) occurrence of each name
+            // 1. Filter internal duplicates
             final seenNames = <String>{};
+            final seenUrls = <String>{};
             final uniquePreviewRadios = <dynamic>[];
 
             for (final s in raw) {
-              final sName = (s['name']?.toString() ?? '').toLowerCase().trim();
-              if (sName.isNotEmpty && !seenNames.contains(sName)) {
-                seenNames.add(sName);
+              final sName = (s['name']?.toString() ?? '').trim();
+              final sUrl = (s['url_resolved'] ?? s['url'] ?? '').toString().trim();
+              final sNameLower = sName.toLowerCase();
+              if (sName.isNotEmpty &&
+                  sUrl.isNotEmpty &&
+                  !seenNames.contains(sNameLower) &&
+                  !seenUrls.contains(sUrl)) {
+                seenNames.add(sNameLower);
+                seenUrls.add(sUrl);
                 uniquePreviewRadios.add(s);
               }
-              // We stop when we have enough unique ones to fill the 25 slots
               if (uniquePreviewRadios.length >= 25) break;
             }
 
-            final finalPreview = uniquePreviewRadios;
+            if (uniquePreviewRadios.isNotEmpty) {
+              setState(() {
+                _previewRadios = uniquePreviewRadios;
+                _previewCustomLogos.clear();
+                _selectedPreviewRadios.clear();
+                _isLoadingPreview = false;
+                _lastLoadedPreviewCountryCode = code;
+              });
 
-            setState(() {
-              _previewRadios = finalPreview;
-              _previewCustomLogos.clear();
-              _selectedPreviewRadios.clear();
-              _isLoadingPreview = false;
-              _lastLoadedPreviewCountryCode = code; // Salviamo il codice effettivo caricato
-            });
-
-            // Start an async background task to find missing logos
-            _autoFetchMissingLogos();
+              _autoFetchMissingLogos();
+              loaded = true;
+              break;
+            }
           }
-          break;
         }
+      } catch (e) {
+        debugPrint("Error loading preview radios from $server: $e");
       }
-    } catch (_) {}
+    }
+
+    // Fallback sulle Top Global se il paese selezionato non ha stazioni in preview
+    if (!loaded && code != "ALL" && mounted) {
+      _loadPreviewRadios("ALL");
+      return;
+    }
+
     if (mounted && _isLoadingPreview) {
       setState(() => _isLoadingPreview = false);
     }
@@ -204,9 +231,12 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     String? effectiveCode = _selectedCountryCode;
     if (effectiveCode == null) {
       try {
-        final locale = Platform.localeName;
+        final locale = Platform.localeName.replaceAll('-', '_');
         if (locale.contains('_')) {
-          effectiveCode = locale.split('_')[1].toUpperCase();
+          final parts = locale.split('_');
+          if (parts.length > 1 && parts[1].isNotEmpty) {
+            effectiveCode = parts[1].toUpperCase();
+          }
         } else if (locale.length == 2) {
           effectiveCode = locale.toUpperCase();
         }
@@ -516,46 +546,46 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
 
     try {
       List<dynamic> stations = [];
-      // Try servers de1 to de5
-      for (int i = 1; i <= 5; i++) {
-        final server = "de$i.api.radio-browser.info";
-        final Uri url;
 
-        if (_selectedCountryCode == "ALL") {
-          // Top Global
-          url = Uri.parse(
-            "https://$server/json/stations/search?limit=100&order=clickcount&reverse=true",
-          );
-        } else {
-          // Top by Country
-          url = Uri.parse(
-            "https://$server/json/stations/search?countrycode=${_selectedCountryCode!.toLowerCase()}&order=clickcount&reverse=true",
-          );
-        }
+      for (final server in _radioBrowserServers) {
+        final Uri url = (_selectedCountryCode == "ALL")
+            ? Uri.parse(
+                "https://$server/json/stations/search?limit=100&order=clickcount&reverse=true",
+              )
+            : Uri.parse(
+                "https://$server/json/stations/search?countrycode=${_selectedCountryCode!.toLowerCase()}&limit=100&order=clickcount&reverse=true",
+              );
 
         try {
           final response = await http
-              .get(url)
-              .timeout(const Duration(seconds: 4));
+              .get(url, headers: {
+                'User-Agent': 'RadioStreaming/1.0',
+                'Accept': 'application/json',
+              })
+              .timeout(const Duration(seconds: 8));
 
           if (response.statusCode == 200) {
             final List<dynamic> rawStations = json.decode(response.body);
             final seenUuids = <String>{};
             final seenUrls = <String>{};
+            final seenNames = <String>{};
             stations = [];
             for (final s in rawStations) {
               final uuid = s['stationuuid']?.toString();
               final String url = (s['url_resolved'] ?? s['url'] ?? '')
-                  .toString();
-              final int bitrate = s['bitrate'] ?? 0;
+                  .toString()
+                  .trim();
+              final String name = (s['name']?.toString() ?? '').trim();
 
               if (uuid != null &&
                   url.isNotEmpty &&
+                  name.isNotEmpty &&
                   !seenUuids.contains(uuid) &&
                   !seenUrls.contains(url) &&
-                  bitrate > 0) {
+                  !seenNames.contains(name.toLowerCase())) {
                 seenUuids.add(uuid);
                 seenUrls.add(url);
+                seenNames.add(name.toLowerCase());
                 stations.add(s);
               }
             }
@@ -573,26 +603,30 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
             });
             break;
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint("Failed to fetch stations from $server: $e");
+        }
       }
 
       if (mounted) {
         // Synchronize with existing stations
         final provider = Provider.of<RadioProvider>(context, listen: false);
         final existingStations = provider.stations;
-        // Remove stations that are already present in the provider
-        stations.removeWhere((s) {
-          final sName = (s['name']?.toString() ?? '').toLowerCase();
-          return existingStations.any((e) => e.name.toLowerCase() == sName);
-        });
 
-        // We no longer need to sync selection for existing ones because they are removed.
-        // We only show NEW stations.
+        // Filter out stations that are already present in the provider
+        final filteredNew = stations.where((s) {
+          final sName = (s['name']?.toString() ?? '').trim().toLowerCase();
+          final sUrl = (s['url_resolved'] ?? s['url'] ?? '').toString().trim();
+          return !existingStations.any((e) =>
+              e.name.trim().toLowerCase() == sName || e.url.trim() == sUrl);
+        }).toList();
 
-        // We only show NEW stations.
+        // If filtering leaves nothing (e.g. all top stations already in library),
+        // keep the stations so the user can still see them
+        final finalStations = filteredNew.isNotEmpty ? filteredNew : stations;
 
         setState(() {
-          _searchResults = stations;
+          _searchResults = finalStations;
           _isLoading = false;
         });
       }
@@ -1138,12 +1172,14 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                     // 2. Detect Device Country
                     String? deviceCode;
                     try {
-                      final locale = Platform.localeName; // e.g. en_US
+                      final locale = Platform.localeName.replaceAll('-', '_'); // e.g. en_US or it-IT
                       if (locale.contains('_')) {
                         final parts = locale.split('_');
-                        if (parts.length > 1) {
+                        if (parts.length > 1 && parts[1].isNotEmpty) {
                           deviceCode = parts[1].toUpperCase();
                         }
+                      } else if (locale.length == 2) {
+                        deviceCode = locale.toUpperCase();
                       }
                     } catch (_) {}
 
@@ -1360,7 +1396,41 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: filteredStations.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.radio_outlined,
+                          size: 48,
+                          color: Theme.of(context).disabledColor,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          langProvider.translate('no_stations_found'),
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodyMedium?.color,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _scanRadios,
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: Text(langProvider.translate('retry_search')),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).primaryColor,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
             primary: false, // Prevent conflict
             padding: const EdgeInsets.only(bottom: 24),
             itemCount: filteredStations.length,
@@ -1398,7 +1468,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                           },
                         ),
                         title: Text(
-                          station['name'] ?? langProvider.translate('unknown'),
+                          (station['name']?.toString() ?? langProvider.translate('unknown')).trim(),
                           style: TextStyle(
                             color: isSelected
                                 ? Theme.of(context).primaryColor
@@ -1596,7 +1666,35 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     }
 
     if (_previewRadios.isEmpty) {
-      return const SizedBox.shrink();
+      return Container(
+        height: 52,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.star_outline, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  langProvider.translate('top_radios'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            TextButton.icon(
+              onPressed: () => _loadPreviewRadios(_selectedCountryCode),
+              icon: const Icon(Icons.refresh, size: 16),
+              label: Text(langProvider.translate('retry_search')),
+            ),
+          ],
+        ),
+      );
     }
 
     return Container(
@@ -1639,6 +1737,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
     final isSelected = _selectedPreviewRadios.contains(station);
     final customLogo = _previewCustomLogos[station];
     final displayLogo = customLogo ?? station['favicon'];
+    final name = (station['name']?.toString() ?? 'Unknown').trim();
 
     return GestureDetector(
       onTap: () => _togglePreviewSelection(station),
@@ -1684,7 +1783,7 @@ class _TutorialCreateRadioWizardState extends State<TutorialCreateRadioWizard> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: Text(
-                    station['name'] ?? 'Unknown',
+                    name,
                     maxLines: 2,
                     textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis,
