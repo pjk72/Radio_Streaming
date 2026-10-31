@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        windowLayoutInDisplayCutoutMode="always" was introduced in API 30.
+        On Android 9/10 (API 28/29) the value 3 is unknown and makes
+        PhoneWindow.generateLayout() throw UnsupportedOperationException,
+        crashing the app before Flutter starts. Keep it only in this
+        API 30+ qualified resource.
+    -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+</resources>
