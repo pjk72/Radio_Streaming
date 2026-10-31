@@ -15,6 +15,7 @@ import '../models/playlist.dart';
 
 import '../widgets/player_bar.dart';
 import '../widgets/native_ad_widget.dart';
+import '../services/native_ad_pool.dart';
 import '../widgets/mini_visualizer.dart';
 import '../services/log_service.dart';
 import '../providers/language_provider.dart';
@@ -22,7 +23,11 @@ import '../utils/glass_utils.dart';
 import 'artist_details_screen.dart';
 
 class _AdItem {
-  const _AdItem();
+  const _AdItem(this.slot);
+
+  /// Stable identifier of the ad slot, used as widget key so a loaded ad
+  /// follows its slot when the track list changes.
+  final int slot;
 }
 
 class TrendingDetailsScreen extends StatefulWidget {
@@ -648,14 +653,17 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
   void _buildItems() {
     _items = [];
     if (_songs.isNotEmpty) {
-      _items.add(const _AdItem()); // Ad at start
+      int adSlot = 0;
+      _items.add(_AdItem(adSlot++)); // Ad at start
       for (int i = 0; i < _songs.length; i++) {
         _items.add(_songs[i]);
         if ((i + 1) % 10 == 0 && (i + 1) < _songs.length) {
-          _items.add(const _AdItem()); // Ad every 10 songs
+          _items.add(_AdItem(adSlot++)); // Ad every 10 songs
         }
       }
-      _items.add(const _AdItem()); // Ad at end
+      _items.add(_AdItem(adSlot++)); // Ad at end
+
+      NativeAdPool.instance.preload(target: adSlot.clamp(1, 3).toInt());
     }
   }
 
@@ -1142,7 +1150,7 @@ class _TrendingDetailsScreenState extends State<TrendingDetailsScreen> {
     final item = _items[index];
 
     if (item is _AdItem) {
-      return NativeAdWidget();
+      return NativeAdWidget(key: ValueKey('trending_ad_${item.slot}'));
     }
 
     final track = item as SavedSong;

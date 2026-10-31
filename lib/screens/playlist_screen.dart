@@ -39,6 +39,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'playlist_screen_duplicates_logic.dart';
 import '../widgets/native_ad_widget.dart';
+import '../services/native_ad_pool.dart';
 import '../widgets/player_bar.dart';
 import 'add_song_screen.dart';
 import '../services/entitlement_service.dart';
@@ -79,7 +80,11 @@ List<MergeSuggestion> _runMergeSuggestions(_MergeRequest request) {
 }
 
 class _AdItem {
-  const _AdItem();
+  const _AdItem(this.slot);
+
+  /// Stable identifier of the ad slot, used as widget key so a loaded ad
+  /// follows its slot when songs are added, removed or reordered.
+  final int slot;
 }
 
 class PlaylistScreen extends StatefulWidget {
@@ -5078,46 +5083,40 @@ class _PlaylistScreenState extends State<PlaylistScreen>
       }
     }
 
-    // Logic for Ads: At start, at end, and every 10 songs (including grouped content)
+    // Ads: one at the start, one every 10 songs, one at the end.
+    // Slots are placed only between top-level cards, never inside a collapsed
+    // album group: an ad there cannot be seen (and still costs a request)
+    // until the group is expanded.
     final List<dynamic> listItems = [];
     if (groupedSongs.isNotEmpty) {
-      listItems.add(const _AdItem()); // Initial Ad
+      int adSlot = 0;
+      listItems.add(_AdItem(adSlot++)); // Initial Ad
 
       int songCounter = 0;
+      int nextAdAt = 10;
       for (var group in groupedSongs) {
-        final List<dynamic> internalItems = [];
-        for (var song in group) {
-          songCounter++;
-          internalItems.add(song);
-          if (songCounter % 10 == 0) {
-            internalItems.add(const _AdItem());
-          }
+        if (group.length == 1) {
+          listItems.add([group.first]);
+        } else {
+          listItems.add(List<dynamic>.from(group));
         }
 
-        // Pull out trailing ad from group to main list (between cards)
-        if (internalItems.isNotEmpty && internalItems.last is _AdItem) {
-          internalItems.removeLast();
-          if (internalItems.length == 1) {
-            listItems.add([
-              internalItems.first,
-            ]); // Still a list for consistency
-          } else {
-            listItems.add(internalItems);
-          }
-          listItems.add(const _AdItem());
-        } else {
-          if (internalItems.length == 1) {
-            listItems.add([internalItems.first]);
-          } else {
-            listItems.add(internalItems);
-          }
+        songCounter += group.length;
+        if (songCounter >= nextAdAt) {
+          listItems.add(_AdItem(adSlot++));
+          // Never place two slots back to back when a large group crosses more
+          // than one boundary: move the next boundary past the current count.
+          nextAdAt = (songCounter ~/ 10 + 1) * 10;
         }
       }
 
       // Final Ad if not already present
       if (listItems.isNotEmpty && listItems.last is! _AdItem) {
-        listItems.add(const _AdItem());
+        listItems.add(_AdItem(adSlot++));
       }
+
+      // Warm up the pool for the slots that are about to be rendered.
+      NativeAdPool.instance.preload(target: adSlot.clamp(1, 3).toInt());
     } else {
       listItems.addAll(groupedSongs);
     }
@@ -5188,7 +5187,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
           final item = listItems[index];
 
           if (item is _AdItem) {
-            return NativeAdWidget();
+            return NativeAdWidget(key: ValueKey('playlist_ad_${item.slot}'));
           }
 
           final group = item as List<dynamic>;
@@ -5215,7 +5214,7 @@ class _PlaylistScreenState extends State<PlaylistScreen>
         final item = listItems[index];
 
         if (item is _AdItem) {
-          return NativeAdWidget();
+          return NativeAdWidget(key: ValueKey('playlist_ad_${item.slot}'));
         }
 
         final group = item as List<dynamic>;
@@ -9937,7 +9936,9 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
               itemBuilder: (ctx, i) {
                 final item = widget.groupItems[i];
                 if (item is _AdItem) {
-                  return NativeAdWidget();
+                  return NativeAdWidget(
+                    key: ValueKey('playlist_group_ad_${item.slot}'),
+                  );
                 }
                 final song = item as SavedSong;
                 // Calculate index based on its position in the pure song list

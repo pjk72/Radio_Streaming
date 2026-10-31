@@ -31,6 +31,7 @@ import 'widgets/admob_banner_widget.dart';
 import 'services/encryption_service.dart';
 import 'services/entitlement_service.dart';
 import 'services/interstitial_ad_service.dart';
+import 'services/native_ad_pool.dart';
 import 'widgets/admin_debug_overlay.dart';
 import 'services/app_open_ad_manager.dart';
 import 'services/notification_service.dart';
@@ -203,6 +204,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
           await MobileAds.instance
               .initialize()
               .timeout(const Duration(seconds: 5));
+          // Warm up the native ad pool so the first list slot can render
+          // without waiting for a fresh request.
+          NativeAdPool.instance.preload();
         } catch (_) {}
       }
 
