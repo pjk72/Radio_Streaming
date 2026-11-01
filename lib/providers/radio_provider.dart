@@ -7418,6 +7418,25 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // Saved (named) themes are part of the theme settings, so they travel
+      // with the backup. Fall back to the raw preference when the provider is
+      // not available yet.
+      List<dynamic> savedThemesPayload;
+      if (_themeProvider != null) {
+        savedThemesPayload =
+            _themeProvider.savedThemes.map((t) => t.toJson()).toList();
+      } else {
+        savedThemesPayload = <dynamic>[];
+        final rawSavedThemes = prefs.getString('saved_themes');
+        if (rawSavedThemes != null && rawSavedThemes.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(rawSavedThemes);
+            if (decoded is List) savedThemesPayload = decoded;
+          } catch (_) {}
+        }
+      }
+
       final data = {
         'stations': stations.map((s) => s.toJson()).toList(),
         'favorites': _favorites,
@@ -7445,6 +7464,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
           'custom_card': prefs.getInt('custom_card'),
           'custom_surface': prefs.getInt('custom_surface'),
           'custom_bg_image': prefs.getString('custom_bg_image'),
+          'saved_themes': savedThemesPayload,
         },
         'playback_settings': {
           'crossfade_duration': _crossfadeDuration,
@@ -7777,6 +7797,14 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         }
         if (theme['custom_bg_image'] != null) {
           await prefs.setString('custom_bg_image', theme['custom_bg_image']);
+        }
+        if (theme['saved_themes'] is List) {
+          final List<dynamic> savedThemes = theme['saved_themes'] as List;
+          if (_themeProvider != null) {
+            await _themeProvider.importSavedThemes(savedThemes);
+          } else {
+            await prefs.setString('saved_themes', jsonEncode(savedThemes));
+          }
         }
 
         // Reload theme if provider is available
@@ -11186,6 +11214,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'custom_card',
         'custom_surface',
         'custom_bg_image',
+        'saved_themes',
         'initial_setup_v2'
       ];
       for (var key in themeKeys) {
@@ -11223,6 +11252,7 @@ class RadioProvider with ChangeNotifier, WidgetsBindingObserver {
         'custom_card',
         'custom_surface',
         'custom_bg_image',
+        'saved_themes',
         'initial_setup_v2'
       ];
       for (var key in themeKeys) {

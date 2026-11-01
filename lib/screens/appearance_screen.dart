@@ -55,6 +55,16 @@ class AppearanceScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _buildBackgroundImageSection(context, themeProvider),
 
+            const SizedBox(height: 32),
+            _buildSectionHeader(langProvider.translate('saved_themes')),
+            const SizedBox(height: 8),
+            Text(
+              langProvider.translate('saved_themes_desc'),
+              style: const TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            _buildSavedThemesSection(context, themeProvider),
+
             if (themeProvider.hasCustomColors) ...[
               const SizedBox(height: 24),
               Center(
@@ -442,6 +452,342 @@ class AppearanceScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildSavedThemesSection(
+    BuildContext context,
+    ThemeProvider provider,
+  ) {
+    final langProvider = Provider.of<LanguageProvider>(context);
+    final theme = Theme.of(context);
+    final canSave = provider.canSaveTheme;
+    final savedThemes = provider.savedThemes;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ElevatedButton.icon(
+          onPressed: canSave
+              ? () => _showSaveThemeDialog(context, provider)
+              : null,
+          icon: const Icon(Icons.bookmark_add_rounded, size: 19),
+          label: Text(
+            langProvider.translate('save_theme_with_name'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            disabledBackgroundColor:
+                theme.colorScheme.onSurface.withValues(alpha: 0.12),
+            disabledForegroundColor:
+                theme.colorScheme.onSurface.withValues(alpha: 0.4),
+            elevation: 0,
+            minimumSize: const Size(double.infinity, 46),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        if (!canSave) ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                size: 15,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  langProvider.translate('save_theme_hint'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (savedThemes.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.dividerColor.withValues(alpha: 0.1),
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (int i = 0; i < savedThemes.length; i++) ...[
+                  if (i > 0)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                  _buildSavedThemeTile(
+                    context,
+                    provider,
+                    savedThemes[i],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSavedThemeTile(
+    BuildContext context,
+    ThemeProvider provider,
+    SavedTheme saved,
+  ) {
+    final langProvider = Provider.of<LanguageProvider>(context);
+    final theme = Theme.of(context);
+    final preset = provider.presets.firstWhere(
+      (p) => p.id == saved.presetId,
+      orElse: () => provider.currentPreset,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          await provider.applySavedTheme(saved);
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                langProvider.translate('theme_applied', args: [saved.name]),
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: saved.background ?? preset.backgroundColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white24, width: 1),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (saved.backgroundImageUrl != null)
+                      Image.network(
+                        saved.backgroundImageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    if (saved.backgroundImageUrl != null)
+                      Container(color: Colors.black.withValues(alpha: 0.15)),
+                    Center(
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: saved.primary ?? preset.primaryColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white54, width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      saved.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            preset.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (saved.backgroundImageUrl != null) ...[
+                          const SizedBox(width: 5),
+                          Icon(
+                            Icons.image_rounded,
+                            size: 12,
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: langProvider.translate('rename'),
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  Icons.edit_outlined,
+                  size: 19,
+                  color: theme.colorScheme.primary,
+                ),
+                onPressed: () => _renameTheme(context, provider, saved),
+              ),
+              IconButton(
+                tooltip: langProvider.translate('delete'),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 20,
+                  color: Colors.redAccent,
+                ),
+                onPressed: () => _confirmDeleteTheme(context, provider, saved),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSaveThemeDialog(
+    BuildContext context,
+    ThemeProvider provider,
+  ) async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (_) => _ThemeNameDialog(
+        initialName: provider.currentPreset.name,
+        title: langProvider.translate('save_theme_title'),
+        hint: langProvider.translate('save_theme_name_hint'),
+        confirmLabel: langProvider.translate('save'),
+      ),
+    );
+
+    if (result == null || result.trim().isEmpty) return;
+
+    final saved = await provider.saveCurrentThemeAs(result);
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved != null
+              ? langProvider.translate('theme_saved', args: [saved.name])
+              : langProvider.translate('save_theme_hint'),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _renameTheme(
+    BuildContext context,
+    ThemeProvider provider,
+    SavedTheme saved,
+  ) async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (_) => _ThemeNameDialog(
+        initialName: saved.name,
+        title: langProvider.translate('rename_theme_title'),
+        hint: langProvider.translate('rename_theme_hint'),
+        confirmLabel: langProvider.translate('rename'),
+      ),
+    );
+
+    if (result == null || result.trim().isEmpty) return;
+    if (result.trim() == saved.name) return;
+
+    final renamed = await provider.renameSavedTheme(saved.id, result);
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          renamed
+              ? langProvider.translate('theme_renamed', args: [result.trim()])
+              : langProvider.translate('theme_name_exists'),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteTheme(
+    BuildContext context,
+    ThemeProvider provider,
+    SavedTheme saved,
+  ) async {
+    final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(langProvider.translate('delete_theme_title')),
+        content: Text(
+          langProvider.translate('delete_theme_confirm', args: [saved.name]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(langProvider.translate('cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: Text(langProvider.translate('delete')),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    await provider.deleteSavedTheme(saved.id);
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          langProvider.translate('theme_deleted', args: [saved.name]),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _openImageSearch(BuildContext context, ThemeProvider provider) async {
     final selectedUrl = await Navigator.push<String>(
       context,
@@ -763,6 +1109,112 @@ class _ImageSearchPageState extends State<_ImageSearchPage> {
     );
   }
 
+}
+
+class _ThemeNameDialog extends StatefulWidget {
+  final String initialName;
+  final String title;
+  final String hint;
+  final String confirmLabel;
+
+  const _ThemeNameDialog({
+    required this.initialName,
+    required this.title,
+    required this.hint,
+    required this.confirmLabel,
+  });
+
+  @override
+  State<_ThemeNameDialog> createState() => _ThemeNameDialogState();
+}
+
+class _ThemeNameDialogState extends State<_ThemeNameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+    if (_controller.text.isNotEmpty) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+    }
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _controller.text.trim();
+    if (name.isEmpty) return;
+    Navigator.pop(context, name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(context);
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            widget.hint,
+            style: TextStyle(
+              fontSize: 12,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              hintText: langProvider.translate('theme_name'),
+              prefixIcon: const Icon(Icons.bookmark_outline_rounded),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(langProvider.translate('cancel')),
+        ),
+        ElevatedButton(
+          onPressed: _controller.text.trim().isEmpty ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: Text(widget.confirmLabel),
+        ),
+      ],
+    );
+  }
 }
 
 class _AccentColorSuggestionSheet extends StatefulWidget {

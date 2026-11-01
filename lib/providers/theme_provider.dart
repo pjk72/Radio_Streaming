@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:convert';
 import 'dart:math';
 
 class ThemePreset {
@@ -25,9 +26,89 @@ class ThemePreset {
   });
 }
 
+/// A complete theme (preset + custom color overrides + background image) that
+/// the user named and saved. Saved themes are persisted locally and included in
+/// the Google Drive backups, so they can be restored on any device/version.
+class SavedTheme {
+  final String id;
+  final String name;
+  final String presetId;
+  final int? primaryColor;
+  final int? backgroundColor;
+  final int? cardColor;
+  final int? surfaceColor;
+  final String? backgroundImageUrl;
+  final int createdAt;
+
+  const SavedTheme({
+    required this.id,
+    required this.name,
+    required this.presetId,
+    this.primaryColor,
+    this.backgroundColor,
+    this.cardColor,
+    this.surfaceColor,
+    this.backgroundImageUrl,
+    required this.createdAt,
+  });
+
+  Color? get primary => primaryColor != null ? Color(primaryColor!) : null;
+  Color? get background =>
+      backgroundColor != null ? Color(backgroundColor!) : null;
+  Color? get card => cardColor != null ? Color(cardColor!) : null;
+  Color? get surface => surfaceColor != null ? Color(surfaceColor!) : null;
+
+  bool get hasCustomColors =>
+      primaryColor != null ||
+      backgroundColor != null ||
+      cardColor != null ||
+      surfaceColor != null;
+
+  SavedTheme copyWith({String? name}) => SavedTheme(
+        id: id,
+        name: name ?? this.name,
+        presetId: presetId,
+        primaryColor: primaryColor,
+        backgroundColor: backgroundColor,
+        cardColor: cardColor,
+        surfaceColor: surfaceColor,
+        backgroundImageUrl: backgroundImageUrl,
+        createdAt: createdAt,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'preset_id': presetId,
+        'primary_color': primaryColor,
+        'background_color': backgroundColor,
+        'card_color': cardColor,
+        'surface_color': surfaceColor,
+        'background_image_url': backgroundImageUrl,
+        'created_at': createdAt,
+      };
+
+  factory SavedTheme.fromJson(Map<String, dynamic> json) {
+    int? readInt(dynamic value) => value is num ? value.toInt() : null;
+    return SavedTheme(
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      presetId: (json['preset_id'] ?? 'dark_default').toString(),
+      primaryColor: readInt(json['primary_color']),
+      backgroundColor: readInt(json['background_color']),
+      cardColor: readInt(json['card_color']),
+      surfaceColor: readInt(json['surface_color']),
+      backgroundImageUrl: json['background_image_url']?.toString(),
+      createdAt: readInt(json['created_at']) ??
+          DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+}
+
 class ThemeProvider with ChangeNotifier {
   static const String _keyThemeId = 'theme_id';
   static const String _keyInitialSetup = 'initial_setup_v2';
+  static const String _keySavedThemes = 'saved_themes';
 
   // --- Default Backgrounds for first access ---
   static final List<Map<String, dynamic>> _defaultBackgrounds = [
@@ -310,8 +391,17 @@ class ThemeProvider with ChangeNotifier {
   Color? _customSurfaceColor;
   String? _customBackgroundImageUrl;
 
+  List<SavedTheme> _savedThemes = [];
+
   ThemePreset get currentPreset => _currentPreset;
   List<ThemePreset> get presets => [..._presets];
+
+  /// Named themes saved by the user (newest first).
+  List<SavedTheme> get savedThemes => [..._savedThemes];
+
+  /// Saving a theme is only meaningful when the user actually customised
+  /// something: picking a built-in preset alone does not enable saving.
+  bool get canSaveTheme => hasCustomColors || _customBackgroundImageUrl != null;
 
   String? get customBackgroundImageUrl => _customBackgroundImageUrl;
 
@@ -373,6 +463,8 @@ class ThemeProvider with ChangeNotifier {
     if (surface != null) _customSurfaceColor = Color(surface);
 
     _customBackgroundImageUrl = prefs.getString('custom_bg_image');
+
+    _savedThemes = _decodeSavedThemes(prefs.getString(_keySavedThemes));
 
     // First run initialization: if no background image and first time, pick a random one
     final bool initialSetupDone = prefs.getBool(_keyInitialSetup) ?? false;
@@ -476,6 +568,180 @@ class ThemeProvider with ChangeNotifier {
     } else {
       await prefs.remove('custom_bg_image');
     }
+  }
+
+  // --- Named / saved themes -------------------------------------------------
+
+  static List<SavedTheme> _decodeSavedThemes(String? raw) {
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return [];
+      return decoded
+          .whereType<Map>()
+          .map((e) => SavedTheme.fromJson(Map<String, dynamic>.from(e)))
+          .where((e) => e.id.isNotEmpty && e.name.isNotEmpty)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _persistSavedThemes() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _keySavedThemes,
+      jsonEncode(_savedThemes.map((t) => t.toJson()).toList()),
+    );
+  }
+
+  /// Saves the current theme (preset + custom colors + background image) under
+  /// [name]. When a theme with the same name already exists it is updated
+  /// instead of being duplicated.
+  Future<SavedTheme?> saveCurrentThemeAs(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || !canSaveTheme) return null;
+
+    final existingIndex = _savedThemes.indexWhere(
+      (t) => t.name.toLowerCase() == trimmed.toLowerCase(),
+    );
+    final existing = existingIndex >= 0 ? _savedThemes[existingIndex] : null;
+
+    final saved = SavedTheme(
+      id: existing?.id ??
+          DateTime.now().microsecondsSinceEpoch.toString(),
+      name: trimmed,
+      presetId: _currentPreset.id,
+      primaryColor: _customPrimaryColor?.toARGB32(),
+      backgroundColor: _customBackgroundColor?.toARGB32(),
+      cardColor: _customCardColor?.toARGB32(),
+      surfaceColor: _customSurfaceColor?.toARGB32(),
+      backgroundImageUrl: _customBackgroundImageUrl,
+      createdAt:
+          existing?.createdAt ?? DateTime.now().millisecondsSinceEpoch,
+    );
+
+    if (existingIndex >= 0) {
+      _savedThemes[existingIndex] = saved;
+    } else {
+      _savedThemes.insert(0, saved);
+    }
+    await _persistSavedThemes();
+    notifyListeners();
+    return saved;
+  }
+
+  /// Applies a previously saved theme, restoring both the base preset and all
+  /// custom overrides (including the background image).
+  Future<void> applySavedTheme(SavedTheme saved) async {
+    _currentPreset = _presets.firstWhere(
+      (p) => p.id == saved.presetId,
+      orElse: () => _currentPreset,
+    );
+    _customPrimaryColor = saved.primary;
+    _customBackgroundColor = saved.background;
+    _customCardColor = saved.card;
+    _customSurfaceColor = saved.surface;
+    _customBackgroundImageUrl = saved.backgroundImageUrl;
+
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyThemeId, _currentPreset.id);
+    await _writeOptionalColor(prefs, 'custom_primary', saved.primaryColor);
+    await _writeOptionalColor(prefs, 'custom_bg', saved.backgroundColor);
+    await _writeOptionalColor(prefs, 'custom_card', saved.cardColor);
+    await _writeOptionalColor(prefs, 'custom_surface', saved.surfaceColor);
+    if (saved.backgroundImageUrl != null) {
+      await prefs.setString('custom_bg_image', saved.backgroundImageUrl!);
+    } else {
+      await prefs.remove('custom_bg_image');
+    }
+  }
+
+  Future<void> _writeOptionalColor(
+    SharedPreferences prefs,
+    String key,
+    int? value,
+  ) async {
+    if (value == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setInt(key, value);
+    }
+  }
+
+  Future<void> deleteSavedTheme(String id) async {
+    _savedThemes.removeWhere((t) => t.id == id);
+    await _persistSavedThemes();
+    notifyListeners();
+  }
+
+  /// Renames the saved theme with [id]. Returns `false` when the new name is
+  /// empty or already used by another saved theme.
+  Future<bool> renameSavedTheme(String id, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return false;
+
+    final index = _savedThemes.indexWhere((t) => t.id == id);
+    if (index < 0) return false;
+
+    final isDuplicate = _savedThemes.any(
+      (t) => t.id != id && t.name.toLowerCase() == trimmed.toLowerCase(),
+    );
+    if (isDuplicate) return false;
+
+    if (_savedThemes[index].name == trimmed) return true;
+
+    _savedThemes[index] = _savedThemes[index].copyWith(name: trimmed);
+    await _persistSavedThemes();
+    notifyListeners();
+    return true;
+  }
+
+  /// Merges the saved themes coming from a backup payload. Themes with the same
+  /// id are replaced by the imported version; everything else is preserved.
+  Future<void> importSavedThemes(
+    List<dynamic> raw, {
+    bool replace = false,
+  }) async {
+    final imported = raw
+        .whereType<Map>()
+        .map((e) => SavedTheme.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.id.isNotEmpty && e.name.isNotEmpty)
+        .toList();
+
+    if (replace) {
+      _savedThemes = imported;
+    } else {
+      final Map<String, SavedTheme> byId = {
+        for (final t in _savedThemes) t.id: t,
+      };
+      for (final t in imported) {
+        byId[t.id] = t;
+      }
+      // Merge by id first, then collapse entries sharing the same name (they
+      // can come from another device) keeping the most recent one.
+      final merged = <SavedTheme>[];
+      for (final theme in byId.values) {
+        final duplicateIndex = merged.indexWhere(
+          (m) => m.name.toLowerCase() == theme.name.toLowerCase(),
+        );
+        if (duplicateIndex >= 0) {
+          if (theme.createdAt > merged[duplicateIndex].createdAt) {
+            merged[duplicateIndex] = theme;
+          }
+        } else {
+          merged.add(theme);
+        }
+      }
+      _savedThemes = merged;
+    }
+    _savedThemes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    await _persistSavedThemes();
+    notifyListeners();
   }
 
   // Generate ThemeData from the current preset

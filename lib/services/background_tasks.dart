@@ -90,6 +90,15 @@ Future<bool> _performBackgroundBackup() async {
     final promotedPlaylistsJson = prefs.getString('promoted_playlists');
     final crossfadeDuration = prefs.getInt('crossfade_duration_v2') ?? 15;
 
+    final savedThemesJson = prefs.getString('saved_themes');
+    List<dynamic> savedThemes = [];
+    if (savedThemesJson != null && savedThemesJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(savedThemesJson);
+        if (decoded is List) savedThemes = decoded;
+      } catch (_) {}
+    }
+
     final data = {
       'stations': stationsJson != null ? jsonDecode(stationsJson) : [],
       'favorites':
@@ -119,6 +128,7 @@ Future<bool> _performBackgroundBackup() async {
         'custom_card': prefs.getInt('custom_card'),
         'custom_surface': prefs.getInt('custom_surface'),
         'custom_bg_image': prefs.getString('custom_bg_image'),
+        'saved_themes': savedThemes,
       },
       'playback_settings': {
         'crossfade_duration': crossfadeDuration,
