@@ -618,11 +618,14 @@ Future<void> downloadPlaylist(
   // 2. Show Progress Dialog IMMEDIATELY
   if (!context.mounted) return;
 
+  BuildContext? dialogCtx;
   GlassUtils.showGlassDialog(
     context: context,
     barrierDismissible: false,
-    builder: (ctx) => PopScope(
-      canPop: false,
+    builder: (ctx) {
+      dialogCtx = ctx;
+      return PopScope(
+        canPop: false,
       child: Center(
         child: Card(
           color: Theme.of(context).cardColor.withValues(alpha: 0.7),
@@ -813,8 +816,9 @@ Future<void> downloadPlaylist(
           ),
         ),
       ),
-    ),
-  );
+    );
+  },
+);
 
   // 3. Perform Async Setup inside a try-catch
   Directory saveDir;
@@ -857,7 +861,13 @@ Future<void> downloadPlaylist(
 
     pathNotifier.value = saveDir.path;
   } catch (e) {
-    if (context.mounted && !isDismissed) Navigator.pop(context);
+    if (!isDismissed) {
+      if (dialogCtx != null && dialogCtx!.mounted) {
+        Navigator.of(dialogCtx!).pop();
+      } else if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
     return;
   }
 
@@ -1216,6 +1226,8 @@ Future<void> downloadPlaylist(
                     anyUpdate = true;
                     successCount++;
                     downloadSuccess = true;
+                    currentFileProgress.value = 1.0;
+                    statusNotifier.value = "Completed";
 
                     // Sync this status to all other playlists
                     await provider.updateSongDownloadStatusGlobally(
@@ -1275,10 +1287,17 @@ Future<void> downloadPlaylist(
     if (anyUpdate && !playlist.id.startsWith('temp_')) {
       await provider.updateSongsInPlaylist(playlist.id, updatedSongs);
     }
+    await Future.delayed(const Duration(milliseconds: 300));
   } catch (e) {
     // General error
   } finally {
-    if (context.mounted && !isDismissed) Navigator.pop(context);
+    if (!isDismissed) {
+      if (dialogCtx != null && dialogCtx!.mounted) {
+        Navigator.of(dialogCtx!).pop();
+      } else if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
     cancelSubscription.cancel();
 
     if (isJobCancelled) {
