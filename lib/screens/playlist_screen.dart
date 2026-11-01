@@ -5772,9 +5772,8 @@ class _PlaylistScreenState extends State<PlaylistScreen>
                                                         .file_download_done_rounded
                                                   : Icons.folder_rounded,
                                               size: 12,
-                                              color: song.isDownloaded
-                                                  ? Colors.greenAccent
-                                                  : Theme.of(context).primaryColor
+                                              color:
+                                                  Theme.of(context).primaryColor,
                                             ),
                                           ),
                                         ),
@@ -9799,7 +9798,7 @@ class _AlbumGroupWidgetState extends State<_AlbumGroupWidget> {
                                       : Icons.folder_rounded,
                                   size: 10,
                                   color: widget.groupSongs.first.isDownloaded
-                                      ? Colors.greenAccent
+                                      ? Theme.of(context).primaryColor
                                       : Colors.white,
                                 ),
                               ),

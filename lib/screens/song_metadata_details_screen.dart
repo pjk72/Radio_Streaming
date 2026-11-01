@@ -11,13 +11,16 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart'
 import '../providers/radio_provider.dart';
 import '../providers/language_provider.dart';
 import '../models/saved_song.dart';
+import '../models/playlist.dart';
 import '../services/entitlement_service.dart';
 import '../services/recognition_api_service.dart';
 import '../services/interstitial_ad_service.dart';
 import '../services/encryption_service.dart';
 import '../services/id3_tag_service.dart';
+import '../services/download_service.dart';
 import '../utils/glass_utils.dart';
 import '../utils/shazam_utils.dart';
+import 'export_mp3_screen.dart';
 
 class SongMetadataDetailsScreen extends StatefulWidget {
   const SongMetadataDetailsScreen({
@@ -163,6 +166,44 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  /// True when the song is already available on the device as a local `.m4a`
+  /// file (e.g. imported from the device library). Such songs are not shown as
+  /// downloadable, since no online/offline download is needed.
+  bool get _hasLocalM4aFile {
+    final path = _song.localPath;
+    if (path == null || path.isEmpty) return false;
+    if (!path.toLowerCase().endsWith('.m4a')) return false;
+    try {
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Starts the online/offline download procedure for this song by wrapping it
+  /// in a temporary single-song playlist, exactly like the playlist menu does.
+  Future<void> _startDownload() async {
+    final provider = widget.provider;
+    if (provider == null || _song.isDownloaded) return;
+
+    final tempPlaylist = Playlist(
+      id: 'temp_download_${_song.id}',
+      name: _song.title,
+      songs: [_song],
+      createdAt: DateTime.now(),
+    );
+
+    await downloadPlaylist(
+      context,
+      provider,
+      tempPlaylist,
+      onSongDownloaded: (updatedSong) async {
+        if (!mounted || updatedSong.id != _song.id) return;
+        setState(() => _song = updatedSong);
+      },
+    );
   }
 
   Future<void> _startRecognition() async {
@@ -800,6 +841,29 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
     );
   }
 
+  /// Formats the release date as `dd-MM-yyyy`, followed by how many years
+  /// have passed since the release year (e.g. "12-05-2019 (7 anni fa)").
+  String _formatReleaseDate(LanguageProvider lang) {
+    final releaseDate = _song.releaseDate;
+    if (releaseDate == null || releaseDate.isEmpty) {
+      return lang.translate('unknown');
+    }
+    final dt = DateTime.tryParse(releaseDate);
+    if (dt == null) return releaseDate;
+
+    final dateStr =
+        "${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}";
+    final int yearsSinceRelease = DateTime.now().year - dt.year;
+    if (yearsSinceRelease <= 0) return dateStr;
+
+    final String yearsLabel = yearsSinceRelease == 1
+        ? lang.translate('year_ago')
+        : lang
+            .translate('years_ago')
+            .replaceAll('{0}', yearsSinceRelease.toString());
+    return '$dateStr ($yearsLabel)';
+  }
+
   Widget _buildInfoCards() {
     final lang = Provider.of<LanguageProvider>(context);
     final onSurface = Theme.of(context).colorScheme.onSurface;
@@ -823,16 +887,7 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
           _buildRowItem(
             Icons.calendar_today_rounded,
             lang.translate('release_date'),
-            (() {
-              if (_song.releaseDate == null || _song.releaseDate!.isEmpty) {
-                return lang.translate('unknown');
-              }
-              final dt = DateTime.tryParse(_song.releaseDate!);
-              if (dt != null) {
-                return "${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}";
-              }
-              return _song.releaseDate!;
-            })(),
+            _formatReleaseDate(lang),
           ),
           _buildRowItem(
             Icons.date_range_rounded,
@@ -926,67 +981,108 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
 
   Widget _buildRecognitionButton() {
     final lang = Provider.of<LanguageProvider>(context);
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    final onSurface = theme.colorScheme.onSurface;
     final bool isShazamDisabled = RecognitionApiService.isShazamDisabled.value;
+    final bool disabled = isShazamDisabled || _isAnalyzing;
+    final Color contentColor =
+        isShazamDisabled ? onSurface.withValues(alpha: 0.38) : accent;
+
     return SizedBox(
-      width: double.infinity,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(30),
-          onTap: (isShazamDisabled || _isAnalyzing)
-              ? null
-              : () {
-                  ShazamUtils.checkAndShowShazamInfoDialog(
-                    context,
-                    _startRecognition,
-                    showInfo: false,
-                  );
-                },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              color: isShazamDisabled
-                  ? Colors.grey.withValues(alpha: 0.2)
-                  : const Color(0xFF0088FF).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(
-                color: isShazamDisabled
-                    ? Colors.grey.withValues(alpha: 0.3)
-                    : const Color(0xFF0088FF).withValues(alpha: 0.4),
+      height: 38,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: contentColor,
+          backgroundColor: isShazamDisabled
+              ? onSurface.withValues(alpha: 0.05)
+              : accent.withValues(alpha: 0.12),
+          side: BorderSide(
+            color: isShazamDisabled
+                ? onSurface.withValues(alpha: 0.12)
+                : accent.withValues(alpha: 0.35),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: disabled
+            ? null
+            : () {
+                ShazamUtils.checkAndShowShazamInfoDialog(
+                  context,
+                  _startRecognition,
+                  showInfo: false,
+                );
+              },
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isAnalyzing)
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: contentColor,
+                ),
+              )
+            else
+              Icon(Icons.track_changes_rounded, size: 17, color: contentColor),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                _isAnalyzing
+                    ? lang.translate('shazam_analyzing')
+                    : lang.translate('music_recognition'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: contentColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                ),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_isAnalyzing)
-                  const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFF0088FF),
-                    ),
-                  )
-                else
-                  const Icon(
-                    Icons.track_changes,
-                    color: Color(0xFF0088FF),
-                    size: 20,
-                  ),
-                const SizedBox(width: 8),
-                Text(
-                  _isAnalyzing
-                      ? lang.translate('shazam_analyzing')
-                      : lang.translate('music_recognition'),
-                  style: TextStyle(
-                    color: isShazamDisabled ? Colors.grey : Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildManualRecognitionButton(LanguageProvider lang) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+
+    return Tooltip(
+      message: lang.translate('reload'),
+      child: SizedBox(
+        width: 44,
+        height: 38,
+        child: OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            padding: EdgeInsets.zero,
+            foregroundColor: accent,
+            backgroundColor: accent.withValues(alpha: 0.08),
+            side: BorderSide(color: accent.withValues(alpha: 0.35)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
+          onPressed: _isFetching ? null : _reloadMetadata,
+          child: _isFetching
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: accent,
+                  ),
+                )
+              : Icon(Icons.sync_rounded, size: 18, color: accent),
         ),
       ),
     );
@@ -999,28 +1095,28 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
     final bool canSave =
         widget.provider != null && widget.playlistId != null;
 
-    final Widget saveButton = _buildSaveButton(lang, canSave);
-    final Widget reloadButton = _buildReloadButton(lang);
-    final Widget closeButton = _buildCloseButton(lang);
-
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Line 1: Music Recognition (full width)
+          // Line 1: Music recognition + manual recognition (compact)
           if (recognitionEnabled) ...[
-            _buildRecognitionButton(),
+            Row(
+              children: [
+                Expanded(child: _buildRecognitionButton()),
+                const SizedBox(width: 8),
+                _buildManualRecognitionButton(lang),
+              ],
+            ),
             const SizedBox(height: 8),
           ],
-          // Line 2: Reload (full width)
-          SizedBox(width: double.infinity, child: reloadButton),
-          const SizedBox(height: 8),
-          // Line 3: Save + Close
+          // Line 2: Close + Save (compact)
           Row(
             children: [
-              Expanded(child: saveButton),
-              const SizedBox(width: 10),
-              Expanded(child: closeButton),
+              Expanded(child: _buildCloseButton(lang)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSaveButton(lang, canSave)),
             ],
           ),
         ],
@@ -1029,74 +1125,71 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
   }
 
   Widget _buildSaveButton(LanguageProvider lang, bool canSave) {
-    return ElevatedButton.icon(
-      onPressed: (_isSaving || !canSave) ? null : _saveMetadata,
-      icon: _isSaving
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white),
-            )
-          : const Icon(Icons.save_rounded, size: 18),
-      label: Text(
-        lang.translate('save'),
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.green.shade700,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        minimumSize: const Size(0, 44),
-      ),
-    );
-  }
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    final onPrimary = theme.colorScheme.onPrimary;
 
-  Widget _buildReloadButton(LanguageProvider lang) {
-    return ElevatedButton.icon(
-      onPressed: _isFetching ? null : _reloadMetadata,
-      icon: _isFetching
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white),
-            )
-          : const Icon(Icons.sync_rounded, size: 18),
-      label: Text(
-        lang.translate('reload'),
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.blueGrey.shade700,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
+    return SizedBox(
+      height: 40,
+      child: ElevatedButton.icon(
+        onPressed: (_isSaving || !canSave) ? null : _saveMetadata,
+        icon: _isSaving
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: onPrimary,
+                ),
+              )
+            : const Icon(Icons.save_rounded, size: 17),
+        label: Text(
+          lang.translate('save'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         ),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        minimumSize: const Size(0, 44),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: onPrimary,
+          disabledBackgroundColor: accent.withValues(alpha: 0.35),
+          disabledForegroundColor: onPrimary.withValues(alpha: 0.7),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       ),
     );
   }
 
   Widget _buildCloseButton(LanguageProvider lang) {
-    return ElevatedButton(
-      onPressed: () => Navigator.pop(context),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Theme.of(context).primaryColor,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final contentColor = onSurface.withValues(alpha: 0.8);
+
+    return SizedBox(
+      height: 40,
+      child: OutlinedButton(
+        onPressed: () => Navigator.pop(context),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: contentColor,
+          backgroundColor: onSurface.withValues(alpha: 0.05),
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
-        minimumSize: const Size(0, 44),
-      ),
-      child: Text(
-        lang.translate('close'),
-        style: const TextStyle(
-            color: Colors.white, fontWeight: FontWeight.bold),
+        child: Text(
+          lang.translate('close'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
@@ -1104,6 +1197,9 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final lang = Provider.of<LanguageProvider>(context);
+    final bool exportEnabled =
+        Provider.of<EntitlementService>(context).isFeatureEnabled('export_mp3');
+    final Color accentColor = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -1116,6 +1212,35 @@ class _SongMetadataDetailsScreenState extends State<SongMetadataDetailsScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          if (_song.isDownloaded && exportEnabled)
+            IconButton(
+              tooltip: lang.translate('export_mp3_title'),
+              icon: Icon(
+                Icons.library_music_rounded,
+                color: accentColor,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ExportMp3Screen(),
+                  ),
+                );
+              },
+            )
+          else if (!_song.isDownloaded &&
+              !_hasLocalM4aFile &&
+              widget.provider != null)
+            IconButton(
+              tooltip: lang.translate('download'),
+              icon: Icon(
+                Icons.download_rounded,
+                color: accentColor,
+              ),
+              onPressed: _startDownload,
+            ),
+        ],
       ),
       body: SafeArea(
         child: Column(

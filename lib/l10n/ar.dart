@@ -299,7 +299,8 @@ final Map<String, String> ar = {
   'offline': 'غير متصل',
   'add_folders_device': 'إضافة مجلدات من جهازك',
   'remove_local_folder_title': 'إخفاء بطاقة "الموسيقى المحلية"؟',
-  'remove_local_folder_message': 'ستتم إزالة بطاقة "الموسيقى المحلية" من شاشة القوائم.',
+  'remove_local_folder_message':
+      'ستتم إزالة بطاقة "الموسيقى المحلية" من شاشة القوائم.',
   'remove_local_folder_done': 'تمت إزالة بطاقة "الموسيقى المحلية"',
   'no_artists_found': 'لم يتم العثور على فنانين',
   'no_albums_found': 'لم يتم العثور على ألبومات',
@@ -398,7 +399,8 @@ final Map<String, String> ar = {
   'data_usage_desc':
       'يستهلك تنزيل الموسيقى كمية كبيرة من بيانات الهاتف المحمول. قد يؤدي هذا إلى فرض رسوم إضافية على خطة الأسعار الخاصة بك.',
   'remaining_downloads': 'التنزيلات المتبقية:{0}',
-  'offline_download_blocked': 'أنت غير متصل بالإنترنت. اتصل بالإنترنت لتنزيل الأغاني.',
+  'offline_download_blocked':
+      'أنت غير متصل بالإنترنت. اتصل بالإنترنت لتنزيل الأغاني.',
   'wifi_recommendation': 'نوصي باستخدام اتصال WiFi لتجنب رسوم الناقل المحتملة.',
   'continue': 'يستمر',
   'download_limit_reached':
@@ -666,13 +668,15 @@ final Map<String, String> ar = {
   'less_than_a_minute': 'أقل من دقيقة',
   'radio': 'راديو',
   'shazam_info_title': 'التعرف على الأغنية',
-  'shazam_info_desc': 'ستحاول هذه الميزة التعرف على الأغنية التي يتم تشغيلها حاليًا من خلال الاستماع إلى الصوت. يرجى التأكد من أن الحجم مناسب.',
+  'shazam_info_desc':
+      'ستحاول هذه الميزة التعرف على الأغنية التي يتم تشغيلها حاليًا من خلال الاستماع إلى الصوت. يرجى التأكد من أن الحجم مناسب.',
   'dont_show_again': 'لا تظهر هذه الرسالة مرة أخرى',
   'bonus': 'بوس',
   'no_new_metadata': 'لم يتم العثور على بيانات وصفية جديدة.',
   'metadata_updated': 'تم تحديث البيانات الوصفية بنجاح!',
   'sync_interrupted_title': 'تمت مقاطعة المزامنة',
-  'sync_interrupted_desc': 'لقد وصلت إلى الحد الأقصى لعدد المزامنات المسموح بها. يرجى المحاولة مرة أخرى في وقت لاحق.',
+  'sync_interrupted_desc':
+      'لقد وصلت إلى الحد الأقصى لعدد المزامنات المسموح بها. يرجى المحاولة مرة أخرى في وقت لاحق.',
   // Statistics
   'statistics': 'إحصائيات',
   'statistics_desc': 'عرض سجل الاستماع الخاص بك والاتجاهات',
@@ -744,14 +748,16 @@ final Map<String, String> ar = {
   'export_mp3_hide_dialog': 'الاستمرار في الخلفية',
   'tap_to_play_hint': 'انقر للاستماع',
   'never_ask_again_song': 'لا تظهر هذه المقارنة مرة أخرى',
-  'never_ask_again_song_desc': 'اضغط على أيقونة العين المتقاطعة لاستبعاد أغنية من المقارنات المستقبلية.',
+  'never_ask_again_song_desc':
+      'اضغط على أيقونة العين المتقاطعة لاستبعاد أغنية من المقارنات المستقبلية.',
   'never_ask_badge': 'لا تسأل مرة أخرى',
   'export_mp3_group_title': 'منظمة المجلد',
   'export_mp3_group_desc': 'كيف تريد تنظيم الملفات المصدرة؟',
   'export_mp3_group_artist': 'بقلم الفنان / الفرقة',
   'export_mp3_group_artist_path': 'MusicStream/الفنان/<اسم الفنان>/',
   'export_mp3_group_playlist': 'حسب اسم قائمة التشغيل',
-  'export_mp3_group_playlist_path': 'MusicStream/قائمة التشغيل/<اسم قائمة التشغيل>/',
+  'export_mp3_group_playlist_path':
+      'MusicStream/قائمة التشغيل/<اسم قائمة التشغيل>/',
   'export_mp3_other_group': 'آخر',
   'export_mp3_group_confirm': 'ابدأ',
   'export_mp3_partial_title': 'المكافآت غير كافية',
@@ -768,14 +774,16 @@ final Map<String, String> ar = {
   'artist_merge_apply': 'دمج (الفتحة0الفتحة)',
   'artist_merge_banner': '{0} فنانين مشابهين للانضمام',
   'artist_merge_banner_desc': 'التحقق من أسماء الفنانين المكررة وتوحيدها',
-  'artist_merge_desc': 'اختر كيفية الانضمام إلى كل زوج. سيتم تحديث اسم الفنان على جميع الأغاني التي تحتوي عليه.',
+  'artist_merge_desc':
+      'اختر كيفية الانضمام إلى كل زوج. سيتم تحديث اسم الفنان على جميع الأغاني التي تحتوي عليه.',
   'artist_merge_done': 'أسماء الفنانين {0} متحدة',
   'merge_into_playlist': 'دمج في قائمة التشغيل',
   'create_merged_playlist': 'إنشاء وحدة قائمة التشغيل',
   'enter_playlist_name': 'اسم قائمة التشغيل الجديدة',
   'selected_folders_count': 'مجلدات {0}(أغاني {1})',
   'search_folders_hint': 'تصفية المجلدات أو الأغاني...',
-  'merged_playlist_created': 'قائمة التشغيل "{0}" التي تم إنشاؤها باستخدام أغاني {1}!',
+  'merged_playlist_created':
+      'قائمة التشغيل "{0}" التي تم إنشاؤها باستخدام أغاني {1}!',
   'select_folders_to_merge': 'حدد مجلدين على الأقل لدمجهما.',
   'folders_selected': 'يختار',
   'artist_merge_select': 'حدد للدمج',
@@ -787,7 +795,8 @@ final Map<String, String> ar = {
   'album_merge_banner': '{0} ألبومات متشابهة للدمج',
   'album_merge_banner_desc': 'التحقق من أسماء الألبومات المكررة وتوحيدها',
   'album_merge_title': 'دمج الألبومات المتشابهة',
-  'album_merge_desc': 'اختر كيفية دمج كل زوج. سيتم تحديث اسم الألبوم على جميع الأغاني التي تحتوي عليه.',
+  'album_merge_desc':
+      'اختر كيفية دمج كل زوج. سيتم تحديث اسم الألبوم على جميع الأغاني التي تحتوي عليه.',
   'album_merge_into': 'دمج {0}({1}) في {2}({3})',
   'album_merge_ignore': 'لا تقترح هذه المقارنة مرة أخرى',
   'album_merge_select': 'حدد للدمج',
@@ -795,8 +804,8 @@ final Map<String, String> ar = {
   'album_merge_apply': 'دمج ({0})',
   'album_merge_done': 'أسماء الألبومات {0} متحدة',
   'export_mp3_title': 'تصدير الأغاني',
-  'export_mp3_desc': 'فك تشفير وتصدير الأغاني التي تم تنزيلها كملفات محلية غير محمية',
-  'export_mp3_empty_desc': 'TODO: Before exporting, download each song using the download button in the playlists. Only songs downloaded through the app can be exported.',
+  'export_mp3_desc':
+      'فك تشفير وتصدير الأغاني التي تم تنزيلها كملفات محلية غير محمية',
   'keep_final_name': 'احتفظ كاسم نهائي:',
   'sample_tracks_label': 'المسارات:',
   'similarity_label': '{0} ٪ التشابه',
@@ -819,7 +828,6 @@ final Map<String, String> ar = {
   'keep_current_color': 'متابعة...',
   'high_contrast': 'تباين عالٍ',
   'extracting_colors': 'جارٍ تحليل ألوان الخلفية...',
+  'export_mp3_empty_desc':
+      'قبل التصدير، قم بتنزيل كل أغنية باستخدام زر التنزيل في قوائم التشغيل. لا يمكن تصدير سوى الأغاني التي تم تنزيلها من خلال التطبيق.',
 };
-
-
-

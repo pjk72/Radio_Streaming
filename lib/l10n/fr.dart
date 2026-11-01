@@ -315,7 +315,8 @@ final Map<String, String> fr = {
   'offline': 'Hors ligne',
   'add_folders_device': 'Ajouter des dossiers depuis votre appareil',
   'remove_local_folder_title': 'Masquer la carte Musique locale ?',
-  'remove_local_folder_message': 'La carte Musique locale sera retirée de l\'écran Playlists.',
+  'remove_local_folder_message':
+      'La carte Musique locale sera retirée de l\'écran Playlists.',
   'remove_local_folder_done': 'Carte Musique locale retirée',
   'no_artists_found': 'Aucun artiste trouvé',
   'no_albums_found': 'Aucun album trouvé',
@@ -421,7 +422,8 @@ final Map<String, String> fr = {
   'data_usage_desc':
       'Le téléchargement de musique consomme une quantité importante de données mobiles. Cela pourrait entraîner des frais supplémentaires sur votre forfait mobile.',
   'remaining_downloads': 'Téléchargements restants : {0}',
-  'offline_download_blocked': 'Vous êtes hors ligne. Connectez-vous à Internet pour télécharger des chansons.',
+  'offline_download_blocked':
+      'Vous êtes hors ligne. Connectez-vous à Internet pour télécharger des chansons.',
   'wifi_recommendation':
       'Nous vous recommandons d\'utiliser une connexion WiFi pour éviter d\'éventuels frais d\'opérateur.',
   'continue': 'Continuer',
@@ -488,7 +490,8 @@ final Map<String, String> fr = {
   'restore_failed': 'Échec de la restauration : {0}',
   'restore_select_backup': 'Sélectionner la sauvegarde à restaurer',
   'restore_no_backups': 'Aucune sauvegarde trouvée sur Google Drive',
-  'restore_first_backup': 'Première sauvegarde disponible, aucune différence précédente',
+  'restore_first_backup':
+      'Première sauvegarde disponible, aucune différence précédente',
   'diff_no_changes': 'Aucune différence avec la sauvegarde précédente',
   'diff_unavailable': 'Impossible de calculer les différences',
   'diff_and_more': '+{0} de plus',
@@ -644,7 +647,8 @@ final Map<String, String> fr = {
   'followed_artists_only': 'Uniquement les artistes suivis',
   'followed_albums_only': 'Albums suivis uniquement',
   'filter_local_device': 'Afficher uniquement les sites',
-  'filter_incomplete_metadata': 'Afficher uniquement les métadonnées incomplètes',
+  'filter_incomplete_metadata':
+      'Afficher uniquement les métadonnées incomplètes',
   'filter_invalid_tracks': 'Afficher uniquement Invalide',
   'group_by_none_label': 'Sans regroupement',
   'ad_offer_title': 'Obtenez des crédits de téléchargement',
@@ -703,13 +707,15 @@ final Map<String, String> fr = {
   'less_than_a_minute': 'moins d\'une minute',
   'radio': 'Radio',
   'shazam_info_title': 'Reconnaissance de chansons',
-  'shazam_info_desc': 'Cette fonctionnalité tentera d\'identifier la chanson en cours de lecture en écoutant l\'audio. Veuillez vous assurer que le volume est adéquat.',
+  'shazam_info_desc':
+      'Cette fonctionnalité tentera d\'identifier la chanson en cours de lecture en écoutant l\'audio. Veuillez vous assurer que le volume est adéquat.',
   'dont_show_again': 'Ne plus afficher ce message',
   'bonus': 'Bouus',
   'no_new_metadata': 'Aucune nouvelle métadonnée trouvée.',
   'metadata_updated': 'Métadonnées mises à jour avec succès !',
   'sync_interrupted_title': 'Synchronisation interrompue',
-  'sync_interrupted_desc': 'Vous avez atteint le nombre maximum de synchronisations autorisées. Veuillez réessayer plus tard.',
+  'sync_interrupted_desc':
+      'Vous avez atteint le nombre maximum de synchronisations autorisées. Veuillez réessayer plus tard.',
   // Statistics
   'statistics': 'Statistiques',
   'statistics_desc': 'Voir votre historique d\'écoute et vos tendances',
@@ -756,13 +762,15 @@ final Map<String, String> fr = {
   'release_date': 'Date de publication',
   'tap_to_sync': 'Appuyez pour synchroniser',
   'tap_to_sync_active': 'Appuyez sur une ligne pour synchroniser',
-  'tap_to_sync_hint': 'Appuyez sur n\'importe quelle ligne de paroles pour synchroniser instantanément le karaoké',
+  'tap_to_sync_hint':
+      'Appuyez sur n\'importe quelle ligne de paroles pour synchroniser instantanément le karaoké',
   'tap_to_sync_disabled': 'Toucher pour synchroniser désactivé',
   'lyrics_synced_success': 'Karaoké synchronisé avec cette ligne !',
   'scroll_to_top': 'Retour en haut',
   // Export
   'export_mp3_title': 'Exporter les morceaux',
-  'export_mp3_desc': 'Déchiffrez et exportez les morceaux téléchargés sous forme de fichiers locaux non protégés',
+  'export_mp3_desc':
+      'Déchiffrez et exportez les morceaux téléchargés sous forme de fichiers locaux non protégés',
   'export_mp3_destination': 'Dossier de destination',
   'export_mp3_change_folder': 'Changer de dossier',
   'export_mp3_select_folder': 'Sélectionner un dossier',
@@ -775,26 +783,32 @@ final Map<String, String> fr = {
   'export_mp3_in_background': 'Traitement en arrière-plan',
   'export_mp3_completed': 'Exportation terminée !',
   'export_mp3_completed_desc': '{0} morceaux exportés avec succès.',
-  'export_mp3_no_downloads': 'Aucun morceau téléchargé disponible pour l\'exportation.',
+  'export_mp3_no_downloads':
+      'Aucun morceau téléchargé disponible pour l\'exportation.',
   'export_mp3_empty_title': 'Aucun morceau téléchargé',
-  'export_mp3_empty_desc': 'Avant d\'exporter, téléchargez chaque morceau à l\'aide du bouton de téléchargement dans les playlists. Seuls les morceaux téléchargés via l\'application peuvent être exportés.',
+  'export_mp3_empty_desc':
+      'Avant d\'exporter, téléchargez chaque morceau à l\'aide du bouton de téléchargement dans les playlists. Seuls les morceaux téléchargés via l\'application peuvent être exportés.',
   'export_mp3_empty_dont_show_again': 'Ne plus afficher ce message',
   'export_mp3_no_selection': 'Sélectionnez au moins un morceau à exporter.',
   'export_mp3_no_folder': 'Sélectionnez un dossier de destination valide.',
   'export_mp3_cancel': 'Annuler',
   'export_mp3_close': 'Fermer',
-  'export_mp3_permission_denied': 'L\'autorisation de stockage est requise pour enregistrer les fichiers.',
+  'export_mp3_permission_denied':
+      'L\'autorisation de stockage est requise pour enregistrer les fichiers.',
   'export_mp3_hide_dialog': 'Continuer en arrière-plan',
   'tap_to_play_hint': 'Appuyez pour écouter',
   'never_ask_again_song': 'Ne plus afficher cette comparaison',
-  'never_ask_again_song_desc': 'Appuyez sur l\'icône en forme d\'œil croisé pour exclure une chanson des comparaisons futures.',
+  'never_ask_again_song_desc':
+      'Appuyez sur l\'icône en forme d\'œil croisé pour exclure une chanson des comparaisons futures.',
   'never_ask_badge': 'Ne demande plus',
   'export_mp3_group_title': 'Organisation des dossiers',
-  'export_mp3_group_desc': 'Comment souhaitez-vous organiser les fichiers exportés ?',
+  'export_mp3_group_desc':
+      'Comment souhaitez-vous organiser les fichiers exportés ?',
   'export_mp3_group_artist': 'Par artiste/groupe',
   'export_mp3_group_artist_path': 'MusicStream/Artista/<Nom de l\'artiste>/',
   'export_mp3_group_playlist': 'Par nom de liste de lecture',
-  'export_mp3_group_playlist_path': 'MusicStream/Playlist/<Nom de la liste de lecture>/',
+  'export_mp3_group_playlist_path':
+      'MusicStream/Playlist/<Nom de la liste de lecture>/',
   'export_mp3_other_group': 'Autres',
   'export_mp3_group_confirm': 'Démarrer',
   'export_mp3_partial_title': 'Bonus insuffisants',
@@ -804,9 +818,11 @@ final Map<String, String> fr = {
   'create_merged_playlist': 'Créer une liste de lecture fusionnée',
   'reload': 'Reconnaissance manuelle',
   'artist_merge_banner': '{0} artistes similaires à fusionner',
-  'artist_merge_banner_desc': 'Vérifiez et unifiez les noms d\'artistes en double',
+  'artist_merge_banner_desc':
+      'Vérifiez et unifiez les noms d\'artistes en double',
   'artist_merge_title': 'Fusionner des artistes similaires',
-  'artist_merge_desc': 'Choisissez comment fusionner chaque paire. Le nom de l\'artiste sera mis à jour sur toutes les chansons le contenant.',
+  'artist_merge_desc':
+      'Choisissez comment fusionner chaque paire. Le nom de l\'artiste sera mis à jour sur toutes les chansons le contenant.',
   'artist_merge_into': 'Fusionner {0}({1}) dans {2}({3})',
   'artist_merge_unignore': 'Inclure à nouveau',
   'artist_merge_apply': 'Fusionner ({0})',
@@ -816,7 +832,6 @@ final Map<String, String> fr = {
   'artist_merge_unselect': 'Désélectionner',
   'merge_folders': 'Fusionner des dossiers',
   'merge_into_playlist': 'Fusionner dans la liste de lecture',
-  'playlist_name_hint': 'TODO: e.g. Local Mix, Favorites...',
   'selected_folders_count': 'Dossiers {0}(chansons {1})',
   'search_folders_hint': 'Filtrer des dossiers ou des chansons...',
   'merged_playlist_created': 'Playlist "{0}" créée avec les chansons de {1}!',
@@ -830,7 +845,8 @@ final Map<String, String> fr = {
   'album_merge_banner': '{0} albums similaires à fusionner',
   'album_merge_banner_desc': 'Vérifiez et unifiez les noms d\'albums en double',
   'album_merge_title': 'Fusionner des albums similaires',
-  'album_merge_desc': 'Choisissez comment fusionner chaque paire. Le nom de l\'album sera mis à jour sur toutes les chansons le contenant.',
+  'album_merge_desc':
+      'Choisissez comment fusionner chaque paire. Le nom de l\'album sera mis à jour sur toutes les chansons le contenant.',
   'album_merge_into': 'Fusionner {0}({1}) dans {2}({3})',
   'album_merge_ignore': 'Ne proposez plus jamais cette comparaison',
   'album_merge_select': 'Sélectionner pour fusionner',
@@ -853,13 +869,12 @@ final Map<String, String> fr = {
   'photo_saved': 'Photo enregistrée par défaut',
   'no_photos_found': 'Aucune photo trouvée. Réessayez plus tard.',
   'suggest_accent_title': 'Couleur primaire suggérée',
-  'suggest_accent_desc': 'Couleur d\'accentuation extraite de l\'image d\'arrière-plan :',
+  'suggest_accent_desc':
+      'Couleur d\'accentuation extraite de l\'image d\'arrière-plan :',
   'apply_accent_color': 'Définir comme couleur principale',
   'other_extracted_colors': 'Autres couleurs d\'accentuation détectées',
   'keep_current_color': 'Conserver les réglages actuels',
   'high_contrast': 'Contraste élevé',
   'extracting_colors': 'Analyse des couleurs d\'arrière-plan...',
+  'playlist_name_hint': 'par exemple, Mélange local, Favoris...',
 };
-
-
-

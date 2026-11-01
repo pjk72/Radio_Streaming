@@ -7,6 +7,10 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // IronSource / LevelPlay SDK artifacts (required by gma_mediation_ironsource).
+        maven {
+            url = uri("https://android-sdk.is.com/")
+        }
     }
 }
 

@@ -316,14 +316,24 @@ Future<void> downloadPlaylist(
                       radio.earnedDownloadCredits -
                       radio.lifetimeDownloadCount);
 
+            // Follow the app theme so the dialog stays readable on both
+            // light and dark presets and matches the user's accent color.
+            final theme = Theme.of(context);
+            final colorScheme = theme.colorScheme;
+            final onSurface = colorScheme.onSurface;
+            final primary = theme.primaryColor;
+            final onPrimary = colorScheme.onPrimary;
+            final accent = colorScheme.secondary;
+
             return AlertDialog(
           surfaceTintColor: Colors.transparent,
+          backgroundColor: theme.dialogTheme.backgroundColor,
           elevation: 24,
-          shadowColor: Colors.black,
+          shadowColor: theme.shadowColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
             side: BorderSide(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: onSurface.withValues(alpha: 0.2),
               width: 1,
             ),
           ),
@@ -332,12 +342,12 @@ Future<void> downloadPlaylist(
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.orangeAccent.withValues(alpha: 0.5),
+                  color: primary.withValues(alpha: 0.16),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.signal_wifi_off_rounded,
-                  color: Colors.orangeAccent,
+                  color: primary,
                   size: 32,
                 ),
               ),
@@ -348,8 +358,8 @@ Future<void> downloadPlaylist(
                   listen: false,
                 ).translate('data_usage_warning'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: onSurface,
                   fontWeight: FontWeight.bold,
                   fontSize: 22,
                 ),
@@ -366,7 +376,7 @@ Future<void> downloadPlaylist(
                 ).translate('data_usage_desc'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: onSurface.withValues(alpha: 0.7),
                   fontSize: 16,
                   height: 1.4,
                 ),
@@ -380,8 +390,8 @@ Future<void> downloadPlaylist(
                         lang
                             .translate('remaining_downloads')
                             .replaceAll('{0}', liveRemaining.toString()),
-                        style: const TextStyle(
-                          color: Colors.greenAccent,
+                        style: TextStyle(
+                          color: primary,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
@@ -448,28 +458,28 @@ Future<void> downloadPlaylist(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                Colors.amber.withValues(alpha: 0.1),
-                                Colors.amber.withValues(alpha: 0.2),
+                                accent.withValues(alpha: 0.1),
+                                accent.withValues(alpha: 0.2),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: Colors.amber.withValues(alpha: 0.4),
+                              color: accent.withValues(alpha: 0.4),
                             ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.stars_rounded,
-                                color: Colors.amber,
+                                color: accent,
                                 size: 24,
                               ),
                               const SizedBox(width: 12),
                               Text(
                                 "${lang.translate('bonus')} - ${lang.translate('watch_ad')}",
-                                style: const TextStyle(
-                                  color: Colors.amber,
+                                style: TextStyle(
+                                  color: accent,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 15,
                                 ),
@@ -485,17 +495,17 @@ Future<void> downloadPlaylist(
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blueAccent.withValues(alpha: 0.1),
+                  color: primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: Colors.blueAccent.withValues(alpha: 0.5),
+                    color: primary.withValues(alpha: 0.4),
                   ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.info_outline_rounded,
-                      color: Colors.blueAccent,
+                      color: primary,
                       size: 20,
                     ),
                     const SizedBox(width: 12),
@@ -506,7 +516,7 @@ Future<void> downloadPlaylist(
                           listen: false,
                         ).translate('wifi_recommendation'),
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
+                          color: onSurface.withValues(alpha: 0.7),
                           fontSize: 13,
                         ),
                       ),
@@ -535,7 +545,7 @@ Future<void> downloadPlaylist(
                         listen: false,
                       ).translate('cancel'),
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: onSurface.withValues(alpha: 0.7),
                         fontWeight: FontWeight.w600,
                         fontSize: 16,
                       ),
@@ -549,8 +559,8 @@ Future<void> downloadPlaylist(
                         ? () => Navigator.pop(ctx, true)
                         : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent,
-                      foregroundColor: Colors.white,
+                      backgroundColor: primary,
+                      foregroundColor: onPrimary,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(

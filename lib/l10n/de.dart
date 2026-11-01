@@ -313,7 +313,8 @@ final Map<String, String> de = {
   'offline': 'Offline',
   'add_folders_device': 'Ordner von deinem Gerät hinzufügen',
   'remove_local_folder_title': 'Lokale Musik-Karte ausblenden?',
-  'remove_local_folder_message': 'Die Karte für lokale Musik wird vom Playlists-Bildschirm entfernt.',
+  'remove_local_folder_message':
+      'Die Karte für lokale Musik wird vom Playlists-Bildschirm entfernt.',
   'remove_local_folder_done': 'Karte für lokale Musik entfernt',
   'no_artists_found': 'Keine Künstler gefunden',
   'no_albums_found': 'Keine Alben gefunden',
@@ -420,7 +421,8 @@ final Map<String, String> de = {
   'data_usage_desc':
       'Das Herunterladen von Musik verbraucht eine erhebliche Menge an mobilen Daten. Dies könnte zu zusätzlichen Kosten in Ihrem Mobilfunktarif führen.',
   'remaining_downloads': 'Verbleibende Downloads: {0}',
-  'offline_download_blocked': 'Du bist offline. Verbinde dich mit dem Internet, um Songs herunterzuladen.',
+  'offline_download_blocked':
+      'Du bist offline. Verbinde dich mit dem Internet, um Songs herunterzuladen.',
   'wifi_recommendation':
       'Wir empfehlen die Verwendung einer WLAN-Verbindung, um potenzielle Mobilfunkkosten zu vermeiden.',
   'continue': 'Weiter',
@@ -487,7 +489,8 @@ final Map<String, String> de = {
   'restore_failed': 'Wiederherstellung fehlgeschlagen: {0}',
   'restore_select_backup': 'Backup zum Wiederherstellen auswählen',
   'restore_no_backups': 'Keine Backups auf Google Drive gefunden',
-  'restore_first_backup': 'Erstes verfügbares Backup, keine vorherigen Unterschiede',
+  'restore_first_backup':
+      'Erstes verfügbares Backup, keine vorherigen Unterschiede',
   'diff_no_changes': 'Keine Unterschiede zum vorherigen Backup',
   'diff_unavailable': 'Unterschiede konnten nicht berechnet werden',
   'diff_and_more': '+{0} weitere',
@@ -701,13 +704,15 @@ final Map<String, String> de = {
   'less_than_a_minute': 'weniger als eine Minute',
   'radio': 'Radio',
   'shazam_info_title': 'Liederkennung',
-  'shazam_info_desc': 'Diese Funktion versucht, das aktuell wiedergegebene Lied anhand des Audios zu identifizieren. Bitte stellen Sie sicher, dass die Lautstärke ausreichend ist.',
+  'shazam_info_desc':
+      'Diese Funktion versucht, das aktuell wiedergegebene Lied anhand des Audios zu identifizieren. Bitte stellen Sie sicher, dass die Lautstärke ausreichend ist.',
   'dont_show_again': 'Diese Nachricht nicht mehr anzeigen',
   'bonus': 'Bouus',
   'no_new_metadata': 'Keine neuen Metadaten gefunden.',
   'metadata_updated': 'Metadaten erfolgreich aktualisiert!',
   'sync_interrupted_title': 'Synchronisierung unterbrochen',
-  'sync_interrupted_desc': 'Sie haben die maximal zulässige Anzahl an Synchronisierungen erreicht. Bitte versuchen Sie es später noch einmal.',
+  'sync_interrupted_desc':
+      'Sie haben die maximal zulässige Anzahl an Synchronisierungen erreicht. Bitte versuchen Sie es später noch einmal.',
   // Statistics
   'statistics': 'Statistiken',
   'statistics_desc': 'Sehen Sie sich Ihren Hörverlauf und Ihre Trends an',
@@ -754,12 +759,14 @@ final Map<String, String> de = {
   'release_date': 'Veröffentlichungsdatum',
   'tap_to_sync': 'Tippen Sie zum Synchronisieren',
   'tap_to_sync_active': 'Tippen Sie auf eine Zeile, um sie zu synchronisieren',
-  'tap_to_sync_hint': 'Tippen Sie auf eine beliebige Textzeile, um Karaoke sofort zu synchronisieren',
+  'tap_to_sync_hint':
+      'Tippen Sie auf eine beliebige Textzeile, um Karaoke sofort zu synchronisieren',
   'tap_to_sync_disabled': 'Tap-to-Sync deaktiviert',
   'lyrics_synced_success': 'Karaoke synchronisiert mit dieser Linie!',
   'scroll_to_top': 'Zurück nach oben',
   'export_mp3_title': 'Exportieren Sie Songs',
-  'export_mp3_desc': 'Entschlüsseln und exportieren Sie heruntergeladene Songs als nicht geschützte lokale Dateien',
+  'export_mp3_desc':
+      'Entschlüsseln und exportieren Sie heruntergeladene Songs als nicht geschützte lokale Dateien',
   'export_mp3_destination': 'Zielordner',
   'export_mp3_change_folder': 'Ordner wechseln',
   'export_mp3_select_folder': 'Ordner auswählen',
@@ -772,21 +779,26 @@ final Map<String, String> de = {
   'export_mp3_in_background': 'Verarbeitung im Hintergrund',
   'export_mp3_completed': 'Export abgeschlossen!',
   'export_mp3_completed_desc': '{0}-Songs wurden erfolgreich exportiert.',
-  'export_mp3_no_downloads': 'Es sind keine heruntergeladenen Songs für den Export verfügbar.',
+  'export_mp3_no_downloads':
+      'Es sind keine heruntergeladenen Songs für den Export verfügbar.',
   'export_mp3_empty_title': 'Noch keine heruntergeladenen Titel',
   'export_mp3_empty_dont_show_again': 'Diese Meldung nicht mehr anzeigen',
-  'export_mp3_no_selection': 'Wählen Sie mindestens einen Song zum Exportieren aus.',
+  'export_mp3_no_selection':
+      'Wählen Sie mindestens einen Song zum Exportieren aus.',
   'export_mp3_no_folder': 'Wählen Sie einen gültigen Zielordner.',
   'export_mp3_cancel': 'Stornieren',
   'export_mp3_close': 'Schließen',
-  'export_mp3_permission_denied': 'Zum Speichern der Dateien ist eine Speichererlaubnis erforderlich.',
+  'export_mp3_permission_denied':
+      'Zum Speichern der Dateien ist eine Speichererlaubnis erforderlich.',
   'export_mp3_hide_dialog': 'Weiter im Hintergrund',
   'tap_to_play_hint': 'Tippen zum Anhören',
   'never_ask_again_song': 'Diesen Vergleich nicht erneut anzeigen',
-  'never_ask_again_song_desc': 'Tippen Sie auf das Symbol mit dem gekreuzten Auge, um einen Song von zukünftigen Vergleichen auszuschließen.',
+  'never_ask_again_song_desc':
+      'Tippen Sie auf das Symbol mit dem gekreuzten Auge, um einen Song von zukünftigen Vergleichen auszuschließen.',
   'never_ask_badge': 'Fragen Sie nicht noch einmal',
   'export_mp3_group_title': 'Ordnerorganisation',
-  'export_mp3_group_desc': 'Wie möchten Sie die exportierten Dateien organisieren?',
+  'export_mp3_group_desc':
+      'Wie möchten Sie die exportierten Dateien organisieren?',
   'export_mp3_group_artist': 'Nach Künstler/Band',
   'export_mp3_group_artist_path': 'MusicStream/Artista/<Künstlername>/',
   'export_mp3_group_playlist': 'Nach Playlist-Name',
@@ -798,7 +810,8 @@ final Map<String, String> de = {
       'Du hast {0} Bonuspunkte, aber {1} Titel sind ausgewählt. Jetzt werden nur {0} exportiert. Die restlichen {2} Titel bleiben ausgewählt, bis du weitere Bonuspunkte verdienst.',
   'export_mp3_partial_confirm': 'Jetzt {0} exportieren',
   'merged_playlist_created': 'Playlist „{0}“ mit {1}-Songs erstellt!',
-  'select_folders_to_merge': 'Wählen Sie mindestens 2 Ordner zum Zusammenführen aus.',
+  'select_folders_to_merge':
+      'Wählen Sie mindestens 2 Ordner zum Zusammenführen aus.',
   'folders_selected': 'ausgewählt',
   'musicstream_folders': 'MusicStream-Ordner',
   'musicstream_badge': 'MusicStream',
@@ -806,9 +819,11 @@ final Map<String, String> de = {
   'artist_merge_apply': 'Zusammenführen ({0})',
   'artist_merge_done': '{0}-Künstlernamen zusammengeführt',
   'artist_merge_banner': '{0} ähnliche Künstler, denen man beitreten kann',
-  'artist_merge_banner_desc': 'Überprüfen und vereinheitlichen Sie doppelte Künstlernamen',
+  'artist_merge_banner_desc':
+      'Überprüfen und vereinheitlichen Sie doppelte Künstlernamen',
   'artist_merge_title': 'Ähnliche Künstler zusammenführen',
-  'artist_merge_desc': 'Wählen Sie, wie Sie jedes Paar verbinden möchten. Der Name des Künstlers wird bei allen Songs, die ihn enthalten, aktualisiert.',
+  'artist_merge_desc':
+      'Wählen Sie, wie Sie jedes Paar verbinden möchten. Der Name des Künstlers wird bei allen Songs, die ihn enthalten, aktualisiert.',
   'artist_merge_into': 'Unisci {0}({1}) in {2}({3})',
   'artist_merge_unignore': 'Wieder aufgenommen',
   'confirm': 'Er bestätigt',
@@ -824,21 +839,23 @@ final Map<String, String> de = {
   'artist_merge_unselect': 'Abwählen',
   'artist_merge_ignore': 'Schlagen Sie diesen Vergleich nie wieder vor',
   'album_merge_banner': '{0} ähnliche Alben, die zusammengeführt werden können',
-  'album_merge_banner_desc': 'Überprüfen und vereinheitlichen Sie doppelte Albumnamen',
+  'album_merge_banner_desc':
+      'Überprüfen und vereinheitlichen Sie doppelte Albumnamen',
   'album_merge_title': 'Ähnliche Alben zusammenführen',
-  'album_merge_desc': 'Wählen Sie, wie Sie jedes Paar verbinden möchten. Der Name des Albums wird bei allen Songs, die es enthalten, aktualisiert.',
+  'album_merge_desc':
+      'Wählen Sie, wie Sie jedes Paar verbinden möchten. Der Name des Albums wird bei allen Songs, die es enthalten, aktualisiert.',
   'album_merge_into': 'Unisci {0}({1}) in {2}({3})',
   'album_merge_ignore': 'Schlagen Sie diesen Vergleich nie wieder vor',
   'album_merge_select': 'Zum Zusammenführen auswählen',
   'album_merge_unselect': 'Abwählen',
   'album_merge_apply': 'Zusammenführen ({0})',
   'album_merge_done': '{0}-Albumnamen zusammengeführt',
-  'export_mp3_empty_desc': 'TODO: Before exporting, download each song using the download button in the playlists. Only songs downloaded through the app can be exported.',
   'keep_final_name': 'Als endgültigen Namen behalten:',
   'sample_tracks_label': 'Titel:',
   'similarity_label': '{0}% Ähnlichkeit',
   'confirm_never_ask': 'Bestätigen, nicht erneut fragen ({0})',
-  'never_ask_saved': 'Präferenz gespeichert:{0} wird nicht erneut vorgeschlagen.',
+  'never_ask_saved':
+      'Präferenz gespeichert:{0} wird nicht erneut vorgeschlagen.',
   'online_track': 'Online-Track',
   'offline_match': 'Passende Offlinedatei',
   'file_label': 'Datei',
@@ -856,7 +873,6 @@ final Map<String, String> de = {
   'keep_current_color': 'Behalten Sie aktuelles',
   'high_contrast': 'Hoher Kontrast',
   'extracting_colors': 'Hintergrundfarben werden analysiert...',
+  'export_mp3_empty_desc':
+      'Laden Sie vor dem Export jeden Song über die Download-Schaltfläche in den Wiedergabelisten herunter. Nur Songs, die über die App heruntergeladen wurden, können exportiert werden.',
 };
-
-
-

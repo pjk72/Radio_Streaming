@@ -41,6 +41,22 @@
 -keep class com.google.android.gms.ads.** { *; }
 -keep class com.google.android.gms.internal.ads.** { *; }
 
+# AdMob mediation adapters are instantiated by reflection from the adapter class
+# name returned by the server (e.g. IronSource). Without these rules R8 renames
+# them and mediation silently fails in release builds.
+-keep class com.google.ads.mediation.** { *; }
+-dontwarn com.google.ads.mediation.**
+
+# IronSource / LevelPlay SDK (gma_mediation_ironsource)
+-keep class com.ironsource.** { *; }
+-dontwarn com.ironsource.**
+-keep class com.unity3d.ironsourceads.** { *; }
+-dontwarn com.unity3d.ironsourceads.**
+-keep class com.unity3d.ads.** { *; }
+-dontwarn com.unity3d.ads.**
+-keep class com.unity3d.mediation.** { *; }
+-dontwarn com.unity3d.mediation.**
+
 # Connectivity Plus rules
 -keep class dev.fluttercommunity.plus.connectivity.** { *; }
 

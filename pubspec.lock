@@ -852,6 +852,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
+  gma_mediation_ironsource:
+    dependency: "direct main"
+    description:
+      name: gma_mediation_ironsource
+      sha256: "44a6c0a6e40d107f0f29406793e77514bf0f76456c287853921b67f8f7345da7"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.0"
   google_cloud:
     dependency: transitive
     description:
