@@ -165,6 +165,7 @@ final Map<String, String> pt = {
   'error_searching': 'Erro ao buscar rádios: {0}',
   'no_logos_found': 'Nenhum logo encontrado',
   'select_logo_for': 'Selecionar logo para {0}',
+  'logo_search_hint': 'Nome da rádio para pesquisar o logotipo',
   'stream_verify_failed': 'Falha na verificação: {0}',
   'processed_count': '{0} estações processadas!',
   // Player & General

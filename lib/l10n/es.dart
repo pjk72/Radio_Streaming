@@ -165,6 +165,7 @@ final Map<String, String> es = {
   'error_searching': 'Error al buscar radios: {0}',
   'no_logos_found': 'No se encontraron logotipos',
   'select_logo_for': 'Seleccionar logotipo para {0}',
+  'logo_search_hint': 'Nombre de la radio para buscar el logotipo',
   'stream_verify_failed': 'La verificación de la transmisión falló: {0}',
   'processed_count': '¡Se procesaron {0} emisoras!',
   // Player & General

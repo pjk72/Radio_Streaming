@@ -162,6 +162,7 @@ final Map<String, String> zh = {
   'error_searching': '搜索无线电台出错：{0}',
   'no_logos_found': '找不到徽标',
   'select_logo_for': '为 {0} 选择徽标',
+  'logo_search_hint': '用于搜索徽标的电台名称',
   'stream_verify_failed': '流媒体验证失败：{0}',
   'processed_count': '已处理 {0} 个电台！',
   // Player & General

@@ -178,6 +178,7 @@ final Map<String, String> it = {
   'error_searching': 'Errore nella ricerca radio: {0}',
   'no_logos_found': 'Nessun logo trovato',
   'select_logo_for': 'Seleziona logo per {0}',
+  'logo_search_hint': 'Nome radio per la ricerca del logo',
   'stream_verify_failed': 'Verifica stream fallita: {0}',
   'processed_count': 'Elaborate {0} stazioni!',
   // Player & General

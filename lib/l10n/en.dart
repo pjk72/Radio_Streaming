@@ -177,6 +177,7 @@ final Map<String, String> en = {
   'error_searching': 'Error searching radios: {0}',
   'no_logos_found': 'No logos found',
   'select_logo_for': 'Select Logo for {0}',
+  'logo_search_hint': 'Radio name for the logo search',
   'stream_verify_failed': 'Stream verify failed: {0}',
   'processed_count': 'Processed {0} stations!',
   // Player & General

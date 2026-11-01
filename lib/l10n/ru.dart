@@ -164,6 +164,7 @@ final Map<String, String> ru = {
   'error_searching': 'Ошибка при поиске радиопередач: {0}',
   'no_logos_found': 'Логотипы не найдены',
   'select_logo_for': 'Выбрать логотип для {0}',
+  'logo_search_hint': 'Название радио для поиска логотипа',
   'stream_verify_failed': 'Ошибка проверки потока: {0}',
   'processed_count': 'Обработано {0} станций!',
   // Player & General

@@ -5,6 +5,11 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io'; // Added for Platform.localeName
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:image/image.dart' as img;
 
 import 'package:palette_generator/palette_generator.dart';
 import '../models/station.dart';
@@ -1206,225 +1211,610 @@ class _EditStationScreenState extends State<EditStationScreen> {
     );
   }
 
+  // --- Logo search helpers ---------------------------------------------------
+
+  /// Words that do not help identifying a specific radio station.
+  static const Set<String> _logoStopWords = {
+    'radio',
+    'fm',
+    'am',
+    'live',
+    'online',
+    'stream',
+    'streaming',
+    'station',
+    'the',
+    'official',
+    'web',
+    'hd',
+    'hq',
+    'music',
+  };
+
+  static const Map<String, String> _logoDiacritics = {
+    'à': 'a',
+    'á': 'a',
+    'â': 'a',
+    'ã': 'a',
+    'ä': 'a',
+    'å': 'a',
+    'è': 'e',
+    'é': 'e',
+    'ê': 'e',
+    'ë': 'e',
+    'ì': 'i',
+    'í': 'i',
+    'î': 'i',
+    'ï': 'i',
+    'ò': 'o',
+    'ó': 'o',
+    'ô': 'o',
+    'õ': 'o',
+    'ö': 'o',
+    'ø': 'o',
+    'ù': 'u',
+    'ú': 'u',
+    'û': 'u',
+    'ü': 'u',
+    'ç': 'c',
+    'ñ': 'n',
+    'ý': 'y',
+    'ÿ': 'y',
+    'ß': 'ss',
+    'æ': 'ae',
+    'œ': 'oe',
+  };
+
+  String _normalizeStationName(String value) {
+    var text = value.toLowerCase();
+    _logoDiacritics.forEach((from, to) => text = text.replaceAll(from, to));
+    text = text.replaceAll(
+      RegExp(r"[\s\-_.,/\\|:;!?()\[\]{}'’“”«»&+#@*~^%$=<>]+"),
+      ' ',
+    );
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  List<String> _stationTokens(String normalized) {
+    return normalized
+        .split(' ')
+        .where((t) => t.isNotEmpty && !_logoStopWords.contains(t))
+        .toList();
+  }
+
+  /// Returns true only when [candidateName] refers to the same radio station
+  /// as [query] (same brand name), avoiding unrelated stations/logos.
+  bool _isSameStation(String candidateName, String query) {
+    final candidate = _normalizeStationName(candidateName);
+    final queryNorm = _normalizeStationName(query);
+    if (candidate.isEmpty || queryNorm.isEmpty) return false;
+    if (candidate == queryNorm) return true;
+
+    final candidateNameTokens = candidate.split(' ');
+    final queryNameTokens = queryNorm.split(' ');
+    final queryTokens = _stationTokens(queryNorm);
+    final candidateTokens = _stationTokens(candidate);
+    final queryCore = queryTokens.join(' ');
+    final candidateCore = candidateTokens.join(' ');
+
+    if (queryCore.isEmpty) {
+      // Query made only of generic words (e.g. "Radio"): require a close match.
+      return candidateCore == queryCore;
+    }
+    if (candidateCore.isEmpty) return false;
+    if (candidateCore == queryCore) return true;
+
+    // Purely numeric brands ("Radio 105") must match exactly, otherwise
+    // frequencies such as "Radio 105.5" would be treated as the same station.
+    final numericQuery = RegExp(r'^\d+$').hasMatch(queryCore);
+    final numericCandidate = RegExp(r'^\d+$').hasMatch(candidateCore);
+    if (numericQuery || numericCandidate) return false;
+
+    // Multi-word brands may differ by a suffix/prefix ("Radio Kiss Kiss" vs
+    // "Kiss Kiss Napoli"), so core phrase containment is enough.
+    if (queryTokens.length >= 2 &&
+        (_phraseContains(candidateTokens, queryTokens) ||
+            _phraseContains(queryTokens, candidateTokens))) {
+      return true;
+    }
+
+    // Single-word brands ("Radio Italia", "Virgin Radio") must appear as a
+    // whole phrase in the full name, otherwise stations that merely share a
+    // word ("Italia 1") would contribute the wrong logo.
+    return _phraseContains(candidateNameTokens, queryNameTokens) ||
+        _phraseContains(queryNameTokens, candidateNameTokens);
+  }
+
+  /// Returns true when [needle] appears as a consecutive sequence in
+  /// [haystack].
+  bool _phraseContains(List<String> haystack, List<String> needle) {
+    if (needle.isEmpty || needle.length > haystack.length) return false;
+    for (var i = 0; i + needle.length <= haystack.length; i++) {
+      var matches = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (haystack[i + j] != needle[j]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) return true;
+    }
+    return false;
+  }
+
+  int _stationMatchScore(String candidateName, String query) {
+    final candidate = _normalizeStationName(candidateName);
+    final queryNorm = _normalizeStationName(query);
+    if (candidate == queryNorm) return 100;
+
+    final candidateCore = _stationTokens(candidate).join(' ');
+    final queryCore = _stationTokens(queryNorm).join(' ');
+    if (queryCore.isEmpty) {
+      return candidate.contains(queryNorm) ? 40 : 10;
+    }
+    if (candidateCore == queryCore) return 90;
+    if (candidateCore.startsWith(queryCore)) return 80;
+    if (candidateCore.contains(queryCore)) return 70;
+    if (queryCore.contains(candidateCore)) return 60;
+    return 20;
+  }
+
+  int _clickCount(Map<String, dynamic> station) {
+    final value = station['clickcount'];
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String? _hostFromUrl(String? rawUrl) {
+    if (rawUrl == null) return null;
+    var value = rawUrl.trim();
+    if (value.isEmpty) return null;
+    if (!value.contains('://')) value = 'https://$value';
+    try {
+      final uri = Uri.parse(value);
+      var host = uri.host.toLowerCase();
+      if (host.isEmpty) return null;
+      if (host.startsWith('www.')) host = host.substring(4);
+      return host.contains('.') ? host : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Generic streaming providers: their favicon is never the station's logo.
+  static const Set<String> _streamProviderHosts = {
+    'radio-browser.info',
+    'zeno.fm',
+    'radio.co',
+    'streamguys.com',
+    'shoutcast.com',
+    'radionomy.com',
+    'live365.com',
+    'securenetsystems.net',
+    'spacial.com',
+    'listen2myradio.com',
+    'myradiostream.com',
+    'cristalhost.com',
+    'streamerr.net',
+  };
+
+  /// Directories, social pages and aggregators: their favicon is never the
+  /// station's logo either.
+  static const Set<String> _aggregatorHosts = {
+    'onlineradiobox.com',
+    'streema.com',
+    'tunein.com',
+    'radio.it',
+    'radioguide.fm',
+    'streamingradioguide.com',
+    'facebook.com',
+    'instagram.com',
+    'twitter.com',
+    'x.com',
+    'youtube.com',
+    'tiktok.com',
+    'linkedin.com',
+    'linktr.ee',
+    'sites.google.com',
+  };
+
+  /// Hosts that must never be used as a logo source, even when the station
+  /// itself declares them (radio-browser placeholder icons and similar).
+  static const Set<String> _faviconBlockedHosts = {
+    'radio-browser.info',
+  };
+
+  static const Map<String, String> _logoHttpHeaders = {
+    'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept':
+        'text/html,application/xhtml+xml,image/avif,image/webp,'
+        'image/png,image/*;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+  };
+
+  bool _hostInSet(String host, Set<String> hosts) {
+    return hosts.any(
+      (candidate) => host == candidate || host.endsWith('.$candidate'),
+    );
+  }
+
+  bool _isStationLogoHost(String host) {
+    return !_hostInSet(host, _streamProviderHosts) &&
+        !_hostInSet(host, _aggregatorHosts);
+  }
+
+  /// Official logo/favicon endpoints for a station's own domain.
+  List<String> _logoUrlsForHost(String host) => [
+    'https://www.google.com/s2/favicons?domain=$host&sz=256',
+    'https://icons.duckduckgo.com/ip3/$host.ico',
+    'https://logo.clearbit.com/$host',
+  ];
+
+  String? _absoluteLogoUrl(String value, String baseUrl) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return null;
+    final lower = trimmed.toLowerCase();
+    if (lower.startsWith('data:') || lower.startsWith('javascript:')) {
+      return null;
+    }
+    try {
+      final base = Uri.parse(baseUrl);
+      final resolved = base.resolve(trimmed);
+      if (resolved.scheme != 'http' && resolved.scheme != 'https') return null;
+      return resolved.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Reads the station's website and extracts the logos it declares itself
+  /// (`og:image`, `twitter:image`, `apple-touch-icon` and `<link rel=icon>`).
+  Future<List<String>> _homepageLogoUrls(String homepage) async {
+    final host = _hostFromUrl(homepage);
+    if (host == null || !_isStationLogoHost(host)) return [];
+
+    var pageUrl = homepage.trim();
+    if (!pageUrl.contains('://')) pageUrl = 'https://$pageUrl';
+
+    try {
+      final response = await http
+          .get(Uri.parse(pageUrl), headers: _logoHttpHeaders)
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode < 200 || response.statusCode >= 300) return [];
+
+      final contentType =
+          response.headers['content-type']?.toLowerCase() ?? '';
+      if (contentType.isNotEmpty && !contentType.contains('html')) return [];
+
+      final html = utf8.decode(response.bodyBytes, allowMalformed: true);
+      if (html.isEmpty) return [];
+
+      final urls = <String>[];
+      void addFromTag(String tagPattern, String attribute) {
+        final tagRegExp = RegExp(
+          tagPattern,
+          caseSensitive: false,
+          dotAll: true,
+        );
+        final attributeRegExp = RegExp(
+          '$attribute\\s*=\\s*["\']([^"\']+)["\']',
+          caseSensitive: false,
+          dotAll: true,
+        );
+        for (final match in tagRegExp.allMatches(html)) {
+          final tag = match.group(0);
+          if (tag == null) continue;
+          final value = attributeRegExp.firstMatch(tag)?.group(1);
+          final resolved = value == null ? null : _absoluteLogoUrl(value, pageUrl);
+          if (resolved != null && !urls.contains(resolved)) {
+            urls.add(resolved);
+          }
+        }
+      }
+
+      // The icons declared by the website are usually the square logo and
+      // look best in the picker.
+      addFromTag(
+        r"""<link[^>]+rel\s*=\s*["'][^"']*(?:apple-touch-icon|icon)[^"']*["'][^>]*>""",
+        'href',
+      );
+      // Open Graph / Twitter images are a last resort: they are often wide
+      // banners rather than a proper logo.
+      addFromTag(
+        r"""<meta[^>]+(?:property|name)\s*=\s*["'](?:og:image(?::url|:secure_url)?|twitter:image(?::src)?|image)["'][^>]*>""",
+        'content',
+      );
+
+      return urls.take(6).toList();
+    } catch (e) {
+      debugPrint('Logo search: homepage $homepage failed: $e');
+      return [];
+    }
+  }
+
+  /// Downloads the raw bytes of a candidate image.
+  Future<Uint8List?> _downloadLogo(String url) async {
+    try {
+      final response = await http
+          .get(Uri.parse(url), headers: _logoHttpHeaders)
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+
+      final bytes = response.bodyBytes;
+      if (bytes.length < 64 || bytes.length > 4 * 1024 * 1024) return null;
+
+      final contentType =
+          response.headers['content-type']?.toLowerCase() ?? '';
+      if (contentType.contains('text/html') ||
+          contentType.contains('application/json')) {
+        return null;
+      }
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Decodes and normalizes a downloaded image, so the dialog always shows
+  /// exactly the bytes that were validated. Returns null for broken images.
+  ({Uint8List bytes, String signature})? _prepareLogo(Uint8List raw) {
+    try {
+      final decoded = img.decodeImage(raw);
+      if (decoded == null) return null;
+      if (decoded.width < 16 || decoded.height < 16) return null;
+      if (decoded.width * decoded.height > 40000000) return null;
+
+      // Signature of a normalized thumbnail: identical logos returned by
+      // different services are collapsed into a single entry.
+      final signature = crypto.sha1
+          .convert(
+            img.encodePng(
+              img.copyResize(decoded, width: 32, height: 32),
+            ),
+          )
+          .toString();
+
+      var output = decoded;
+      final maxSide = math.max(decoded.width, decoded.height);
+      if (maxSide > 512) {
+        output = img.copyResize(
+          decoded,
+          width: decoded.width >= decoded.height ? 512 : null,
+          height: decoded.height > decoded.width ? 512 : null,
+        );
+      }
+
+      return (
+        bytes: Uint8List.fromList(img.encodePng(output, level: 6)),
+        signature: signature,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<dynamic>> _fetchRadioBrowserStations(String query) async {
+    final encoded = Uri.encodeComponent(query);
+    for (int i = 1; i <= 5; i++) {
+      final server = "de$i.api.radio-browser.info";
+      final url = Uri.parse(
+        "https://$server/json/stations/search?name=$encoded&limit=100&hidebroken=true&order=clickcount&reverse=true",
+      );
+      try {
+        final response = await http
+            .get(url)
+            .timeout(const Duration(seconds: 4));
+        if (response.statusCode == 200) {
+          final decoded = json.decode(response.body);
+          if (decoded is List) return decoded;
+        }
+      } catch (e) {
+        debugPrint("Logo search: server $server failed: $e");
+      }
+    }
+    return [];
+  }
+
+  /// Gathers and validates logo candidates for [query]. Only logos that
+  /// belong to the station itself are returned.
+  Future<List<({String url, Uint8List bytes})>> _collectLogosForQuery(
+    String query,
+  ) async {
+    final trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty) return [];
+
+    try {
+      // Only show logos that belong to the radio being edited: query Radio
+      // Browser for stations with the same name, keep only strict name
+      // matches and derive favicons from each station's own domain.
+      final coreQuery = _stationTokens(
+        _normalizeStationName(trimmedQuery),
+      ).join(' ');
+      final searchQueries = <String>{
+        trimmedQuery,
+        if (coreQuery.isNotEmpty) coreQuery,
+      };
+      final stationsByUuid = <String, Map<String, dynamic>>{};
+      for (final searchQuery in searchQueries) {
+        final results = await _fetchRadioBrowserStations(searchQuery);
+        for (final item in results.whereType<Map>()) {
+          final station = Map<String, dynamic>.from(item);
+          final uuid = (station['stationuuid'] ?? station['name'] ?? '')
+              .toString();
+          stationsByUuid.putIfAbsent(uuid, () => station);
+        }
+      }
+
+      final matchingStations = stationsByUuid.values
+          .map((s) => MapEntry(s, s['name']?.toString() ?? ''))
+          .where((entry) => _isSameStation(entry.value, trimmedQuery))
+          .toList();
+
+      final selectedCountry = _selectedSearchCountry.toUpperCase();
+      matchingStations.sort((a, b) {
+        final scoreA = _stationMatchScore(a.value, trimmedQuery);
+        final scoreB = _stationMatchScore(b.value, trimmedQuery);
+        if (scoreA != scoreB) return scoreB.compareTo(scoreA);
+
+        if (selectedCountry != 'ALL') {
+          final countryA =
+              (a.key['countrycode'] ?? '').toString().toUpperCase();
+          final countryB =
+              (b.key['countrycode'] ?? '').toString().toUpperCase();
+          final matchA = countryA == selectedCountry;
+          final matchB = countryB == selectedCountry;
+          if (matchA != matchB) return matchA ? -1 : 1;
+        }
+
+        return _clickCount(b.key).compareTo(_clickCount(a.key));
+      });
+
+      // Gather candidates in order of reliability: logos declared by the
+      // station's own website, then the station favicon, then favicon
+      // services for the station's own domain.
+      final homepageLogos = <String>[];
+      final stationFavicons = <String>[];
+      final domainLogos = <String>[];
+      final streamHostLogos = <String>[];
+
+      void addTo(List<String> target, String? url) {
+        final value = url?.trim();
+        if (value == null || value.isEmpty) return;
+        if (!value.startsWith('http')) return;
+        if (!target.contains(value)) target.add(value);
+      }
+
+      // Scraping is the most reliable source, but limit the number of pages.
+      final stationsForHomepage = matchingStations.take(4).toList();
+      final homepageResults = await Future.wait(
+        stationsForHomepage.map((entry) async {
+          final homepage = entry.key['homepage']?.toString() ?? '';
+          if (homepage.isEmpty) return const <String>[];
+          return _homepageLogoUrls(homepage);
+        }),
+      );
+      for (final logos in homepageResults) {
+        for (final url in logos) {
+          addTo(homepageLogos, url);
+        }
+      }
+
+      for (final entry in matchingStations) {
+        final station = entry.key;
+
+        final favicon = station['favicon']?.toString();
+        final faviconHost = _hostFromUrl(favicon);
+        if (faviconHost != null &&
+            !_hostInSet(faviconHost, _faviconBlockedHosts)) {
+          addTo(stationFavicons, favicon);
+        }
+
+        final homepageHost = _hostFromUrl(station['homepage']?.toString());
+        if (homepageHost != null && _isStationLogoHost(homepageHost)) {
+          for (final url in _logoUrlsForHost(homepageHost)) {
+            addTo(domainLogos, url);
+          }
+        }
+
+        // Stream hosts are often shared hosting providers, so they are used
+        // only when the station has no usable website of its own.
+        final streamHost = _hostFromUrl(
+          (station['url_resolved'] ?? station['url'])?.toString(),
+        );
+        if (homepageHost == null &&
+            streamHost != null &&
+            _isStationLogoHost(streamHost)) {
+          for (final url in _logoUrlsForHost(streamHost)) {
+            addTo(streamHostLogos, url);
+          }
+        }
+      }
+
+      // The stream URL currently typed in the form is another strong hint.
+      final typedHost = _hostFromUrl(_urlController.text);
+      if (typedHost != null && _isStationLogoHost(typedHost)) {
+        for (final url in _logoUrlsForHost(typedHost)) {
+          addTo(streamHostLogos, url);
+        }
+      }
+
+      const maxCandidates = 32;
+      final seenUrls = <String>{};
+      final candidateUrls = <String>[];
+      for (final group in [
+        homepageLogos,
+        stationFavicons,
+        domainLogos,
+        streamHostLogos,
+      ]) {
+        for (final url in group) {
+          if (candidateUrls.length >= maxCandidates) break;
+          if (seenUrls.add(url)) candidateUrls.add(url);
+        }
+      }
+
+      if (!mounted) return [];
+
+      // Download and validate the actual bytes: the dialog shows these exact
+      // bytes, so a listed logo can never fail to render and images that are
+      // not real pictures (HTML error pages, SVG, broken files) are dropped.
+      const batchSize = 10;
+      final preparedLogos =
+          <({String url, Uint8List bytes, String signature})>[];
+      for (var i = 0; i < candidateUrls.length; i += batchSize) {
+        final batch = candidateUrls.skip(i).take(batchSize);
+        final batchResults = await Future.wait(
+          batch.map((url) async {
+            final raw = await _downloadLogo(url);
+            if (raw == null) return null;
+            final prepared = _prepareLogo(raw);
+            if (prepared == null) return null;
+            return (
+              url: url,
+              bytes: prepared.bytes,
+              signature: prepared.signature,
+            );
+          }),
+        );
+        for (final result in batchResults) {
+          if (result != null) preparedLogos.add(result);
+        }
+      }
+
+      // Collapse duplicates coming from different services (same logo served
+      // by Google, DuckDuckGo and Clearbit for example).
+      final seenSignatures = <String>{};
+      final logos = <({String url, Uint8List bytes})>[];
+      for (final item in preparedLogos) {
+        if (logos.length >= 15) break;
+        if (!seenSignatures.add(item.signature)) continue;
+        logos.add((url: item.url, bytes: item.bytes));
+      }
+
+      return logos;
+    } catch (e) {
+      debugPrint('Logo search error: $e');
+      return [];
+    }
+  }
+
   Future<void> _searchAndShowLogos(BuildContext context, String query) async {
     final langProvider = Provider.of<LanguageProvider>(
       context,
       listen: false,
     );
+    final trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty) return;
     if (!_isSearching) setState(() => _isSearching = true);
 
+    List<({String url, Uint8List bytes})> logos = [];
     try {
-      final Set<String> imageUrls = {};
-
-      Future<void> safeFetch(
-        String name,
-        Future<List<String>> Function() fetcher,
-      ) async {
-        try {
-          final results = await fetcher();
-          if (mounted) {
-            imageUrls.addAll(results);
-          }
-        } catch (e) {
-          debugPrint("Error fetching $name: $e");
-        }
-      }
-
-      await Future.wait([
-        // 1. iTunes Podcast Search
-        safeFetch("iTunes", () async {
-          final uri = Uri.parse(
-            "https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=podcast&entity=podcast&limit=15",
-          );
-          final resp = await http.get(uri).timeout(const Duration(seconds: 4));
-          if (resp.statusCode == 200) {
-            final data = json.decode(resp.body);
-            return (data['results'] as List?)
-                    ?.map(
-                      (e) =>
-                          (e['artworkUrl600'] ?? e['artworkUrl100'])
-                              ?.toString() ??
-                          "",
-                    )
-                    .where((s) => s.isNotEmpty)
-                    .toList() ??
-                [];
-          }
-          return [];
-        }),
-
-        // 2. Clearbit
-        safeFetch("Clearbit", () async {
-          final resp = await http
-              .get(
-                Uri.parse(
-                  "https://autocomplete.clearbit.com/v1/companies/suggest?query=${Uri.encodeComponent(query)}",
-                ),
-              )
-              .timeout(const Duration(seconds: 4));
-          if (resp.statusCode == 200) {
-            final List data = json.decode(resp.body);
-            return data
-                .map((e) => e['logo']?.toString() ?? "")
-                .where((s) => s.isNotEmpty)
-                .toList();
-          }
-          return [];
-        }),
-
-        // 3. Web Search Simulation (Google Images fallback via Bing)
-        // We use Bing's thumbnail proxy which is reliable and acts very similarly to Google Images
-        // for "best match" retrieval without needing an API key/parsing HTML.
-        safeFetch("WebSearch", () async {
-          final base = "https://tse2.mm.bing.net/th";
-          final params = "&w=500&h=500&c=7&rs=1&p=0"; // p=0 high quality
-
-          String makeUrl(String q) =>
-              "$base?q=${Uri.encodeComponent(q)}$params";
-
-          // Generate diverse variations to get different results
-          return [
-            makeUrl("$query logo"),
-            makeUrl("$query station icon"),
-            makeUrl("$query radio fm logo"),
-            makeUrl("$query broadcast"),
-            makeUrl(query), // Fallback to raw query
-            makeUrl("$query logo png"), // Try to get transparent-ish
-            makeUrl("$query logo square"), // Try to get square
-          ];
-        }),
-      ]);
-
-      if (!mounted) return;
-
-      // 4. Verify Images (filter out broken links)
-      // We do a quick HEAD check to ensure the image exists and is accessible.
-      final List<String> verifiedImages = [];
-      final rawList = imageUrls
-          .where((u) => u.startsWith('http'))
-          .toSet()
-          .toList();
-
-      // Check in parallel batches to be faster, but limited concurrency isn't strictly needed for few items.
-      // We will check all.
-      await Future.wait(
-        rawList.map((url) async {
-          try {
-            final response = await http
-                .head(Uri.parse(url))
-                .timeout(const Duration(milliseconds: 1500));
-            if (response.statusCode == 200) {
-              // If content-type is available, check if image. If not, assume yes if 200.
-              final cType = response.headers['content-type'];
-              if (cType == null ||
-                  cType.contains('image') ||
-                  cType == 'application/octet-stream') {
-                verifiedImages.add(url);
-              }
-            }
-          } catch (_) {
-            // Ignore failures
-          }
-        }),
-      );
-
-      // Stop searching spinner
-      setState(() => _isSearching = false);
-
-      if (verifiedImages.isEmpty) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                langProvider.translate('no_valid_logo_suggestions'),
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
-      if (!context.mounted) return;
-
-      final selected = await GlassUtils.showGlassDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            "Select Logo for '$query'",
-            style: TextStyle(
-              color: Theme.of(context).textTheme.titleLarge?.color,
-              fontSize: 16,
-            ),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 400,
-            child: GridView.builder(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-              ),
-              itemCount: verifiedImages.length,
-              itemBuilder: (context, index) {
-                final url = verifiedImages[index];
-                return GestureDetector(
-                  onTap: () => Navigator.pop(context, url),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black26,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Image.network(
-                      url,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const Center(
-                        child: Icon(Icons.broken_image, color: Colors.white24),
-                      ),
-                      loadingBuilder: (ctx, child, loading) {
-                        if (loading == null) return child;
-                        return const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white24,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                langProvider.translate('cancel'),
-              ),
-            ),
-          ],
-        ),
-      );
-
-      if (selected != null && mounted) {
-        setState(() => _logoController.text = selected);
-        // Automatic Color Extraction
-        _extractColorFromLogo();
-      }
+      logos = await _collectLogosForQuery(trimmedQuery);
     } catch (e) {
       if (context.mounted) {
-        debugPrint("Logo search error: $e");
+        debugPrint('Logo search error: $e');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -1437,6 +1827,23 @@ class _EditStationScreenState extends State<EditStationScreen> {
       }
     } finally {
       if (mounted) setState(() => _isSearching = false);
+    }
+
+    if (!context.mounted) return;
+
+    final selected = await GlassUtils.showGlassDialog<String>(
+      context: context,
+      builder: (ctx) => _LogoPickerDialog(
+        initialQuery: trimmedQuery,
+        initialLogos: logos,
+        onSearch: _collectLogosForQuery,
+      ),
+    );
+
+    if (selected != null && mounted) {
+      setState(() => _logoController.text = selected);
+      // Automatic Color Extraction
+      _extractColorFromLogo();
     }
   }
 
@@ -2091,6 +2498,233 @@ class _StationSelectionDialog extends StatelessWidget {
               ),
             );
           },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(langProvider.translate('cancel')),
+        ),
+      ],
+    );
+  }
+}
+
+/// Logo picker with an editable search query: the user can refine the query
+/// and re-run the logo search without leaving the dialog.
+class _LogoPickerDialog extends StatefulWidget {
+  final String initialQuery;
+  final List<({String url, Uint8List bytes})> initialLogos;
+  final Future<List<({String url, Uint8List bytes})>> Function(String query)
+  onSearch;
+
+  const _LogoPickerDialog({
+    required this.initialQuery,
+    required this.initialLogos,
+    required this.onSearch,
+  });
+
+  @override
+  State<_LogoPickerDialog> createState() => _LogoPickerDialogState();
+}
+
+class _LogoPickerDialogState extends State<_LogoPickerDialog> {
+  late final TextEditingController _queryController;
+  late List<({String url, Uint8List bytes})> _logos;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _queryController = TextEditingController(text: widget.initialQuery);
+    _logos = List.of(widget.initialLogos);
+  }
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _runSearch() async {
+    final query = _queryController.text.trim();
+    if (query.isEmpty || _isLoading) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() => _isLoading = true);
+    try {
+      final results = await widget.onSearch(query);
+      if (!mounted) return;
+      setState(() {
+        _logos = results;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      final langProvider = Provider.of<LanguageProvider>(
+        context,
+        listen: false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            langProvider
+                .translate('logo_search_error')
+                .replaceAll('{0}', e.toString()),
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final langProvider = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    );
+    final theme = Theme.of(context);
+    final titleQuery = _queryController.text.trim();
+    final contentHeight = math.min(
+      460.0,
+      MediaQuery.sizeOf(context).height * 0.55,
+    );
+
+    return AlertDialog(
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(
+        langProvider.translate('select_logo_for', args: [titleQuery]),
+        style: TextStyle(
+          color: theme.textTheme.titleLarge?.color,
+          fontSize: 16,
+        ),
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: contentHeight,
+        child: Column(
+          children: [
+            Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: theme.cardColor.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: theme.dividerColor.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.search,
+                    size: 20,
+                    color: theme.primaryColor,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _queryController,
+                      enabled: !_isLoading,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _runSearch(),
+                      onChanged: (_) => setState(() {}),
+                      style: TextStyle(
+                        color: theme.textTheme.bodyMedium?.color,
+                        fontSize: 14,
+                      ),
+                      decoration: InputDecoration(
+                        isCollapsed: true,
+                        border: InputBorder.none,
+                        hintText: langProvider.translate(
+                          'logo_search_hint',
+                        ),
+                        hintStyle: TextStyle(
+                          color: theme.hintColor.withValues(alpha: 0.7),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: _isLoading
+                        ? const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : IconButton(
+                            padding: EdgeInsets.zero,
+                            iconSize: 20,
+                            tooltip: langProvider.translate(
+                              'search_default_logo',
+                            ),
+                            icon: Icon(
+                              Icons.refresh_rounded,
+                              size: 20,
+                              color: theme.primaryColor,
+                            ),
+                            onPressed: _runSearch,
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _isLoading
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        color: theme.primaryColor,
+                      ),
+                    )
+                  : _logos.isEmpty
+                  ? Center(
+                      child: Text(
+                        langProvider.translate('no_valid_logo_suggestions'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: theme.textTheme.bodySmall?.color,
+                        ),
+                      ),
+                    )
+                  : GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                          ),
+                      itemCount: _logos.length,
+                      itemBuilder: (context, index) {
+                        final logo = _logos[index];
+                        return GestureDetector(
+                          onTap: () => Navigator.pop(context, logo.url),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black26,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            padding: const EdgeInsets.all(6),
+                            child: Image.memory(
+                              logo.bytes,
+                              fit: BoxFit.contain,
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
       actions: [

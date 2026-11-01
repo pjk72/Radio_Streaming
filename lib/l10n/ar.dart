@@ -157,6 +157,7 @@ final Map<String, String> ar = {
   'error_searching': 'خطأ البحث في الراديو:{0}',
   'no_logos_found': 'لم يتم العثور على شعار',
   'select_logo_for': 'حدد الشعار لـ {0}',
+  'logo_search_hint': 'اسم الراديو للبحث عن الشعار',
   'stream_verify_failed': 'فشل التحقق من الدفق:{0}',
   'processed_count': 'وضع محطات {0}!',
   'guest': 'ضيف',

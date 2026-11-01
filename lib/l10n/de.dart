@@ -165,6 +165,7 @@ final Map<String, String> de = {
   'error_searching': 'Fehler bei der Radiosuche: {0}',
   'no_logos_found': 'Keine Logos gefunden',
   'select_logo_for': 'Logo für {0} auswählen',
+  'logo_search_hint': 'Radioname für die Logosuche',
   'stream_verify_failed': 'Stream-Überprüfung fehlgeschlagen: {0}',
   'processed_count': '{0} Sender verarbeitet!',
   // Player & General
