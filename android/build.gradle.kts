@@ -3,6 +3,41 @@ import com.android.build.gradle.AppExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// Suppress premature Flutter deprecation warning for third-party plugins applying KGP
+try {
+    val loggerFactory = org.slf4j.LoggerFactory.getILoggerFactory()
+    val getOutputEventListenerMethod = loggerFactory.javaClass.getMethod("getOutputEventListener")
+    val defaultListener = getOutputEventListenerMethod.invoke(loggerFactory)
+    val listenerClass = Class.forName("org.gradle.internal.logging.events.OutputEventListener")
+    val setOutputEventListenerMethod = loggerFactory.javaClass.getMethod("setOutputEventListener", listenerClass)
+    val proxy = java.lang.reflect.Proxy.newProxyInstance(
+        listenerClass.classLoader,
+        arrayOf(listenerClass)
+    ) { _, method, args ->
+        if (method.name == "onOutput" && args != null && args.isNotEmpty()) {
+            val event = args[0]
+            val message = try {
+                event.javaClass.getMethod("getMessage").invoke(event)?.toString() ?: ""
+            } catch (_: Throwable) { "" }
+            if (message.contains("Your app uses the following plugins that apply Kotlin Gradle Plugin") ||
+                message.contains("Future versions of Flutter will fail to build if your app uses plugins that apply KGP") ||
+                message.contains("Please check the changelogs of these plugins and upgrade") ||
+                message.contains("If you are a plugin author, please migrate your plugin") ||
+                message.contains("applies the Kotlin Gradle Plugin, which will cause build failures") ||
+                message.contains("Please migrate your app to Built-in Kotlin")
+            ) {
+                return@newProxyInstance null
+            }
+            method.invoke(defaultListener, *args)
+        } else {
+            null
+        }
+    }
+    setOutputEventListenerMethod.invoke(loggerFactory, proxy)
+} catch (_: Throwable) {
+    // Graceful fallback
+}
+
 allprojects {
     repositories {
         google()
@@ -19,6 +54,21 @@ val newBuildDir: Directory =
         .dir("../../build")
         .get()
 rootProject.layout.buildDirectory.value(newBuildDir)
+
+// AGP 9 enforces AAR metadata checks against the app's compileSdk (36).
+// Several Flutter plugins still hardcode an older compileSdk, so raise them
+// all. This must be registered before any project is evaluated (and before
+// Flutter's plugin handler registers its own afterEvaluate callbacks).
+subprojects {
+    afterEvaluate {
+        extensions.findByType(LibraryExtension::class.java)?.let { androidExtension ->
+            val current = androidExtension.compileSdk
+            if (current == null || current < 36) {
+                androidExtension.compileSdk = 36
+            }
+        }
+    }
+}
 
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)

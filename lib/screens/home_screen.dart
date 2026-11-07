@@ -1,4 +1,6 @@
+// import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+// import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/radio_provider.dart';
@@ -48,6 +50,28 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      /*       floatingActionButton: kDebugMode
+          ? Padding(
+              // Keep the debug button above the floating player bar.
+              padding: const EdgeInsets.only(bottom: 84),
+              child: FloatingActionButton(
+                heroTag: 'adInspectorButton',
+                tooltip: 'Apri Ad Inspector',
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+                onPressed: () {
+                  MobileAds.instance.openAdInspector((error) {
+                    if (error != null) {
+                      debugPrint('Ad Inspector error: ${error.message}');
+                    } else {
+                      debugPrint('Ad Inspector chiuso');
+                    }
+                  });
+                },
+                child: const Icon(Icons.bug_report),
+              ),
+            )
+          : null, */
       body: Stack(
         children: [
           Column(
@@ -85,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           const TrendingScreen(),
                           const PlaylistScreen(),
-                          const RadioScreen(),                          
+                          const RadioScreen(),
                           const SettingsScreen(),
                         ],
                       ),
@@ -105,11 +129,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Hide player bar only if:
                 // 1. We are on the first tab (Radio) AND the wizard is active due to no stations
                 // 2. OR the wizard is explicitly open (e.g. from Manage Stations)
-                
+
                 // Logic for "auto-wizard" in RadioScreen:
-                final bool isHomeWizard = _navIndex == 2 && 
-                  radio.stations.where((s) => radio.favorites.contains(s.id)).isEmpty;
-                
+                final bool isHomeWizard =
+                    _navIndex == 2 &&
+                    radio.stations
+                        .where((s) => radio.favorites.contains(s.id))
+                        .isEmpty;
+
                 // The isWizardOpen flag is also set when opening from Manage Stations
                 final bool shouldHide = isHomeWizard || radio.isWizardOpen;
 
@@ -128,7 +155,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildTopHeader(BuildContext context) {
     // Only for Mobile/Tablet (!isDesktop)
     final langProvider = Provider.of<LanguageProvider>(context);
-    final isGuest = !Provider.of<RadioProvider>(context).backupService.isSignedIn;
+    final isGuest = !Provider.of<RadioProvider>(
+      context,
+    ).backupService.isSignedIn;
 
     return Container(
       padding: EdgeInsets.only(

@@ -70,7 +70,7 @@ Future<bool> _performBackgroundBackup() async {
 
     if (!backupService.isSignedIn) {
       debugPrint("Workmanager: Backup skipped - Not signed in");
-      return Future.value(false);
+      return false;
     }
 
     // Gather Data

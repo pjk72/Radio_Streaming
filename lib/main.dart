@@ -41,7 +41,8 @@ import 'utils/glass_utils.dart';
 import 'utils/http_overrides.dart';
 
 late AudioHandler audioHandler;
-final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> globalNavigatorKey =
+    GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> main() async {
@@ -56,7 +57,10 @@ Future<void> main() async {
         errorStr.contains("SocketException") ||
         errorStr.contains("HandshakeException") ||
         errorStr.contains("TimeoutException") ||
+        errorStr.contains("ClientException") ||
         errorStr.contains("MEDIA_ERROR_SERVER_DIED") ||
+        errorStr.contains("AndroidAudioError") ||
+        errorStr.contains("firebase_remote_config") ||
         errorStr.contains("PermissionHandler") ||
         errorStr.contains("HTTP request failed") ||
         errorStr.contains("NetworkImage") ||
@@ -69,15 +73,12 @@ Future<void> main() async {
   }
 
   FlutterError.onError = (errorDetails) {
-    if (isNonFatalError(errorDetails.exception)) {
-      FirebaseCrashlytics.instance.recordError(
-        errorDetails.exception,
-        errorDetails.stack,
-        fatal: false,
-      );
-    } else {
-      FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
-    }
+    // Errors reaching FlutterError.onError were caught by the Flutter
+    // framework; the app keeps running. They include debug-only diagnostics
+    // (layout overflow/ListTile assertions) and expected image/network
+    // failures, so reporting them as fatal grouped unrelated issues under
+    // this handler. Keep reporting them, but as non-fatal.
+    FirebaseCrashlytics.instance.recordFlutterError(errorDetails, fatal: false);
   };
 
   PlatformDispatcher.instance.onError = (error, stack) {
@@ -150,16 +151,23 @@ class _MusicStreamRootState extends State<MusicStreamRoot> {
         ChangeNotifierProvider.value(value: _entitlementService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
-        ChangeNotifierProxyProvider2<LanguageProvider, ThemeProvider, RadioProvider>(
-          create: (ctx) => RadioProvider(
-            audioHandler,
-            _backupService,
-            _entitlementService,
-            Provider.of<ThemeProvider>(ctx, listen: false),
-          )..updateLanguageCode(
-            Provider.of<LanguageProvider>(ctx, listen: false)
-                .resolvedLanguageCode,
-          ),
+        ChangeNotifierProxyProvider2<
+          LanguageProvider,
+          ThemeProvider,
+          RadioProvider
+        >(
+          create: (ctx) =>
+              RadioProvider(
+                audioHandler,
+                _backupService,
+                _entitlementService,
+                Provider.of<ThemeProvider>(ctx, listen: false),
+              )..updateLanguageCode(
+                Provider.of<LanguageProvider>(
+                  ctx,
+                  listen: false,
+                ).resolvedLanguageCode,
+              ),
           update: (ctx, lang, theme, radio) {
             if (radio != null) {
               radio.updateLanguageCode(lang.resolvedLanguageCode);
@@ -192,7 +200,10 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
   }
 
   Future<void> _initApp() async {
-    final entitlements = Provider.of<EntitlementService>(context, listen: false);
+    final entitlements = Provider.of<EntitlementService>(
+      context,
+      listen: false,
+    );
 
     // 1. Start the minimum splash timer immediately (2.5s)
     final splashTimer = Future.delayed(const Duration(milliseconds: 2500));
@@ -201,9 +212,9 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
       // 2. CRITICAL INITIALIZATIONS
       if (!kIsWeb) {
         try {
-          await MobileAds.instance
-              .initialize()
-              .timeout(const Duration(seconds: 5));
+          await MobileAds.instance.initialize().timeout(
+            const Duration(seconds: 5),
+          );
           // Warm up the native ad pool so the first list slot can render
           // without waiting for a fresh request.
           NativeAdPool.instance.preload();
@@ -240,6 +251,16 @@ class _RadioAppState extends State<RadioApp> with WidgetsBindingObserver {
         });
       }
     }
+  }
+
+  void openAdInspector() {
+    MobileAds.instance.openAdInspector((error) {
+      if (error != null) {
+        debugPrint('Errore Ad Inspector: ${error.message}');
+      } else {
+        debugPrint('Ad Inspector chiuso correttamente');
+      }
+    });
   }
 
   Future<void> _initNotifications() async {

@@ -37,10 +37,6 @@
 -keep class xyz.luan.audioplayers.** { *; }
 -keep class luan.xyz.audioplayers.** { *; }
 
-# AdMob rules
--keep class com.google.android.gms.ads.** { *; }
--keep class com.google.android.gms.internal.ads.** { *; }
-
 # AdMob mediation adapters are instantiated by reflection from the adapter class
 # name returned by the server (e.g. IronSource). Without these rules R8 renames
 # them and mediation silently fails in release builds.
@@ -67,65 +63,37 @@
 -keep class com.beefe.ssworkmanager.** { *; }
 
 # Specific App Kotlin Classes
-# Instead of keeping the whole package (which prevents obfuscation), we keep entry points
--keep class com.fazio.musicstream.MainActivity { *; }
--keep class com.fazio.musicstream.channels.** { *; }
+# AppEventChannelsPlugin is registered through a direct reference in
+# GeneratedPluginRegistrant, and NativeAdFactorySmall is directly instantiated
+# by MainActivity. Neither requires name-based lookup, so R8 can safely process them.
+# MainActivity is a manifest component; AGP already keeps its component entry
+# point. Its members are referenced directly or through normal Android overrides.
 -keep class com.fazio.musicstream.HomeWidgetProvider { *; }
--keep class com.fazio.musicstream.NativeAdFactorySmall { *; }
--keep class com.fazio.musicstream.BackgroundWorker { *; }
-
-# Keep data models if they are used for JSON serialization in background
--keep class com.fazio.musicstream.models.** { *; }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Firebase – Required for RecognitionApiService (Remote Config + Firestore)
+# Firebase
 # ──────────────────────────────────────────────────────────────────────────────
-
-# Firebase Core
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.internal.firebase** { *; }
+# Firebase SDKs and their Flutter plugins contribute their own consumer rules.
+# Do not keep the entire Firebase implementation; Dart code reaches it through
+# generated plugin bindings, while Android manifest components are kept by AGP.
 -dontwarn com.google.firebase.**
-
-# Firebase Remote Config
--keep class com.google.firebase.remoteconfig.** { *; }
--keep class com.google.firebase.remoteconfig.internal.** { *; }
-
-# Cloud Firestore
--keep class com.google.firebase.firestore.** { *; }
--keep class com.google.firebase.firestore.internal.** { *; }
--keep class io.grpc.** { *; }
 -dontwarn io.grpc.**
-
-# Firebase Auth (required by Firestore)
--keep class com.google.firebase.auth.** { *; }
-
-# Firebase Installations
--keep class com.google.firebase.installations.** { *; }
-
-# Firebase Analytics (used for heartbeat)
--keep class com.google.firebase.analytics.** { *; }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # OkHttp / Okio – Used by Firebase SDKs and http package
 # ──────────────────────────────────────────────────────────────────────────────
--keep class okhttp3.** { *; }
--keep interface okhttp3.** { *; }
 -dontwarn okhttp3.**
--keep class okio.** { *; }
 -dontwarn okio.**
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Kotlin Coroutines / Serialization – Used by Firebase internally
 # ──────────────────────────────────────────────────────────────────────────────
--keep class kotlinx.coroutines.** { *; }
 -dontwarn kotlinx.coroutines.**
--keep class kotlin.** { *; }
 -dontwarn kotlin.**
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Gson / JSON parsing (used for Remote Config key parsing in RecognitionApiService)
+# Gson: keep explicitly named JSON fields where application models use them.
 # ──────────────────────────────────────────────────────────────────────────────
--keep class com.google.gson.** { *; }
 -keepattributes *Annotation*
 -keepclassmembers class * {
     @com.google.gson.annotations.SerializedName <fields>;
